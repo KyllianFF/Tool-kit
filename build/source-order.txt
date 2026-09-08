@@ -1,0 +1,44 @@
+# Load order for the toolkit sources.
+#
+# Read by both the development launcher (toolkit.ps1) and the build script
+# (build/Build-Toolkit.ps1), so the modular run and the compiled single file
+# always contain the same code in the same order.
+#
+# Paths are relative to the repository root. Lines starting with # and blank
+# lines are ignored.
+
+# --- Core: no dependencies beyond each other -------------------------------
+src/Core/Config.ps1
+src/Core/Logging.ps1
+src/Core/Environment.ps1
+src/Core/Elevation.ps1
+src/Core/Utilities.ps1
+src/Core/Threading.ps1
+src/Core/DataLoader.ps1
+
+# --- Features: depend on core only -----------------------------------------
+src/Features/System/SystemInventory.ps1
+src/Features/System/VendorSupport.ps1
+src/Features/Software/WingetManager.ps1
+src/Features/Tweaks/TweakEngine.ps1
+src/Features/Fixes/SystemFixes.ps1
+src/Features/Fixes/AutoLogon.ps1
+src/Features/Network/SubnetCalculator.ps1
+src/Features/Network/NetworkTools.ps1
+src/Features/Security/SshKeys.ps1
+src/Features/Security/FileIntegrity.ps1
+src/Features/Security/VirusTotal.ps1
+src/Features/Security/CredentialTools.ps1
+src/Features/Security/SecurityAudit.ps1
+
+# --- Interface: depends on core and features -------------------------------
+src/UI/Window.ps1
+src/UI/Pages/SystemPage.ps1
+src/UI/Pages/SoftwarePage.ps1
+src/UI/Pages/TweaksPage.ps1
+src/UI/Pages/FixesPage.ps1
+src/UI/Pages/NetworkPage.ps1
+src/UI/Pages/SecurityPage.ps1
+
+# --- Entry point -----------------------------------------------------------
+src/Start-Toolkit.ps1

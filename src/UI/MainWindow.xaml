@@ -1,0 +1,943 @@
+<!--
+    Toolkit - Main window
+
+    Loaded at run time with XamlReader, which imposes two rules on this file:
+
+      - no x:Class attribute, because there is no compiled code behind;
+      - no event handler attributes, because XamlReader cannot resolve them.
+        Every handler is attached from PowerShell through FindName.
+
+    Layout: a fixed header, a navigation rail, one panel per feature area of
+    which exactly one is visible, a collapsible output console and a status
+    bar. Colours are declared once as resources so a light theme is a
+    resource swap rather than a rewrite.
+-->
+<Window
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Toolkit"
+    Height="820" Width="1320"
+    MinHeight="640" MinWidth="1080"
+    WindowStartupLocation="CenterScreen"
+    Background="{DynamicResource AppBackground}">
+
+    <Window.Resources>
+
+        <!-- ============================ Palette ============================ -->
+        <SolidColorBrush x:Key="AppBackground"  Color="#16181D" />
+        <SolidColorBrush x:Key="Surface"        Color="#1E2128" />
+        <SolidColorBrush x:Key="SurfaceRaised"  Color="#262A33" />
+        <SolidColorBrush x:Key="BorderSubtle"   Color="#333845" />
+        <SolidColorBrush x:Key="TextPrimary"    Color="#E7EAF0" />
+        <SolidColorBrush x:Key="TextMuted"      Color="#98A1B2" />
+        <SolidColorBrush x:Key="Accent"         Color="#4C8DFF" />
+        <SolidColorBrush x:Key="AccentMuted"    Color="#2A4C8A" />
+        <SolidColorBrush x:Key="Success"        Color="#3FB950" />
+        <SolidColorBrush x:Key="Warning"        Color="#D29922" />
+        <SolidColorBrush x:Key="Danger"         Color="#F85149" />
+
+        <!-- ========================== Base styles ========================== -->
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize"   Value="13" />
+        </Style>
+
+        <Style x:Key="Heading" TargetType="TextBlock">
+            <Setter Property="FontSize"   Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin"     Value="0,0,0,4" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+
+        <Style x:Key="SubHeading" TargetType="TextBlock">
+            <Setter Property="FontSize"   Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin"     Value="0,14,0,6" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+
+        <Style x:Key="Muted" TargetType="TextBlock">
+            <Setter Property="Foreground"   Value="{DynamicResource TextMuted}" />
+            <Setter Property="FontSize"     Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style TargetType="Button">
+            <Setter Property="Background"      Value="{DynamicResource SurfaceRaised}" />
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding"         Value="14,7" />
+            <Setter Property="Margin"          Value="0,0,8,0" />
+            <Setter Property="FontFamily"      Value="Segoe UI" />
+            <Setter Property="FontSize"        Value="13" />
+            <Setter Property="Cursor"          Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background"  Value="{DynamicResource AccentMuted}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="FontWeight"  Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background"          Value="Transparent" />
+            <Setter Property="BorderThickness"     Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding"             Value="16,11" />
+            <Setter Property="Margin"              Value="8,2,8,2" />
+            <Setter Property="FontSize"            Value="13" />
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background"      Value="{DynamicResource Surface}" />
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding"         Value="8,6" />
+            <Setter Property="FontFamily"      Value="Segoe UI" />
+            <Setter Property="FontSize"        Value="13" />
+            <Setter Property="CaretBrush"      Value="{DynamicResource TextPrimary}" />
+        </Style>
+
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background"      Value="{DynamicResource Surface}" />
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding"         Value="8,6" />
+            <Setter Property="FontSize"        Value="13" />
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource Surface}" />
+            <Setter Property="Foreground" Value="#111111" />
+            <Setter Property="Padding"    Value="6,4" />
+            <Setter Property="FontSize"   Value="13" />
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontSize"   Value="13" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="Background"  Value="{DynamicResource Surface}" />
+            <Setter Property="Foreground"  Value="#111111" />
+            <Setter Property="Padding"     Value="14,7" />
+            <Setter Property="FontSize"    Value="13" />
+        </Style>
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background"      Value="{DynamicResource Surface}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius"    Value="8" />
+            <Setter Property="Padding"         Value="16" />
+            <Setter Property="Margin"          Value="0,0,0,12" />
+        </Style>
+
+        <Style x:Key="Mono" TargetType="TextBox">
+            <Setter Property="FontFamily"    Value="Cascadia Mono, Consolas, Courier New" />
+            <Setter Property="FontSize"      Value="12" />
+            <Setter Property="IsReadOnly"    Value="True" />
+            <Setter Property="Background"    Value="#11131A" />
+            <Setter Property="BorderBrush"   Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="TextWrapping"  Value="NoWrap" />
+        </Style>
+
+        <!-- Label and value pair used across the inventory page. -->
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            <Setter Property="FontSize"   Value="11" />
+            <Setter Property="Margin"     Value="0,0,0,2" />
+        </Style>
+
+        <Style x:Key="FieldValue" TargetType="TextBlock">
+            <Setter Property="Foreground"    Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontSize"      Value="13" />
+            <Setter Property="TextWrapping"  Value="Wrap" />
+            <Setter Property="Margin"        Value="0,0,0,12" />
+        </Style>
+
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ============================= Header ============================= -->
+        <Border Grid.Row="0" Background="{DynamicResource Surface}"
+                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1" Padding="20,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Toolkit" FontSize="19" FontWeight="Bold" />
+                    <TextBlock x:Name="HeaderVersion" Text="v1.0.0" Style="{StaticResource Muted}"
+                               Margin="10,0,0,0" VerticalAlignment="Bottom" />
+                </StackPanel>
+
+                <TextBlock Grid.Column="1" x:Name="HeaderHost" Style="{StaticResource Muted}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border x:Name="ElevationBadge" CornerRadius="4" Padding="10,4" Margin="0,0,10,0"
+                            Background="{DynamicResource SurfaceRaised}"
+                            BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                        <TextBlock x:Name="ElevationText" Text="Standard user" FontSize="12" />
+                    </Border>
+                    <Button x:Name="BtnElevate" Content="Restart as administrator" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ============================== Body ============================== -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="208" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Navigation rail -->
+            <Border Grid.Column="0" Background="{DynamicResource Surface}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,1,0">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Top" Margin="0,12,0,0">
+                        <Button x:Name="NavSystem"   Content="System"       Style="{StaticResource NavButton}" Tag="System" />
+                        <Button x:Name="NavSoftware" Content="Software"     Style="{StaticResource NavButton}" Tag="Software" />
+                        <Button x:Name="NavTweaks"   Content="Tweaks"       Style="{StaticResource NavButton}" Tag="Tweaks" />
+                        <Button x:Name="NavFixes"    Content="Fixes"        Style="{StaticResource NavButton}" Tag="Fixes" />
+                        <Button x:Name="NavNetwork"  Content="Network"      Style="{StaticResource NavButton}" Tag="Network" />
+                        <Button x:Name="NavSecurity" Content="Security"     Style="{StaticResource NavButton}" Tag="Security" />
+                    </StackPanel>
+
+                    <StackPanel DockPanel.Dock="Bottom" Margin="16,0,16,16">
+                        <Button x:Name="BtnOpenLogs" Content="Open log folder" HorizontalAlignment="Stretch" Margin="0,0,0,6" />
+                        <Button x:Name="BtnAbout"    Content="About"           HorizontalAlignment="Stretch" Margin="0" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Feature panels. Exactly one is visible at a time. -->
+            <Grid Grid.Column="1" x:Name="PageHost">
+
+                <!-- ========================= SYSTEM ========================= -->
+                <ScrollViewer x:Name="PageSystem" VerticalScrollBarVisibility="Auto" Padding="24,20" Visibility="Visible">
+                    <StackPanel>
+                        <TextBlock Text="System" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}"
+                                   Text="Machine identity read from SMBIOS, operating system state and platform security posture. Everything on this page is read only and works without elevation." />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,16,0,4">
+                            <Button x:Name="BtnRefreshSystem" Content="Refresh" Style="{StaticResource PrimaryButton}" />
+                            <Button x:Name="BtnCopySerial"    Content="Copy serial number" />
+                            <Button x:Name="BtnVendorDrivers" Content="Vendor drivers" />
+                            <Button x:Name="BtnVendorWarranty" Content="Warranty" />
+                            <Button x:Name="BtnVendorTool"    Content="Install firmware utility" />
+                            <Button x:Name="BtnExportReport"  Content="Export report" />
+                        </StackPanel>
+
+                        <!-- Identity -->
+                        <Border Style="{StaticResource Card}" Margin="0,12,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Identity" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
+                                <UniformGrid Columns="4" x:Name="IdentityGrid">
+                                    <StackPanel><TextBlock Text="Manufacturer" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValManufacturer" Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Model"        Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValModel"        Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Serial number" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValSerial"      Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Asset tag"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValAssetTag"     Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Chassis"      Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValChassis"      Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Motherboard"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBoard"        Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Domain"       Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValDomain"       Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Signed in user" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValUser"       Style="{StaticResource FieldValue}" /></StackPanel>
+                                </UniformGrid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Firmware -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Firmware" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
+                                <UniformGrid Columns="4">
+                                    <StackPanel><TextBlock Text="BIOS vendor"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosVendor"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="BIOS version" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosVersion" Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Release date" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosDate"    Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Age"          Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosAge"     Style="{StaticResource FieldValue}" /></StackPanel>
+                                </UniformGrid>
+                                <TextBlock x:Name="ValBiosAdvice" Style="{StaticResource Muted}" Margin="0,4,0,0" />
+                                <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                           Text="The toolkit never downloads or flashes firmware itself. It installs the vendor utility and opens the support page pre-filled with this serial number." />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Operating system -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Operating system" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
+                                <UniformGrid Columns="4">
+                                    <StackPanel><TextBlock Text="Edition"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValOsCaption"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Version"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValOsVersion"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Build"      Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValOsBuild"    Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Activation" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValActivation" Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Installed"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValInstalled"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Uptime"     Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValUptime"     Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Time zone"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValTimeZone"   Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="PowerShell" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValPowerShell" Style="{StaticResource FieldValue}" /></StackPanel>
+                                </UniformGrid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Hardware -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Hardware" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
+                                <UniformGrid Columns="4">
+                                    <StackPanel><TextBlock Text="Processor" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValCpu"      Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Cores"     Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValCores"    Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Memory"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValMemory"   Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Graphics"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValGpu"      Style="{StaticResource FieldValue}" /></StackPanel>
+                                </UniformGrid>
+
+                                <TextBlock Text="Volumes" Style="{StaticResource FieldLabel}" Margin="0,6,0,4" />
+                                <ListView x:Name="ListVolumes" Height="120" Background="{DynamicResource SurfaceRaised}"
+                                          BorderBrush="{DynamicResource BorderSubtle}" Foreground="#111111">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Drive"  Width="60"  DisplayMemberBinding="{Binding Drive}" />
+                                            <GridViewColumn Header="Label"  Width="160" DisplayMemberBinding="{Binding Label}" />
+                                            <GridViewColumn Header="File system" Width="90" DisplayMemberBinding="{Binding FileSystem}" />
+                                            <GridViewColumn Header="Size"   Width="110" DisplayMemberBinding="{Binding Size}" />
+                                            <GridViewColumn Header="Free"   Width="110" DisplayMemberBinding="{Binding Free}" />
+                                            <GridViewColumn Header="Used %" Width="70"  DisplayMemberBinding="{Binding UsedPercent}" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+
+                                <TextBlock Text="Physical disks" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
+                                <ListView x:Name="ListDisks" Height="110" Background="{DynamicResource SurfaceRaised}"
+                                          BorderBrush="{DynamicResource BorderSubtle}" Foreground="#111111">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Model"  Width="320" DisplayMemberBinding="{Binding Name}" />
+                                            <GridViewColumn Header="Size"   Width="110" DisplayMemberBinding="{Binding Size}" />
+                                            <GridViewColumn Header="Type"   Width="90"  DisplayMemberBinding="{Binding MediaType}" />
+                                            <GridViewColumn Header="Bus"    Width="90"  DisplayMemberBinding="{Binding BusType}" />
+                                            <GridViewColumn Header="Health" Width="90"  DisplayMemberBinding="{Binding Health}" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Platform security -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Platform security" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
+                                <UniformGrid Columns="2">
+                                    <StackPanel><TextBlock Text="Secure Boot" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValSecureBoot" Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="TPM"         Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValTpm"        Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="BitLocker"   Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBitLocker"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Firewall"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValFirewall"   Style="{StaticResource FieldValue}" /></StackPanel>
+                                </UniformGrid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ======================== SOFTWARE ======================== -->
+                <Grid x:Name="PageSoftware" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0">
+                        <TextBlock Text="Software" Style="{StaticResource Heading}" />
+                        <TextBlock x:Name="WingetStatusText" Style="{StaticResource Muted}"
+                                   Text="Installation through winget, from the official Microsoft source only." />
+                    </StackPanel>
+
+                    <Grid Grid.Row="1" Margin="0,14,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Grid.Column="0" x:Name="SoftwareSearch" Margin="0,0,10,0" />
+                        <ComboBox Grid.Column="1" x:Name="SoftwareCategory" Width="200" Margin="0,0,10,0" />
+                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            <Button x:Name="BtnInstallSelected"   Content="Install selected" Style="{StaticResource PrimaryButton}" />
+                            <Button x:Name="BtnUninstallSelected" Content="Uninstall" />
+                            <Button x:Name="BtnUpgradeAll"        Content="Upgrade all" />
+                            <Button x:Name="BtnRefreshInstalled"  Content="Refresh state" />
+                            <Button x:Name="BtnClearSelection"    Content="Clear" Margin="0" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0" Padding="4">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="SoftwareList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource SurfaceRaised}" CornerRadius="6"
+                                                Margin="6,4" Padding="12,9"
+                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                          VerticalAlignment="Center" Margin="0,0,12,0" />
+
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" />
+                                                    <TextBlock Text="{Binding PackageId}" Style="{StaticResource Muted}"
+                                                               FontFamily="Cascadia Mono, Consolas" Opacity="0.65" />
+                                                </StackPanel>
+
+                                                <TextBlock Grid.Column="2" Text="{Binding StateText}"
+                                                           VerticalAlignment="Center" FontSize="12"
+                                                           Foreground="{DynamicResource Success}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+
+                <!-- ========================= TWEAKS ========================= -->
+                <Grid x:Name="PageTweaks" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0">
+                        <TextBlock Text="Tweaks" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}"
+                                   Text="Every tweak declares both the applied state and the state to restore, so each one can be reverted. A system restore point is created before a batch is applied." />
+                    </StackPanel>
+
+                    <Grid Grid.Row="1" Margin="0,14,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Grid.Column="0" x:Name="TweakSearch" Margin="0,0,10,0" />
+                        <ComboBox Grid.Column="1" x:Name="TweakCategory" Width="200" Margin="0,0,10,0" />
+                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            <Button x:Name="BtnApplyTweaks"   Content="Apply selected" Style="{StaticResource PrimaryButton}" />
+                            <Button x:Name="BtnRevertTweaks"  Content="Revert selected" />
+                            <Button x:Name="BtnRefreshTweaks" Content="Refresh state" Margin="0" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0" Padding="4">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="TweakList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource SurfaceRaised}" CornerRadius="6"
+                                                Margin="6,4" Padding="12,9"
+                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                          VerticalAlignment="Top" Margin="0,2,12,0" />
+
+                                                <StackPanel Grid.Column="1">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                        <Border CornerRadius="3" Padding="6,1" Margin="10,0,0,0"
+                                                                Background="{DynamicResource Surface}"
+                                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                                            <TextBlock Text="{Binding Impact}" FontSize="10" Foreground="{DynamicResource TextMuted}" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" Margin="0,3,0,0" />
+                                                </StackPanel>
+
+                                                <TextBlock Grid.Column="2" Text="{Binding StateText}"
+                                                           VerticalAlignment="Center" FontSize="12" Margin="12,0,0,0"
+                                                           Foreground="{DynamicResource Success}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+
+                <!-- ========================== FIXES ========================== -->
+                <Grid x:Name="PageFixes" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <TextBlock Text="Fixes" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}"
+                                   Text="Repair actions with the symptom each one addresses. Read the note before running anything marked high risk." />
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                            <Button x:Name="BtnAutoLogon"     Content="Automatic logon" Style="{StaticResource PrimaryButton}" />
+                            <Button x:Name="BtnRestorePoint"  Content="Create a restore point" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0" Padding="4">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="FixList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource SurfaceRaised}" CornerRadius="6"
+                                                Margin="6,4" Padding="12,10"
+                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                        <Border CornerRadius="3" Padding="6,1" Margin="10,0,0,0"
+                                                                Background="{DynamicResource Surface}"
+                                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                                            <TextBlock Text="{Binding RiskText}" FontSize="10" Foreground="{DynamicResource TextMuted}" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" Margin="0,3,0,0" />
+                                                    <TextBlock Text="{Binding WhenToUse}" Style="{StaticResource Muted}"
+                                                               Margin="0,3,0,0" FontStyle="Italic" Opacity="0.8" />
+                                                </StackPanel>
+
+                                                <Button Grid.Column="1" Content="Run" Tag="{Binding Id}"
+                                                        VerticalAlignment="Center" Margin="0" MinWidth="80" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+
+                <!-- ========================= NETWORK ========================= -->
+                <Grid x:Name="PageNetwork" Margin="24,20" Visibility="Collapsed">
+                    <TabControl x:Name="NetworkTabs" Background="Transparent" BorderThickness="0">
+
+                        <TabItem Header="Subnet calculator">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,16,0,0">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel>
+                                            <TextBlock Text="IPv4 subnet" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBox x:Name="SubnetInput" Width="260" Text="192.168.1.10/24" />
+                                                <Button x:Name="BtnCalculateSubnet" Content="Calculate" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0" />
+                                                <TextBox x:Name="SplitPrefixInput" Width="70" Margin="20,0,0,0" Text="26" />
+                                                <Button x:Name="BtnSplitSubnet" Content="Split into" Margin="8,0,0,0" />
+                                                <TextBox x:Name="HostCountInput" Width="90" Margin="20,0,0,0" Text="300" />
+                                                <Button x:Name="BtnPrefixForHosts" Content="Prefix for hosts" Margin="8,0,0,0" />
+                                            </StackPanel>
+                                            <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                                       Text="Accepts CIDR notation or an address with a mask. /31 point to point links and /32 host routes are handled per RFC 3021." />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Style="{StaticResource Card}">
+                                        <TextBox x:Name="SubnetOutput" Style="{StaticResource Mono}" Height="380"
+                                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                                 AcceptsReturn="True" />
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+
+                        <TabItem Header="Adapters">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Button x:Name="BtnRefreshAdapters" Content="Refresh" Style="{StaticResource PrimaryButton}" />
+                                    <Button x:Name="BtnPublicIp"        Content="Show public address" />
+                                    <Button x:Name="BtnListeningPorts"  Content="Listening ports" />
+                                </StackPanel>
+
+                                <ListView Grid.Row="1" x:Name="ListAdapters" Background="{DynamicResource SurfaceRaised}"
+                                          BorderBrush="{DynamicResource BorderSubtle}" Foreground="#111111">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Name"        Width="150" DisplayMemberBinding="{Binding Name}" />
+                                            <GridViewColumn Header="Status"      Width="70"  DisplayMemberBinding="{Binding Status}" />
+                                            <GridViewColumn Header="IPv4"        Width="130" DisplayMemberBinding="{Binding IPv4Address}" />
+                                            <GridViewColumn Header="Mask"        Width="130" DisplayMemberBinding="{Binding SubnetMask}" />
+                                            <GridViewColumn Header="Gateway"     Width="130" DisplayMemberBinding="{Binding Gateway}" />
+                                            <GridViewColumn Header="DNS"         Width="200" DisplayMemberBinding="{Binding DnsServers}" />
+                                            <GridViewColumn Header="DHCP"        Width="70"  DisplayMemberBinding="{Binding Dhcp}" />
+                                            <GridViewColumn Header="MAC"         Width="140" DisplayMemberBinding="{Binding MacAddress}" />
+                                            <GridViewColumn Header="Speed"       Width="90"  DisplayMemberBinding="{Binding LinkSpeed}" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Diagnostics">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Target" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="DiagTarget" Width="240" Text="192.168.1.1" />
+                                            <Button x:Name="BtnTestConnectivity" Content="Connectivity chain" Style="{StaticResource PrimaryButton}" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnPortScan"         Content="Common ports" />
+                                            <Button x:Name="BtnSweep"            Content="Sweep subnet" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="DNS name" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="DnsName" Width="240" Text="www.microsoft.com" />
+                                            <ComboBox x:Name="DnsType" Width="90" Margin="10,0,0,0" />
+                                            <TextBox x:Name="DnsServer" Width="150" Margin="10,0,0,0" />
+                                            <Button x:Name="BtnResolveDns" Content="Resolve" Margin="10,0,0,0" />
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                                   Text="Port checks and sweeps are for networks you administer. The sweep refuses any prefix shorter than /22 and every target is written to the log." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="NetworkOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Knowledge base">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="280" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBox Grid.Row="0" Grid.Column="0" x:Name="KnowledgeSearch" Margin="0,0,10,10" />
+                                <ListBox Grid.Row="1" Grid.Column="0" x:Name="KnowledgeList" Margin="0,0,10,0"
+                                         Background="{DynamicResource SurfaceRaised}" Foreground="#111111"
+                                         BorderBrush="{DynamicResource BorderSubtle}" />
+
+                                <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <TextBox x:Name="KnowledgeContent" Style="{StaticResource Mono}"
+                                                 TextWrapping="Wrap" BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}" FontSize="13"
+                                                 FontFamily="Segoe UI" AcceptsReturn="True" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Vendor commands">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="280" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,10,10">
+                                    <ComboBox x:Name="VendorSelect" Margin="0,0,0,8" />
+                                    <TextBox  x:Name="VendorSearch" />
+                                </StackPanel>
+
+                                <ListBox Grid.Row="1" Grid.Column="0" x:Name="VendorSectionList" Margin="0,0,10,0"
+                                         Background="{DynamicResource SurfaceRaised}" Foreground="#111111"
+                                         BorderBrush="{DynamicResource BorderSubtle}" />
+
+                                <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <TextBox x:Name="VendorContent" Style="{StaticResource Mono}"
+                                                 TextWrapping="NoWrap" BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}" AcceptsReturn="True" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+
+                <!-- ======================== SECURITY ======================== -->
+                <Grid x:Name="PageSecurity" Margin="24,20" Visibility="Collapsed">
+                    <TabControl x:Name="SecurityTabs" Background="Transparent" BorderThickness="0">
+
+                        <TabItem Header="SSH keys">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Generate a key pair" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="SshKeyName" Width="160" Text="id_ed25519" />
+                                            <TextBlock Text="Type" VerticalAlignment="Center" Margin="16,0,8,0" />
+                                            <ComboBox x:Name="SshKeyType" Width="110" />
+                                            <TextBlock Text="Comment" VerticalAlignment="Center" Margin="16,0,8,0" />
+                                            <TextBox x:Name="SshKeyComment" Width="200" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Passphrase" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <PasswordBox x:Name="SshPassphrase" Width="220" />
+                                            <CheckBox x:Name="SshNoPassphrase" Content="No passphrase (not recommended)" Margin="16,0,0,0" />
+                                            <Button x:Name="BtnGenerateSshKey" Content="Generate" Style="{StaticResource PrimaryButton}" Margin="16,0,0,0" />
+                                            <Button x:Name="BtnListSshKeys"    Content="List keys" />
+                                            <Button x:Name="BtnCopyPublicKey"  Content="Copy public key" />
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                                   Text="ed25519 is the default. An existing key is never overwritten, and the private key permissions are restricted to the owner after generation." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="SshOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="File integrity">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="File" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="HashFilePath" Width="440" />
+                                            <Button x:Name="BtnBrowseHashFile" Content="Browse" Margin="10,0,0,0" />
+                                            <Button x:Name="BtnComputeHash"    Content="Compute hashes" Style="{StaticResource PrimaryButton}" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Expected hash" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="ExpectedHash" Width="520" />
+                                            <Button x:Name="BtnVerifyHash" Content="Verify" Margin="10,0,0,0" />
+                                            <Button x:Name="BtnVirusTotal" Content="Check on VirusTotal" />
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                                   Text="The VirusTotal check sends the SHA256 only. The file itself is never uploaded, so internal documents and installers stay private." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="IntegrityOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Credentials">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Length" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="PasswordLength" Width="60" Text="20" />
+                                            <CheckBox x:Name="PwdUpper"   Content="A-Z" IsChecked="True" Margin="14,0,0,0" />
+                                            <CheckBox x:Name="PwdLower"   Content="a-z" IsChecked="True" Margin="10,0,0,0" />
+                                            <CheckBox x:Name="PwdDigits"  Content="0-9" IsChecked="True" Margin="10,0,0,0" />
+                                            <CheckBox x:Name="PwdSymbols" Content="Symbols" IsChecked="True" Margin="10,0,0,0" />
+                                            <Button x:Name="BtnGeneratePassword"   Content="Generate password" Style="{StaticResource PrimaryButton}" Margin="16,0,0,0" />
+                                            <Button x:Name="BtnGeneratePassphrase" Content="Generate passphrase" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Check a password" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <PasswordBox x:Name="BreachPassword" Width="260" />
+                                            <Button x:Name="BtnCheckBreach" Content="Check against breaches" Margin="10,0,0,0" />
+                                            <Button x:Name="BtnCopyPassword" Content="Copy last generated" />
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                                   Text="The breach check uses k-anonymity: only the first five characters of the SHA1 hash are sent, so the password never leaves this machine." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="CredentialOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Local audit">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Button x:Name="BtnRunAudit"    Content="Run the audit" Style="{StaticResource PrimaryButton}" />
+                                    <Button x:Name="BtnExportAudit" Content="Export report" />
+                                    <TextBlock x:Name="AuditSummary" VerticalAlignment="Center" Margin="16,0,0,0" Style="{StaticResource Muted}" />
+                                </StackPanel>
+
+                                <ListView Grid.Row="1" x:Name="ListAudit" Background="{DynamicResource SurfaceRaised}"
+                                          BorderBrush="{DynamicResource BorderSubtle}" Foreground="#111111">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Status"   Width="80"  DisplayMemberBinding="{Binding Status}" />
+                                            <GridViewColumn Header="Check"    Width="180" DisplayMemberBinding="{Binding Name}" />
+                                            <GridViewColumn Header="Category" Width="130" DisplayMemberBinding="{Binding Category}" />
+                                            <GridViewColumn Header="Detail"   Width="380" DisplayMemberBinding="{Binding Detail}" />
+                                            <GridViewColumn Header="What to do" Width="420" DisplayMemberBinding="{Binding Recommendation}" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Settings">
+                            <ScrollViewer Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel>
+                                            <TextBlock Text="VirusTotal API key" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                                       Text="Stored encrypted with DPAPI under this Windows account. It cannot be decrypted by another user or on another machine, and it never appears in a log or a command line. A free account gives 4 requests per minute." />
+                                            <StackPanel Orientation="Horizontal">
+                                                <PasswordBox x:Name="VtApiKey" Width="360" />
+                                                <Button x:Name="BtnSaveVtKey"   Content="Save key" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0" />
+                                                <Button x:Name="BtnRemoveVtKey" Content="Remove stored key" />
+                                            </StackPanel>
+                                            <TextBlock x:Name="VtKeyStatus" Style="{StaticResource Muted}" Margin="0,8,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel>
+                                            <TextBlock Text="Data and logs" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                            <TextBlock x:Name="DataPathText" Style="{StaticResource Muted}" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                                <Button x:Name="BtnOpenDataFolder" Content="Open data folder" />
+                                                <Button x:Name="BtnClearLogs"      Content="Delete old logs" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- ============================= Console ============================= -->
+        <Expander Grid.Row="2" x:Name="ConsoleExpander" IsExpanded="True"
+                  Background="{DynamicResource Surface}" Foreground="{DynamicResource TextMuted}"
+                  BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="16,6">
+            <Expander.Header>
+                <TextBlock Text="Output" FontSize="12" Foreground="{DynamicResource TextMuted}" />
+            </Expander.Header>
+            <TextBox x:Name="OutputConsole" Height="150" Style="{StaticResource Mono}"
+                     Margin="0,6,0,6" VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto" AcceptsReturn="True" />
+        </Expander>
+
+        <!-- =========================== Status bar =========================== -->
+        <Border Grid.Row="3" Background="{DynamicResource Surface}"
+                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="20,7">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" x:Name="StatusText" Text="Ready." Style="{StaticResource Muted}" />
+                <ProgressBar Grid.Column="1" x:Name="BusyBar" Width="180" Height="6"
+                             IsIndeterminate="True" Visibility="Hidden"
+                             Background="{DynamicResource SurfaceRaised}" Foreground="{DynamicResource Accent}" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

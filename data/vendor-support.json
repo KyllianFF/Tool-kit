@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "description": "Vendor support profiles. Tokens {serial}, {model} and {assettag} are URL encoded and substituted at click time.",
+  "vendors": [
+    {
+      "name": "Dell",
+      "match": [ "Dell" ],
+      "driversUrl": "https://www.dell.com/support/home/en-us/product-support/servicetag/{serial}/drivers",
+      "warrantyUrl": "https://www.dell.com/support/home/en-us/product-support/servicetag/{serial}/warranty",
+      "manualUrl": "https://www.dell.com/support/home/en-us/product-support/servicetag/{serial}/manuals",
+      "updateToolName": "Dell Command Update",
+      "updateToolPackage": "Dell.CommandUpdate",
+      "note": "The service tag is the serial number reported by SMBIOS, so every link opens directly on this machine."
+    },
+    {
+      "name": "HP",
+      "match": [ "HP", "Hewlett-Packard", "Hewlett Packard" ],
+      "driversUrl": "https://support.hp.com/us-en/drivers",
+      "warrantyUrl": "https://support.hp.com/us-en/check-warranty",
+      "manualUrl": "https://support.hp.com/us-en/manuals",
+      "updateToolName": "HP Support Assistant",
+      "updateToolPackage": "HP.SupportAssistant",
+      "note": "HP does not accept a serial number in the URL path, so the serial is shown in the interface to paste into the search box."
+    },
+    {
+      "name": "Lenovo",
+      "match": [ "Lenovo" ],
+      "driversUrl": "https://pcsupport.lenovo.com/products?SerialNumber={serial}",
+      "warrantyUrl": "https://pcsupport.lenovo.com/warrantylookup?SerialNumber={serial}",
+      "manualUrl": "https://pcsupport.lenovo.com/products?SerialNumber={serial}",
+      "updateToolName": "Lenovo System Update",
+      "updateToolPackage": "Lenovo.SystemUpdate",
+      "note": "System Update covers ThinkPad and ThinkCentre; consumer lines use Lenovo Vantage instead."
+    },
+    {
+      "name": "Microsoft Surface",
+      "match": [ "Microsoft Corporation", "Surface" ],
+      "driversUrl": "https://www.microsoft.com/en-us/download/details.aspx?id=49038",
+      "warrantyUrl": "https://account.microsoft.com/devices",
+      "manualUrl": "https://support.microsoft.com/surface",
+      "updateToolName": "Surface firmware via Windows Update",
+      "updateToolPackage": "",
+      "note": "Surface firmware ships through Windows Update. The MSI packages are only for imaged deployments."
+    },
+    {
+      "name": "ASUS",
+      "match": [ "ASUS", "ASUSTeK" ],
+      "driversUrl": "https://www.asus.com/support/",
+      "warrantyUrl": "https://www.asus.com/support/warranty-status-inquiry/",
+      "manualUrl": "https://www.asus.com/support/",
+      "updateToolName": "MyASUS",
+      "updateToolPackage": "9N7R5S6B0ZZH",
+      "note": "MyASUS drives firmware updates on recent laptops."
+    },
+    {
+      "name": "Acer",
+      "match": [ "Acer" ],
+      "driversUrl": "https://www.acer.com/us-en/support/drivers-and-manuals",
+      "warrantyUrl": "https://www.acer.com/us-en/support/warranty-check",
+      "manualUrl": "https://www.acer.com/us-en/support/drivers-and-manuals",
+      "updateToolName": "Acer Care Center",
+      "updateToolPackage": "",
+      "note": "Serial number lookup is done from the support page search box."
+    },
+    {
+      "name": "MSI",
+      "match": [ "Micro-Star", "MSI" ],
+      "driversUrl": "https://www.msi.com/support/download",
+      "warrantyUrl": "https://account.msi.com/login",
+      "manualUrl": "https://www.msi.com/support/download",
+      "updateToolName": "MSI Center",
+      "updateToolPackage": "9NVMNJCR03XV",
+      "note": "Board firmware is downloaded per model from the support page."
+    },
+    {
+      "name": "Gigabyte",
+      "match": [ "Gigabyte" ],
+      "driversUrl": "https://www.gigabyte.com/Support",
+      "warrantyUrl": "https://www.gigabyte.com/Support/Consumer",
+      "manualUrl": "https://www.gigabyte.com/Support",
+      "updateToolName": "Gigabyte Control Center",
+      "updateToolPackage": "",
+      "note": "Desktop boards update through Q-Flash from the firmware setup."
+    },
+    {
+      "name": "Fujitsu",
+      "match": [ "FUJITSU" ],
+      "driversUrl": "https://support.ts.fujitsu.com/IndexDownload.asp",
+      "warrantyUrl": "https://support.ts.fujitsu.com/warranty/",
+      "manualUrl": "https://support.ts.fujitsu.com/IndexDownload.asp",
+      "updateToolName": "Fujitsu DeskUpdate",
+      "updateToolPackage": "",
+      "note": "DeskUpdate is downloaded from the support portal."
+    },
+    {
+      "name": "Apple",
+      "match": [ "Apple" ],
+      "driversUrl": "https://support.apple.com/downloads",
+      "warrantyUrl": "https://checkcoverage.apple.com/",
+      "manualUrl": "https://support.apple.com/manuals",
+      "updateToolName": "Boot Camp",
+      "updateToolPackage": "",
+      "note": "Windows on Mac hardware updates firmware from macOS, not from Windows."
+    },
+    {
+      "name": "Framework",
+      "match": [ "Framework" ],
+      "driversUrl": "https://knowledgebase.frame.work/en_us/bios-and-driver-releases-BkQ6Jc3F",
+      "warrantyUrl": "https://frame.work/support",
+      "manualUrl": "https://guides.frame.work/",
+      "updateToolName": "Framework firmware (LVFS or EFI updater)",
+      "updateToolPackage": "",
+      "note": "Firmware ships as an EFI updater or through LVFS."
+    }
+  ]
+}

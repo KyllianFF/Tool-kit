@@ -1,0 +1,29 @@
+# Normalise every text file to LF in the repository. Windows PowerShell,
+# pwsh and WPF all read LF without complaint, and it keeps diffs clean when
+# the same file is edited from different tools.
+* text=auto eol=lf
+
+*.ps1   text eol=lf
+*.psd1  text eol=lf
+*.psm1  text eol=lf
+*.xaml  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.txt   text eol=lf
+
+# Language statistics: the repository is PowerShell, not JSON.
+data/*.json linguist-language=JSON linguist-detectable=false
+dist/*      linguist-generated=true
+
+# ---------------------------------------------------------------------------
+# Exceptions, declared last because the last matching rule wins.
+# ---------------------------------------------------------------------------
+
+# The compiled build is published with a SHA256 so a user can verify what
+# they are about to execute. Any line ending translation between commit and
+# checkout would silently invalidate that hash, so these two are stored and
+# served byte for byte. The build script already emits LF, so nothing is
+# lost by opting out of normalisation here.
+dist/toolkit.ps1        -text
+dist/toolkit.ps1.sha256 -text

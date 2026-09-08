@@ -1,0 +1,105 @@
+# Continuous integration
+#
+# Runs on Windows because the toolkit targets Windows and its tests load
+# Windows-only modules. Two jobs on purpose: the test job tells you the code
+# is wrong, the build job tells you the released artefact would be wrong.
+
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+
+  test:
+    name: Tests (${{ matrix.shell }})
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both hosts are supported, so both are tested. 5.1 is what is present
+        # on an unmanaged machine; 7 is what an engineer installs.
+        shell: [ 'powershell', 'pwsh' ]
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install modules
+        shell: ${{ matrix.shell }}
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
+
+      - name: Run Pester
+        shell: ${{ matrix.shell }}
+        run: |
+          Import-Module Pester -MinimumVersion 5.0.0
+
+          $configuration = New-PesterConfiguration
+          $configuration.Run.Path      = './tests'
+          $configuration.Run.Exit      = $true
+          $configuration.Output.Verbosity = 'Detailed'
+          $configuration.TestResult.Enabled      = $true
+          $configuration.TestResult.OutputPath   = 'testResults.xml'
+          $configuration.TestResult.OutputFormat = 'NUnitXml'
+
+          Invoke-Pester -Configuration $configuration
+
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.shell }}
+          path: testResults.xml
+
+  build:
+    name: Analyse and build
+    runs-on: windows-latest
+    needs: test
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+
+      - name: Build
+        shell: pwsh
+        run: ./build/Build-Toolkit.ps1
+
+      - name: Verify the build loads and the interface can be built
+        shell: powershell
+        run: |
+          # Windows PowerShell 5.1 in STA, which is how a user runs it.
+          # -NoGui proves every function loads; the XAML parse proves the
+          # embedded markup is intact.
+          . ./dist/toolkit.ps1 -NoGui | Out-Null
+
+          if (-not (Import-TkUiAssembly)) { throw 'WPF assemblies did not load.' }
+
+          $window = New-TkMainWindow
+          $count  = (Get-TkContext).Controls.Count
+
+          if ($count -lt 100) {
+              throw "Only $count named controls were registered; the XAML looks truncated."
+          }
+
+          Write-Host "Interface built with $count controls."
+
+      - name: Upload the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolkit
+          path: |
+            dist/toolkit.ps1
+            dist/toolkit.ps1.sha256

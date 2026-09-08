@@ -1,0 +1,469 @@
+{
+  "schemaVersion": 1,
+  "description": "Declarative tweaks. Every entry carries both the applied state and the state to restore, so nothing here is one way.",
+  "categories": [
+    { "id": "privacy",     "name": "Privacy" },
+    { "id": "interface",   "name": "Interface" },
+    { "id": "performance", "name": "Performance" },
+    { "id": "gaming",      "name": "Gaming" },
+    { "id": "hardening",   "name": "Security hardening" },
+    { "id": "advanced",    "name": "Advanced" }
+  ],
+  "tweaks": [
+    {
+      "id": "disable-telemetry",
+      "name": "Disable Windows telemetry",
+      "category": "privacy",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Sets the diagnostic data level to Security and stops the connected user experiences service. On Home and Pro the policy caps collection rather than removing it entirely.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "name": "AllowTelemetry", "type": "DWord", "value": 0, "default": 1, "defaultAction": "delete" },
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "name": "DoNotShowFeedbackNotifications", "type": "DWord", "value": 1, "default": 0, "defaultAction": "delete" }
+      ],
+      "services": [
+        { "name": "DiagTrack", "startup": "Disabled", "default": "Automatic" },
+        { "name": "dmwappushservice", "startup": "Disabled", "default": "Manual" }
+      ],
+      "scheduledTasks": [
+        "\\Microsoft\\Windows\\Application Experience\\ProgramDataUpdater",
+        "\\Microsoft\\Windows\\Customer Experience Improvement Program\\Consolidator",
+        "\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip"
+      ]
+    },
+    {
+      "id": "disable-advertising-id",
+      "name": "Disable the advertising ID",
+      "category": "privacy",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Stops applications from using a per user identifier to correlate advertising across apps.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo", "name": "Enabled", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+    {
+      "id": "disable-activity-history",
+      "name": "Disable activity history",
+      "category": "privacy",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Stops Windows from recording the timeline of opened applications and documents, and from uploading it to a Microsoft account.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "name": "EnableActivityFeed", "type": "DWord", "value": 0, "default": 1, "defaultAction": "delete" },
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "name": "PublishUserActivities", "type": "DWord", "value": 0, "default": 1, "defaultAction": "delete" },
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "name": "UploadUserActivities", "type": "DWord", "value": 0, "default": 1, "defaultAction": "delete" }
+      ]
+    },
+    {
+      "id": "disable-consumer-features",
+      "name": "Disable suggested apps and consumer features",
+      "category": "privacy",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Stops Windows from silently installing promoted applications and from showing suggestions in the Start menu.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent", "name": "DisableWindowsConsumerFeatures", "type": "DWord", "value": 1, "default": 0, "defaultAction": "delete" },
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SilentInstalledAppsEnabled", "type": "DWord", "value": 0, "default": 1 },
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SystemPaneSuggestionsEnabled", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+    {
+      "id": "disable-bing-search",
+      "name": "Remove web results from the Start menu search",
+      "category": "privacy",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Keeps the Start menu search local. Every keystroke otherwise reaches Bing.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer", "name": "DisableSearchBoxSuggestions", "type": "DWord", "value": 1, "default": 0, "defaultAction": "delete" }
+      ]
+    },
+    {
+      "id": "disable-copilot",
+      "name": "Disable Windows Copilot",
+      "category": "privacy",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Removes the Copilot entry point from the taskbar and the shell.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot", "name": "TurnOffWindowsCopilot", "type": "DWord", "value": 1, "default": 0, "defaultAction": "delete" },
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "ShowCopilotButton", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+    {
+      "id": "disable-recall",
+      "name": "Disable Recall snapshots",
+      "category": "privacy",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Prevents the AI data analysis feature from capturing periodic screenshots of the session. Only relevant on Copilot+ hardware.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI", "name": "DisableAIDataAnalysis", "type": "DWord", "value": 1, "default": 0, "defaultAction": "delete" }
+      ]
+    },
+    {
+      "id": "disable-location",
+      "name": "Deny location access to applications",
+      "category": "privacy",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Blocks the location capability globally. Turn it back on before troubleshooting anything that legitimately needs geolocation.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\location", "name": "Value", "type": "String", "value": "Deny", "default": "Allow" }
+      ]
+    },
+
+    {
+      "id": "show-file-extensions",
+      "name": "Show file extensions",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Makes invoice.pdf.exe visible for what it is. This is a security control as much as a convenience.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "HideFileExt", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+    {
+      "id": "show-hidden-files",
+      "name": "Show hidden files",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Displays hidden items in Explorer.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "Hidden", "type": "DWord", "value": 1, "default": 2 }
+      ]
+    },
+    {
+      "id": "classic-context-menu",
+      "name": "Restore the classic context menu (Windows 11)",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": true,
+      "description": "Removes the compact Windows 11 right click menu and the extra click it adds to every shell extension. Explorer must restart for the change to appear.",
+      "registryKeys": [
+        {
+          "path": "HKCU:\\Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\\InprocServer32",
+          "applyAction": "create",
+          "revertAction": "delete",
+          "defaultValue": ""
+        }
+      ]
+    },
+    {
+      "id": "taskbar-align-left",
+      "name": "Align the taskbar to the left",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Moves the Windows 11 taskbar icons back to the left edge.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "TaskbarAl", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+    {
+      "id": "show-clock-seconds",
+      "name": "Show seconds in the taskbar clock",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Useful when correlating a user report with a log timestamp.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "ShowSecondsInSystemClock", "type": "DWord", "value": 1, "default": 0 }
+      ]
+    },
+    {
+      "id": "dark-theme",
+      "name": "Enable the dark theme",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Switches applications and the shell to the dark theme.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", "name": "AppsUseLightTheme", "type": "DWord", "value": 0, "default": 1 },
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", "name": "SystemUsesLightTheme", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+    {
+      "id": "verbose-logon",
+      "name": "Verbose logon messages",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Replaces 'Please wait' with the actual step being executed. The fastest way to see which group policy extension is hanging a logon.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "name": "VerboseStatus", "type": "DWord", "value": 1, "default": 0, "defaultAction": "delete" }
+      ]
+    },
+    {
+      "id": "disable-widgets",
+      "name": "Disable widgets and news",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Removes the widgets board and its background feed refresh.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Dsh", "name": "AllowNewsAndInterests", "type": "DWord", "value": 0, "default": 1, "defaultAction": "delete" },
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "TaskbarDa", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+
+    {
+      "id": "disable-fast-startup",
+      "name": "Disable fast start-up",
+      "category": "performance",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Makes a shutdown a real shutdown. Fast start-up hibernates the kernel session, which is why a driver problem survives a shutdown but not a restart. Disable it on any machine you are troubleshooting or dual booting.",
+      "registry": [
+        { "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power", "name": "HiberbootEnabled", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+    {
+      "id": "disable-background-apps",
+      "name": "Stop applications running in the background",
+      "category": "performance",
+      "impact": "Medium",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Prevents Store applications from running when not in the foreground. Notifications from those applications stop as well.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications", "name": "GlobalUserDisabled", "type": "DWord", "value": 1, "default": 0 }
+      ]
+    },
+    {
+      "id": "disable-sysmain",
+      "name": "Disable SysMain (Superfetch)",
+      "category": "performance",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Worth doing on an SSD where the prefetching gains nothing and the service can generate constant disk activity. Leave it enabled on a mechanical drive.",
+      "services": [
+        { "name": "SysMain", "startup": "Disabled", "default": "Automatic" }
+      ],
+      "registry": []
+    },
+    {
+      "id": "enable-long-paths",
+      "name": "Enable paths longer than 260 characters",
+      "category": "performance",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Removes the MAX_PATH limit for applications that declare support for it. Ends a whole class of backup and copy failures on deep folder trees.",
+      "registry": [
+        { "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem", "name": "LongPathsEnabled", "type": "DWord", "value": 1, "default": 0 }
+      ]
+    },
+    {
+      "id": "disable-hibernation",
+      "name": "Disable hibernation",
+      "category": "performance",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Reclaims a hiberfil.sys the size of installed memory. Do not apply on a laptop that relies on hibernate for battery preservation.",
+      "registry": [
+        { "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Power", "name": "HibernateEnabled", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+
+    {
+      "id": "enable-game-mode",
+      "name": "Enable Game Mode",
+      "category": "gaming",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Prioritises the foreground game for CPU and GPU scheduling.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\GameBar", "name": "AutoGameModeEnabled", "type": "DWord", "value": 1, "default": 0 },
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\GameBar", "name": "AllowAutoGameMode", "type": "DWord", "value": 1, "default": 0 }
+      ]
+    },
+    {
+      "id": "hardware-gpu-scheduling",
+      "name": "Enable hardware accelerated GPU scheduling",
+      "category": "gaming",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Lets the GPU manage its own frame queue. Requires a supported adapter and a recent driver; revert it if you see display instability.",
+      "registry": [
+        { "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", "name": "HwSchMode", "type": "DWord", "value": 2, "default": 1 }
+      ]
+    },
+    {
+      "id": "disable-game-bar",
+      "name": "Disable the Game Bar and background recording",
+      "category": "gaming",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Removes the capture overlay and the background recording that costs frames.",
+      "registry": [
+        { "path": "HKCU:\\System\\GameConfigStore", "name": "GameDVR_Enabled", "type": "DWord", "value": 0, "default": 1 },
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\GameBar", "name": "UseNexusForGameBarEnabled", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+
+    {
+      "id": "disable-autorun",
+      "name": "Disable AutoRun on every drive type",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "A USB stick found in a car park should not be able to start anything when it is plugged in.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer", "name": "NoDriveTypeAutoRun", "type": "DWord", "value": 255, "default": 145 }
+      ]
+    },
+    {
+      "id": "disable-llmnr",
+      "name": "Disable LLMNR",
+      "category": "hardening",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Link local multicast name resolution is what Responder abuses to answer failed DNS lookups and capture NTLM hashes. Nothing in a network with working DNS needs it.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient", "name": "EnableMulticast", "type": "DWord", "value": 0, "default": 1, "defaultAction": "delete" }
+      ]
+    },
+    {
+      "id": "enable-script-block-logging",
+      "name": "Enable PowerShell script block logging",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Records de-obfuscated PowerShell in the event log. This is the single most useful piece of telemetry when investigating an incident on Windows.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging", "name": "EnableScriptBlockLogging", "type": "DWord", "value": 1, "default": 0, "defaultAction": "delete" }
+      ]
+    },
+    {
+      "id": "disable-remote-assistance",
+      "name": "Disable Remote Assistance",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Closes an inbound remote control path that most estates never use and rarely monitor.",
+      "registry": [
+        { "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Remote Assistance", "name": "fAllowToGetHelp", "type": "DWord", "value": 0, "default": 1 }
+      ]
+    },
+    {
+      "id": "harden-uac",
+      "name": "Always prompt for elevation on the secure desktop",
+      "category": "hardening",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Raises UAC to prompt for consent on the secure desktop, which cannot be driven by another process on the interactive desktop.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "name": "ConsentPromptBehaviorAdmin", "type": "DWord", "value": 2, "default": 5 },
+        { "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "name": "PromptOnSecureDesktop", "type": "DWord", "value": 1, "default": 1 },
+        { "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "name": "EnableLUA", "type": "DWord", "value": 1, "default": 1 }
+      ]
+    },
+    {
+      "id": "disable-remote-registry",
+      "name": "Disable the Remote Registry service",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Removes remote registry read and write. Some inventory agents rely on it, so check before applying on a managed estate.",
+      "services": [
+        { "name": "RemoteRegistry", "startup": "Disabled", "default": "Manual" }
+      ],
+      "registry": []
+    },
+    {
+      "id": "disable-print-spooler",
+      "name": "Disable the print spooler",
+      "category": "hardening",
+      "impact": "High",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "The PrintNightmare mitigation for servers that do not print. Applying this on a workstation removes all printing, including to PDF.",
+      "services": [
+        { "name": "Spooler", "startup": "Disabled", "default": "Automatic" }
+      ],
+      "registry": []
+    },
+
+    {
+      "id": "enable-rdp-nla",
+      "name": "Enable Remote Desktop with NLA required",
+      "category": "advanced",
+      "impact": "High",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Opens RDP and requires Network Level Authentication. Only do this on a machine reachable from a management network, never from the internet.",
+      "registry": [
+        { "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server", "name": "fDenyTSConnections", "type": "DWord", "value": 0, "default": 1 },
+        { "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp", "name": "UserAuthentication", "type": "DWord", "value": 1, "default": 1 }
+      ]
+    },
+    {
+      "id": "disable-storage-sense",
+      "name": "Disable Storage Sense",
+      "category": "advanced",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Stops Windows from deleting files in the recycle bin and the downloads folder on its own schedule.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\StorageSense", "name": "AllowStorageSenseGlobal", "type": "DWord", "value": 0, "default": 1, "defaultAction": "delete" }
+      ]
+    },
+    {
+      "id": "disable-onedrive-autostart",
+      "name": "Stop OneDrive starting with Windows",
+      "category": "advanced",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Leaves OneDrive installed and usable but removes it from the logon sequence.",
+      "registry": [
+        { "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", "name": "OneDrive", "type": "String", "value": "", "default": "", "defaultAction": "delete" }
+      ]
+    },
+    {
+      "id": "disable-startup-sound",
+      "name": "Disable the start-up sound",
+      "category": "advanced",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Silences the Windows boot chime.",
+      "registry": [
+        { "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\LogonUI\\BootAnimation", "name": "DisableStartupSound", "type": "DWord", "value": 1, "default": 0 }
+      ]
+    }
+  ]
+}
