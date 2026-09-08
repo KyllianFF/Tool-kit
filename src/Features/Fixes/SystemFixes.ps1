@@ -115,10 +115,10 @@ function Get-TkFix {
     $catalog = Import-TkCatalog -Name 'fixes'
 
     if (-not $catalog) {
-        return @()
+        return , @()
     }
 
-    return @($catalog.fixes)
+    return , @($catalog.fixes)
 }
 
 # ---------------------------------------------------------------------------

@@ -80,7 +80,7 @@ function Get-TkNetworkAdapterInfo {
         )
     }
 
-    return $results
+    return , $results
 }
 
 <#
@@ -218,7 +218,7 @@ function Test-TkPortList {
         '{0}: {1} open port(s) found.' -f $ComputerName, $openCount
     )
 
-    return $results
+    return , $results
 }
 
 <#
@@ -255,7 +255,7 @@ function Get-TkSubnetHost {
             'Refused: /{0} is too large to sweep. Use /22 or smaller.' -f $subnet.PrefixLength
         )
 
-        return @()
+        return , @()
     }
 
     Write-TkLog -Level Information -Category 'Network' -Message (
@@ -309,7 +309,7 @@ function Get-TkSubnetHost {
         'Sweep finished: {0} host(s) responded.' -f $results.Count
     )
 
-    return $results
+    return , $results
 }
 
 <#
@@ -360,7 +360,7 @@ function Resolve-TkDnsRecord {
 
         $records = Resolve-DnsName @parameters
 
-        return @($records | ForEach-Object {
+        return , @($records | ForEach-Object {
 
             [pscustomobject]@{
                 Name    = $_.Name
@@ -380,7 +380,7 @@ function Resolve-TkDnsRecord {
             'DNS lookup for {0} ({1}) failed: {2}' -f $Name, $Type, $_.Exception.Message
         )
 
-        return @()
+        return , @()
     }
 }
 
@@ -426,7 +426,7 @@ function Get-TkListeningPort {
         )
     }
 
-    return ($results | Sort-Object -Property Port)
+    return , @($results | Sort-Object -Property Port)
 }
 
 <#
@@ -549,7 +549,7 @@ function Test-TkConnectivity {
         Detail  = $httpsDetail
     }
 
-    return $results
+    return , $results
 }
 
 <#

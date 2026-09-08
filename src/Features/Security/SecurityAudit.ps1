@@ -63,7 +63,7 @@ function Invoke-TkSecurityAudit {
         'Audit finished: {0} checks, {1} failing.' -f $findings.Count, $failed
     )
 
-    return $findings
+    return , $findings
 }
 
 <#

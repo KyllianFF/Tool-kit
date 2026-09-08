@@ -3,6 +3,11 @@
 # Runs on Windows because the toolkit targets Windows and its tests load
 # Windows-only modules. Two jobs on purpose: the test job tells you the code
 # is wrong, the build job tells you the released artefact would be wrong.
+#
+# Note on the matrix: the `shell` key does not accept ${{ }} expressions, so
+# the host is selected inside the run step by invoking the target executable
+# explicitly. build/Invoke-Tests.ps1 is the same entry point a developer uses
+# locally, which is what makes a green CI run mean what it says.
 
 name: CI
 
@@ -16,47 +21,43 @@ on:
 jobs:
 
   test:
-    name: Tests (${{ matrix.shell }})
+    name: Tests on ${{ matrix.host }}
     runs-on: windows-latest
 
     strategy:
       fail-fast: false
       matrix:
-        # Both hosts are supported, so both are tested. 5.1 is what is present
-        # on an unmanaged machine; 7 is what an engineer installs.
-        shell: [ 'powershell', 'pwsh' ]
+        include:
+          # 5.1 is what is present on an unmanaged machine.
+          - host: Windows PowerShell 5.1
+            exe: powershell
+            id: ps51
+          # 7 is what an engineer installs.
+          - host: PowerShell 7
+            exe: pwsh
+            id: ps7
 
     steps:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Install modules
-        shell: ${{ matrix.shell }}
+      - name: Run the test suite
+        shell: pwsh
         run: |
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module Pester -MinimumVersion 5.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          & ${{ matrix.exe }} -NoProfile -ExecutionPolicy Bypass `
+              -File ./build/Invoke-Tests.ps1 -ResultPath testResults.xml
 
-      - name: Run Pester
-        shell: ${{ matrix.shell }}
-        run: |
-          Import-Module Pester -MinimumVersion 5.0.0
-
-          $configuration = New-PesterConfiguration
-          $configuration.Run.Path      = './tests'
-          $configuration.Run.Exit      = $true
-          $configuration.Output.Verbosity = 'Detailed'
-          $configuration.TestResult.Enabled      = $true
-          $configuration.TestResult.OutputPath   = 'testResults.xml'
-          $configuration.TestResult.OutputFormat = 'NUnitXml'
-
-          Invoke-Pester -Configuration $configuration
+          if ($LASTEXITCODE -ne 0) {
+              throw "The test suite failed on ${{ matrix.host }}."
+          }
 
       - name: Publish test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.shell }}
+          name: test-results-${{ matrix.id }}
           path: testResults.xml
+          if-no-files-found: warn
 
   build:
     name: Analyse and build
@@ -73,19 +74,21 @@ jobs:
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
 
-      - name: Build
+      - name: Analyse and compile
         shell: pwsh
         run: ./build/Build-Toolkit.ps1
 
-      - name: Verify the build loads and the interface can be built
+      - name: Verify the compiled build loads and builds its window
         shell: powershell
         run: |
           # Windows PowerShell 5.1 in STA, which is how a user runs it.
-          # -NoGui proves every function loads; the XAML parse proves the
-          # embedded markup is intact.
+          # -NoGui proves every function loads; constructing the window proves
+          # the embedded XAML survived the build intact.
           . ./dist/toolkit.ps1 -NoGui | Out-Null
 
-          if (-not (Import-TkUiAssembly)) { throw 'WPF assemblies did not load.' }
+          if (-not (Import-TkUiAssembly)) {
+              throw 'The WPF assemblies did not load.'
+          }
 
           $window = New-TkMainWindow
           $count  = (Get-TkContext).Controls.Count
@@ -95,6 +98,13 @@ jobs:
           }
 
           Write-Host "Interface built with $count controls."
+
+      # Note: this job does not assert that the freshly built file matches the
+      # committed dist/toolkit.ps1. It cannot: the header embeds the commit
+      # and the build time, so a build made at commit N can never equal the
+      # artefact that was committed as N+1. dist/ is refreshed deliberately
+      # when a release is cut, which is what the SHA256 published with that
+      # release describes.
 
       - name: Upload the build
         uses: actions/upload-artifact@v4

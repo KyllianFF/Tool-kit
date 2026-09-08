@@ -37,6 +37,13 @@ function Test-TkCommand {
     failures when iterating over optional JSON fields, so every optional
     collection in the catalogs is read through this function.
 
+    Both returns use the comma operator. Without it PowerShell unrolls the
+    result on the way out, so a one element array arrives at the caller as a
+    bare object and an empty array arrives as $null. On PowerShell 7 that is
+    survivable because every scalar has a .Count; on Windows PowerShell 5.1
+    it does not, and .Count silently evaluates to $null. Returning a real
+    array in every case is the whole point of this function.
+
 .OUTPUTS
     System.Object[]
 #>
@@ -51,10 +58,10 @@ function ConvertTo-TkArray {
     )
 
     if ($null -eq $InputObject) {
-        return @()
+        return , @()
     }
 
-    return @($InputObject | Where-Object { $null -ne $_ })
+    return , @($InputObject | Where-Object { $null -ne $_ })
 }
 
 <#

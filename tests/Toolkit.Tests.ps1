@@ -246,6 +246,23 @@ Describe 'ConvertTo-TkArray' {
     It 'wraps a single value' {
         (ConvertTo-TkArray 'one').Count | Should -Be 1
     }
+
+    # PowerShell unrolls a returned collection unless the comma operator stops
+    # it, so a one element result arrives as a bare object and an empty one as
+    # $null. Windows PowerShell 5.1 has no .Count on a scalar, so the failure
+    # only shows there. These assert the type rather than the count, which is
+    # what actually went wrong.
+    It 'returns a real array for a single element' {
+        , (ConvertTo-TkArray 'one') | Should -BeOfType [System.Object[]]
+    }
+
+    It 'returns a real array when the input was null' {
+        , (ConvertTo-TkArray $null) | Should -BeOfType [System.Object[]]
+    }
+
+    It 'returns a real array when every element was null' {
+        , (ConvertTo-TkArray @($null, $null)) | Should -BeOfType [System.Object[]]
+    }
 }
 
 Describe 'ConvertTo-TkProcessArgument' {

@@ -265,7 +265,7 @@ function Install-TkPackageBatch {
         'Batch finished: {0} succeeded, {1} failed.' -f ($results.Count - $failed.Count), $failed.Count
     )
 
-    return $results
+    return , $results
 }
 
 <#
@@ -291,7 +291,7 @@ function Get-TkUpgradablePackage {
     if ($result.ExitCode -ne 0 -and [string]::IsNullOrWhiteSpace($result.StandardOutput)) {
 
         Write-TkLog -Level Warning -Category 'Software' -Message 'winget upgrade returned no usable output.'
-        return @()
+        return , @()
     }
 
     return (ConvertFrom-TkWingetTable -Text $result.StandardOutput)
@@ -380,7 +380,7 @@ function ConvertFrom-TkWingetTable {
     )
 
     if ([string]::IsNullOrWhiteSpace($Text)) {
-        return @()
+        return , @()
     }
 
     $lines = $Text -split "`r?`n"
@@ -398,7 +398,7 @@ function ConvertFrom-TkWingetTable {
     }
 
     if ($headerIndex -lt 0) {
-        return @()
+        return , @()
     }
 
     $header = $lines[$headerIndex]
@@ -412,7 +412,7 @@ function ConvertFrom-TkWingetTable {
     }
 
     if ($columns.Count -lt 2) {
-        return @()
+        return , @()
     }
 
     $rows = @()
@@ -478,7 +478,7 @@ function ConvertFrom-TkWingetTable {
         }
     }
 
-    return $rows
+    return , $rows
 }
 
 <#
