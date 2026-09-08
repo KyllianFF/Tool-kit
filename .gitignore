@@ -1,0 +1,24 @@
+# The build output is committed on purpose: dist/toolkit.ps1 is the file the
+# one liner downloads. Everything else a build or an editor produces is not.
+dist/*.tmp
+dist/*.bak
+
+# PowerShell
+*.ps1.bak
+
+# Editors
+.vs/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.user
+
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Local scratch
+scratch/
+tmp/
+*.log
