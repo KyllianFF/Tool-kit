@@ -1,0 +1,339 @@
+<#
+    Toolkit - UI / Software page
+
+    Renders the application catalog with a search box and a category filter,
+    and drives winget in the background.
+
+    Filtering uses the collection view rather than rebuilding the item source,
+    so a selection made before typing in the search box survives the filter.
+#>
+
+$script:TkApplicationItems = $null
+$script:TkApplicationView  = $null
+
+<#
+.SYNOPSIS
+    Wires the Software page and loads the catalog.
+#>
+function Initialize-TkSoftwarePage {
+    [CmdletBinding()]
+    param()
+
+    $catalog = Import-TkCatalog -Name 'applications'
+
+    if (-not $catalog) {
+        Set-TkOutput -ControlName 'WingetStatusText' -Text 'The application catalog could not be loaded.'
+        return
+    }
+
+    # --- Item source ------------------------------------------------------
+    $items = New-Object 'System.Collections.ObjectModel.ObservableCollection[object]'
+
+    $categoryNames = @{}
+
+    foreach ($category in $catalog.categories) {
+        $categoryNames[$category.id] = $category.name
+    }
+
+    foreach ($application in $catalog.applications) {
+
+        $items.Add([pscustomobject]@{
+            IsSelected   = $false
+            Id           = $application.id
+            Name         = $application.name
+            Description  = $application.description
+            PackageId    = $application.packageId
+            Category     = $application.category
+            CategoryName = $categoryNames[$application.category]
+            StateText    = ''
+        })
+    }
+
+    $script:TkApplicationItems = $items
+
+    $list = Get-TkControl -Name 'SoftwareList'
+
+    if ($list) {
+        $list.ItemsSource = $items
+    }
+
+    $script:TkApplicationView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($items)
+    $script:TkApplicationView.Filter = [Predicate[object]] {
+        param($item)
+        Test-TkApplicationVisible -Item $item
+    }
+
+    # --- Category filter --------------------------------------------------
+    $combo = Get-TkControl -Name 'SoftwareCategory'
+
+    if ($combo) {
+
+        [void] $combo.Items.Add('All categories')
+
+        foreach ($category in ($catalog.categories | Sort-Object -Property name)) {
+            [void] $combo.Items.Add($category.name)
+        }
+
+        $combo.SelectedIndex = 0
+        $combo.Add_SelectionChanged({ $script:TkApplicationView.Refresh() })
+    }
+
+    $search = Get-TkControl -Name 'SoftwareSearch'
+
+    if ($search) {
+        $search.Add_TextChanged({ $script:TkApplicationView.Refresh() })
+    }
+
+    # --- Actions ----------------------------------------------------------
+    Register-TkClick -Name 'BtnInstallSelected'   -Action { Invoke-TkSoftwareAction -Action 'Install' }
+    Register-TkClick -Name 'BtnUninstallSelected' -Action { Invoke-TkSoftwareAction -Action 'Uninstall' }
+    Register-TkClick -Name 'BtnRefreshInstalled'  -Action { Update-TkInstalledState }
+    Register-TkClick -Name 'BtnUpgradeAll'        -Action { Invoke-TkUpgradeAll }
+
+    Register-TkClick -Name 'BtnClearSelection' -Action {
+
+        foreach ($item in $script:TkApplicationItems) {
+            $item.IsSelected = $false
+        }
+
+        $script:TkApplicationView.Refresh()
+        Set-TkStatus -Text 'Selection cleared.'
+    }
+
+    Update-TkWingetStatusText
+}
+
+<#
+.SYNOPSIS
+    Decides whether a catalog entry passes the current filters.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Test-TkApplicationVisible {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        $Item
+    )
+
+    # A selected item stays visible whatever the filter, so the user can see
+    # what is about to be installed.
+    if ($Item.IsSelected) {
+        return $true
+    }
+
+    $combo = Get-TkControl -Name 'SoftwareCategory'
+
+    if ($combo -and $combo.SelectedIndex -gt 0) {
+
+        if ($Item.CategoryName -ne [string] $combo.SelectedItem) {
+            return $false
+        }
+    }
+
+    $search = Get-TkControl -Name 'SoftwareSearch'
+
+    if ($search -and -not [string]::IsNullOrWhiteSpace($search.Text)) {
+
+        $term = $search.Text.Trim()
+
+        $haystack = '{0} {1} {2}' -f $Item.Name, $Item.Description, $Item.PackageId
+
+        if ($haystack -notlike ('*{0}*' -f $term)) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+<#
+.SYNOPSIS
+    Reports whether winget is usable, in the page header.
+#>
+function Update-TkWingetStatusText {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Checking winget...' `
+        -ScriptBlock { Get-TkWingetStatus } `
+        -OnComplete {
+            param($result)
+
+            $status  = @($result.Output) | Select-Object -First 1
+            $control = Get-TkControl -Name 'WingetStatusText'
+
+            if (-not $control -or -not $status) {
+                return
+            }
+
+            if ($status.Available) {
+                $control.Text = 'winget {0} - installs come from the official Microsoft source only.' -f $status.Version
+            }
+            else {
+                $control.Text = $status.Message
+            }
+        }
+}
+
+<#
+.SYNOPSIS
+    Installs or removes the selected applications.
+
+.PARAMETER Action
+    Install or Uninstall.
+#>
+function Invoke-TkSoftwareAction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Install', 'Uninstall')]
+        [string] $Action
+    )
+
+    $selected = @($script:TkApplicationItems | Where-Object { $_.IsSelected })
+
+    if ($selected.Count -eq 0) {
+        Set-TkStatus -Text 'Nothing is selected.'
+        return
+    }
+
+    if (-not (Test-TkIsElevated)) {
+
+        Write-TkLog -Level Warning -Category 'Software' -Message (
+            'Not elevated: machine wide packages will fail. Restart as administrator for a reliable install.'
+        )
+    }
+
+    $names = ($selected | ForEach-Object { $_.Name }) -join ', '
+
+    $confirmed = Confirm-TkAction -Title ('{0} {1} application(s)' -f $Action, $selected.Count) -Message (
+        "{0}:`n`n{1}`n`nContinue?" -f $Action, $names
+    )
+
+    if (-not $confirmed) {
+        return
+    }
+
+    $packageIds = @($selected | ForEach-Object { $_.PackageId })
+
+    # The comma keeps the array as a single argument instead of unrolling it
+    # into one argument per package.
+    $arguments = @((, $packageIds), $Action)
+
+    Invoke-TkBackgroundAction -StatusText ('{0}ing {1} application(s)...' -f $Action, $packageIds.Count) `
+        -ArgumentList $arguments `
+        -ScriptBlock {
+            param($ids, $verb)
+
+            $results = @()
+
+            foreach ($id in $ids) {
+
+                if ($verb -eq 'Install') {
+                    $ok = Install-TkWingetPackage -PackageId $id -Confirm:$false
+                }
+                else {
+                    $ok = Uninstall-TkWingetPackage -PackageId $id -Confirm:$false
+                }
+
+                $results += [pscustomobject]@{ PackageId = $id; Success = $ok }
+            }
+
+            return $results
+        } `
+        -OnComplete {
+            param($result)
+
+            $rows      = @($result.Output)
+            $succeeded = @($rows | Where-Object { $_.Success }).Count
+
+            Set-TkStatus -Text ('{0} of {1} package(s) completed successfully.' -f $succeeded, $rows.Count)
+
+            Update-TkInstalledState
+        }
+}
+
+<#
+.SYNOPSIS
+    Upgrades every package winget reports as upgradable.
+#>
+function Invoke-TkUpgradeAll {
+    [CmdletBinding()]
+    param()
+
+    $confirmed = Confirm-TkAction -Title 'Upgrade everything' -Message (
+        "Upgrade every package winget reports as out of date?`n`nThis can restart applications and takes a while on a machine that has not been updated recently."
+    )
+
+    if (-not $confirmed) {
+        return
+    }
+
+    Invoke-TkBackgroundAction -StatusText 'Upgrading packages...' `
+        -ScriptBlock {
+
+            $upgradable = Get-TkUpgradablePackage
+
+            if ($upgradable.Count -eq 0) {
+                return 'Everything is up to date.'
+            }
+
+            $results = Install-TkPackageBatch -PackageId @($upgradable | ForEach-Object { $_.Id }) -Confirm:$false
+
+            return ('{0} of {1} package(s) upgraded.' -f
+                @($results | Where-Object { $_.Success }).Count, $results.Count)
+        } `
+        -OnComplete {
+            param($result)
+
+            Set-TkStatus -Text ([string] (@($result.Output) | Select-Object -Last 1))
+            Update-TkInstalledState
+        }
+}
+
+<#
+.SYNOPSIS
+    Marks catalog entries that are already installed.
+#>
+function Update-TkInstalledState {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading installed packages...' `
+        -ScriptBlock {
+
+            # HashSet does not survive the runspace boundary well; return a
+            # plain array and rebuild the lookup on the UI thread.
+            return @(Get-TkInstalledPackageId)
+        } `
+        -OnComplete {
+            param($result)
+
+            $installed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+
+            foreach ($id in @($result.Output)) {
+
+                if ($id) {
+                    [void] $installed.Add([string] $id)
+                }
+            }
+
+            foreach ($item in $script:TkApplicationItems) {
+
+                $item.StateText = if ($installed.Contains($item.PackageId)) { 'Installed' } else { '' }
+            }
+
+            # ItemsSource is reassigned because the item objects do not raise
+            # change notifications on their own.
+            $list = Get-TkControl -Name 'SoftwareList'
+
+            if ($list) {
+                $list.Items.Refresh()
+            }
+
+            Set-TkStatus -Text ('{0} installed package(s) detected.' -f $installed.Count)
+        }
+}

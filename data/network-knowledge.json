@@ -1,0 +1,319 @@
+{
+  "schemaVersion": 1,
+  "description": "Networking reference. Written as working notes rather than exam answers: each topic says what the thing is, what it looks like when it breaks, and what to check first.",
+  "categories": [
+    { "id": "fundamentals", "name": "Fundamentals" },
+    { "id": "layer2",       "name": "Switching and VLANs" },
+    { "id": "layer3",       "name": "Routing and addressing" },
+    { "id": "services",     "name": "Network services" },
+    { "id": "security",     "name": "Network security" },
+    { "id": "wireless",     "name": "Wireless" },
+    { "id": "method",       "name": "Method and tooling" }
+  ],
+  "topics": [
+    {
+      "id": "osi-model",
+      "title": "The OSI model",
+      "category": "fundamentals",
+      "summary": "Seven layers used as a shared vocabulary and, more usefully, as a troubleshooting order.",
+      "content": [
+        "The OSI model is not how any real stack is implemented; it is how engineers agree on where a problem lives. Its practical value is that it gives you a fixed order to eliminate causes, from the cable upwards.",
+        "Layer 1, physical: electrical and optical signals. Cable, connector, transceiver, port, link LED.",
+        "Layer 2, data link: framing and local addressing. Ethernet, MAC addresses, 802.1Q VLAN tags, switching, spanning tree.",
+        "Layer 3, network: logical addressing and forwarding between networks. IPv4 and IPv6, ICMP, routing tables.",
+        "Layer 4, transport: end to end delivery. TCP with its handshake and retransmission, UDP without either.",
+        "Layer 5, session: establishing and maintaining a dialogue. In practice folded into layers above it.",
+        "Layer 6, presentation: encoding, encryption and compression. TLS is normally placed here.",
+        "Layer 7, application: what the user sees. HTTP, DNS, SMB, SMTP."
+      ],
+      "keyPoints": [
+        "Troubleshoot upwards. A layer 3 symptom with a layer 1 cause is the most common wasted afternoon in this job.",
+        "The layer at which a device makes its forwarding decision defines what it is: a hub is layer 1, a switch layer 2, a router layer 3, a next generation firewall layers 3 to 7.",
+        "Encapsulation adds a header per layer on the way down and removes it on the way up. That is why MTU problems surface as large transfers failing while ping succeeds."
+      ],
+      "troubleshooting": [
+        "L1: is the link LED on, is the cable in the right port, does another cable behave differently.",
+        "L2: is the MAC address in the switch table, is the port in the expected VLAN, is spanning tree blocking.",
+        "L3: is there an address, a mask and a gateway, does ping reach the gateway, does the route table have a path.",
+        "L4: does the TCP port answer, is a firewall dropping or rejecting.",
+        "L7: does the application resolve the name, does the certificate validate, does the service log the request."
+      ]
+    },
+    {
+      "id": "tcp-ip-model",
+      "title": "The TCP/IP model and the handshake",
+      "category": "fundamentals",
+      "summary": "The four layer model that real stacks implement, and the behaviour of TCP versus UDP.",
+      "content": [
+        "The TCP/IP model has four layers: network access (OSI 1 and 2), internet (OSI 3), transport (OSI 4) and application (OSI 5 to 7).",
+        "TCP establishes a connection with a three way handshake: SYN, SYN-ACK, ACK. It numbers bytes, acknowledges them, retransmits what is lost and applies flow and congestion control. It is what you want when every byte must arrive.",
+        "UDP sends datagrams with no handshake, no ordering and no retransmission. It is what you want when late data is worthless: voice, video, DNS queries, game state.",
+        "A connection is identified by the five tuple: protocol, source address, source port, destination address, destination port. Two browser tabs to the same server differ only by source port."
+      ],
+      "keyPoints": [
+        "A refused connection returns RST immediately; a dropped one times out. That difference tells you whether a firewall is rejecting or silently discarding.",
+        "TCP retransmission hides packet loss from the application and shows up as slowness rather than as an error.",
+        "Ephemeral source ports on Windows run from 49152 to 65535. Exhausting them is a real failure mode on busy proxies and terminal servers."
+      ]
+    },
+    {
+      "id": "ethernet-switching",
+      "title": "Ethernet switching",
+      "category": "layer2",
+      "summary": "How a switch learns, floods and forwards, and why that matters when troubleshooting.",
+      "content": [
+        "A switch builds a MAC address table by reading the source address of every frame it receives and recording the port it arrived on. When it has to forward a frame it looks up the destination address: a hit is forwarded to that single port, a miss is flooded to every port in the VLAN except the one it came from.",
+        "Each switch port is its own collision domain, which is why full duplex is the norm and collisions are effectively history on switched networks. All ports in the same VLAN share one broadcast domain.",
+        "ARP maps an IPv4 address to a MAC address inside a broadcast domain. A host with no ARP entry broadcasts 'who has 10.0.0.1' and caches the answer.",
+        "Unicast flooding to every port, seen in a capture, usually means the MAC table has aged out an entry or a topology change has flushed it."
+      ],
+      "keyPoints": [
+        "Duplex mismatch produces late collisions and FCS errors on one side and a link that works but is dramatically slow. Auto negotiation on both ends is the correct setting, not a manual match.",
+        "A MAC address appearing on two ports alternately means a loop, or a host that has moved, or a virtual switch bridging two uplinks.",
+        "The MAC table ages entries out after five minutes by default on most vendors."
+      ],
+      "troubleshooting": [
+        "Check the MAC table for the address you expect and confirm it is on the port you expect.",
+        "Look at interface counters: CRC errors point at cabling or a transceiver, late collisions at a duplex mismatch, input drops at congestion."
+      ]
+    },
+    {
+      "id": "vlans",
+      "title": "VLANs and 802.1Q",
+      "category": "layer2",
+      "summary": "Splitting one physical switch into several broadcast domains, and carrying them between switches.",
+      "content": [
+        "A VLAN is a broadcast domain defined in software. Ports in VLAN 10 cannot reach ports in VLAN 20 without a router, even on the same switch.",
+        "An access port belongs to exactly one VLAN and carries untagged frames. It is what an end device connects to.",
+        "A trunk port carries several VLANs between switches, tagging each frame with a 4 byte 802.1Q header containing the VLAN ID. The tag sits between the source MAC and the EtherType.",
+        "The native VLAN on a trunk is the one whose frames stay untagged. Both ends must agree on it, or traffic leaks between VLANs.",
+        "A voice VLAN lets an IP phone tag its own traffic while the PC behind it stays untagged on the access VLAN.",
+        "Inter VLAN routing is done by a router on a stick, one physical link with tagged subinterfaces, or by a layer 3 switch using switched virtual interfaces."
+      ],
+      "keyPoints": [
+        "VLAN 1 is the default on Cisco and should not carry user traffic or be the native VLAN on a trunk.",
+        "VLAN IDs run from 1 to 4094. 1002 to 1005 are reserved on Cisco for legacy media.",
+        "A VLAN that exists on the switch but is not allowed on the trunk simply does not cross it. That is the single most common VLAN mistake."
+      ],
+      "troubleshooting": [
+        "Confirm the VLAN exists in the database on both switches, not only on the port.",
+        "Confirm the VLAN is in the allowed list on every trunk along the path.",
+        "Confirm the native VLAN matches on both ends of each trunk."
+      ]
+    },
+    {
+      "id": "spanning-tree",
+      "title": "Spanning Tree Protocol",
+      "category": "layer2",
+      "summary": "Loop prevention on redundant layer 2 topologies, and the features that keep it from being the outage.",
+      "content": [
+        "Ethernet frames have no TTL, so a layer 2 loop does not decay: it saturates the network in seconds. Spanning tree exists to prevent that by blocking redundant paths until they are needed.",
+        "Switches elect a root bridge by lowest priority then lowest MAC address. Every other switch keeps its lowest cost path to the root and blocks the rest.",
+        "Rapid Spanning Tree (802.1w) converges in seconds instead of the 30 to 50 of the original protocol and is what you should be running.",
+        "PortFast, or edge port, moves an access port straight to forwarding rather than through listening and learning. It belongs on ports facing end devices and never on a port facing another switch.",
+        "BPDU Guard disables a PortFast port that receives a BPDU, which is exactly what happens when someone plugs a small unmanaged switch into a wall port."
+      ],
+      "keyPoints": [
+        "Set the root bridge deliberately with a priority. Leaving the election to MAC addresses means the oldest switch in the building often wins.",
+        "A loop shows up as 100 percent broadcast, MAC flapping across ports, and management access to the switch becoming impossible.",
+        "PortFast plus BPDU Guard on every access port is the standard configuration."
+      ]
+    },
+    {
+      "id": "ipv4-addressing",
+      "title": "IPv4 addressing, CIDR and VLSM",
+      "category": "layer3",
+      "summary": "How a prefix defines a network, and how to size one correctly.",
+      "content": [
+        "An IPv4 address is 32 bits. The prefix length says how many leading bits identify the network; the rest identify the host. 192.168.1.10/24 means 24 network bits and 8 host bits.",
+        "The network address has all host bits at zero, the broadcast address has them all at one. Neither is assignable, which is where the 'minus two' comes from.",
+        "A /31 is the exception: RFC 3021 allows both addresses on a point to point link, which saves two addresses per router interface.",
+        "A /32 is a single host route, used for loopbacks and for pointing a route at one address.",
+        "VLSM means using different prefix lengths inside the same address plan: /30 or /31 for point to point links, /24 for user VLANs, /22 for a large wireless pool. Sizing every subnet identically wastes address space and makes summarisation impossible.",
+        "RFC 1918 private ranges: 10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16. 169.254.0.0/16 is APIPA, self assigned when DHCP fails. 100.64.0.0/10 is carrier grade NAT and increasingly seen on consumer links."
+      ],
+      "keyPoints": [
+        "Work in binary or use the calculator. The classic error is assuming 172.16.0.0/12 covers only 172.16.x.x when it covers 172.16 through 172.31.",
+        "A host with a 169.254 address did not reach a DHCP server. That is a layer 2 or DHCP problem, never a layer 3 one.",
+        "Plan subnets on a power of two boundary so they can be summarised later. A /23 starting at .1.0 cannot be summarised."
+      ]
+    },
+    {
+      "id": "routing",
+      "title": "Routing",
+      "category": "layer3",
+      "summary": "How a router chooses a path, and the order in which its criteria apply.",
+      "content": [
+        "A router forwards a packet by finding the most specific matching route in its table. Longest prefix always wins: a /32 beats a /24 which beats a default route, regardless of protocol or metric.",
+        "When two routes have the same prefix length, administrative distance decides which protocol to believe. On Cisco: connected 0, static 1, eBGP 20, OSPF 110, RIP 120, iBGP 200.",
+        "When two routes have the same prefix and the same distance, the metric of that protocol decides. OSPF uses cost derived from bandwidth, RIP uses hop count, BGP uses a sequence of attributes starting with weight and local preference.",
+        "Static routing is deterministic and fine for a stub site with one uplink. Dynamic routing earns its complexity when there are alternative paths that must be discovered after a failure.",
+        "OSPF is a link state interior protocol: every router builds the same map and runs shortest path first on it. It converges quickly and is the usual choice inside an enterprise.",
+        "BGP is a path vector protocol carrying reachability between autonomous systems. It is what runs the internet and what you configure for multi homing."
+      ],
+      "keyPoints": [
+        "Routing is asymmetric by default. A packet reaching a destination proves nothing about the return path, and stateful firewalls in the middle care about that.",
+        "A default route is 0.0.0.0/0. It is a match of length zero, so it only wins when nothing else matches.",
+        "Recursive static routes pointing at a next hop the router cannot itself reach are silently useless."
+      ]
+    },
+    {
+      "id": "nat",
+      "title": "NAT and PAT",
+      "category": "layer3",
+      "summary": "Address translation, and why it breaks some protocols.",
+      "content": [
+        "Source NAT rewrites the source address of outbound packets, typically many private addresses to one public one. When ports are rewritten too it is PAT, or NAT overload, and it is what a home or office router does.",
+        "Destination NAT rewrites the destination, which is how a port is published from the internet to an internal server.",
+        "Static NAT is a fixed one to one mapping in both directions.",
+        "NAT is stateful: the device keeps a translation table so return traffic can be mapped back. Entries time out, which is why long idle sessions such as SSH or RDP drop without keepalives.",
+        "Protocols that carry addresses inside their payload, such as FTP in active mode, SIP and some IPsec configurations, need an application layer gateway or they break through NAT."
+      ],
+      "keyPoints": [
+        "NAT is not a security control. It hides topology as a side effect but a stateful firewall is what actually enforces policy.",
+        "Double NAT, one at the ISP box and one at your router, breaks inbound publishing and most VPN passthrough.",
+        "Hairpin NAT, reaching your own public address from inside, must be configured explicitly and is a frequent cause of 'it works from outside but not from the office'."
+      ]
+    },
+    {
+      "id": "dhcp",
+      "title": "DHCP",
+      "category": "services",
+      "summary": "Automatic address assignment, its four messages, and relay across subnets.",
+      "content": [
+        "DHCP assigns an address, a mask, a gateway, DNS servers and any number of extra options. The exchange is four messages: Discover from the client as a broadcast, Offer from the server, Request from the client, Acknowledge from the server. Remember it as DORA.",
+        "Because Discover is a broadcast it does not cross a router. A DHCP relay, called an IP helper on Cisco, forwards it as unicast to the server and puts the receiving interface address in the giaddr field so the server picks the right scope.",
+        "A lease has a duration. At 50 percent the client tries to renew with the same server, at 87.5 percent it broadcasts a rebind to any server.",
+        "Reservations bind an address to a MAC address inside the scope. They are preferable to static configuration on the host because the settings stay centrally managed."
+      ],
+      "keyPoints": [
+        "A 169.254 address means no DHCP answer reached the client. Check the relay before the server.",
+        "Two DHCP servers on the same broadcast domain, often a forgotten small router, produce intermittent wrong addresses. This is what DHCP snooping prevents.",
+        "Option 82 inserted by the relay carries the port and switch identity, which is how an address can be traced back to a wall socket."
+      ]
+    },
+    {
+      "id": "dns",
+      "title": "DNS",
+      "category": "services",
+      "summary": "Name resolution, the record types that matter, and how a lookup actually proceeds.",
+      "content": [
+        "A resolver asks its configured server; if that server is recursive it walks the hierarchy from the root to the top level domain to the authoritative server, then caches the answer for the TTL.",
+        "A: name to IPv4 address. AAAA: name to IPv6 address. CNAME: alias to another name, and it cannot coexist with other records at the same name. MX: mail exchanger with a priority. NS: delegation to authoritative servers. TXT: free text, used for SPF, DKIM and domain verification. SRV: service location with port, used by Active Directory and SIP. PTR: address to name, in the in-addr.arpa zone.",
+        "TTL is the cache lifetime in seconds. Lower it before a planned migration, days ahead, not on the day.",
+        "Active Directory depends on DNS completely. Domain members must point at the domain controllers, and the SRV records under _msdcs are how clients find them."
+      ],
+      "keyPoints": [
+        "Public resolvers on a domain joined machine break domain logon. This is one of the most common misconfigurations in small networks.",
+        "Negative answers are cached too, so a record that was wrong when first queried stays wrong locally until the negative TTL expires.",
+        "Use nslookup or Resolve-DnsName against a specific server to distinguish a client cache problem from a server data problem."
+      ]
+    },
+    {
+      "id": "firewalls",
+      "title": "Firewalls and filtering",
+      "category": "security",
+      "summary": "Stateful inspection, rule ordering, and the difference between drop and reject.",
+      "content": [
+        "A stateless filter evaluates each packet alone. A stateful firewall tracks connections, so return traffic for an allowed outbound session is permitted without a matching inbound rule.",
+        "Rules are evaluated top down and the first match wins. The order of the list is the policy; a permissive rule above a restrictive one makes the restrictive one dead.",
+        "The last rule should be an explicit deny with logging. Relying on an implicit deny means denied traffic is invisible.",
+        "Drop discards silently and the client times out. Reject sends an ICMP unreachable or a TCP RST and the client fails fast. Reject inside a trusted network, drop at the perimeter.",
+        "A next generation firewall additionally identifies the application and the user rather than only the port, which matters when everything is tunnelled over 443.",
+        "Zones group interfaces with the same trust level. Policy is written between zones rather than between interfaces, which keeps the rule base readable as the network grows."
+      ],
+      "keyPoints": [
+        "Write rules from specific to general, and comment every one with a ticket reference and an owner. An uncommented rule is one nobody will ever dare delete.",
+        "Test with the actual protocol. A successful ping proves ICMP is allowed and nothing else.",
+        "Review rules that have not matched in months. Unused permits are accumulated risk."
+      ]
+    },
+    {
+      "id": "vpn",
+      "title": "VPN technologies",
+      "category": "security",
+      "summary": "Site to site and remote access tunnels, and how they differ in practice.",
+      "content": [
+        "IPsec provides authentication, integrity and confidentiality at layer 3. Phase 1 (IKE) authenticates the peers and builds a management channel; phase 2 negotiates the tunnel for the interesting traffic. Mismatched proposals or mismatched interesting traffic definitions are the usual failures.",
+        "SSL and TLS VPNs tunnel over 443, which passes through nearly any network. Convenient for remote users, and the reason they are the standard for client access.",
+        "WireGuard is a modern, small kernel level tunnel with a fixed cryptographic suite and no negotiation. It connects in milliseconds and is very hard to misconfigure, at the cost of less policy flexibility.",
+        "Split tunnelling sends only corporate traffic through the tunnel. It saves bandwidth and breaks the assumption that all user traffic is inspected. Decide deliberately, per organisation."
+      ],
+      "keyPoints": [
+        "Site to site tunnels drop when the interesting traffic definitions do not mirror each other exactly.",
+        "MTU matters: tunnel overhead plus a 1500 byte packet exceeds the path MTU and large transfers hang while ping works. Clamp MSS on the tunnel interface.",
+        "A VPN authenticates the tunnel, not the device posture. Add device compliance separately."
+      ]
+    },
+    {
+      "id": "wifi",
+      "title": "Wi-Fi",
+      "category": "wireless",
+      "summary": "Standards, channels and the mistakes that cause most wireless complaints.",
+      "content": [
+        "802.11n is Wi-Fi 4, ac is Wi-Fi 5, ax is Wi-Fi 6 and 6E with the 6 GHz band, be is Wi-Fi 7.",
+        "2.4 GHz travels further and penetrates walls but has only three non overlapping channels: 1, 6 and 11. 5 GHz has many more channels and much less range. 6 GHz has more still and effectively no legacy interference.",
+        "Channel width trades throughput against interference. 20 MHz on 2.4 GHz always. On 5 GHz, 40 or 80 MHz in a dense deployment, not 160.",
+        "Coverage is not the same as capacity. A survey that only checks signal strength misses the fact that thirty clients on one access point share its airtime.",
+        "WPA2-Personal uses a shared passphrase. WPA2-Enterprise authenticates each user against RADIUS with 802.1X, which is what an organisation should run. WPA3 adds SAE, which removes the offline dictionary attack on the handshake."
+      ],
+      "keyPoints": [
+        "Turning transmit power to maximum makes roaming worse, not better: clients hear the far access point and refuse to move.",
+        "The client decides when to roam. Access point features only make the decision easier or harder.",
+        "Disable the lowest data rates so distant, slow clients stop consuming airtime from everyone else."
+      ]
+    },
+    {
+      "id": "link-aggregation",
+      "title": "Link aggregation and redundancy",
+      "category": "layer2",
+      "summary": "Bundling links for bandwidth and resilience, and what it does not give you.",
+      "content": [
+        "LACP (802.3ad) negotiates a bundle of physical links into one logical interface. Static bundles work too but do not detect a link that is up while not forwarding.",
+        "Traffic is distributed per flow using a hash of addresses and ports, not per packet, so ordering is preserved. One conversation therefore never exceeds the speed of one member link.",
+        "First hop redundancy protocols, VRRP as the standard and HSRP on Cisco, present one virtual gateway address backed by two routers so a gateway failure is invisible to hosts."
+      ],
+      "keyPoints": [
+        "Two 1 Gb links do not make a 2 Gb file transfer. They make two transfers able to use 1 Gb each.",
+        "Both ends must agree on the aggregation mode. A mismatch produces a loop or a down bundle.",
+        "Multi chassis aggregation (MLAG, VPC, stacking) is what removes the switch itself as a single point of failure."
+      ]
+    },
+    {
+      "id": "troubleshooting-method",
+      "title": "A troubleshooting method",
+      "category": "method",
+      "summary": "The sequence that solves problems faster than guessing does.",
+      "content": [
+        "Define the symptom precisely. 'The internet is down' and 'one application times out from one VLAN' lead to entirely different investigations.",
+        "Establish what changed. Most incidents follow a change, and the change log is faster to read than a packet capture.",
+        "Determine the scope: one host, one VLAN, one site, everyone. Scope points directly at the layer and the device involved.",
+        "Work the layers in order and test each conclusion rather than assuming it.",
+        "Change one thing at a time, and record it. Two simultaneous changes make the result uninterpretable.",
+        "When it works again, confirm with the user, then write down the cause. The cause is what prevents the next occurrence; the fix only ends this one."
+      ],
+      "keyPoints": [
+        "Half of all network incidents are DNS, DHCP or a certificate. Check those three before capturing packets.",
+        "Reproduce from a second machine on the same VLAN early: it splits the problem space in half in one step.",
+        "A packet capture answers questions you can already state. Take one when you know what you are looking for."
+      ]
+    },
+    {
+      "id": "common-ports",
+      "title": "Ports worth knowing by heart",
+      "category": "method",
+      "summary": "The service and port pairs that come up daily.",
+      "content": [
+        "20 and 21 FTP, 22 SSH and SFTP, 23 Telnet, 25 SMTP, 53 DNS, 67 and 68 DHCP, 69 TFTP, 80 HTTP.",
+        "88 Kerberos, 110 POP3, 123 NTP, 135 RPC endpoint mapper, 137 to 139 NetBIOS, 143 IMAP, 161 and 162 SNMP.",
+        "389 LDAP, 443 HTTPS, 445 SMB, 465 SMTPS, 514 syslog, 587 SMTP submission, 636 LDAPS.",
+        "993 IMAPS, 995 POP3S, 1433 SQL Server, 1521 Oracle, 3268 global catalog, 3306 MySQL, 3389 RDP, 5432 PostgreSQL.",
+        "5060 SIP, 5900 VNC, 5985 and 5986 WinRM, 6379 Redis, 8006 Proxmox, 8080 HTTP alternate, 9100 raw printing, 27017 MongoDB."
+      ],
+      "keyPoints": [
+        "Active Directory needs far more than 389: Kerberos, DNS, RPC and a dynamic high port range. Use the documented port set rather than opening them one by one as failures appear.",
+        "A service on a non standard port is normal. Confirm with the application owner rather than assuming the scan is wrong."
+      ]
+    }
+  ]
+}

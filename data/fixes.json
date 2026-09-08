@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "description": "Repair actions. The action field must match a key registered in Get-TkFixDispatchTable; anything else is refused at run time.",
+  "fixes": [
+    {
+      "id": "reset-network-stack",
+      "name": "Reset the TCP/IP stack and Winsock",
+      "action": "ResetNetworkStack",
+      "category": "Network",
+      "risk": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Rebuilds the Winsock catalog and the IPv4 and IPv6 stacks, then re-registers DNS.",
+      "whenToUse": "The link is up and the adapter has an address, but nothing above layer 3 works. Typical after a VPN client or a filter driver was removed badly."
+    },
+    {
+      "id": "flush-dns",
+      "name": "Flush the DNS resolver cache",
+      "action": "FlushDnsCache",
+      "category": "Network",
+      "risk": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Clears cached name resolutions.",
+      "whenToUse": "A record was changed on the server and this machine is still reaching the old address."
+    },
+    {
+      "id": "reset-firewall",
+      "name": "Reset the Windows Firewall to defaults",
+      "action": "ResetWindowsFirewall",
+      "category": "Network",
+      "risk": "High",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Restores the default policy. Every custom rule is deleted.",
+      "whenToUse": "Conflicting rules left behind by uninstalled software. Export the current rules first if the machine is managed."
+    },
+    {
+      "id": "repair-windows-update",
+      "name": "Rebuild the Windows Update components",
+      "action": "RepairWindowsUpdate",
+      "category": "Servicing",
+      "risk": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Stops the servicing services, renames SoftwareDistribution and catroot2 so Windows recreates them, then restarts the services.",
+      "whenToUse": "Updates fail repeatedly with 0x8007000x or 0x80244xxx, or the download sits at 0 percent."
+    },
+    {
+      "id": "sfc-scannow",
+      "name": "Run the System File Checker",
+      "action": "RunSystemFileCheck",
+      "category": "Servicing",
+      "risk": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Verifies protected system files against the component store and repairs what it can.",
+      "whenToUse": "Unexplained shell crashes, missing system DLLs, or a first pass before any reinstall decision."
+    },
+    {
+      "id": "dism-restorehealth",
+      "name": "Repair the component store (DISM)",
+      "action": "RepairComponentStore",
+      "category": "Servicing",
+      "risk": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Repairs the component store that the System File Checker copies from.",
+      "whenToUse": "sfc reported corrupt files it could not repair. Run DISM, then run sfc again."
+    },
+    {
+      "id": "clear-temp",
+      "name": "Delete temporary files",
+      "action": "ClearTemporaryFiles",
+      "category": "Maintenance",
+      "risk": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Empties the user and system temporary folders and the prefetch cache. Locked files are skipped.",
+      "whenToUse": "The system drive is full, or an installer keeps failing on a stale extraction."
+    },
+    {
+      "id": "rebuild-icon-cache",
+      "name": "Rebuild the icon and thumbnail caches",
+      "action": "RebuildIconCache",
+      "category": "Shell",
+      "risk": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Deletes the cache databases and restarts Explorer.",
+      "whenToUse": "Blank, wrong or generic icons on shortcuts and file types."
+    },
+    {
+      "id": "restart-explorer",
+      "name": "Restart Explorer",
+      "action": "RestartExplorer",
+      "category": "Shell",
+      "risk": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Restarts the shell process.",
+      "whenToUse": "The taskbar or the Start menu is unresponsive, or a shell setting has not taken effect."
+    },
+    {
+      "id": "reset-print-spooler",
+      "name": "Reset the print spooler",
+      "action": "ResetPrintSpooler",
+      "category": "Printing",
+      "risk": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Stops the spooler, deletes queued jobs and restarts it.",
+      "whenToUse": "A stuck job that will not delete, or a spooler that keeps crashing."
+    },
+    {
+      "id": "reset-store",
+      "name": "Reset the Microsoft Store cache",
+      "action": "ResetWindowsStore",
+      "category": "Shell",
+      "risk": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Clears the Store cache without touching installed applications.",
+      "whenToUse": "Store downloads fail or the Store opens on a blank page."
+    },
+    {
+      "id": "rebuild-search-index",
+      "name": "Rebuild the Windows Search index",
+      "action": "RebuildSearchIndex",
+      "category": "Shell",
+      "risk": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Forces the indexer to rebuild from scratch. Full indexing then runs in the background for a while.",
+      "whenToUse": "The Start menu or Outlook search returns nothing for content that clearly exists."
+    }
+  ]
+}
