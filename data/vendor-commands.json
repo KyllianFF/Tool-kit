@@ -1,76 +1,7 @@
 {
   "schemaVersion": 1,
-  "description": "Command reference for the network platforms most often met in the field. Commands are grouped by task so the same question can be answered on any vendor.",
+  "description": "Command reference for the network and security platforms most often met in the field. Commands are grouped by task so the same question can be answered on any platform, and the search looks across every vendor at once.",
   "vendors": [
-    {
-      "id": "cisco-ios",
-      "name": "Cisco IOS and IOS-XE",
-      "description": "Catalyst switches and ISR routers. Configuration is applied immediately and lost on reload unless written to startup-config.",
-      "sections": [
-        {
-          "name": "Inspection",
-          "commands": [
-            { "command": "show version", "description": "Model, IOS version, uptime, last reload reason." },
-            { "command": "show running-config", "description": "Active configuration. Add | section interface to narrow it." },
-            { "command": "show ip interface brief", "description": "One line per interface: address, status, protocol." },
-            { "command": "show interfaces status", "description": "Switch view: port, VLAN, duplex, speed, type." },
-            { "command": "show interfaces GigabitEthernet1/0/1", "description": "Counters and errors for one port." },
-            { "command": "show interfaces counters errors", "description": "CRC, collisions and drops across all ports in one table." },
-            { "command": "show processes cpu sorted", "description": "What is consuming the control plane." },
-            { "command": "show logging", "description": "Local log buffer, newest last." },
-            { "command": "show inventory", "description": "Serial numbers of the chassis and every module." }
-          ]
-        },
-        {
-          "name": "Layer 2 and VLANs",
-          "commands": [
-            { "command": "show vlan brief", "description": "VLAN database and which ports are in each VLAN." },
-            { "command": "show mac address-table", "description": "Learned MAC addresses with port and VLAN." },
-            { "command": "show mac address-table address 0011.2233.4455", "description": "Locate one device on the switch." },
-            { "command": "show interfaces trunk", "description": "Trunk ports, native VLAN and allowed VLAN list." },
-            { "command": "show spanning-tree vlan 10", "description": "Root bridge, port roles and states for one VLAN." },
-            { "command": "show cdp neighbors detail", "description": "Directly connected Cisco devices with their addresses." },
-            { "command": "show lldp neighbors detail", "description": "Same for non Cisco neighbours." },
-            { "command": "show etherchannel summary", "description": "Aggregation bundles and member state." }
-          ]
-        },
-        {
-          "name": "Layer 3",
-          "commands": [
-            { "command": "show ip route", "description": "Routing table with the source protocol of each route." },
-            { "command": "show ip route 10.20.30.40", "description": "Which route would be used for one destination." },
-            { "command": "show ip arp", "description": "ARP cache." },
-            { "command": "show ip ospf neighbor", "description": "OSPF adjacencies and their state." },
-            { "command": "show ip bgp summary", "description": "BGP peers, state and prefix counts." },
-            { "command": "show ip dhcp binding", "description": "Leases issued when the device is the DHCP server." }
-          ]
-        },
-        {
-          "name": "Configuration",
-          "commands": [
-            { "command": "configure terminal", "description": "Enter global configuration mode." },
-            { "command": "vlan 10\n name USERS", "description": "Create a VLAN and name it." },
-            { "command": "interface GigabitEthernet1/0/5\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\n spanning-tree bpduguard enable", "description": "Standard access port for an end device." },
-            { "command": "interface GigabitEthernet1/0/24\n switchport mode trunk\n switchport trunk native vlan 999\n switchport trunk allowed vlan 10,20,30", "description": "Trunk with an unused native VLAN and an explicit allowed list." },
-            { "command": "interface Vlan10\n ip address 10.10.10.1 255.255.255.0\n no shutdown", "description": "Switched virtual interface for inter VLAN routing." },
-            { "command": "ip route 0.0.0.0 0.0.0.0 192.168.1.254", "description": "Default route." },
-            { "command": "ip helper-address 10.0.0.10", "description": "Relay DHCP broadcasts to a server, applied on the client side interface." },
-            { "command": "spanning-tree vlan 1-100 root primary", "description": "Make this switch the root bridge deliberately." },
-            { "command": "copy running-config startup-config", "description": "Persist the configuration. write memory does the same." }
-          ]
-        },
-        {
-          "name": "Diagnostics",
-          "commands": [
-            { "command": "ping 8.8.8.8 source Vlan10", "description": "Test from a specific source interface." },
-            { "command": "traceroute 8.8.8.8", "description": "Path to a destination." },
-            { "command": "show power inline", "description": "PoE budget and per port consumption." },
-            { "command": "test cable-diagnostics tdr interface Gi1/0/5", "description": "Cable length and fault distance. Read with show cable-diagnostics tdr." },
-            { "command": "debug ip icmp", "description": "Live debugging. Always follow with undebug all." }
-          ]
-        }
-      ]
-    },
     {
       "id": "aruba-cx",
       "name": "Aruba AOS-CX",
@@ -79,42 +10,105 @@
         {
           "name": "Inspection",
           "commands": [
-            { "command": "show version", "description": "Firmware version and platform." },
-            { "command": "show system", "description": "Model, serial number, uptime, resource usage." },
-            { "command": "show running-config", "description": "Active configuration." },
-            { "command": "show interface brief", "description": "Status of every port in one table." },
-            { "command": "show interface 1/1/1", "description": "Detail and counters for one port." },
-            { "command": "show lldp neighbor-info", "description": "Directly connected devices." },
-            { "command": "show logging -r", "description": "Log, newest first." }
+            {
+              "command": "show version",
+              "description": "Firmware version and platform."
+            },
+            {
+              "command": "show system",
+              "description": "Model, serial number, uptime, resource usage."
+            },
+            {
+              "command": "show running-config",
+              "description": "Active configuration."
+            },
+            {
+              "command": "show interface brief",
+              "description": "Status of every port in one table."
+            },
+            {
+              "command": "show interface 1/1/1",
+              "description": "Detail and counters for one port."
+            },
+            {
+              "command": "show lldp neighbor-info",
+              "description": "Directly connected devices."
+            },
+            {
+              "command": "show logging -r",
+              "description": "Log, newest first."
+            }
           ]
         },
         {
           "name": "Layer 2 and VLANs",
           "commands": [
-            { "command": "show vlan", "description": "VLANs and their member ports." },
-            { "command": "show mac-address-table", "description": "Learned addresses." },
-            { "command": "show spanning-tree", "description": "STP roles and states." },
-            { "command": "show lacp interfaces", "description": "Aggregation state." }
+            {
+              "command": "show vlan",
+              "description": "VLANs and their member ports."
+            },
+            {
+              "command": "show mac-address-table",
+              "description": "Learned addresses."
+            },
+            {
+              "command": "show spanning-tree",
+              "description": "STP roles and states."
+            },
+            {
+              "command": "show lacp interfaces",
+              "description": "Aggregation state."
+            }
           ]
         },
         {
           "name": "Configuration",
           "commands": [
-            { "command": "configure terminal", "description": "Enter configuration mode." },
-            { "command": "vlan 10\n name USERS", "description": "Create a VLAN." },
-            { "command": "interface 1/1/5\n no shutdown\n vlan access 10", "description": "Access port." },
-            { "command": "interface 1/1/24\n no shutdown\n vlan trunk native 999\n vlan trunk allowed 10,20,30", "description": "Trunk port with an explicit allowed list." },
-            { "command": "interface vlan 10\n ip address 10.10.10.1/24", "description": "Routed VLAN interface, prefix notation." },
-            { "command": "ip route 0.0.0.0/0 192.168.1.254", "description": "Default route." },
-            { "command": "write memory", "description": "Persist the configuration." }
+            {
+              "command": "configure terminal",
+              "description": "Enter configuration mode."
+            },
+            {
+              "command": "vlan 10\n name USERS",
+              "description": "Create a VLAN."
+            },
+            {
+              "command": "interface 1/1/5\n no shutdown\n vlan access 10",
+              "description": "Access port."
+            },
+            {
+              "command": "interface 1/1/24\n no shutdown\n vlan trunk native 999\n vlan trunk allowed 10,20,30",
+              "description": "Trunk port with an explicit allowed list."
+            },
+            {
+              "command": "interface vlan 10\n ip address 10.10.10.1/24",
+              "description": "Routed VLAN interface, prefix notation."
+            },
+            {
+              "command": "ip route 0.0.0.0/0 192.168.1.254",
+              "description": "Default route."
+            },
+            {
+              "command": "write memory",
+              "description": "Persist the configuration."
+            }
           ]
         },
         {
           "name": "Diagnostics",
           "commands": [
-            { "command": "show power-over-ethernet brief", "description": "PoE allocation per port." },
-            { "command": "ping 10.0.0.1", "description": "Reachability test." },
-            { "command": "diag utilities tcpdump interface 1/1/1", "description": "Packet capture on a port." }
+            {
+              "command": "show power-over-ethernet brief",
+              "description": "PoE allocation per port."
+            },
+            {
+              "command": "ping 10.0.0.1",
+              "description": "Reachability test."
+            },
+            {
+              "command": "diag utilities tcpdump interface 1/1/1",
+              "description": "Packet capture on a port."
+            }
           ]
         }
       ]
@@ -127,23 +121,399 @@
         {
           "name": "Inspection",
           "commands": [
-            { "command": "show system-information", "description": "Model, firmware, serial, uptime." },
-            { "command": "show interfaces brief", "description": "Port status overview." },
-            { "command": "show vlans", "description": "VLAN list." },
-            { "command": "show vlans ports 5 detail", "description": "VLAN membership of one port." },
-            { "command": "show mac-address", "description": "Learned addresses." },
-            { "command": "show lldp info remote-device", "description": "Neighbours." }
+            {
+              "command": "show system-information",
+              "description": "Model, firmware, serial, uptime."
+            },
+            {
+              "command": "show interfaces brief",
+              "description": "Port status overview."
+            },
+            {
+              "command": "show vlans",
+              "description": "VLAN list."
+            },
+            {
+              "command": "show vlans ports 5 detail",
+              "description": "VLAN membership of one port."
+            },
+            {
+              "command": "show mac-address",
+              "description": "Learned addresses."
+            },
+            {
+              "command": "show lldp info remote-device",
+              "description": "Neighbours."
+            }
           ]
         },
         {
           "name": "Configuration",
           "commands": [
-            { "command": "configure", "description": "Enter configuration mode." },
-            { "command": "vlan 10\n name USERS\n untagged 1-10\n exit", "description": "Create a VLAN and add access ports as untagged members." },
-            { "command": "vlan 20\n tagged 24", "description": "Add a VLAN to a trunk by tagging it on the uplink port." },
-            { "command": "vlan 10\n ip address 10.10.10.1/24", "description": "Routed VLAN interface." },
-            { "command": "ip route 0.0.0.0/0 192.168.1.254", "description": "Default route." },
-            { "command": "write memory", "description": "Persist the configuration." }
+            {
+              "command": "configure",
+              "description": "Enter configuration mode."
+            },
+            {
+              "command": "vlan 10\n name USERS\n untagged 1-10\n exit",
+              "description": "Create a VLAN and add access ports as untagged members."
+            },
+            {
+              "command": "vlan 20\n tagged 24",
+              "description": "Add a VLAN to a trunk by tagging it on the uplink port."
+            },
+            {
+              "command": "vlan 10\n ip address 10.10.10.1/24",
+              "description": "Routed VLAN interface."
+            },
+            {
+              "command": "ip route 0.0.0.0/0 192.168.1.254",
+              "description": "Default route."
+            },
+            {
+              "command": "write memory",
+              "description": "Persist the configuration."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cisco-ios",
+      "name": "Cisco IOS and IOS-XE",
+      "description": "Catalyst switches and ISR routers. Configuration is applied immediately and lost on reload unless written to startup-config.",
+      "sections": [
+        {
+          "name": "Inspection",
+          "commands": [
+            {
+              "command": "show version",
+              "description": "Model, IOS version, uptime, last reload reason."
+            },
+            {
+              "command": "show running-config",
+              "description": "Active configuration. Add | section interface to narrow it."
+            },
+            {
+              "command": "show ip interface brief",
+              "description": "One line per interface: address, status, protocol."
+            },
+            {
+              "command": "show interfaces status",
+              "description": "Switch view: port, VLAN, duplex, speed, type."
+            },
+            {
+              "command": "show interfaces GigabitEthernet1/0/1",
+              "description": "Counters and errors for one port."
+            },
+            {
+              "command": "show interfaces counters errors",
+              "description": "CRC, collisions and drops across all ports in one table."
+            },
+            {
+              "command": "show processes cpu sorted",
+              "description": "What is consuming the control plane."
+            },
+            {
+              "command": "show logging",
+              "description": "Local log buffer, newest last."
+            },
+            {
+              "command": "show inventory",
+              "description": "Serial numbers of the chassis and every module."
+            }
+          ]
+        },
+        {
+          "name": "Layer 2 and VLANs",
+          "commands": [
+            {
+              "command": "show vlan brief",
+              "description": "VLAN database and which ports are in each VLAN."
+            },
+            {
+              "command": "show mac address-table",
+              "description": "Learned MAC addresses with port and VLAN."
+            },
+            {
+              "command": "show mac address-table address 0011.2233.4455",
+              "description": "Locate one device on the switch."
+            },
+            {
+              "command": "show interfaces trunk",
+              "description": "Trunk ports, native VLAN and allowed VLAN list."
+            },
+            {
+              "command": "show spanning-tree vlan 10",
+              "description": "Root bridge, port roles and states for one VLAN."
+            },
+            {
+              "command": "show cdp neighbors detail",
+              "description": "Directly connected Cisco devices with their addresses."
+            },
+            {
+              "command": "show lldp neighbors detail",
+              "description": "Same for non Cisco neighbours."
+            },
+            {
+              "command": "show etherchannel summary",
+              "description": "Aggregation bundles and member state."
+            }
+          ]
+        },
+        {
+          "name": "Layer 3",
+          "commands": [
+            {
+              "command": "show ip route",
+              "description": "Routing table with the source protocol of each route."
+            },
+            {
+              "command": "show ip route 10.20.30.40",
+              "description": "Which route would be used for one destination."
+            },
+            {
+              "command": "show ip arp",
+              "description": "ARP cache."
+            },
+            {
+              "command": "show ip ospf neighbor",
+              "description": "OSPF adjacencies and their state."
+            },
+            {
+              "command": "show ip bgp summary",
+              "description": "BGP peers, state and prefix counts."
+            },
+            {
+              "command": "show ip dhcp binding",
+              "description": "Leases issued when the device is the DHCP server."
+            }
+          ]
+        },
+        {
+          "name": "Configuration",
+          "commands": [
+            {
+              "command": "configure terminal",
+              "description": "Enter global configuration mode."
+            },
+            {
+              "command": "vlan 10\n name USERS",
+              "description": "Create a VLAN and name it."
+            },
+            {
+              "command": "interface GigabitEthernet1/0/5\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\n spanning-tree bpduguard enable",
+              "description": "Standard access port for an end device."
+            },
+            {
+              "command": "interface GigabitEthernet1/0/24\n switchport mode trunk\n switchport trunk native vlan 999\n switchport trunk allowed vlan 10,20,30",
+              "description": "Trunk with an unused native VLAN and an explicit allowed list."
+            },
+            {
+              "command": "interface Vlan10\n ip address 10.10.10.1 255.255.255.0\n no shutdown",
+              "description": "Switched virtual interface for inter VLAN routing."
+            },
+            {
+              "command": "ip route 0.0.0.0 0.0.0.0 192.168.1.254",
+              "description": "Default route."
+            },
+            {
+              "command": "ip helper-address 10.0.0.10",
+              "description": "Relay DHCP broadcasts to a server, applied on the client side interface."
+            },
+            {
+              "command": "spanning-tree vlan 1-100 root primary",
+              "description": "Make this switch the root bridge deliberately."
+            },
+            {
+              "command": "copy running-config startup-config",
+              "description": "Persist the configuration. write memory does the same."
+            }
+          ]
+        },
+        {
+          "name": "Diagnostics",
+          "commands": [
+            {
+              "command": "ping 8.8.8.8 source Vlan10",
+              "description": "Test from a specific source interface."
+            },
+            {
+              "command": "traceroute 8.8.8.8",
+              "description": "Path to a destination."
+            },
+            {
+              "command": "show power inline",
+              "description": "PoE budget and per port consumption."
+            },
+            {
+              "command": "test cable-diagnostics tdr interface Gi1/0/5",
+              "description": "Cable length and fault distance. Read with show cable-diagnostics tdr."
+            },
+            {
+              "command": "debug ip icmp",
+              "description": "Live debugging. Always follow with undebug all."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meraki",
+      "name": "Cisco Meraki",
+      "description": "Cloud managed. There is no configuration CLI: the dashboard and its API own the configuration, and the device shell exists only for local diagnosis when a unit will not connect.",
+      "sections": [
+        {
+          "name": "Local device access",
+          "commands": [
+            {
+              "command": "http://setup.meraki.com",
+              "description": "Local status page, reachable from a client on the device LAN even with no cloud connectivity. Shows uplink state, cloud reachability and firmware."
+            },
+            {
+              "command": "Reset button, 10 seconds",
+              "description": "Factory reset and re-enrolment. The serial stays bound to the organisation."
+            }
+          ]
+        },
+        {
+          "name": "Dashboard diagnosis",
+          "commands": [
+            {
+              "command": "Network wide, Clients, then a client, then Ping and Traceroute",
+              "description": "Runs the test from the device rather than from your workstation, which is usually the question."
+            },
+            {
+              "command": "Security and SD-WAN, Appliance status, Tools, Packet capture",
+              "description": "Capture on the appliance, downloadable as pcap."
+            },
+            {
+              "command": "Network wide, Event log",
+              "description": "Association, DHCP and policy events, filterable per client."
+            },
+            {
+              "command": "Switch, Switch ports, Cable test",
+              "description": "Time domain reflectometry per pair, from the dashboard."
+            }
+          ]
+        },
+        {
+          "name": "API",
+          "commands": [
+            {
+              "command": "curl -H \"X-Cisco-Meraki-API-Key: $KEY\" https://api.meraki.com/api/v1/organizations",
+              "description": "List organisations. Everything else needs the organisation identifier from here."
+            },
+            {
+              "command": "curl -H \"X-Cisco-Meraki-API-Key: $KEY\" https://api.meraki.com/api/v1/organizations/{orgId}/devices",
+              "description": "Every device, with serial, model, network and address."
+            },
+            {
+              "command": "curl -H \"X-Cisco-Meraki-API-Key: $KEY\" https://api.meraki.com/api/v1/networks/{netId}/clients?timespan=86400",
+              "description": "Clients seen in the last day."
+            },
+            {
+              "command": "curl -H \"X-Cisco-Meraki-API-Key: $KEY\" https://api.meraki.com/api/v1/devices/{serial}/switch/ports/statuses",
+              "description": "Live port status, including PoE draw and errors."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "extreme",
+      "name": "Extreme Networks EXOS",
+      "description": "Switches from the Extreme and former Enterasys lines. Configuration applies immediately and is saved explicitly; VLANs are named rather than referred to only by number.",
+      "sections": [
+        {
+          "name": "Inspection",
+          "commands": [
+            {
+              "command": "show version",
+              "description": "Firmware, model and serial."
+            },
+            {
+              "command": "show switch",
+              "description": "System state, uptime, temperature and the configuration in use."
+            },
+            {
+              "command": "show ports no-refresh",
+              "description": "Port state without the auto refreshing display."
+            },
+            {
+              "command": "show ports statistics no-refresh",
+              "description": "Counters per port."
+            },
+            {
+              "command": "show vlan",
+              "description": "VLANs with their tagged and untagged members."
+            },
+            {
+              "command": "show fdb",
+              "description": "Forwarding database, the MAC table."
+            },
+            {
+              "command": "show iproute",
+              "description": "Routing table."
+            },
+            {
+              "command": "show lldp neighbors detailed",
+              "description": "Neighbours."
+            }
+          ]
+        },
+        {
+          "name": "Configuration",
+          "commands": [
+            {
+              "command": "create vlan USERS tag 10",
+              "description": "Create a VLAN. The name is how it is referred to afterwards."
+            },
+            {
+              "command": "configure vlan USERS add ports 1-10 untagged",
+              "description": "Access ports."
+            },
+            {
+              "command": "configure vlan USERS add ports 49 tagged",
+              "description": "Add the VLAN to an uplink."
+            },
+            {
+              "command": "configure vlan USERS ipaddress 10.10.10.1/24",
+              "description": "Routed VLAN interface."
+            },
+            {
+              "command": "enable ipforwarding vlan USERS",
+              "description": "Routing has to be enabled per VLAN."
+            },
+            {
+              "command": "configure iproute add default 192.168.1.254",
+              "description": "Default route."
+            },
+            {
+              "command": "save configuration",
+              "description": "Persist. Configuration is live before this but not durable."
+            }
+          ]
+        },
+        {
+          "name": "Diagnostics",
+          "commands": [
+            {
+              "command": "show ports 1 transceiver information detail",
+              "description": "Optical power and transceiver identity."
+            },
+            {
+              "command": "show power inline",
+              "description": "PoE allocation."
+            },
+            {
+              "command": "run diagnostics normal",
+              "description": "Hardware self test. Disruptive."
+            },
+            {
+              "command": "show log",
+              "description": "System log."
+            }
           ]
         }
       ]
@@ -156,100 +526,194 @@
         {
           "name": "Inspection",
           "commands": [
-            { "command": "get system status", "description": "Model, firmware, serial, HA mode." },
-            { "command": "get system performance status", "description": "CPU, memory, sessions and uptime." },
-            { "command": "show full-configuration", "description": "Complete configuration including defaults." },
-            { "command": "show system interface", "description": "Interface configuration." },
-            { "command": "get router info routing-table all", "description": "Full routing table." },
-            { "command": "get system ha status", "description": "Cluster state and role." },
-            { "command": "diagnose sys session stat", "description": "Session table statistics." }
+            {
+              "command": "get system status",
+              "description": "Model, firmware, serial, HA mode."
+            },
+            {
+              "command": "get system performance status",
+              "description": "CPU, memory, sessions and uptime."
+            },
+            {
+              "command": "show full-configuration",
+              "description": "Complete configuration including defaults."
+            },
+            {
+              "command": "show system interface",
+              "description": "Interface configuration."
+            },
+            {
+              "command": "get router info routing-table all",
+              "description": "Full routing table."
+            },
+            {
+              "command": "get system ha status",
+              "description": "Cluster state and role."
+            },
+            {
+              "command": "diagnose sys session stat",
+              "description": "Session table statistics."
+            }
           ]
         },
         {
           "name": "Diagnostics",
           "commands": [
-            { "command": "execute ping 8.8.8.8", "description": "Reachability from the firewall itself." },
-            { "command": "execute ping-options source 10.0.0.1", "description": "Set the source before pinging." },
-            { "command": "execute traceroute 8.8.8.8", "description": "Path to a destination." },
-            { "command": "diagnose sniffer packet any 'host 10.0.0.5' 4 0 l", "description": "Packet capture. Verbosity 4 shows interfaces, l prints local time." },
-            { "command": "diagnose debug flow filter addr 10.0.0.5\ndiagnose debug flow show function-name enable\ndiagnose debug flow trace start 20\ndiagnose debug enable", "description": "Trace how a packet is processed, including which policy matched and why it was dropped. The single most useful FortiGate command." },
-            { "command": "diagnose debug disable\ndiagnose debug reset", "description": "Always stop debugging when finished." },
-            { "command": "diagnose vpn tunnel list", "description": "IPsec tunnel state." },
-            { "command": "diagnose hardware deviceinfo nic port1", "description": "Physical interface counters and errors." }
+            {
+              "command": "execute ping 8.8.8.8",
+              "description": "Reachability from the firewall itself."
+            },
+            {
+              "command": "execute ping-options source 10.0.0.1",
+              "description": "Set the source before pinging."
+            },
+            {
+              "command": "execute traceroute 8.8.8.8",
+              "description": "Path to a destination."
+            },
+            {
+              "command": "diagnose sniffer packet any 'host 10.0.0.5' 4 0 l",
+              "description": "Packet capture. Verbosity 4 shows interfaces, l prints local time."
+            },
+            {
+              "command": "diagnose debug flow filter addr 10.0.0.5\ndiagnose debug flow show function-name enable\ndiagnose debug flow trace start 20\ndiagnose debug enable",
+              "description": "Trace how a packet is processed, including which policy matched and why it was dropped. The single most useful FortiGate command."
+            },
+            {
+              "command": "diagnose debug disable\ndiagnose debug reset",
+              "description": "Always stop debugging when finished."
+            },
+            {
+              "command": "diagnose vpn tunnel list",
+              "description": "IPsec tunnel state."
+            },
+            {
+              "command": "diagnose hardware deviceinfo nic port1",
+              "description": "Physical interface counters and errors."
+            }
           ]
         },
         {
           "name": "Configuration",
           "commands": [
-            { "command": "config system interface\n edit port1\n set ip 192.168.1.1 255.255.255.0\n set allowaccess ping https ssh\n next\nend", "description": "Address an interface and choose which management protocols it answers." },
-            { "command": "config router static\n edit 1\n set gateway 192.168.1.254\n set device port1\n next\nend", "description": "Default route." },
-            { "command": "config firewall policy\n edit 0\n set srcintf lan\n set dstintf wan1\n set srcaddr all\n set dstaddr all\n set service HTTPS\n set action accept\n set nat enable\n next\nend", "description": "Policy with source NAT. edit 0 assigns the next free identifier." },
-            { "command": "execute backup config tftp fgt.conf 10.0.0.10", "description": "Back up the configuration before any change." }
+            {
+              "command": "config system interface\n edit port1\n set ip 192.168.1.1 255.255.255.0\n set allowaccess ping https ssh\n next\nend",
+              "description": "Address an interface and choose which management protocols it answers."
+            },
+            {
+              "command": "config router static\n edit 1\n set gateway 192.168.1.254\n set device port1\n next\nend",
+              "description": "Default route."
+            },
+            {
+              "command": "config firewall policy\n edit 0\n set srcintf lan\n set dstintf wan1\n set srcaddr all\n set dstaddr all\n set service HTTPS\n set action accept\n set nat enable\n next\nend",
+              "description": "Policy with source NAT. edit 0 assigns the next free identifier."
+            },
+            {
+              "command": "execute backup config tftp fgt.conf 10.0.0.10",
+              "description": "Back up the configuration before any change."
+            }
           ]
         }
       ]
     },
     {
-      "id": "ubiquiti",
-      "name": "Ubiquiti UniFi and EdgeOS",
-      "description": "UniFi devices are normally driven by the controller; the CLI is for adoption problems and diagnostics. EdgeOS uses a commit and save model.",
-      "sections": [
-        {
-          "name": "UniFi device CLI",
-          "commands": [
-            { "command": "info", "description": "Model, firmware, adoption status and controller address." },
-            { "command": "set-inform http://10.0.0.10:8080/inform", "description": "Point a device at a controller. Repeat once the device appears as pending." },
-            { "command": "syswrapper.sh restore-default", "description": "Factory reset from the shell." },
-            { "command": "mca-status", "description": "Detailed status including uplink and radio state." },
-            { "command": "tcpdump -i br0 -n", "description": "Capture on the bridge interface." }
-          ]
-        },
-        {
-          "name": "EdgeOS inspection",
-          "commands": [
-            { "command": "show interfaces", "description": "Interface summary." },
-            { "command": "show configuration commands", "description": "Configuration as a flat list of set commands, easy to copy." },
-            { "command": "show dhcp leases", "description": "Active leases." },
-            { "command": "show ip route", "description": "Routing table." },
-            { "command": "show vpn ipsec sa", "description": "IPsec security associations." }
-          ]
-        },
-        {
-          "name": "EdgeOS configuration",
-          "commands": [
-            { "command": "configure", "description": "Enter configuration mode." },
-            { "command": "set interfaces ethernet eth0 address 192.168.1.1/24", "description": "Address an interface." },
-            { "command": "set interfaces ethernet eth1 vif 10 address 10.10.10.1/24", "description": "Tagged subinterface for VLAN 10." },
-            { "command": "set protocols static route 0.0.0.0/0 next-hop 192.168.1.254", "description": "Default route." },
-            { "command": "commit\nsave\nexit", "description": "Apply, persist, then leave configuration mode. Commit without save is lost on reboot." }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "mikrotik",
-      "name": "MikroTik RouterOS",
-      "description": "Menu based CLI where every command is a path. Powerful and inexpensive, with defaults that need review before production.",
+      "id": "comware",
+      "name": "HPE Comware",
+      "description": "The H3C derived operating system on HPE FlexNetwork and FlexFabric switches. Not to be confused with Aruba AOS-S or AOS-CX, whose syntax is entirely different.",
       "sections": [
         {
           "name": "Inspection",
           "commands": [
-            { "command": "/system resource print", "description": "Model, version, CPU and memory." },
-            { "command": "/interface print", "description": "Interfaces and their state." },
-            { "command": "/ip address print", "description": "Addresses per interface." },
-            { "command": "/ip route print", "description": "Routing table." },
-            { "command": "/ip firewall filter print", "description": "Filter rules in evaluation order." },
-            { "command": "/ip dhcp-server lease print", "description": "Leases." },
-            { "command": "/export compact", "description": "Full configuration as commands, without defaults." }
+            {
+              "command": "display version",
+              "description": "Software version and uptime."
+            },
+            {
+              "command": "display device",
+              "description": "Hardware, slots and modules."
+            },
+            {
+              "command": "display interface brief",
+              "description": "Interface state in one table."
+            },
+            {
+              "command": "display vlan brief",
+              "description": "VLANs and their ports."
+            },
+            {
+              "command": "display mac-address",
+              "description": "MAC table."
+            },
+            {
+              "command": "display ip routing-table",
+              "description": "Routing table."
+            },
+            {
+              "command": "display lldp neighbor-information verbose",
+              "description": "Neighbours."
+            },
+            {
+              "command": "display current-configuration",
+              "description": "Running configuration."
+            }
           ]
         },
         {
-          "name": "Diagnostics and maintenance",
+          "name": "Configuration",
           "commands": [
-            { "command": "/tool torch interface=ether1", "description": "Live per flow bandwidth on an interface." },
-            { "command": "/tool sniffer quick interface=ether1", "description": "Quick packet view." },
-            { "command": "/system backup save name=before-change", "description": "Binary backup." },
-            { "command": "/system reboot", "description": "Reboot." }
+            {
+              "command": "system-view",
+              "description": "Enter configuration mode. The equivalent of configure terminal."
+            },
+            {
+              "command": "vlan 10\n name USERS\n quit",
+              "description": "Create a VLAN."
+            },
+            {
+              "command": "interface GigabitEthernet 1/0/5\n port link-type access\n port access vlan 10\n quit",
+              "description": "Access port."
+            },
+            {
+              "command": "interface GigabitEthernet 1/0/24\n port link-type trunk\n port trunk permit vlan 10 20 30\n quit",
+              "description": "Trunk with an explicit allowed list."
+            },
+            {
+              "command": "interface Vlan-interface 10\n ip address 10.10.10.1 24\n quit",
+              "description": "Routed VLAN interface. The mask is given as a prefix length."
+            },
+            {
+              "command": "ip route-static 0.0.0.0 0 192.168.1.254",
+              "description": "Default route."
+            },
+            {
+              "command": "save force",
+              "description": "Persist without the confirmation prompt."
+            }
+          ]
+        },
+        {
+          "name": "Diagnostics",
+          "commands": [
+            {
+              "command": "display interface GigabitEthernet 1/0/5",
+              "description": "Counters and errors for one port."
+            },
+            {
+              "command": "display poe interface",
+              "description": "PoE state per port."
+            },
+            {
+              "command": "display transceiver diagnosis interface GigabitEthernet 1/0/49",
+              "description": "Optical diagnostics."
+            },
+            {
+              "command": "display logbuffer",
+              "description": "Log buffer."
+            },
+            {
+              "command": "reset counters interface",
+              "description": "Zero the counters before a test."
+            }
           ]
         }
       ]
@@ -262,54 +726,161 @@
         {
           "name": "Inspection",
           "commands": [
-            { "command": "show version", "description": "Platform and JunOS release." },
-            { "command": "show interfaces terse", "description": "Compact interface and address list." },
-            { "command": "show route", "description": "Routing table." },
-            { "command": "show vlans", "description": "VLANs and members." },
-            { "command": "show lldp neighbors", "description": "Neighbours." },
-            { "command": "show chassis alarms", "description": "Active hardware alarms." },
-            { "command": "show configuration | display set", "description": "Configuration as set commands." }
+            {
+              "command": "show version",
+              "description": "Platform and JunOS release."
+            },
+            {
+              "command": "show interfaces terse",
+              "description": "Compact interface and address list."
+            },
+            {
+              "command": "show route",
+              "description": "Routing table."
+            },
+            {
+              "command": "show vlans",
+              "description": "VLANs and members."
+            },
+            {
+              "command": "show lldp neighbors",
+              "description": "Neighbours."
+            },
+            {
+              "command": "show chassis alarms",
+              "description": "Active hardware alarms."
+            },
+            {
+              "command": "show configuration | display set",
+              "description": "Configuration as set commands."
+            }
           ]
         },
         {
           "name": "Configuration",
           "commands": [
-            { "command": "configure", "description": "Enter configuration mode on the candidate configuration." },
-            { "command": "set interfaces ge-0/0/5 unit 0 family ethernet-switching vlan members USERS", "description": "Access port in a named VLAN." },
-            { "command": "set interfaces irb unit 10 family inet address 10.10.10.1/24", "description": "Routed VLAN interface." },
-            { "command": "show | compare", "description": "Difference between the candidate and the active configuration. Always run before committing." },
-            { "command": "commit confirmed 5", "description": "Apply and roll back automatically in five minutes unless confirmed. Use it on remote devices." },
-            { "command": "commit and-quit", "description": "Apply and leave configuration mode." },
-            { "command": "rollback 1", "description": "Return to the previous committed configuration." }
+            {
+              "command": "configure",
+              "description": "Enter configuration mode on the candidate configuration."
+            },
+            {
+              "command": "set interfaces ge-0/0/5 unit 0 family ethernet-switching vlan members USERS",
+              "description": "Access port in a named VLAN."
+            },
+            {
+              "command": "set interfaces irb unit 10 family inet address 10.10.10.1/24",
+              "description": "Routed VLAN interface."
+            },
+            {
+              "command": "show | compare",
+              "description": "Difference between the candidate and the active configuration. Always run before committing."
+            },
+            {
+              "command": "commit confirmed 5",
+              "description": "Apply and roll back automatically in five minutes unless confirmed. Use it on remote devices."
+            },
+            {
+              "command": "commit and-quit",
+              "description": "Apply and leave configuration mode."
+            },
+            {
+              "command": "rollback 1",
+              "description": "Return to the previous committed configuration."
+            }
           ]
         }
       ]
     },
     {
-      "id": "windows-network",
-      "name": "Windows networking",
-      "description": "The commands run from the machine in front of you, in their modern PowerShell form with the legacy equivalent where it is still faster.",
+      "id": "linux-firewall",
+      "name": "Linux firewalling and traffic control",
+      "description": "nftables and its predecessor iptables, plus the routing and shaping tools. Useful whenever the appliance in front of you turns out to be Linux underneath, which most of them are.",
       "sections": [
         {
-          "name": "Configuration and state",
+          "name": "nftables",
           "commands": [
-            { "command": "Get-NetIPConfiguration", "description": "Address, gateway and DNS per interface. Replaces ipconfig /all." },
-            { "command": "Get-NetAdapter | Format-Table Name, Status, LinkSpeed, MacAddress", "description": "Physical adapter state." },
-            { "command": "Get-NetRoute -AddressFamily IPv4", "description": "Routing table. Legacy: route print." },
-            { "command": "Get-NetNeighbor", "description": "ARP and neighbour cache. Legacy: arp -a." },
-            { "command": "Get-NetTCPConnection -State Listen", "description": "Listening sockets with owning process. Legacy: netstat -ano." },
-            { "command": "Get-NetFirewallProfile", "description": "Firewall state per profile." }
+            {
+              "command": "nft list ruleset",
+              "description": "The whole rule set, in the syntax that would recreate it."
+            },
+            {
+              "command": "nft list table inet filter",
+              "description": "One table."
+            },
+            {
+              "command": "nft -a list ruleset",
+              "description": "With handles, which is what you need to delete a specific rule."
+            },
+            {
+              "command": "nft add rule inet filter input tcp dport 22 accept",
+              "description": "Add a rule at the end of a chain."
+            },
+            {
+              "command": "nft delete rule inet filter input handle 12",
+              "description": "Delete by handle."
+            },
+            {
+              "command": "nft list ruleset > /etc/nftables.conf",
+              "description": "Persist the live rule set."
+            },
+            {
+              "command": "nft monitor trace",
+              "description": "Live rule evaluation, after marking packets with a trace rule."
+            }
           ]
         },
         {
-          "name": "Diagnostics",
+          "name": "iptables, still widely deployed",
           "commands": [
-            { "command": "Test-NetConnection -ComputerName srv01 -Port 445", "description": "TCP reachability with route and source information." },
-            { "command": "Resolve-DnsName www.example.com -Server 8.8.8.8", "description": "Query a specific resolver to separate client cache from server data." },
-            { "command": "Clear-DnsClientCache", "description": "Flush the resolver cache. Legacy: ipconfig /flushdns." },
-            { "command": "pathping 8.8.8.8", "description": "Traceroute with per hop loss statistics." },
-            { "command": "netsh wlan show wlanreport", "description": "Generate a full wireless connectivity report." },
-            { "command": "netsh trace start capture=yes tracefile=C:\\temp\\net.etl", "description": "Built in capture with no software to install. Stop with netsh trace stop." }
+            {
+              "command": "iptables -L -n -v --line-numbers",
+              "description": "Filter table with counters and line numbers."
+            },
+            {
+              "command": "iptables -t nat -L -n -v",
+              "description": "NAT table."
+            },
+            {
+              "command": "iptables -D INPUT 3",
+              "description": "Delete rule three from INPUT."
+            },
+            {
+              "command": "iptables-save > /etc/iptables/rules.v4",
+              "description": "Persist."
+            },
+            {
+              "command": "conntrack -L",
+              "description": "Connection tracking table, the equivalent of a state table."
+            }
+          ]
+        },
+        {
+          "name": "Routing and shaping",
+          "commands": [
+            {
+              "command": "ip route show table all",
+              "description": "Every routing table, not just the main one."
+            },
+            {
+              "command": "ip rule show",
+              "description": "Policy routing rules, which decide which table is consulted."
+            },
+            {
+              "command": "ip route get 8.8.8.8",
+              "description": "Which route and source address would actually be used."
+            },
+            {
+              "command": "tc qdisc show dev eth0",
+              "description": "Queueing discipline in place."
+            },
+            {
+              "command": "tc -s qdisc show dev eth0",
+              "description": "With statistics, including drops and overlimits."
+            },
+            {
+              "command": "ss -s",
+              "description": "Socket summary: how many are open, in which states."
+            }
           ]
         }
       ]
@@ -322,21 +893,541 @@
         {
           "name": "Configuration and state",
           "commands": [
-            { "command": "ip -c addr show", "description": "Addresses per interface. Replaces ifconfig." },
-            { "command": "ip route show", "description": "Routing table." },
-            { "command": "ip neigh show", "description": "ARP cache." },
-            { "command": "ss -tulpn", "description": "Listening sockets with process. Replaces netstat." },
-            { "command": "resolvectl status", "description": "Effective DNS configuration per link on systemd hosts." }
+            {
+              "command": "ip -c addr show",
+              "description": "Addresses per interface. Replaces ifconfig."
+            },
+            {
+              "command": "ip route show",
+              "description": "Routing table."
+            },
+            {
+              "command": "ip neigh show",
+              "description": "ARP cache."
+            },
+            {
+              "command": "ss -tulpn",
+              "description": "Listening sockets with process. Replaces netstat."
+            },
+            {
+              "command": "resolvectl status",
+              "description": "Effective DNS configuration per link on systemd hosts."
+            }
           ]
         },
         {
           "name": "Diagnostics",
           "commands": [
-            { "command": "tcpdump -i any -n host 10.0.0.5 and port 443", "description": "Targeted capture. -w file.pcap to open it in Wireshark later." },
-            { "command": "mtr -rwbzc 100 8.8.8.8", "description": "Traceroute and continuous loss measurement in one report." },
-            { "command": "nc -zv 10.0.0.5 443", "description": "Port test without installing anything." },
-            { "command": "dig +trace www.example.com", "description": "Follow the resolution from the root down." },
-            { "command": "ethtool eth0", "description": "Speed, duplex and link detection at the driver level." }
+            {
+              "command": "tcpdump -i any -n host 10.0.0.5 and port 443",
+              "description": "Targeted capture. -w file.pcap to open it in Wireshark later."
+            },
+            {
+              "command": "mtr -rwbzc 100 8.8.8.8",
+              "description": "Traceroute and continuous loss measurement in one report."
+            },
+            {
+              "command": "nc -zv 10.0.0.5 443",
+              "description": "Port test without installing anything."
+            },
+            {
+              "command": "dig +trace www.example.com",
+              "description": "Follow the resolution from the root down."
+            },
+            {
+              "command": "ethtool eth0",
+              "description": "Speed, duplex and link detection at the driver level."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mikrotik",
+      "name": "MikroTik RouterOS",
+      "description": "Menu based CLI where every command is a path. Powerful and inexpensive, with defaults that need review before production.",
+      "sections": [
+        {
+          "name": "Inspection",
+          "commands": [
+            {
+              "command": "/system resource print",
+              "description": "Model, version, CPU and memory."
+            },
+            {
+              "command": "/interface print",
+              "description": "Interfaces and their state."
+            },
+            {
+              "command": "/ip address print",
+              "description": "Addresses per interface."
+            },
+            {
+              "command": "/ip route print",
+              "description": "Routing table."
+            },
+            {
+              "command": "/ip firewall filter print",
+              "description": "Filter rules in evaluation order."
+            },
+            {
+              "command": "/ip dhcp-server lease print",
+              "description": "Leases."
+            },
+            {
+              "command": "/export compact",
+              "description": "Full configuration as commands, without defaults."
+            }
+          ]
+        },
+        {
+          "name": "Diagnostics and maintenance",
+          "commands": [
+            {
+              "command": "/tool torch interface=ether1",
+              "description": "Live per flow bandwidth on an interface."
+            },
+            {
+              "command": "/tool sniffer quick interface=ether1",
+              "description": "Quick packet view."
+            },
+            {
+              "command": "/system backup save name=before-change",
+              "description": "Binary backup."
+            },
+            {
+              "command": "/system reboot",
+              "description": "Reboot."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paloalto",
+      "name": "Palo Alto PAN-OS",
+      "description": "Next generation firewalls. Configuration is a candidate that only takes effect on commit, and the CLI has two modes: operational for looking, configure for changing.",
+      "sections": [
+        {
+          "name": "Inspection",
+          "commands": [
+            {
+              "command": "show system info",
+              "description": "Model, serial, PAN-OS version, uptime, management address."
+            },
+            {
+              "command": "show system resources",
+              "description": "Live process and memory view, in top format."
+            },
+            {
+              "command": "show high-availability state",
+              "description": "Cluster role and whether the peers agree."
+            },
+            {
+              "command": "show interface all",
+              "description": "Every interface with its zone, address and state."
+            },
+            {
+              "command": "show routing route",
+              "description": "Routing table for the default virtual router."
+            },
+            {
+              "command": "show session all filter source 10.0.0.5",
+              "description": "Live sessions from one host. The first thing to look at when traffic is not passing."
+            },
+            {
+              "command": "show session id 12345",
+              "description": "Everything about one session: rule matched, application, NAT, decryption."
+            },
+            {
+              "command": "show running security-policy",
+              "description": "The security rule base as it is actually being evaluated."
+            }
+          ]
+        },
+        {
+          "name": "Diagnostics",
+          "commands": [
+            {
+              "command": "test security-policy-match from trust to untrust source 10.0.0.5 destination 8.8.8.8 protocol 6 destination-port 443",
+              "description": "Asks the firewall which rule a hypothetical packet would match. Answers most policy questions without generating traffic."
+            },
+            {
+              "command": "test nat-policy-match from trust to untrust source 10.0.0.5 destination 8.8.8.8 protocol 6 destination-port 443",
+              "description": "The same for NAT."
+            },
+            {
+              "command": "show counter global filter severity drop",
+              "description": "Why packets are being discarded, by reason. The fastest route to a silent drop."
+            },
+            {
+              "command": "debug dataplane packet-diag set filter match source 10.0.0.5\ndebug dataplane packet-diag set filter on\ndebug dataplane packet-diag set capture stage receive file rx.pcap\ndebug dataplane packet-diag set capture on",
+              "description": "Packet capture on the dataplane, filtered. Turn it off again with set capture off and clear the filter."
+            },
+            {
+              "command": "less mp-log ms.log",
+              "description": "Management plane log, for commit and configuration problems."
+            },
+            {
+              "command": "show log traffic direction equal backward",
+              "description": "Traffic log newest first."
+            }
+          ]
+        },
+        {
+          "name": "Configuration",
+          "commands": [
+            {
+              "command": "configure",
+              "description": "Enter configuration mode on the candidate configuration."
+            },
+            {
+              "command": "set network interface ethernet ethernet1/1 layer3 ip 192.168.1.1/24",
+              "description": "Address an interface."
+            },
+            {
+              "command": "set rulebase security rules allow-web from trust to untrust source any destination any application web-browsing service application-default action allow",
+              "description": "A security rule. application-default is the safer choice over any service."
+            },
+            {
+              "command": "show | match interface",
+              "description": "Search the candidate configuration."
+            },
+            {
+              "command": "commit",
+              "description": "Apply the candidate. Nothing takes effect before this."
+            },
+            {
+              "command": "commit force",
+              "description": "When a partial commit is blocked by an unrelated validation error."
+            },
+            {
+              "command": "exit",
+              "description": "Leave configuration mode."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stormshield",
+      "name": "Stormshield SNS",
+      "description": "French firewalls, common in public sector and industrial estates. The CLI uses the same object model as the administration suite, and configuration is applied per module rather than through a global commit.",
+      "sections": [
+        {
+          "name": "Inspection",
+          "commands": [
+            {
+              "command": "sysinfo",
+              "description": "Model, firmware, serial, uptime and licence state."
+            },
+            {
+              "command": "monitor system",
+              "description": "Live CPU, memory and throughput."
+            },
+            {
+              "command": "config network interface show",
+              "description": "Interfaces and their addressing."
+            },
+            {
+              "command": "config network route show",
+              "description": "Routing table."
+            },
+            {
+              "command": "monitor state",
+              "description": "Live connection table."
+            },
+            {
+              "command": "config filter explicit show index=1",
+              "description": "The filter and NAT rules of a policy slot."
+            },
+            {
+              "command": "config ha info",
+              "description": "Cluster state and synchronisation."
+            }
+          ]
+        },
+        {
+          "name": "Diagnostics",
+          "commands": [
+            {
+              "command": "tcpdump -ni <interface> host 10.0.0.5",
+              "description": "Capture, as on any BSD based system."
+            },
+            {
+              "command": "slogctl -l",
+              "description": "List the available log files."
+            },
+            {
+              "command": "monitor log filter",
+              "description": "Follow the filter log live, which shows the rule identifier that matched."
+            },
+            {
+              "command": "config filter check index=1",
+              "description": "Validate a policy before activating it."
+            },
+            {
+              "command": "system property show",
+              "description": "Every system property, useful when comparing two appliances."
+            }
+          ]
+        },
+        {
+          "name": "Maintenance",
+          "commands": [
+            {
+              "command": "config backup",
+              "description": "Take a configuration backup before any change."
+            },
+            {
+              "command": "config filter activate index=1",
+              "description": "Activate a policy slot."
+            },
+            {
+              "command": "system reboot",
+              "description": "Restart the appliance."
+            },
+            {
+              "command": "setup restore",
+              "description": "Restore factory settings from the console. Destructive."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ubiquiti",
+      "name": "Ubiquiti UniFi and EdgeOS",
+      "description": "UniFi devices are normally driven by the controller; the CLI is for adoption problems and diagnostics. EdgeOS uses a commit and save model.",
+      "sections": [
+        {
+          "name": "UniFi device CLI",
+          "commands": [
+            {
+              "command": "info",
+              "description": "Model, firmware, adoption status and controller address."
+            },
+            {
+              "command": "set-inform http://10.0.0.10:8080/inform",
+              "description": "Point a device at a controller. Repeat once the device appears as pending."
+            },
+            {
+              "command": "syswrapper.sh restore-default",
+              "description": "Factory reset from the shell."
+            },
+            {
+              "command": "mca-status",
+              "description": "Detailed status including uplink and radio state."
+            },
+            {
+              "command": "tcpdump -i br0 -n",
+              "description": "Capture on the bridge interface."
+            }
+          ]
+        },
+        {
+          "name": "EdgeOS inspection",
+          "commands": [
+            {
+              "command": "show interfaces",
+              "description": "Interface summary."
+            },
+            {
+              "command": "show configuration commands",
+              "description": "Configuration as a flat list of set commands, easy to copy."
+            },
+            {
+              "command": "show dhcp leases",
+              "description": "Active leases."
+            },
+            {
+              "command": "show ip route",
+              "description": "Routing table."
+            },
+            {
+              "command": "show vpn ipsec sa",
+              "description": "IPsec security associations."
+            }
+          ]
+        },
+        {
+          "name": "EdgeOS configuration",
+          "commands": [
+            {
+              "command": "configure",
+              "description": "Enter configuration mode."
+            },
+            {
+              "command": "set interfaces ethernet eth0 address 192.168.1.1/24",
+              "description": "Address an interface."
+            },
+            {
+              "command": "set interfaces ethernet eth1 vif 10 address 10.10.10.1/24",
+              "description": "Tagged subinterface for VLAN 10."
+            },
+            {
+              "command": "set protocols static route 0.0.0.0/0 next-hop 192.168.1.254",
+              "description": "Default route."
+            },
+            {
+              "command": "commit\nsave\nexit",
+              "description": "Apply, persist, then leave configuration mode. Commit without save is lost on reboot."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "windows-network",
+      "name": "Windows networking",
+      "description": "The commands run from the machine in front of you, in their modern PowerShell form with the legacy equivalent where it is still faster.",
+      "sections": [
+        {
+          "name": "Configuration and state",
+          "commands": [
+            {
+              "command": "Get-NetIPConfiguration",
+              "description": "Address, gateway and DNS per interface. Replaces ipconfig /all."
+            },
+            {
+              "command": "Get-NetAdapter | Format-Table Name, Status, LinkSpeed, MacAddress",
+              "description": "Physical adapter state."
+            },
+            {
+              "command": "Get-NetRoute -AddressFamily IPv4",
+              "description": "Routing table. Legacy: route print."
+            },
+            {
+              "command": "Get-NetNeighbor",
+              "description": "ARP and neighbour cache. Legacy: arp -a."
+            },
+            {
+              "command": "Get-NetTCPConnection -State Listen",
+              "description": "Listening sockets with owning process. Legacy: netstat -ano."
+            },
+            {
+              "command": "Get-NetFirewallProfile",
+              "description": "Firewall state per profile."
+            }
+          ]
+        },
+        {
+          "name": "Diagnostics",
+          "commands": [
+            {
+              "command": "Test-NetConnection -ComputerName srv01 -Port 445",
+              "description": "TCP reachability with route and source information."
+            },
+            {
+              "command": "Resolve-DnsName www.example.com -Server 8.8.8.8",
+              "description": "Query a specific resolver to separate client cache from server data."
+            },
+            {
+              "command": "Clear-DnsClientCache",
+              "description": "Flush the resolver cache. Legacy: ipconfig /flushdns."
+            },
+            {
+              "command": "pathping 8.8.8.8",
+              "description": "Traceroute with per hop loss statistics."
+            },
+            {
+              "command": "netsh wlan show wlanreport",
+              "description": "Generate a full wireless connectivity report."
+            },
+            {
+              "command": "netsh trace start capture=yes tracefile=C:\\temp\\net.etl",
+              "description": "Built in capture with no software to install. Stop with netsh trace stop."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pfsense",
+      "name": "pfSense and OPNsense",
+      "description": "FreeBSD based firewalls. The web interface owns the configuration; the shell is for diagnosis, and the underlying tools are pf and FreeBSD rather than anything vendor specific.",
+      "sections": [
+        {
+          "name": "Inspection",
+          "commands": [
+            {
+              "command": "pfctl -s rules",
+              "description": "The loaded rule set, as pf sees it after the web interface has generated it."
+            },
+            {
+              "command": "pfctl -s state | head -50",
+              "description": "Live state table."
+            },
+            {
+              "command": "pfctl -s info",
+              "description": "Counters: state table size, searches, matches, and packets dropped."
+            },
+            {
+              "command": "pfctl -s nat",
+              "description": "Loaded NAT rules."
+            },
+            {
+              "command": "ifconfig -a",
+              "description": "Interfaces, addresses and media state."
+            },
+            {
+              "command": "netstat -rn",
+              "description": "Routing table."
+            },
+            {
+              "command": "cat /var/etc/dhcpd.conf",
+              "description": "The generated DHCP server configuration."
+            }
+          ]
+        },
+        {
+          "name": "Diagnostics",
+          "commands": [
+            {
+              "command": "tcpdump -ni em0 host 10.0.0.5",
+              "description": "Capture on an interface. Use pflog0 to see only what the firewall blocked."
+            },
+            {
+              "command": "tcpdump -ni pflog0",
+              "description": "Everything pf is dropping, with the rule number that dropped it."
+            },
+            {
+              "command": "pfctl -s state | grep 10.0.0.5",
+              "description": "State entries for one host, to see whether a session was ever established."
+            },
+            {
+              "command": "clog -f /var/log/filter.log",
+              "description": "Follow the filter log on pfSense. OPNsense uses plain text logs under /var/log/filter."
+            },
+            {
+              "command": "/etc/rc.reload_all",
+              "description": "Regenerate and reload every service configuration."
+            },
+            {
+              "command": "viconfig",
+              "description": "Edit config.xml safely, with a reload on exit. A last resort."
+            }
+          ]
+        },
+        {
+          "name": "Recovery",
+          "commands": [
+            {
+              "command": "pfSsh.php playback enableallowallwan",
+              "description": "Opens WAN completely, to recover from a rule that locked you out. Undo it immediately after."
+            },
+            {
+              "command": "pfSsh.php playback changepassword",
+              "description": "Reset the admin password from the console."
+            },
+            {
+              "command": "pfctl -d",
+              "description": "Disable the packet filter entirely. Diagnosis only, and never leave it this way."
+            },
+            {
+              "command": "pfctl -e",
+              "description": "Enable it again."
+            }
           ]
         }
       ]

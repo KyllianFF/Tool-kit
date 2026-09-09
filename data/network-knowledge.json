@@ -27,6 +27,10 @@
       "name": "Wireless"
     },
     {
+      "id": "physical",
+      "name": "Physical layer"
+    },
+    {
       "id": "method",
       "name": "Method and tooling"
     }
@@ -148,6 +152,40 @@
       ]
     },
     {
+      "id": "link-aggregation",
+      "title": "Link aggregation and redundancy",
+      "category": "layer2",
+      "summary": "Bundling links for bandwidth and resilience, and what it does not give you.",
+      "content": [
+        "LACP (802.3ad) negotiates a bundle of physical links into one logical interface. Static bundles work too but do not detect a link that is up while not forwarding.",
+        "Traffic is distributed per flow using a hash of addresses and ports, not per packet, so ordering is preserved. One conversation therefore never exceeds the speed of one member link.",
+        "First hop redundancy protocols, VRRP as the standard and HSRP on Cisco, present one virtual gateway address backed by two routers so a gateway failure is invisible to hosts."
+      ],
+      "keyPoints": [
+        "Two 1 Gb links do not make a 2 Gb file transfer. They make two transfers able to use 1 Gb each.",
+        "Both ends must agree on the aggregation mode. A mismatch produces a loop or a down bundle.",
+        "Multi chassis aggregation (MLAG, VPC, stacking) is what removes the switch itself as a single point of failure."
+      ]
+    },
+    {
+      "id": "spanning-tree",
+      "title": "Spanning Tree Protocol",
+      "category": "layer2",
+      "summary": "Loop prevention on redundant layer 2 topologies, and the features that keep it from being the outage.",
+      "content": [
+        "Ethernet frames have no TTL, so a layer 2 loop does not decay: it saturates the network in seconds. Spanning tree exists to prevent that by blocking redundant paths until they are needed.",
+        "Switches elect a root bridge by lowest priority then lowest MAC address. Every other switch keeps its lowest cost path to the root and blocks the rest.",
+        "Rapid Spanning Tree (802.1w) converges in seconds instead of the 30 to 50 of the original protocol and is what you should be running.",
+        "PortFast, or edge port, moves an access port straight to forwarding rather than through listening and learning. It belongs on ports facing end devices and never on a port facing another switch.",
+        "BPDU Guard disables a PortFast port that receives a BPDU, which is exactly what happens when someone plugs a small unmanaged switch into a wall port."
+      ],
+      "keyPoints": [
+        "Set the root bridge deliberately with a priority. Leaving the election to MAC addresses means the oldest switch in the building often wins.",
+        "A loop shows up as 100 percent broadcast, MAC flapping across ports, and management access to the switch becoming impossible.",
+        "PortFast plus BPDU Guard on every access port is the standard configuration."
+      ]
+    },
+    {
       "id": "vlans",
       "title": "VLANs and 802.1Q",
       "category": "layer2",
@@ -172,21 +210,145 @@
       ]
     },
     {
-      "id": "spanning-tree",
-      "title": "Spanning Tree Protocol",
-      "category": "layer2",
-      "summary": "Loop prevention on redundant layer 2 topologies, and the features that keep it from being the outage.",
+      "id": "bgp-practice",
+      "title": "BGP in practice",
+      "category": "layer3",
+      "summary": "The protocol that connects autonomous systems, and the handful of attributes that actually decide a path.",
       "content": [
-        "Ethernet frames have no TTL, so a layer 2 loop does not decay: it saturates the network in seconds. Spanning tree exists to prevent that by blocking redundant paths until they are needed.",
-        "Switches elect a root bridge by lowest priority then lowest MAC address. Every other switch keeps its lowest cost path to the root and blocks the rest.",
-        "Rapid Spanning Tree (802.1w) converges in seconds instead of the 30 to 50 of the original protocol and is what you should be running.",
-        "PortFast, or edge port, moves an access port straight to forwarding rather than through listening and learning. It belongs on ports facing end devices and never on a port facing another switch.",
-        "BPDU Guard disables a PortFast port that receives a BPDU, which is exactly what happens when someone plugs a small unmanaged switch into a wall port."
+        "BGP does not look for the shortest path. It looks for the path its policy prefers, and policy is expressed through attributes. That is the difference from every interior protocol and the source of most confusion.",
+        "eBGP runs between autonomous systems and is what you configure with an ISP. iBGP runs inside one, carries external routes across it, and has a rule that surprises people: a route learned from an iBGP peer is not re-advertised to another iBGP peer, which is why full mesh, route reflectors or confederations exist.",
+        "For a multi-homed site the two questions are separate. Outbound traffic is chosen by your own local preference. Inbound traffic is chosen by the other side, and all you can do is influence it, with AS path prepending or by asking your provider to honour communities."
+      ],
+      "tables": [
+        {
+          "title": "Path selection, in the order it is applied",
+          "columns": [
+            "Step",
+            "Attribute",
+            "Prefers",
+            "Controlled by"
+          ],
+          "rows": [
+            [
+              "1",
+              "Weight",
+              "Highest",
+              "You, locally, on one router only"
+            ],
+            [
+              "2",
+              "Local preference",
+              "Highest",
+              "You, across your whole AS. The outbound lever"
+            ],
+            [
+              "3",
+              "Locally originated",
+              "Yes",
+              "Where the route was injected"
+            ],
+            [
+              "4",
+              "AS path length",
+              "Shortest",
+              "Prepending. The inbound lever, and a blunt one"
+            ],
+            [
+              "5",
+              "Origin",
+              "IGP over EGP over incomplete",
+              "Rarely used deliberately"
+            ],
+            [
+              "6",
+              "MED",
+              "Lowest",
+              "Suggests an entry point to a neighbour who may ignore it"
+            ],
+            [
+              "7",
+              "eBGP over iBGP",
+              "eBGP",
+              "Topology"
+            ],
+            [
+              "8",
+              "IGP metric to next hop",
+              "Lowest",
+              "Your interior protocol"
+            ]
+          ]
+        }
       ],
       "keyPoints": [
-        "Set the root bridge deliberately with a priority. Leaving the election to MAC addresses means the oldest switch in the building often wins.",
-        "A loop shows up as 100 percent broadcast, MAC flapping across ports, and management access to the switch becoming impossible.",
-        "PortFast plus BPDU Guard on every access port is the standard configuration."
+        "Filter both ways, always. Accepting everything from a provider imports the whole internet table; announcing everything you learn turns you into a transit provider for free. Both have happened to real networks.",
+        "Maximum prefix limits protect you from a neighbour leaking a full table into a session sized for a handful of routes.",
+        "BGP converges slowly by design. It is stable, not fast. Pair it with BFD when a link failure has to be detected in under a second.",
+        "Communities are how policy is communicated between networks. Read what your provider supports: most publish a list that lets you set local preference on their side."
+      ],
+      "troubleshooting": [
+        "A session stuck in Active means the TCP connection is not being established: check reachability to the peer address and any filter on port 179.",
+        "A session up with no prefixes usually means a filter, on either side. Look at what is advertised as well as what is received.",
+        "Check the next hop is reachable. A route with an unreachable next hop is valid but never installed."
+      ]
+    },
+    {
+      "id": "first-hop-redundancy",
+      "title": "First hop redundancy and chassis redundancy",
+      "category": "layer3",
+      "summary": "Keeping the default gateway alive, and keeping the switch pair that hosts it alive.",
+      "content": [
+        "A host has one default gateway and no way to fail over on its own. First hop redundancy protocols solve that by presenting one virtual address, backed by two or more routers, so the host never notices which physical device is answering.",
+        "VRRP is the standard and works between vendors. HSRP and GLBP are Cisco. They all do the same job: elect an active device, share a virtual IP and virtual MAC, and fail over when the active one stops sending hellos.",
+        "Underneath, the switch pair itself needs to survive. Stacking makes two switches into one logical device with one control plane, which is simple but means one software upgrade takes both. MLAG keeps two control planes and presents one logical link to downstream devices, which is more resilient and more complex."
+      ],
+      "tables": [
+        {
+          "title": "First hop redundancy protocols",
+          "columns": [
+            "Protocol",
+            "Origin",
+            "Load sharing",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "VRRP",
+              "Standard, RFC 5798",
+              "Per VLAN, by alternating the master",
+              "Use it unless something forces otherwise"
+            ],
+            [
+              "HSRP",
+              "Cisco",
+              "Per VLAN, by alternating the active",
+              "Version 2 supports IPv6 and larger group numbers"
+            ],
+            [
+              "GLBP",
+              "Cisco",
+              "Per host, several forwarders at once",
+              "Rarely worth the complexity"
+            ],
+            [
+              "Anycast gateway",
+              "Fabric designs",
+              "Every switch is the gateway",
+              "The modern answer in EVPN and SD-Access fabrics"
+            ]
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Align the redundancy roles. The device that is the spanning tree root should also be the active gateway, or traffic crosses the peer link twice for no reason.",
+        "Track the uplink. A gateway that stays active with a dead uplink is a black hole; interface tracking lowers its priority so the peer takes over.",
+        "Preemption decides whether the preferred device takes back control when it returns. Without it, a failover is permanent until someone intervenes.",
+        "Test failover during a maintenance window, with traffic running. A design that has never been failed over is a design that has never been tested."
+      ],
+      "troubleshooting": [
+        "Both devices claiming to be active means they cannot hear each other: check the VLAN carrying the hellos across the peer link.",
+        "Flapping usually means hellos are being lost, often because the peer link is congested or the control plane is busy.",
+        "After a failover, confirm the ARP entries on hosts have moved. The virtual MAC should follow the virtual IP, so they usually do not need to."
       ]
     },
     {
@@ -320,6 +482,101 @@
       ]
     },
     {
+      "id": "nat",
+      "title": "NAT and PAT",
+      "category": "layer3",
+      "summary": "Address translation, and why it breaks some protocols.",
+      "content": [
+        "Source NAT rewrites the source address of outbound packets, typically many private addresses to one public one. When ports are rewritten too it is PAT, or NAT overload, and it is what a home or office router does.",
+        "Destination NAT rewrites the destination, which is how a port is published from the internet to an internal server.",
+        "Static NAT is a fixed one to one mapping in both directions.",
+        "NAT is stateful: the device keeps a translation table so return traffic can be mapped back. Entries time out, which is why long idle sessions such as SSH or RDP drop without keepalives.",
+        "Protocols that carry addresses inside their payload, such as FTP in active mode, SIP and some IPsec configurations, need an application layer gateway or they break through NAT."
+      ],
+      "keyPoints": [
+        "NAT is not a security control. It hides topology as a side effect but a stateful firewall is what actually enforces policy.",
+        "Double NAT, one at the ISP box and one at your router, breaks inbound publishing and most VPN passthrough.",
+        "Hairpin NAT, reaching your own public address from inside, must be configured explicitly and is a frequent cause of 'it works from outside but not from the office'."
+      ]
+    },
+    {
+      "id": "qos",
+      "title": "Quality of service",
+      "category": "layer3",
+      "summary": "Deciding what to drop when there is not enough room, and where marking has to happen for it to mean anything.",
+      "content": [
+        "QoS does nothing until a link is congested. On an uncongested link every queueing policy in the world changes nothing, which is why testing QoS on an idle network always shows it working.",
+        "Marking is where the class is written into the packet. Classification is where the device decides which class a packet belongs to. Queueing is where the decision is acted on. All three have to be in place, on every hop, for the result to hold.",
+        "The rule that matters operationally: trust boundaries. Markings from an endpoint you do not control are worthless, because anything can mark itself as voice. Mark at the access edge, based on what you know, and trust nothing arriving from outside."
+      ],
+      "tables": [
+        {
+          "title": "DSCP values in common use",
+          "columns": [
+            "DSCP",
+            "Name",
+            "Carries",
+            "Treatment"
+          ],
+          "rows": [
+            [
+              "46",
+              "EF",
+              "Voice payload",
+              "Priority queue, strictly policed"
+            ],
+            [
+              "34",
+              "AF41",
+              "Interactive video",
+              "Low latency, low drop"
+            ],
+            [
+              "26",
+              "AF31",
+              "Call signalling",
+              "Assured, must not be starved"
+            ],
+            [
+              "24",
+              "CS3",
+              "Signalling, older",
+              "Assured"
+            ],
+            [
+              "18",
+              "AF21",
+              "Transactional data",
+              "Better than best effort"
+            ],
+            [
+              "10",
+              "AF11",
+              "Bulk data",
+              "Drops first under pressure"
+            ],
+            [
+              "0",
+              "BE",
+              "Everything else",
+              "Best effort"
+            ]
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Voice needs less than 150 ms one way latency, less than 30 ms jitter and less than 1 percent loss. Those three numbers are the whole specification.",
+        "A priority queue must be policed. An unpoliced priority queue lets one misbehaving stream starve everything else, which is worse than having no QoS at all.",
+        "Do not mark at the core. By the time a packet reaches the core it is too late to know what it was.",
+        "Wireless is where QoS is most needed and least effective: the medium is shared and half duplex, and WMM maps only four access categories."
+      ],
+      "troubleshooting": [
+        "Confirm the link is actually congested before changing any policy. Check interface utilisation and output drops.",
+        "Follow the marking hop by hop. A single device that rewrites DSCP to zero undoes the whole design downstream.",
+        "Look at per queue drop counters rather than total drops: the point of QoS is that some queues drop and others do not."
+      ]
+    },
+    {
       "id": "routing",
       "title": "Routing",
       "category": "layer3",
@@ -339,125 +596,87 @@
       ]
     },
     {
-      "id": "nat",
-      "title": "NAT and PAT",
+      "id": "ipv6-transition",
+      "title": "Running IPv6 alongside IPv4",
       "category": "layer3",
-      "summary": "Address translation, and why it breaks some protocols.",
+      "summary": "Dual stack, address assignment, and the translation mechanisms that let an IPv6 only client reach IPv4 content.",
       "content": [
-        "Source NAT rewrites the source address of outbound packets, typically many private addresses to one public one. When ports are rewritten too it is PAT, or NAT overload, and it is what a home or office router does.",
-        "Destination NAT rewrites the destination, which is how a port is published from the internet to an internal server.",
-        "Static NAT is a fixed one to one mapping in both directions.",
-        "NAT is stateful: the device keeps a translation table so return traffic can be mapped back. Entries time out, which is why long idle sessions such as SSH or RDP drop without keepalives.",
-        "Protocols that carry addresses inside their payload, such as FTP in active mode, SIP and some IPsec configurations, need an application layer gateway or they break through NAT."
+        "Dual stack is the honest answer: run both, prefer IPv6, keep IPv4 until nothing needs it. Every other approach is a way of postponing that.",
+        "Address assignment on IPv6 is not one mechanism but three, and which one applies is decided by two flags in the router advertisement. SLAAC lets the host build its own address from the prefix. Stateful DHCPv6 hands out an address. Stateless DHCPv6 hands out DNS and other options while the host still builds its own address.",
+        "Do not filter ICMPv6 the way ICMP is often filtered on IPv4. Neighbour discovery, router advertisements and path MTU discovery all ride on it, and blocking it breaks the protocol rather than hardening it."
+      ],
+      "tables": [
+        {
+          "title": "Router advertisement flags and what the host does",
+          "columns": [
+            "M flag",
+            "O flag",
+            "Result"
+          ],
+          "rows": [
+            [
+              "0",
+              "0",
+              "SLAAC only. Address from the prefix, DNS from the RDNSS option if present"
+            ],
+            [
+              "0",
+              "1",
+              "SLAAC for the address, stateless DHCPv6 for DNS and other options"
+            ],
+            [
+              "1",
+              "0",
+              "Stateful DHCPv6 for the address"
+            ],
+            [
+              "1",
+              "1",
+              "Stateful DHCPv6 for the address and other options"
+            ]
+          ]
+        },
+        {
+          "title": "Transition mechanisms",
+          "columns": [
+            "Mechanism",
+            "Does",
+            "Where it appears"
+          ],
+          "rows": [
+            [
+              "Dual stack",
+              "Runs both protocols side by side",
+              "The default answer for an enterprise"
+            ],
+            [
+              "NAT64 with DNS64",
+              "Lets an IPv6 only client reach IPv4 servers",
+              "Mobile networks, modern guest networks"
+            ],
+            [
+              "464XLAT",
+              "Carries IPv4 sockets over an IPv6 only access network",
+              "Mobile handsets"
+            ],
+            [
+              "6to4 and Teredo",
+              "Tunnels IPv6 over IPv4",
+              "Legacy. Disable them"
+            ]
+          ]
+        }
       ],
       "keyPoints": [
-        "NAT is not a security control. It hides topology as a side effect but a stateful firewall is what actually enforces policy.",
-        "Double NAT, one at the ISP box and one at your router, breaks inbound publishing and most VPN passthrough.",
-        "Hairpin NAT, reaching your own public address from inside, must be configured explicitly and is a frequent cause of 'it works from outside but not from the office'."
-      ]
-    },
-    {
-      "id": "dhcp",
-      "title": "DHCP",
-      "category": "services",
-      "summary": "Automatic address assignment, its four messages, and relay across subnets.",
-      "content": [
-        "DHCP assigns an address, a mask, a gateway, DNS servers and any number of extra options. The exchange is four messages: Discover from the client as a broadcast, Offer from the server, Request from the client, Acknowledge from the server. Remember it as DORA.",
-        "Because Discover is a broadcast it does not cross a router. A DHCP relay, called an IP helper on Cisco, forwards it as unicast to the server and puts the receiving interface address in the giaddr field so the server picks the right scope.",
-        "A lease has a duration. At 50 percent the client tries to renew with the same server, at 87.5 percent it broadcasts a rebind to any server.",
-        "Reservations bind an address to a MAC address inside the scope. They are preferable to static configuration on the host because the settings stay centrally managed."
+        "A /64 per link is not a suggestion. SLAAC does not work on anything longer, and nothing is gained by being frugal with a space this large.",
+        "Plan a /48 per site and a /56 per small site. Subnetting IPv6 is about hierarchy and readability, not conservation.",
+        "Privacy addresses change over time, which breaks address based firewall rules and makes logs harder to correlate. Decide deliberately whether to keep them on servers.",
+        "Rogue router advertisements are the IPv6 equivalent of a rogue DHCP server and just as disruptive. RA Guard on access ports is the fix."
       ],
-      "keyPoints": [
-        "A 169.254 address means no DHCP answer reached the client. Check the relay before the server.",
-        "Two DHCP servers on the same broadcast domain, often a forgotten small router, produce intermittent wrong addresses. This is what DHCP snooping prevents.",
-        "Option 82 inserted by the relay carries the port and switch identity, which is how an address can be traced back to a wall socket."
-      ]
-    },
-    {
-      "id": "dns",
-      "title": "DNS",
-      "category": "services",
-      "summary": "Name resolution, the record types that matter, and how a lookup actually proceeds.",
-      "content": [
-        "A resolver asks its configured server; if that server is recursive it walks the hierarchy from the root to the top level domain to the authoritative server, then caches the answer for the TTL.",
-        "A: name to IPv4 address. AAAA: name to IPv6 address. CNAME: alias to another name, and it cannot coexist with other records at the same name. MX: mail exchanger with a priority. NS: delegation to authoritative servers. TXT: free text, used for SPF, DKIM and domain verification. SRV: service location with port, used by Active Directory and SIP. PTR: address to name, in the in-addr.arpa zone.",
-        "TTL is the cache lifetime in seconds. Lower it before a planned migration, days ahead, not on the day.",
-        "Active Directory depends on DNS completely. Domain members must point at the domain controllers, and the SRV records under _msdcs are how clients find them."
-      ],
-      "keyPoints": [
-        "Public resolvers on a domain joined machine break domain logon. This is one of the most common misconfigurations in small networks.",
-        "Negative answers are cached too, so a record that was wrong when first queried stays wrong locally until the negative TTL expires.",
-        "Use nslookup or Resolve-DnsName against a specific server to distinguish a client cache problem from a server data problem."
-      ]
-    },
-    {
-      "id": "firewalls",
-      "title": "Firewalls and filtering",
-      "category": "security",
-      "summary": "Stateful inspection, rule ordering, and the difference between drop and reject.",
-      "content": [
-        "A stateless filter evaluates each packet alone. A stateful firewall tracks connections, so return traffic for an allowed outbound session is permitted without a matching inbound rule.",
-        "Rules are evaluated top down and the first match wins. The order of the list is the policy; a permissive rule above a restrictive one makes the restrictive one dead.",
-        "The last rule should be an explicit deny with logging. Relying on an implicit deny means denied traffic is invisible.",
-        "Drop discards silently and the client times out. Reject sends an ICMP unreachable or a TCP RST and the client fails fast. Reject inside a trusted network, drop at the perimeter.",
-        "A next generation firewall additionally identifies the application and the user rather than only the port, which matters when everything is tunnelled over 443.",
-        "Zones group interfaces with the same trust level. Policy is written between zones rather than between interfaces, which keeps the rule base readable as the network grows."
-      ],
-      "keyPoints": [
-        "Write rules from specific to general, and comment every one with a ticket reference and an owner. An uncommented rule is one nobody will ever dare delete.",
-        "Test with the actual protocol. A successful ping proves ICMP is allowed and nothing else.",
-        "Review rules that have not matched in months. Unused permits are accumulated risk."
-      ]
-    },
-    {
-      "id": "vpn",
-      "title": "VPN technologies",
-      "category": "security",
-      "summary": "Site to site and remote access tunnels, and how they differ in practice.",
-      "content": [
-        "IPsec provides authentication, integrity and confidentiality at layer 3. Phase 1 (IKE) authenticates the peers and builds a management channel; phase 2 negotiates the tunnel for the interesting traffic. Mismatched proposals or mismatched interesting traffic definitions are the usual failures.",
-        "SSL and TLS VPNs tunnel over 443, which passes through nearly any network. Convenient for remote users, and the reason they are the standard for client access.",
-        "WireGuard is a modern, small kernel level tunnel with a fixed cryptographic suite and no negotiation. It connects in milliseconds and is very hard to misconfigure, at the cost of less policy flexibility.",
-        "Split tunnelling sends only corporate traffic through the tunnel. It saves bandwidth and breaks the assumption that all user traffic is inspected. Decide deliberately, per organisation."
-      ],
-      "keyPoints": [
-        "Site to site tunnels drop when the interesting traffic definitions do not mirror each other exactly.",
-        "MTU matters: tunnel overhead plus a 1500 byte packet exceeds the path MTU and large transfers hang while ping works. Clamp MSS on the tunnel interface.",
-        "A VPN authenticates the tunnel, not the device posture. Add device compliance separately."
-      ]
-    },
-    {
-      "id": "wifi",
-      "title": "Wi-Fi",
-      "category": "wireless",
-      "summary": "Standards, channels and the mistakes that cause most wireless complaints.",
-      "content": [
-        "802.11n is Wi-Fi 4, ac is Wi-Fi 5, ax is Wi-Fi 6 and 6E with the 6 GHz band, be is Wi-Fi 7.",
-        "2.4 GHz travels further and penetrates walls but has only three non overlapping channels: 1, 6 and 11. 5 GHz has many more channels and much less range. 6 GHz has more still and effectively no legacy interference.",
-        "Channel width trades throughput against interference. 20 MHz on 2.4 GHz always. On 5 GHz, 40 or 80 MHz in a dense deployment, not 160.",
-        "Coverage is not the same as capacity. A survey that only checks signal strength misses the fact that thirty clients on one access point share its airtime.",
-        "WPA2-Personal uses a shared passphrase. WPA2-Enterprise authenticates each user against RADIUS with 802.1X, which is what an organisation should run. WPA3 adds SAE, which removes the offline dictionary attack on the handshake."
-      ],
-      "keyPoints": [
-        "Turning transmit power to maximum makes roaming worse, not better: clients hear the far access point and refuse to move.",
-        "The client decides when to roam. Access point features only make the decision easier or harder.",
-        "Disable the lowest data rates so distant, slow clients stop consuming airtime from everyone else."
-      ]
-    },
-    {
-      "id": "link-aggregation",
-      "title": "Link aggregation and redundancy",
-      "category": "layer2",
-      "summary": "Bundling links for bandwidth and resilience, and what it does not give you.",
-      "content": [
-        "LACP (802.3ad) negotiates a bundle of physical links into one logical interface. Static bundles work too but do not detect a link that is up while not forwarding.",
-        "Traffic is distributed per flow using a hash of addresses and ports, not per packet, so ordering is preserved. One conversation therefore never exceeds the speed of one member link.",
-        "First hop redundancy protocols, VRRP as the standard and HSRP on Cisco, present one virtual gateway address backed by two routers so a gateway failure is invisible to hosts."
-      ],
-      "keyPoints": [
-        "Two 1 Gb links do not make a 2 Gb file transfer. They make two transfers able to use 1 Gb each.",
-        "Both ends must agree on the aggregation mode. A mismatch produces a loop or a down bundle.",
-        "Multi chassis aggregation (MLAG, VPC, stacking) is what removes the switch itself as a single point of failure."
+      "troubleshooting": [
+        "A host with only a link local fe80 address never received a router advertisement.",
+        "Check the M and O flags on the advertisement before looking at DHCPv6: the host may not be asking at all.",
+        "Happy eyeballs hides a broken IPv6 path by falling back to IPv4 after a short delay, so users report slowness rather than failure. Test IPv6 explicitly."
       ]
     },
     {
@@ -477,6 +696,105 @@
         "Half of all network incidents are DNS, DHCP or a certificate. Check those three before capturing packets.",
         "Reproduce from a second machine on the same VLAN early: it splits the problem space in half in one step.",
         "A packet capture answers questions you can already state. Take one when you know what you are looking for."
+      ]
+    },
+    {
+      "id": "documentation",
+      "title": "Documenting a network so it survives you",
+      "category": "method",
+      "summary": "The minimum record set that makes an incident short, and the naming conventions that make it readable.",
+      "content": [
+        "Documentation is written for the person who is called at three in the morning and has never seen this site. That person needs to know what a device is, where it is, what it connects to and what it is for, in that order.",
+        "The test of a network diagram is whether someone can trace a path through it without asking a question. A diagram that shows every device but no interface names, VLANs or addresses does not pass.",
+        "Address management is where the effort pays back most. An IPAM record, even a spreadsheet, prevents the two failure modes that cost the most time: an address assigned twice, and an address nobody dares reclaim because nobody knows what it was."
+      ],
+      "tables": [
+        {
+          "title": "The minimum record set",
+          "columns": [
+            "Record",
+            "Holds",
+            "Why"
+          ],
+          "rows": [
+            [
+              "Device inventory",
+              "Name, model, serial, location, firmware, owner",
+              "Warranty, recall and upgrade planning all need it"
+            ],
+            [
+              "Address plan",
+              "Every prefix, its VLAN, its purpose, its gateway",
+              "Prevents overlap and reclaims dead space"
+            ],
+            [
+              "VLAN register",
+              "Id, name, purpose, where it is allowed",
+              "A VLAN nobody can explain never gets removed"
+            ],
+            [
+              "Cabling record",
+              "Patch panel port to switch port, both ends",
+              "Turns a physical trace into a lookup"
+            ],
+            [
+              "Logical diagram",
+              "Routing, VLANs, links with speeds",
+              "How traffic actually flows"
+            ],
+            [
+              "Physical diagram",
+              "Racks, rooms, cable runs",
+              "Where to walk to"
+            ],
+            [
+              "Change log",
+              "What, when, who, why, how to undo",
+              "Most incidents follow a change"
+            ],
+            [
+              "Escalation",
+              "Vendor contracts, contract numbers, support paths",
+              "Finding this during an outage wastes an hour"
+            ]
+          ]
+        },
+        {
+          "title": "A naming convention that reads well",
+          "columns": [
+            "Pattern",
+            "Example",
+            "Reads as"
+          ],
+          "rows": [
+            [
+              "site-role-number",
+              "par-sw-01",
+              "Paris, switch, first"
+            ],
+            [
+              "site-role-floor-number",
+              "lyo-ap-02-07",
+              "Lyon, access point, second floor, seventh"
+            ],
+            [
+              "role in the interface description",
+              "to_par-rtr-01_Gi0/1",
+              "What is on the other end"
+            ],
+            [
+              "VLAN by purpose",
+              "v30_voice",
+              "Number and function together"
+            ]
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Describe every interface on every device. It costs seconds when configuring and saves an hour when tracing.",
+        "Keep the documentation where it is reachable when the network is down. A wiki hosted on the network you are fixing is not documentation.",
+        "Record why, not only what. The reason for a static route outlives everyone who remembers it.",
+        "Review after every incident. The thing you could not find at three in the morning is the thing to write down first."
       ]
     },
     {
@@ -773,6 +1091,574 @@
             ]
           ]
         }
+      ]
+    },
+    {
+      "id": "cabling-optics",
+      "title": "Cabling and optics",
+      "category": "physical",
+      "summary": "Copper categories, fibre types and transceivers, and the mistakes that produce a link that comes up and then errors.",
+      "content": [
+        "Most problems blamed on the network are physical. A link that negotiates at the wrong speed, a fibre pair with a dirty connector, or a patch lead crushed under a desk produce symptoms that look like anything but cable.",
+        "Copper is limited to 100 metres for the channel, and that includes the patch leads at both ends, not just the horizontal run. Exceeding it does not fail cleanly: it produces a link that trains and then errors under load.",
+        "Fibre comes in two families that are not interchangeable. Multimode has a wide core, uses cheaper optics and is limited in distance. Single mode has a narrow core, costs more per transceiver and reaches much further. Putting a multimode patch lead on a single mode link produces a marginal link that works at short range and fails as the run grows."
+      ],
+      "tables": [
+        {
+          "title": "Copper categories",
+          "columns": [
+            "Category",
+            "Bandwidth",
+            "Carries",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "Cat 5e",
+              "100 MHz",
+              "1 Gb to 100 m, 2.5 Gb often",
+              "The installed base in most buildings"
+            ],
+            [
+              "Cat 6",
+              "250 MHz",
+              "1 Gb to 100 m, 10 Gb to 55 m",
+              "The sensible minimum for new work"
+            ],
+            [
+              "Cat 6a",
+              "500 MHz",
+              "10 Gb to 100 m",
+              "Required for dense Wi-Fi 6 and 7 uplinks"
+            ],
+            [
+              "Cat 7 / 7a",
+              "600 to 1000 MHz",
+              "10 Gb",
+              "Non standard connectors. Rarely worth it"
+            ],
+            [
+              "Cat 8",
+              "2000 MHz",
+              "25 and 40 Gb to 30 m",
+              "Data centre top of rack only"
+            ]
+          ]
+        },
+        {
+          "title": "Fibre types",
+          "columns": [
+            "Type",
+            "Core",
+            "Colour",
+            "Reach at 10 Gb"
+          ],
+          "rows": [
+            [
+              "OM1",
+              "62.5 micron",
+              "Orange",
+              "33 m"
+            ],
+            [
+              "OM2",
+              "50 micron",
+              "Orange",
+              "82 m"
+            ],
+            [
+              "OM3",
+              "50 micron",
+              "Aqua",
+              "300 m"
+            ],
+            [
+              "OM4",
+              "50 micron",
+              "Aqua or violet",
+              "400 m"
+            ],
+            [
+              "OM5",
+              "50 micron",
+              "Lime",
+              "400 m, more with wavelength division"
+            ],
+            [
+              "OS1 / OS2",
+              "9 micron",
+              "Yellow",
+              "10 km and beyond"
+            ]
+          ]
+        },
+        {
+          "title": "Transceiver form factors",
+          "columns": [
+            "Form factor",
+            "Speed",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "SFP",
+              "1 Gb",
+              "The workhorse for building uplinks"
+            ],
+            [
+              "SFP+",
+              "10 Gb",
+              "Same cage as SFP, not the reverse"
+            ],
+            [
+              "SFP28",
+              "25 Gb",
+              "Server attach"
+            ],
+            [
+              "QSFP+",
+              "40 Gb",
+              "Often four 10 Gb lanes, breakable into four"
+            ],
+            [
+              "QSFP28",
+              "100 Gb",
+              "Four 25 Gb lanes"
+            ],
+            [
+              "DAC",
+              "10 to 100 Gb",
+              "Direct attach copper. Cheap, in rack only, a few metres"
+            ]
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Clean every fibre connector before every insertion. Contamination is the single largest cause of optical faults, and a fingerprint on an end face is enough.",
+        "Read the transceiver optical power on both ends. A link that is up but reporting receive power near the sensitivity floor will fail when the room warms up.",
+        "Transmit and receive have to cross. A link that stays down on a new fibre run is very often a pair that was not rolled.",
+        "Third party optics usually work, but some vendors refuse them by default and the error message rarely says so."
+      ],
+      "troubleshooting": [
+        "Interface counters first: CRC errors point at the physical path, input drops at congestion, and late collisions at a duplex mismatch.",
+        "Read digital diagnostics on the transceiver for transmit and receive power, temperature and bias current.",
+        "Swap the patch lead before anything else. It is the cheapest test and it is right more often than any other single guess."
+      ]
+    },
+    {
+      "id": "poe",
+      "title": "Power over Ethernet",
+      "category": "physical",
+      "summary": "Powering devices over the data cable, the budgets that constrain it, and why a device boots and then dies.",
+      "content": [
+        "PoE delivers power on the same twisted pairs as the data. The switch, the power sourcing equipment, negotiates with the device before delivering anything, so a non-PoE device plugged into a PoE port is not damaged.",
+        "Two numbers matter and they are different: what one port can deliver, and what the whole switch can deliver across every port at once. A 48 port switch rated for 370 watts cannot run 48 access points at 30 watts each, and it will not tell you so until the budget runs out.",
+        "The power available at the device is lower than what the switch supplies, because the cable dissipates some of it. That is why the standards quote two figures, and why a long run to a marginal device fails while a short one works."
+      ],
+      "tables": [
+        {
+          "title": "Standards and what they carry",
+          "columns": [
+            "Standard",
+            "Name",
+            "At the switch",
+            "At the device",
+            "Typical use"
+          ],
+          "rows": [
+            [
+              "802.3af",
+              "PoE",
+              "15.4 W",
+              "12.95 W",
+              "IP phones, basic access points, small cameras"
+            ],
+            [
+              "802.3at",
+              "PoE+",
+              "30 W",
+              "25.5 W",
+              "802.11ac and ax access points, PTZ cameras"
+            ],
+            [
+              "802.3bt type 3",
+              "PoE++",
+              "60 W",
+              "51 W",
+              "Multi radio access points, video conference units, thin clients"
+            ],
+            [
+              "802.3bt type 4",
+              "PoE++",
+              "100 W",
+              "71 W",
+              "Displays, laptops through a docking switch"
+            ]
+          ]
+        },
+        {
+          "title": "Power classes",
+          "columns": [
+            "Class",
+            "Max at device",
+            "Usually"
+          ],
+          "rows": [
+            [
+              "0",
+              "12.95 W",
+              "Unclassified, the switch must assume the worst"
+            ],
+            [
+              "1",
+              "3.84 W",
+              "Very small sensors"
+            ],
+            [
+              "2",
+              "6.49 W",
+              "Basic phones"
+            ],
+            [
+              "3",
+              "12.95 W",
+              "Access points and cameras"
+            ],
+            [
+              "4",
+              "25.5 W",
+              "PoE+ devices"
+            ],
+            [
+              "5 to 8",
+              "40 to 71 W",
+              "802.3bt devices"
+            ]
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Check the switch power budget, not just the port rating. Running out of budget is silent until a device stops being powered, and the switch usually drops the lowest priority port rather than the one you just plugged in.",
+        "A device that boots, runs for a moment and reboots is almost always a power problem, not a network one. An access point negotiating 802.3af when it needs 802.3at does exactly that.",
+        "Cable matters: PoE++ over long runs of thin or low grade cable loses more to resistance and heats the bundle. Category 6 or better for anything above 30 watts.",
+        "Set port priority on the ports that must stay up, so the budget is shed from the ones that can wait."
+      ],
+      "troubleshooting": [
+        "Read the per port PoE state on the switch: it shows the class negotiated, the power drawn and the reason for a denial.",
+        "Compare power drawn against the device datasheet. Consistently at the limit means it is being throttled.",
+        "Swap to a known good short patch lead to eliminate the cable before replacing the device."
+      ]
+    },
+    {
+      "id": "dot1x",
+      "title": "802.1X and network access control",
+      "category": "security",
+      "summary": "Authenticating the device before it gets a usable network, and what happens to the ones that cannot.",
+      "content": [
+        "802.1X puts an authentication step between plugging a cable in and getting a VLAN. Three parties: the supplicant, which is the software on the endpoint; the authenticator, which is the switch or access point; and the authentication server, which is RADIUS. The switch relays EAP between the two and knows nothing about credentials.",
+        "Until authentication succeeds the port passes nothing except EAPOL. That is the whole point, and it is also the whole operational risk: anything that cannot speak 802.1X gets nothing unless you have planned for it.",
+        "MAB, MAC authentication bypass, is the plan for those. The switch sends the MAC address as a username and RADIUS decides. It is not authentication in any meaningful sense, because a MAC address is trivially spoofed, but it is how printers, badge readers and building management get on the network.",
+        "The failure modes are what you design for. A guest VLAN is applied when the endpoint never answers, a restricted VLAN when it answers and fails, and a critical VLAN when RADIUS itself is unreachable. Skipping the critical VLAN means a RADIUS outage takes the whole site off the network."
+      ],
+      "tables": [
+        {
+          "title": "EAP methods worth knowing",
+          "columns": [
+            "Method",
+            "Credential",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "EAP-TLS",
+              "Certificate on both sides",
+              "The strongest, and the only one with no password to phish. Needs a working PKI and enrolment."
+            ],
+            [
+              "PEAP-MSCHAPv2",
+              "Username and password in a TLS tunnel",
+              "Common and easy. The client must validate the server certificate, or the tunnel can be terminated by an attacker."
+            ],
+            [
+              "EAP-TTLS",
+              "Password inside TLS, flexible inner method",
+              "Similar to PEAP, more common outside Windows estates."
+            ],
+            [
+              "EAP-FAST",
+              "Protected access credential",
+              "Cisco origin. Largely displaced by PEAP and TLS."
+            ],
+            [
+              "MAB",
+              "MAC address",
+              "Not authentication. A fallback for devices with no supplicant."
+            ]
+          ]
+        },
+        {
+          "title": "Port states and what they mean",
+          "columns": [
+            "State",
+            "What happened",
+            "What to check"
+          ],
+          "rows": [
+            [
+              "Authorised",
+              "RADIUS accepted, VLAN applied",
+              "Confirm the VLAN is the one you intended"
+            ],
+            [
+              "Unauthorised",
+              "Rejected, or never answered",
+              "RADIUS logs first: accept, reject or no response are three different problems"
+            ],
+            [
+              "Guest VLAN",
+              "No EAPOL at all from the endpoint",
+              "The supplicant is off, or the service is not running"
+            ],
+            [
+              "Restricted VLAN",
+              "Answered and failed",
+              "Wrong credentials, expired certificate, or a policy mismatch"
+            ],
+            [
+              "Critical VLAN",
+              "RADIUS unreachable",
+              "The server is down or the path to it is broken. Check this before touching endpoints"
+            ]
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Deploy in monitor mode first. Every estate has more devices without a supplicant than anyone expects, and finding them by breaking them is expensive.",
+        "The client must be configured to validate the RADIUS server certificate. Without that check, PEAP protects nothing: an attacker stands up their own RADIUS and collects the challenge and response.",
+        "A phone with a PC behind it needs multi-domain authentication on the port, so the phone authenticates into the voice VLAN and the PC into the data VLAN independently.",
+        "Plan the critical VLAN before go live. A RADIUS outage should degrade access, not remove it."
+      ],
+      "troubleshooting": [
+        "Read the RADIUS log first. Accept, reject and no-response point at three different places, and only one of them is the endpoint.",
+        "On the switch, look at the authentication session for the port: it names the method, the identity offered and the applied policy.",
+        "No EAPOL at all means the supplicant never started. On Windows check that the Wired AutoConfig service is running, because it is not started by default.",
+        "An intermittent failure right after boot is usually a certificate that is only available after user logon being used for machine authentication."
+      ]
+    },
+    {
+      "id": "pki",
+      "title": "Certificates and internal PKI",
+      "category": "security",
+      "summary": "What a certificate proves, what a chain is, and why internal certificates cause more outages than external ones.",
+      "content": [
+        "A certificate binds an identity to a public key, signed by an authority the relying party already trusts. It proves that the holder of the private key is who the authority says, and nothing else. It does not prove the service is well run, and it does not prove the connection is safe.",
+        "The chain is what makes it work. A leaf certificate is signed by an intermediate, which is signed by a root the client already has. A server has to present the leaf and every intermediate; only the root is expected to be in the client's store. Missing intermediates are the most common cause of a certificate that works in one browser and not another.",
+        "Internal certificates cause more outages than public ones for two reasons: nothing expires them noisily, and nobody monitors them. A public certificate has a vendor sending renewal reminders. An internal one has whoever issued it four years ago."
+      ],
+      "tables": [
+        {
+          "title": "What each part of a certificate is for",
+          "columns": [
+            "Field",
+            "Holds",
+            "Why it matters"
+          ],
+          "rows": [
+            [
+              "Subject",
+              "The identity, historically the CN",
+              "Ignored by browsers now in favour of SAN"
+            ],
+            [
+              "Subject alt name",
+              "Every name the certificate is valid for",
+              "A name missing from here fails validation, whatever the CN says"
+            ],
+            [
+              "Issuer",
+              "Who signed it",
+              "The next link in the chain"
+            ],
+            [
+              "Validity",
+              "Not before, not after",
+              "The clock on both ends must be right"
+            ],
+            [
+              "Key usage",
+              "What the key may be used for",
+              "A certificate can be valid and still refused for the wrong use"
+            ],
+            [
+              "EKU",
+              "Server auth, client auth, code signing",
+              "802.1X needs client auth; a web certificate usually lacks it"
+            ],
+            [
+              "CRL and OCSP",
+              "Where to check revocation",
+              "Unreachable revocation endpoints cause hard to diagnose delays"
+            ]
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Track expiry centrally. Every internal certificate should be in one list with a date, and the list should be checked before the renewal window rather than after the outage.",
+        "Use a name in the SAN that will still be right in three years. Certificates outlive the reasons they were named.",
+        "Automate issuance where you can. ACME works internally as well as publicly, and a certificate that renews itself never expires unnoticed.",
+        "Protect the private key of an internal certificate authority as carefully as a domain administrator account. It can impersonate anything the estate trusts."
+      ],
+      "troubleshooting": [
+        "Test from a machine that does not trust your internal root. Everything looks valid from a domain joined workstation.",
+        "A chain error on one client and not another is almost always a missing intermediate, cached by the client that works.",
+        "Check the clock on both ends before anything else. Skew makes a valid certificate look expired or not yet valid."
+      ]
+    },
+    {
+      "id": "dns-security",
+      "title": "DNS as a security control",
+      "category": "security",
+      "summary": "The most useful chokepoint on the network, the encryption that removes it, and what DNSSEC does and does not do.",
+      "content": [
+        "Nearly everything resolves a name before it connects. That makes the resolver the cheapest place to see and to block: malware calling home, phishing domains, and data leaving in DNS queries all pass through it.",
+        "Encrypted DNS moves that chokepoint. DNS over HTTPS from a browser bypasses the resolver you configured, because it goes to a resolver of the browser's choosing over port 443, indistinguishable from web traffic. It is good for privacy on a hostile network and awkward on one you are responsible for. Decide the policy deliberately, and configure the browsers rather than trying to block it.",
+        "DNSSEC signs answers so a resolver can verify they were not tampered with. It provides integrity, not confidentiality: the query and the answer are still in clear text. It does not stop a malicious domain from resolving, only a legitimate one from being forged."
+      ],
+      "tables": [
+        {
+          "title": "DNS transports",
+          "columns": [
+            "Name",
+            "Port",
+            "Visible to the network",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "Do53",
+              "53",
+              "Everything",
+              "Classic DNS, clear text"
+            ],
+            [
+              "DoT",
+              "853",
+              "That it is DNS",
+              "Blockable by port, which makes it manageable"
+            ],
+            [
+              "DoH",
+              "443",
+              "Nothing",
+              "Indistinguishable from HTTPS. Configure it, do not fight it"
+            ],
+            [
+              "DoQ",
+              "853/UDP",
+              "That it is DNS",
+              "Newer, over QUIC"
+            ]
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Log resolver queries and keep them. DNS logs are small, cheap and answer more investigation questions than almost any other source.",
+        "Block outbound port 53 except from your own resolvers. An endpoint talking directly to an external resolver has bypassed every control you built.",
+        "Watch for long, high entropy subdomains and unusually high query volume from one host: that is what DNS tunnelling looks like.",
+        "Newly registered domains are worth treating with suspicion as a category, independent of any reputation feed."
+      ],
+      "troubleshooting": [
+        "Query the authoritative server directly to separate a resolver cache problem from a zone data problem.",
+        "Remember that negative answers are cached too, so a record created a moment ago may still be absent locally.",
+        "On Windows, a domain member pointing at a public resolver breaks domain logon. Check the adapter before anything else."
+      ]
+    },
+    {
+      "id": "firewalls",
+      "title": "Firewalls and filtering",
+      "category": "security",
+      "summary": "Stateful inspection, rule ordering, and the difference between drop and reject.",
+      "content": [
+        "A stateless filter evaluates each packet alone. A stateful firewall tracks connections, so return traffic for an allowed outbound session is permitted without a matching inbound rule.",
+        "Rules are evaluated top down and the first match wins. The order of the list is the policy; a permissive rule above a restrictive one makes the restrictive one dead.",
+        "The last rule should be an explicit deny with logging. Relying on an implicit deny means denied traffic is invisible.",
+        "Drop discards silently and the client times out. Reject sends an ICMP unreachable or a TCP RST and the client fails fast. Reject inside a trusted network, drop at the perimeter.",
+        "A next generation firewall additionally identifies the application and the user rather than only the port, which matters when everything is tunnelled over 443.",
+        "Zones group interfaces with the same trust level. Policy is written between zones rather than between interfaces, which keeps the rule base readable as the network grows."
+      ],
+      "keyPoints": [
+        "Write rules from specific to general, and comment every one with a ticket reference and an owner. An uncommented rule is one nobody will ever dare delete.",
+        "Test with the actual protocol. A successful ping proves ICMP is allowed and nothing else.",
+        "Review rules that have not matched in months. Unused permits are accumulated risk."
+      ]
+    },
+    {
+      "id": "vpn",
+      "title": "VPN technologies",
+      "category": "security",
+      "summary": "Site to site and remote access tunnels, and how they differ in practice.",
+      "content": [
+        "IPsec provides authentication, integrity and confidentiality at layer 3. Phase 1 (IKE) authenticates the peers and builds a management channel; phase 2 negotiates the tunnel for the interesting traffic. Mismatched proposals or mismatched interesting traffic definitions are the usual failures.",
+        "SSL and TLS VPNs tunnel over 443, which passes through nearly any network. Convenient for remote users, and the reason they are the standard for client access.",
+        "WireGuard is a modern, small kernel level tunnel with a fixed cryptographic suite and no negotiation. It connects in milliseconds and is very hard to misconfigure, at the cost of less policy flexibility.",
+        "Split tunnelling sends only corporate traffic through the tunnel. It saves bandwidth and breaks the assumption that all user traffic is inspected. Decide deliberately, per organisation."
+      ],
+      "keyPoints": [
+        "Site to site tunnels drop when the interesting traffic definitions do not mirror each other exactly.",
+        "MTU matters: tunnel overhead plus a 1500 byte packet exceeds the path MTU and large transfers hang while ping works. Clamp MSS on the tunnel interface.",
+        "A VPN authenticates the tunnel, not the device posture. Add device compliance separately."
+      ]
+    },
+    {
+      "id": "dhcp",
+      "title": "DHCP",
+      "category": "services",
+      "summary": "Automatic address assignment, its four messages, and relay across subnets.",
+      "content": [
+        "DHCP assigns an address, a mask, a gateway, DNS servers and any number of extra options. The exchange is four messages: Discover from the client as a broadcast, Offer from the server, Request from the client, Acknowledge from the server. Remember it as DORA.",
+        "Because Discover is a broadcast it does not cross a router. A DHCP relay, called an IP helper on Cisco, forwards it as unicast to the server and puts the receiving interface address in the giaddr field so the server picks the right scope.",
+        "A lease has a duration. At 50 percent the client tries to renew with the same server, at 87.5 percent it broadcasts a rebind to any server.",
+        "Reservations bind an address to a MAC address inside the scope. They are preferable to static configuration on the host because the settings stay centrally managed."
+      ],
+      "keyPoints": [
+        "A 169.254 address means no DHCP answer reached the client. Check the relay before the server.",
+        "Two DHCP servers on the same broadcast domain, often a forgotten small router, produce intermittent wrong addresses. This is what DHCP snooping prevents.",
+        "Option 82 inserted by the relay carries the port and switch identity, which is how an address can be traced back to a wall socket."
+      ]
+    },
+    {
+      "id": "dns",
+      "title": "DNS",
+      "category": "services",
+      "summary": "Name resolution, the record types that matter, and how a lookup actually proceeds.",
+      "content": [
+        "A resolver asks its configured server; if that server is recursive it walks the hierarchy from the root to the top level domain to the authoritative server, then caches the answer for the TTL.",
+        "A: name to IPv4 address. AAAA: name to IPv6 address. CNAME: alias to another name, and it cannot coexist with other records at the same name. MX: mail exchanger with a priority. NS: delegation to authoritative servers. TXT: free text, used for SPF, DKIM and domain verification. SRV: service location with port, used by Active Directory and SIP. PTR: address to name, in the in-addr.arpa zone.",
+        "TTL is the cache lifetime in seconds. Lower it before a planned migration, days ahead, not on the day.",
+        "Active Directory depends on DNS completely. Domain members must point at the domain controllers, and the SRV records under _msdcs are how clients find them."
+      ],
+      "keyPoints": [
+        "Public resolvers on a domain joined machine break domain logon. This is one of the most common misconfigurations in small networks.",
+        "Negative answers are cached too, so a record that was wrong when first queried stays wrong locally until the negative TTL expires.",
+        "Use nslookup or Resolve-DnsName against a specific server to distinguish a client cache problem from a server data problem."
+      ]
+    },
+    {
+      "id": "wifi",
+      "title": "Wi-Fi",
+      "category": "wireless",
+      "summary": "Standards, channels and the mistakes that cause most wireless complaints.",
+      "content": [
+        "802.11n is Wi-Fi 4, ac is Wi-Fi 5, ax is Wi-Fi 6 and 6E with the 6 GHz band, be is Wi-Fi 7.",
+        "2.4 GHz travels further and penetrates walls but has only three non overlapping channels: 1, 6 and 11. 5 GHz has many more channels and much less range. 6 GHz has more still and effectively no legacy interference.",
+        "Channel width trades throughput against interference. 20 MHz on 2.4 GHz always. On 5 GHz, 40 or 80 MHz in a dense deployment, not 160.",
+        "Coverage is not the same as capacity. A survey that only checks signal strength misses the fact that thirty clients on one access point share its airtime.",
+        "WPA2-Personal uses a shared passphrase. WPA2-Enterprise authenticates each user against RADIUS with 802.1X, which is what an organisation should run. WPA3 adds SAE, which removes the offline dictionary attack on the handshake."
+      ],
+      "keyPoints": [
+        "Turning transmit power to maximum makes roaming worse, not better: clients hear the far access point and refuse to move.",
+        "The client decides when to roam. Access point features only make the decision easier or harder.",
+        "Disable the lowest data rates so distant, slow clients stop consuming airtime from everyone else."
       ]
     }
   ]
