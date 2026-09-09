@@ -107,6 +107,13 @@ function Invoke-TkSubnetCalculation {
         return
     }
 
+    # An IPv6 address is recognised by its colons, before any parsing, so the
+    # two calculators never have to guess at each other's input.
+    if ($expression -match ':') {
+        Show-TkIPv6SubnetResult -Expression $expression
+        return
+    }
+
     try {
         $info = Get-TkSubnetInfo -Address $expression
     }
@@ -149,6 +156,60 @@ function Invoke-TkSubnetCalculation {
 
     Set-TkOutput -ControlName 'SubnetOutput' -Text ($lines -join [Environment]::NewLine)
     Set-TkStatus -Text ('{0}: {1:N0} usable host(s).' -f $info.Cidr, $info.UsableHosts)
+}
+
+<#
+.SYNOPSIS
+    Renders an IPv6 prefix in the calculator output.
+
+.DESCRIPTION
+    IPv6 answers different questions from IPv4. There is no broadcast address
+    and no "minus two", so the useful figures are the prefix, the address
+    count, the scope, and how many /64 links the prefix contains, which is
+    what an addressing plan is actually built from.
+#>
+function Show-TkIPv6SubnetResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Expression
+    )
+
+    try {
+        $info = Get-TkIPv6SubnetInfo -Address $Expression
+    }
+    catch {
+        Set-TkOutput -ControlName 'SubnetOutput' -Text ('Error: {0}' -f $_.Exception.Message)
+        return
+    }
+
+    $lines = @(
+        'Input                 {0}' -f $info.Address
+        'Expanded              {0}' -f $info.AddressFull
+        ''
+        'Prefix                {0}' -f $info.Cidr
+        'Network               {0}' -f $info.Network
+        'Network expanded      {0}' -f $info.NetworkFull
+        ''
+        'First address         {0}' -f $info.FirstAddress
+        'Last address          {0}' -f $info.LastAddress
+        'Addresses             {0}' -f $info.AddressCount
+        '/64 links contained   {0}' -f $info.SubnetCount64
+        ''
+        'Scope                 {0}' -f $info.Scope
+    )
+
+    if ($info.InterfaceId) {
+        $lines += 'Interface identifier  {0}' -f $info.InterfaceId
+    }
+
+    $lines += ''
+    $lines += 'IPv6 has no broadcast address and reserves nothing inside a prefix, so'
+    $lines += 'every address counted here is usable. A /64 is the standard link size:'
+    $lines += 'SLAAC will not work on anything longer.'
+
+    Set-TkOutput -ControlName 'SubnetOutput' -Text ($lines -join [Environment]::NewLine)
+    Set-TkStatus -Text ('{0}: {1} addresses.' -f $info.Cidr, $info.AddressCount)
 }
 
 <#
@@ -432,7 +493,20 @@ function Initialize-TkKnowledgeBase {
     if ($search) {
 
         $search.Add_TextChanged({
+
+            $list = Get-TkControl -Name 'KnowledgeList'
+            $open = [string] $list.SelectedItem
+
             Update-TkKnowledgeList -Filter (Get-TkControl -Name 'KnowledgeSearch').Text
+
+            # Re-render whatever is open so the highlighting follows the term
+            # that was just typed, and re-select it if the filter kept it.
+            if ($open -and $list.Items.Contains($open)) {
+                $list.SelectedItem = $open
+            }
+            elseif ($open) {
+                Show-TkKnowledgeTopic -Title $open
+            }
         })
     }
 }
@@ -481,7 +555,19 @@ function Update-TkKnowledgeList {
 
 <#
 .SYNOPSIS
-    Renders one knowledge base topic.
+    Renders one knowledge base topic as a formatted document.
+
+.DESCRIPTION
+    Builds a FlowDocument rather than a block of text: headings, prose,
+    bullets and, where the catalog declares them, real tables. The port list
+    is the reason tables exist here, because finding which service owns 3268
+    in a paragraph means reading the whole paragraph.
+
+    The current search term is highlighted throughout, so a hit is visible in
+    the body and not only in the topic list.
+
+.PARAMETER Title
+    Topic title, as shown in the list.
 #>
 function Show-TkKnowledgeTopic {
     [CmdletBinding()]
@@ -497,41 +583,49 @@ function Show-TkKnowledgeTopic {
         return
     }
 
-    $lines = @()
-    $lines += $topic.title
-    $lines += ('=' * $topic.title.Length)
-    $lines += ''
-    $lines += $topic.summary
-    $lines += ''
+    $search    = Get-TkControl -Name 'KnowledgeSearch'
+    $highlight = ''
 
-    foreach ($paragraph in $topic.content) {
-        $lines += $paragraph
-        $lines += ''
+    if ($search -and -not [string]::IsNullOrWhiteSpace($search.Text)) {
+        $highlight = $search.Text.Trim()
     }
 
-    if ($topic.keyPoints) {
+    $document = New-TkFlowDocument
 
-        $lines += 'Key points'
-        $lines += '----------'
+    Add-TkHeading   -Document $document -Text $topic.title -Level 1 -Highlight $highlight
+    Add-TkParagraph -Document $document -Text $topic.summary -Highlight $highlight -Muted
 
-        foreach ($point in $topic.keyPoints) {
-            $lines += ('- ' + $point)
+    foreach ($paragraph in (ConvertTo-TkArray $topic.content)) {
+        Add-TkParagraph -Document $document -Text $paragraph -Highlight $highlight
+    }
+
+    foreach ($table in (ConvertTo-TkArray $topic.tables)) {
+
+        if ($table.title) {
+            Add-TkHeading -Document $document -Text $table.title -Level 2 -Highlight $highlight
         }
 
-        $lines += ''
+        Add-TkTable -Document $document `
+                    -Column @($table.columns) `
+                    -Row @($table.rows) `
+                    -Highlight $highlight
     }
 
-    if ($topic.troubleshooting) {
+    $keyPoints = ConvertTo-TkArray $topic.keyPoints
 
-        $lines += 'Troubleshooting'
-        $lines += '---------------'
-
-        foreach ($step in $topic.troubleshooting) {
-            $lines += ('- ' + $step)
-        }
+    if ($keyPoints.Count -gt 0) {
+        Add-TkHeading    -Document $document -Text 'Key points' -Level 2
+        Add-TkBulletList -Document $document -Item @($keyPoints) -Highlight $highlight
     }
 
-    Set-TkOutput -ControlName 'KnowledgeContent' -Text ($lines -join [Environment]::NewLine)
+    $troubleshooting = ConvertTo-TkArray $topic.troubleshooting
+
+    if ($troubleshooting.Count -gt 0) {
+        Add-TkHeading    -Document $document -Text 'Troubleshooting, in order' -Level 2
+        Add-TkBulletList -Document $document -Item @($troubleshooting) -Highlight $highlight
+    }
+
+    Set-TkDocument -ControlName 'KnowledgeContent' -Document $document
 }
 
 # ---------------------------------------------------------------------------
@@ -607,17 +701,22 @@ function Update-TkVendorSections {
         [void] $list.Items.Add($section.name)
     }
 
-    Set-TkOutput -ControlName 'VendorContent' -Text (
-        ($vendor.name + [Environment]::NewLine +
-         ('=' * $vendor.name.Length) + [Environment]::NewLine + [Environment]::NewLine +
-         $vendor.description + [Environment]::NewLine + [Environment]::NewLine +
-         'Pick a section on the left, or type in the search box to look across every vendor.')
+    $document = New-TkFlowDocument
+
+    Add-TkHeading   -Document $document -Text $vendor.name -Level 1
+    Add-TkParagraph -Document $document -Text $vendor.description
+    Add-TkParagraph -Document $document -Muted -Text (
+        'Pick a section on the left, or type in the search box to look across every vendor at once. ' +
+        'Cross vendor search is the point of this tab: "how do I see the MAC table here" has a ' +
+        'different answer on each platform and they are worth seeing side by side.'
     )
+
+    Set-TkDocument -ControlName 'VendorContent' -Document $document
 }
 
 <#
 .SYNOPSIS
-    Renders the selected vendor section.
+    Renders the selected vendor section as a formatted document.
 #>
 function Show-TkVendorSection {
     [CmdletBinding()]
@@ -638,19 +737,18 @@ function Show-TkVendorSection {
         return
     }
 
-    $lines = @()
-    $lines += ('{0} - {1}' -f $vendor.name, $section.name)
-    $lines += ('-' * 70)
-    $lines += ''
+    $document = New-TkFlowDocument
+
+    Add-TkHeading   -Document $document -Text $vendor.name -Level 1
+    Add-TkParagraph -Document $document -Text $section.name -Muted
 
     foreach ($entry in $section.commands) {
 
-        $lines += $entry.command
-        $lines += ('    # ' + $entry.description)
-        $lines += ''
+        Add-TkCodeBlock -Document $document -Text $entry.command
+        Add-TkParagraph -Document $document -Text $entry.description -Muted
     }
 
-    Set-TkOutput -ControlName 'VendorContent' -Text ($lines -join [Environment]::NewLine)
+    Set-TkDocument -ControlName 'VendorContent' -Document $document
 }
 
 <#
@@ -658,9 +756,9 @@ function Show-TkVendorSection {
     Searches commands across every vendor.
 
 .DESCRIPTION
-    Cross vendor search is the point of this tab: "how do I see the MAC table
-    here" has a different answer on each platform and they are worth seeing
-    side by side.
+    Cross vendor search is the point of this tab: the same question has a
+    different answer on each platform and they are worth seeing side by side.
+    Matches are highlighted inside the command and its description.
 #>
 function Show-TkVendorSearchResult {
     [CmdletBinding()]
@@ -680,10 +778,8 @@ function Show-TkVendorSearchResult {
         return
     }
 
-    $lines = @()
-    $lines += ('Results for "{0}" across every vendor' -f $term)
-    $lines += ('-' * 70)
-    $lines += ''
+    $document = New-TkFlowDocument
+    Add-TkHeading -Document $document -Text ('Results for "{0}"' -f $term) -Level 1
 
     $matchCount = 0
 
@@ -701,17 +797,21 @@ function Show-TkVendorSearchResult {
 
                 $matchCount++
 
-                $lines += ('[{0} / {1}]' -f $vendor.name, $section.name)
-                $lines += $entry.command
-                $lines += ('    # ' + $entry.description)
-                $lines += ''
+                Add-TkHeading   -Document $document -Text ('{0} - {1}' -f $vendor.name, $section.name) -Level 3
+                Add-TkCodeBlock -Document $document -Text $entry.command -Highlight $term
+                Add-TkParagraph -Document $document -Text $entry.description -Highlight $term -Muted
             }
         }
     }
 
     if ($matchCount -eq 0) {
-        $lines += 'No command matched.'
+        Add-TkParagraph -Document $document -Text 'No command matched.' -Muted
+    }
+    else {
+        Add-TkParagraph -Document $document -Muted -Text (
+            '{0} command(s) matched across {1} platforms.' -f $matchCount, @($catalog.vendors).Count
+        )
     }
 
-    Set-TkOutput -ControlName 'VendorContent' -Text ($lines -join [Environment]::NewLine)
+    Set-TkDocument -ControlName 'VendorContent' -Document $document
 }

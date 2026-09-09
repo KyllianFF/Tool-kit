@@ -18,6 +18,11 @@
 # before the value is used to build a command line.
 $script:TkPackageIdPattern = '^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}(\.[A-Za-z0-9._+-]{1,128})*$'
 
+# A Microsoft Store product identifier: twelve characters starting with 9 or X.
+# These exist only in the msstore source, so pinning every install to the
+# winget source made them fail with "no applicable installer found".
+$script:TkStoreIdPattern = '^[9X][A-Z0-9]{11}$'
+
 <#
 .SYNOPSIS
     Tells whether winget is available and usable.
@@ -133,11 +138,17 @@ function Install-TkWingetPackage {
         return $false
     }
 
+    # The source is chosen from the shape of the identifier rather than being
+    # fixed. Pinning a source is what keeps an install from being resolved
+    # somewhere unexpected, but a Store product id only exists in msstore and
+    # pinning winget for it guarantees failure.
+    $source = if ($PackageId -cmatch $script:TkStoreIdPattern) { 'msstore' } else { 'winget' }
+
     $arguments = @(
         'install',
         '--id', $PackageId,
         '--exact',
-        '--source', 'winget',
+        '--source', $source,
         '--accept-package-agreements',
         '--accept-source-agreements',
         '--disable-interactivity',
@@ -154,14 +165,25 @@ function Install-TkWingetPackage {
     # 0                 success
     # -1978335189       no applicable update found (already current)
     # -1978335135       package already installed
-    $acceptable = @(0, -1978335189, -1978335135)
+    # -1978334956       already installed, nothing to do
+    $acceptable = @(0, -1978335189, -1978335135, -1978334956)
     $success    = $acceptable -contains $result.ExitCode
 
     if (-not $success) {
 
+        # winget reports failures as a large negative number and nothing else
+        # useful on stderr, so the common ones are translated here.
+        $reason = switch ($result.ExitCode) {
+            -1978335212 { 'no applicable installer for this machine, or the package is not in the {0} source' -f $source ; break }
+            -1978335216 { 'no package matched that identifier in the {0} source' -f $source ; break }
+            -1978335215 { 'more than one package matched' ; break }
+            -1978335231 { 'the installer failed' ; break }
+            -1978334967 { 'the machine must be restarted to finish' ; break }
+            default     { Get-TkFirstLine -Text ($result.StandardError + $result.StandardOutput) }
+        }
+
         Write-TkLog -Level Error -Category 'Software' -Message (
-            'winget install {0} failed with exit code {1}. {2}' -f
-                $PackageId, $result.ExitCode, (Get-TkFirstLine -Text $result.StandardError)
+            'winget install {0} failed ({1}): {2}' -f $PackageId, $result.ExitCode, $reason
         )
     }
 
@@ -265,7 +287,7 @@ function Install-TkPackageBatch {
         'Batch finished: {0} succeeded, {1} failed.' -f ($results.Count - $failed.Count), $failed.Count
     )
 
-    return , $results
+    return $results
 }
 
 <#
@@ -291,7 +313,7 @@ function Get-TkUpgradablePackage {
     if ($result.ExitCode -ne 0 -and [string]::IsNullOrWhiteSpace($result.StandardOutput)) {
 
         Write-TkLog -Level Warning -Category 'Software' -Message 'winget upgrade returned no usable output.'
-        return , @()
+        return @()
     }
 
     return (ConvertFrom-TkWingetTable -Text $result.StandardOutput)
@@ -380,7 +402,7 @@ function ConvertFrom-TkWingetTable {
     )
 
     if ([string]::IsNullOrWhiteSpace($Text)) {
-        return , @()
+        return @()
     }
 
     $lines = $Text -split "`r?`n"
@@ -398,7 +420,7 @@ function ConvertFrom-TkWingetTable {
     }
 
     if ($headerIndex -lt 0) {
-        return , @()
+        return @()
     }
 
     $header = $lines[$headerIndex]
@@ -412,7 +434,7 @@ function ConvertFrom-TkWingetTable {
     }
 
     if ($columns.Count -lt 2) {
-        return , @()
+        return @()
     }
 
     $rows = @()
@@ -478,7 +500,7 @@ function ConvertFrom-TkWingetTable {
         }
     }
 
-    return , $rows
+    return $rows
 }
 
 <#

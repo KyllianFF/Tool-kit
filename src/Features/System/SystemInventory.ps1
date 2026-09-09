@@ -334,7 +334,7 @@ function Get-TkCimInstanceSafe {
         $result = Get-CimInstance @parameters
 
         if ($All) {
-            return , @($result)
+            return @($result)
         }
 
         return ($result | Select-Object -First 1)
@@ -345,7 +345,7 @@ function Get-TkCimInstanceSafe {
         )
 
         if ($All) {
-            return , @()
+            return @()
         }
 
         return $null

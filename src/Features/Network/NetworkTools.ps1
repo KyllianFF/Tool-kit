@@ -36,7 +36,15 @@ function Get-TkNetworkAdapterInfo {
 
         foreach ($adapter in $adapters) {
 
-            $configuration = Get-NetIPConfiguration -InterfaceIndex $adapter.ifIndex -ErrorAction SilentlyContinue
+            # Ignore, not SilentlyContinue. Get-NetIPConfiguration writes a
+            # record for every adapter with no connection profile or no IPv4
+            # address, and SilentlyContinue only hides the display: the record
+            # still reaches $Error and, in a worker, the runspace error stream,
+            # where the task pump reports it. On a machine with VPN, VMware and
+            # Bluetooth adapters that was dozens of alarming lines in the
+            # output panel for a call that had actually succeeded. Ignore is
+            # the only preference that records nothing at all.
+            $configuration = Get-NetIPConfiguration -InterfaceIndex $adapter.ifIndex -ErrorAction Ignore
 
             $ipv4 = $configuration.IPv4Address | Select-Object -First 1
             $dns  = @()
@@ -55,16 +63,14 @@ function Get-TkNetworkAdapterInfo {
             # the whole enumeration had failed.
             $dhcp = 'Unknown'
 
-            try {
-                $binding = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex `
-                                              -AddressFamily IPv4 -ErrorAction Stop |
-                           Select-Object -First 1
+            $binding = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex `
+                                          -AddressFamily IPv4 -ErrorAction Ignore |
+                       Select-Object -First 1
 
-                if ($binding) {
-                    $dhcp = $binding.Dhcp
-                }
+            if ($binding) {
+                $dhcp = $binding.Dhcp
             }
-            catch {
+            else {
                 $dhcp = 'No IPv4 binding'
             }
 
@@ -90,7 +96,7 @@ function Get-TkNetworkAdapterInfo {
         )
     }
 
-    return , $results
+    return $results
 }
 
 <#
@@ -228,7 +234,7 @@ function Test-TkPortList {
         '{0}: {1} open port(s) found.' -f $ComputerName, $openCount
     )
 
-    return , $results
+    return $results
 }
 
 <#
@@ -265,7 +271,7 @@ function Get-TkSubnetHost {
             'Refused: /{0} is too large to sweep. Use /22 or smaller.' -f $subnet.PrefixLength
         )
 
-        return , @()
+        return @()
     }
 
     Write-TkLog -Level Information -Category 'Network' -Message (
@@ -319,7 +325,7 @@ function Get-TkSubnetHost {
         'Sweep finished: {0} host(s) responded.' -f $results.Count
     )
 
-    return , $results
+    return $results
 }
 
 <#
@@ -370,7 +376,7 @@ function Resolve-TkDnsRecord {
 
         $records = Resolve-DnsName @parameters
 
-        return , @($records | ForEach-Object {
+        return @($records | ForEach-Object {
 
             [pscustomobject]@{
                 Name    = $_.Name
@@ -390,7 +396,7 @@ function Resolve-TkDnsRecord {
             'DNS lookup for {0} ({1}) failed: {2}' -f $Name, $Type, $_.Exception.Message
         )
 
-        return , @()
+        return @()
     }
 }
 
@@ -436,7 +442,7 @@ function Get-TkListeningPort {
         )
     }
 
-    return , @($results | Sort-Object -Property Port)
+    return @($results | Sort-Object -Property Port)
 }
 
 <#
@@ -559,7 +565,7 @@ function Test-TkConnectivity {
         Detail  = $httpsDetail
     }
 
-    return , $results
+    return $results
 }
 
 <#

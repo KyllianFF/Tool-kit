@@ -468,7 +468,7 @@ function Split-TkSubnet {
         )
     }
 
-    return , $results
+    return $results
 }
 
 <#

@@ -545,6 +545,253 @@ Describe 'Test-TkFileHash' {
     }
 }
 
+Describe 'IPv6 conversion' {
+
+    It 'round trips <Address>' -TestCases @(
+        @{ Address = '2001:db8::1' }
+        @{ Address = 'fe80::1' }
+        @{ Address = '::1' }
+        @{ Address = 'fd00:1234:5678::abcd' }
+    ) {
+        param($Address)
+
+        $bytes = ConvertTo-TkIPv6Bytes -Address $Address
+
+        $bytes.Count | Should -Be 16
+        (ConvertFrom-TkIPv6Bytes -Bytes $bytes) | Should -Be $Address
+    }
+
+    It 'refuses an IPv4 address rather than answering the wrong question' {
+        { ConvertTo-TkIPv6Bytes -Address '192.168.1.1' } | Should -Throw
+    }
+
+    It 'expands a compressed address' {
+        Expand-TkIPv6Address -Address '2001:db8::1' |
+            Should -Be '2001:0db8:0000:0000:0000:0000:0000:0001'
+    }
+}
+
+Describe 'Get-TkIPv6SubnetInfo' {
+
+    Context 'a /64 link' {
+
+        BeforeAll {
+            $script:Six = Get-TkIPv6SubnetInfo -Address '2001:db8:abcd:1234::5/64'
+        }
+
+        It 'finds the network'          { $script:Six.Network      | Should -Be '2001:db8:abcd:1234::' }
+        It 'finds the last address'     { $script:Six.LastAddress  | Should -Be '2001:db8:abcd:1234:ffff:ffff:ffff:ffff' }
+        It 'counts 2^64 addresses'      { $script:Six.AddressCount | Should -Be '18446744073709551616' }
+        It 'reports the documentation scope' { $script:Six.Scope   | Should -Match 'Documentation' }
+        It 'extracts the interface id'  { $script:Six.InterfaceId  | Should -Be '0000:0000:0000:0005' }
+    }
+
+    It 'counts the /64 links inside a <Prefix>' -TestCases @(
+        @{ Prefix = '2001:db8::/48'; Links = '65536' }
+        @{ Prefix = '2001:db8::/56'; Links = '256' }
+        @{ Prefix = '2001:db8::/64'; Links = '1' }
+    ) {
+        param($Prefix, $Links)
+
+        (Get-TkIPv6SubnetInfo -Address $Prefix).SubnetCount64 | Should -Be $Links
+    }
+
+    It 'classifies <Address> as <Expected>' -TestCases @(
+        @{ Address = 'fe80::1/64';      Expected = 'Link local' }
+        @{ Address = 'fd00::1/8';       Expected = 'Unique local' }
+        @{ Address = '2001:db8::1/32';  Expected = 'Documentation' }
+        @{ Address = '2606:4700::1/32'; Expected = 'Global unicast' }
+        @{ Address = 'ff02::1/16';      Expected = 'Multicast' }
+        @{ Address = '::1/128';         Expected = 'Loopback' }
+    ) {
+        param($Address, $Expected)
+
+        (Get-TkIPv6SubnetInfo -Address $Address).Scope | Should -Match $Expected
+    }
+
+    It 'assumes a /64 when no prefix is given, because that is the link size' {
+        (Get-TkIPv6SubnetInfo -Address '2001:db8::1').PrefixLength | Should -Be 64
+    }
+}
+
+Describe 'ConvertTo-TkEui64' {
+
+    It 'inserts fffe and flips the universal bit' {
+        ConvertTo-TkEui64 -MacAddress '00:1A:2B:3C:4D:5E' | Should -Be '021a:2bff:fe3c:4d5e'
+    }
+
+    It 'accepts any common separator' {
+        ConvertTo-TkEui64 -MacAddress '00-1A-2B-3C-4D-5E' | Should -Be '021a:2bff:fe3c:4d5e'
+        ConvertTo-TkEui64 -MacAddress '001A2B3C4D5E'      | Should -Be '021a:2bff:fe3c:4d5e'
+    }
+
+    It 'rejects something that is not a MAC address' {
+        { ConvertTo-TkEui64 -MacAddress 'nonsense' } | Should -Throw
+    }
+}
+
+Describe 'Get-TkMacVendor' {
+
+    It 'resolves the known prefix <Mac> to <Expected>' -TestCases @(
+        @{ Mac = '00:0C:29:11:22:33'; Expected = 'VMware' }
+        @{ Mac = '00-15-5D-01-02-03'; Expected = 'Microsoft Hyper-V' }
+        @{ Mac = '080027AABBCC';      Expected = 'Oracle VirtualBox' }
+        @{ Mac = 'B8:27:EB:00:00:01'; Expected = 'Raspberry Pi' }
+    ) {
+        param($Mac, $Expected)
+        Get-TkMacVendor -MacAddress $Mac | Should -Be $Expected
+    }
+
+    It 'recognises a locally administered address' {
+        # The second least significant bit of the first octet marks it.
+        Get-TkMacVendor -MacAddress '02:11:22:33:44:55' | Should -Match 'Locally administered'
+    }
+
+    It 'says so plainly for an unknown prefix' {
+        Get-TkMacVendor -MacAddress '00:11:22:33:44:55' | Should -Be 'Unknown vendor'
+    }
+
+    It 'returns nothing for empty input' {
+        Get-TkMacVendor -MacAddress '' | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Get-TkOuiTable' {
+
+    It 'uses six uppercase hex characters for every prefix' {
+
+        foreach ($key in (Get-TkOuiTable).Keys) {
+            $key | Should -Match '^[0-9A-F]{6}$'
+        }
+    }
+
+    It 'names every prefix' {
+
+        foreach ($value in (Get-TkOuiTable).Values) {
+            $value | Should -Not -BeNullOrEmpty
+        }
+    }
+}
+
+Describe 'Knowledge base tables' {
+
+    It 'gives every table the same number of cells as columns' {
+
+        foreach ($topic in (Import-TkCatalog -Name 'network-knowledge').topics) {
+
+            foreach ($table in (ConvertTo-TkArray $topic.tables)) {
+
+                $width = @($table.columns).Count
+                $width | Should -BeGreaterThan 0
+
+                foreach ($row in $table.rows) {
+                    @($row).Count | Should -Be $width -Because (
+                        'a row of {0} in "{1}" does not match its columns' -f $table.title, $topic.title
+                    )
+                }
+            }
+        }
+    }
+
+    It 'names every table' {
+
+        foreach ($topic in (Import-TkCatalog -Name 'network-knowledge').topics) {
+
+            foreach ($table in (ConvertTo-TkArray $topic.tables)) {
+                $table.title | Should -Not -BeNullOrEmpty
+            }
+        }
+    }
+
+    It 'keeps the port reference as tables rather than prose' {
+
+        $ports  = (Import-TkCatalog -Name 'network-knowledge').topics |
+                  Where-Object { $_.id -eq 'common-ports' }
+
+        $tables = ConvertTo-TkArray $ports.tables
+        $rows   = ($tables | ForEach-Object { @($_.rows).Count } | Measure-Object -Sum).Sum
+
+        $tables.Count | Should -BeGreaterThan 3
+        $rows         | Should -BeGreaterThan 30
+    }
+}
+
+Describe 'Get-TkSeverityBrushKey' {
+
+    It 'maps <Severity> to <Expected>' -TestCases @(
+        @{ Severity = 'Fail';    Expected = 'Danger' }
+        @{ Severity = 'Warning'; Expected = 'Warning' }
+        @{ Severity = 'Pass';    Expected = 'Success' }
+        @{ Severity = 'Info';    Expected = 'TextMuted' }
+        @{ Severity = '';        Expected = 'TextMuted' }
+    ) {
+        param($Severity, $Expected)
+        Get-TkSeverityBrushKey -Severity $Severity | Should -Be $Expected
+    }
+}
+
+Describe 'New-TkHuntFinding' {
+
+    It 'produces the shape the interface binds to' {
+
+        $finding = New-TkHuntFinding -Category 'Failed logons' -Count 3 `
+            -Detail 'three accounts' -Assessment 'nothing to see' -Severity 'Warning'
+
+        $finding.Severity   | Should -Be 'Warning'
+        $finding.Category   | Should -Be 'Failed logons'
+        $finding.Count      | Should -Be 3
+        $finding.Detail     | Should -Be 'three accounts'
+        $finding.Assessment | Should -Be 'nothing to see'
+    }
+
+    It 'refuses a severity outside the set' {
+        { New-TkHuntFinding -Category 'x' -Count 0 -Detail 'y' -Assessment 'z' -Severity 'Critical' } |
+            Should -Throw
+    }
+}
+
+Describe 'Test-TkPackageId with Store identifiers' {
+
+    It 'accepts the Store product id <Id>' -TestCases @(
+        @{ Id = '9NKSQGP7F2NH' }
+        @{ Id = '9N7R5S6B0ZZH' }
+        @{ Id = 'XPFCG5NZ9RC0P4' }
+    ) {
+        param($Id)
+        Test-TkPackageId -PackageId $Id | Should -BeTrue
+    }
+}
+
+Describe 'Catalog integrity, extended' {
+
+    It 'declares a revert value for every tweak registry entry that is not deleted' {
+
+        foreach ($tweak in (Import-TkCatalog -Name 'tweaks').tweaks) {
+
+            foreach ($entry in (ConvertTo-TkArray $tweak.registry)) {
+
+                $names = $entry.PSObject.Properties.Name
+
+                $names | Should -Contain 'default' -Because (
+                    '{0} must say what to restore for {1}' -f $tweak.id, $entry.name
+                )
+            }
+        }
+    }
+
+    It 'uses a supported registry type in every tweak' {
+
+        $supported = @('String', 'ExpandString', 'Binary', 'DWord', 'MultiString', 'QWord')
+
+        foreach ($tweak in (Import-TkCatalog -Name 'tweaks').tweaks) {
+
+            foreach ($entry in (ConvertTo-TkArray $tweak.registry)) {
+                $supported | Should -Contain $entry.type
+            }
+        }
+    }
+}
+
 Describe 'Theme palettes' {
 
     It 'defines the same keys in both themes' {

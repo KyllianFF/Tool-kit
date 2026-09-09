@@ -164,6 +164,12 @@
         </Style>
 
         <!-- ======================== Text entry ========================== -->
+        <!--
+            The default text box carries a hint: whatever is in its Tag is
+            shown, greyed, while the box is empty. A field that does not say
+            what belongs in it is a field nobody fills in correctly, and the
+            configuration tab has a row of them.
+        -->
         <Style TargetType="TextBox">
             <Setter Property="Background"      Value="{DynamicResource InputBackground}" />
             <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
@@ -174,6 +180,43 @@
             <Setter Property="FontSize"        Value="13" />
             <Setter Property="CaretBrush"      Value="{DynamicResource TextPrimary}" />
             <Setter Property="SelectionBrush"  Value="{DynamicResource Accent}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5">
+                            <Grid>
+                                <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}"
+                                           Foreground="{DynamicResource TextMuted}"
+                                           Margin="9,6,9,6"
+                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                           FontSize="{TemplateBinding FontSize}"
+                                           IsHitTestVisible="False" Visibility="Collapsed"
+                                           TextTrimming="CharacterEllipsis" />
+                                <ScrollViewer x:Name="PART_ContentHost"
+                                              Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              HorizontalScrollBarVisibility="{TemplateBinding HorizontalScrollBarVisibility}"
+                                              VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="Hint" Property="Visibility" Value="Visible" />
+                            </MultiDataTrigger>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="PasswordBox">
@@ -186,7 +229,13 @@
             <Setter Property="CaretBrush"      Value="{DynamicResource TextPrimary}" />
         </Style>
 
-        <Style x:Key="Mono" TargetType="TextBox">
+        <!--
+            Output boxes reuse the same template. It respects the control's
+            alignment and scroll bar settings, so the one line fields stay
+            centred and the reports scroll.
+        -->
+        <Style x:Key="Mono" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="VerticalContentAlignment" Value="Top" />
             <Setter Property="FontFamily"     Value="Cascadia Mono, Consolas, Courier New" />
             <Setter Property="FontSize"       Value="12" />
             <Setter Property="IsReadOnly"     Value="True" />
@@ -354,7 +403,16 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ListViewItem">
                         <Border x:Name="Chrome" Background="Transparent" Padding="0,4">
-                            <GridViewRowPresenter Columns="{TemplateBinding GridView.ColumnCollection}"
+                            <!--
+                                Content must be bound explicitly. A
+                                GridViewRowPresenter is not a ContentPresenter
+                                and does not inherit it, so leaving it out
+                                produced rows of the right height with nothing
+                                in them, which is exactly what the audit and
+                                adapter tables were showing.
+                            -->
+                            <GridViewRowPresenter Content="{TemplateBinding Content}"
+                                                  Columns="{TemplateBinding GridView.ColumnCollection}"
                                                   TextElement.Foreground="{DynamicResource TextPrimary}" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -425,6 +483,15 @@
         <Style TargetType="Expander">
             <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
             <Setter Property="Background" Value="{DynamicResource Surface}" />
+        </Style>
+
+        <Style TargetType="RichTextBox">
+            <Setter Property="Foreground"     Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Background"     Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="FontFamily"     Value="Segoe UI" />
+            <Setter Property="FontSize"       Value="13" />
         </Style>
 
         <!-- ============================ Card ============================ -->
@@ -652,7 +719,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBox Grid.Column="0" x:Name="SoftwareSearch" Margin="0,0,10,0" />
+                        <TextBox Grid.Column="0" x:Name="SoftwareSearch" Tag="Search applications by name, description or package id" Margin="0,0,10,0" />
                         <ComboBox Grid.Column="1" x:Name="SoftwareCategory" Width="200" Margin="0,0,10,0" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal">
                             <Button x:Name="BtnInstallSelected"   Content="Install selected" Style="{StaticResource PrimaryButton}" />
@@ -721,7 +788,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBox Grid.Column="0" x:Name="TweakSearch" Margin="0,0,10,0" />
+                        <TextBox Grid.Column="0" x:Name="TweakSearch" Tag="Search tweaks" Margin="0,0,10,0" />
                         <ComboBox Grid.Column="1" x:Name="TweakCategory" Width="200" Margin="0,0,10,0" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal">
                             <Button x:Name="BtnApplyTweaks"   Content="Apply selected" Style="{StaticResource PrimaryButton}" />
@@ -839,15 +906,15 @@
                                         <StackPanel>
                                             <TextBlock Text="IPv4 subnet" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
                                             <StackPanel Orientation="Horizontal">
-                                                <TextBox x:Name="SubnetInput" Width="260" Text="192.168.1.10/24" />
+                                                <TextBox x:Name="SubnetInput" Tag="IPv4 or IPv6, e.g. 192.168.1.10/24 or 2001:db8::1/64" Width="260" Text="192.168.1.10/24" />
                                                 <Button x:Name="BtnCalculateSubnet" Content="Calculate" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0" />
-                                                <TextBox x:Name="SplitPrefixInput" Width="70" Margin="20,0,0,0" Text="26" />
+                                                <TextBox x:Name="SplitPrefixInput" Tag="New prefix" Width="70" Margin="20,0,0,0" Text="26" />
                                                 <Button x:Name="BtnSplitSubnet" Content="Split into" Margin="8,0,0,0" />
-                                                <TextBox x:Name="HostCountInput" Width="90" Margin="20,0,0,0" Text="300" />
+                                                <TextBox x:Name="HostCountInput" Tag="Hosts needed" Width="90" Margin="20,0,0,0" Text="300" />
                                                 <Button x:Name="BtnPrefixForHosts" Content="Prefix for hosts" Margin="8,0,0,0" />
                                             </StackPanel>
                                             <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
-                                                       Text="Accepts CIDR notation or an address with a mask. /31 point to point links and /32 host routes are handled per RFC 3021." />
+                                                       Text="Accepts IPv4 or IPv6, in CIDR notation or with a mask. The family is detected from the address. /31 point to point links and /32 host routes follow RFC 3021; IPv6 prefixes report their scope and interface identifier." />
                                         </StackPanel>
                                     </Border>
 
@@ -902,16 +969,16 @@
                                     <StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                             <TextBlock Text="Target" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="DiagTarget" Width="240" Text="192.168.1.1" />
+                                            <TextBox x:Name="DiagTarget" Tag="Host, or a network in CIDR form for the sweep" Width="240" Text="192.168.1.1" />
                                             <Button x:Name="BtnTestConnectivity" Content="Connectivity chain" Style="{StaticResource PrimaryButton}" Margin="12,0,0,0" />
                                             <Button x:Name="BtnPortScan"         Content="Common ports" />
                                             <Button x:Name="BtnSweep"            Content="Sweep subnet" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="DNS name" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="DnsName" Width="240" Text="www.microsoft.com" />
+                                            <TextBox x:Name="DnsName" Tag="Name to resolve" Width="240" Text="www.microsoft.com" />
                                             <ComboBox x:Name="DnsType" Width="90" Margin="10,0,0,0" />
-                                            <TextBox x:Name="DnsServer" Width="150" Margin="10,0,0,0" />
+                                            <TextBox x:Name="DnsServer" Tag="DNS server (optional)" Width="150" Margin="10,0,0,0" />
                                             <Button x:Name="BtnResolveDns" Content="Resolve" Margin="10,0,0,0" />
                                         </StackPanel>
                                         <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
@@ -921,6 +988,124 @@
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="NetworkOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Admin tools">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Host" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="AdminTarget" Tag="Host name or IP address" Width="230" Text="8.8.8.8" />
+                                            <Button x:Name="BtnPathMtu"     Content="Path MTU"     Style="{StaticResource PrimaryButton}" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnLinkQuality" Content="Link quality" />
+                                            <Button x:Name="BtnTraceRoute"  Content="Trace route" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="TLS" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="TlsHost" Tag="Host name" Width="230" Text="www.microsoft.com" />
+                                            <TextBlock Text="Port" VerticalAlignment="Center" Margin="12,0,8,0" />
+                                            <TextBox x:Name="TlsPort" Tag="Port" Width="70" Text="443" />
+                                            <Button x:Name="BtnTlsCertificate" Content="Inspect certificate" Margin="12,0,0,0" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Wake" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="WolMac" Tag="MAC 00:1A:2B:3C:4D:5E" Width="230" />
+                                            <TextBlock Text="Broadcast" VerticalAlignment="Center" Margin="12,0,8,0" />
+                                            <TextBox x:Name="WolBroadcast" Tag="Broadcast address" Width="150" Text="255.255.255.255" />
+                                            <Button x:Name="BtnWakeOnLan"   Content="Send magic packet" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnNeighbours"  Content="Neighbour table" />
+                                        </StackPanel>
+
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,10,0,0"
+                                                   Text="Path MTU explains a link that connects but stalls on large transfers. Link quality reports loss and jitter, which an average latency hides. Wake-on-LAN needs the directed broadcast of the target subnet when it has to cross a router." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="AdminOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Configuration">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Adapter IP profiles" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Adapter" VerticalAlignment="Center" Width="70" />
+                                            <ComboBox x:Name="ProfileAdapter" Width="230" />
+                                            <TextBlock Text="Profile" VerticalAlignment="Center" Margin="12,0,8,0" />
+                                            <ComboBox x:Name="ProfileSelect" Width="220" />
+                                            <Button x:Name="BtnApplyProfile"  Content="Apply" Style="{StaticResource PrimaryButton}" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnDeleteProfile" Content="Delete" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Name" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="ProfileName" Tag="Profile name, e.g. Site Lyon VLAN 30" Width="230" />
+                                            <TextBox x:Name="ProfileAddress" Tag="Address 192.168.50.10" Width="130" Margin="12,0,0,0" />
+                                            <TextBox x:Name="ProfilePrefix" Tag="Prefix"  Width="50"  Margin="6,0,0,0" Text="24" />
+                                            <TextBox x:Name="ProfileGateway" Tag="Gateway 192.168.50.1" Width="130" Margin="6,0,0,0" />
+                                            <TextBox x:Name="ProfileDns" Tag="DNS 1.1.1.1, 9.9.9.9"     Width="180" Margin="6,0,0,0" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="BtnSaveProfile"    Content="Save static profile" Margin="70,0,0,0" />
+                                            <Button x:Name="BtnSaveDhcpProfile" Content="Save DHCP profile" />
+                                            <Button x:Name="BtnCaptureProfile" Content="Capture current" />
+                                        </StackPanel>
+
+                                        <TextBlock Style="{StaticResource Muted}" Margin="70,8,0,0"
+                                                   Text="Fields in order: name, address, prefix, gateway, DNS servers separated by commas. Applying a profile to the adapter carrying your remote session will disconnect it." />
+
+                                        <TextBlock Text="Routes and port forwarding" Style="{StaticResource SubHeading}" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Route" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="RoutePrefix" Tag="Destination 10.50.0.0/16"  Width="150" />
+                                            <TextBox x:Name="RouteNextHop" Tag="Next hop 192.168.1.254" Width="130" Margin="6,0,0,0" />
+                                            <ComboBox x:Name="RouteAdapter" Width="180" Margin="6,0,0,0" />
+                                            <Button x:Name="BtnAddRoute"    Content="Add persistent" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnRemoveRoute" Content="Remove" />
+                                            <Button x:Name="BtnShowRoutes"  Content="Show table" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Forward" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="ProxyListenPort" Tag="Listen 8080"    Width="80" />
+                                            <TextBlock Text="to" VerticalAlignment="Center" Margin="8,0,8,0" />
+                                            <TextBox x:Name="ProxyConnectAddress" Tag="Forward to 172.28.5.2" Width="130" />
+                                            <TextBox x:Name="ProxyConnectPort" Tag="Port 80"    Width="80" Margin="6,0,0,0" />
+                                            <Button x:Name="BtnAddProxy"    Content="Publish" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnRemoveProxy" Content="Remove" />
+                                            <Button x:Name="BtnShowProxies" Content="Show rules" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="ConfigOutput" Style="{StaticResource Mono}"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" />
                                 </Border>
@@ -938,17 +1123,17 @@
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
-                                <TextBox Grid.Row="0" Grid.Column="0" x:Name="KnowledgeSearch" Margin="0,0,10,10" />
+                                <TextBox Grid.Row="0" Grid.Column="0" x:Name="KnowledgeSearch" Tag="Search every topic" Margin="0,0,10,10" />
                                 <ListBox Grid.Row="1" Grid.Column="0" x:Name="KnowledgeList" Margin="0,0,10,0"
                                          />
 
                                 <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                        <TextBox x:Name="KnowledgeContent" Style="{StaticResource Mono}"
-                                                 TextWrapping="Wrap" BorderThickness="0" Background="Transparent"
-                                                 Foreground="{DynamicResource TextPrimary}" FontSize="13"
-                                                 FontFamily="Segoe UI" AcceptsReturn="True" />
-                                    </ScrollViewer>
+                                    <RichTextBox x:Name="KnowledgeContent" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 IsDocumentEnabled="True" />
                                 </Border>
                             </Grid>
                         </TabItem>
@@ -966,18 +1151,19 @@
 
                                 <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,10,10">
                                     <ComboBox x:Name="VendorSelect" Margin="0,0,0,8" />
-                                    <TextBox  x:Name="VendorSearch" />
+                                    <TextBox  x:Name="VendorSearch" Tag="Search commands across all vendors" />
                                 </StackPanel>
 
                                 <ListBox Grid.Row="1" Grid.Column="0" x:Name="VendorSectionList" Margin="0,0,10,0"
                                          />
 
                                 <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                        <TextBox x:Name="VendorContent" Style="{StaticResource Mono}"
-                                                 TextWrapping="NoWrap" BorderThickness="0" Background="Transparent"
-                                                 Foreground="{DynamicResource TextPrimary}" AcceptsReturn="True" />
-                                    </ScrollViewer>
+                                    <RichTextBox x:Name="VendorContent" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Auto"
+                                                 IsDocumentEnabled="True" />
                                 </Border>
                             </Grid>
                         </TabItem>
@@ -1000,11 +1186,11 @@
                                         <TextBlock Text="Generate a key pair" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                             <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="SshKeyName" Width="160" Text="id_ed25519" />
+                                            <TextBox x:Name="SshKeyName" Tag="Key file name" Width="160" Text="id_ed25519" />
                                             <TextBlock Text="Type" VerticalAlignment="Center" Margin="16,0,8,0" />
                                             <ComboBox x:Name="SshKeyType" Width="110" />
                                             <TextBlock Text="Comment" VerticalAlignment="Center" Margin="16,0,8,0" />
-                                            <TextBox x:Name="SshKeyComment" Width="200" />
+                                            <TextBox x:Name="SshKeyComment" Tag="Comment identifying the key" Width="200" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="Passphrase" VerticalAlignment="Center" Margin="0,0,8,0" />
@@ -1038,13 +1224,13 @@
                                     <StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                             <TextBlock Text="File" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="HashFilePath" Width="440" />
+                                            <TextBox x:Name="HashFilePath" Tag="Path to the file to hash" Width="440" />
                                             <Button x:Name="BtnBrowseHashFile" Content="Browse" Margin="10,0,0,0" />
                                             <Button x:Name="BtnComputeHash"    Content="Compute hashes" Style="{StaticResource PrimaryButton}" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="Expected hash" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="ExpectedHash" Width="520" />
+                                            <TextBox x:Name="ExpectedHash" Tag="Paste the hash published by the vendor" Width="520" />
                                             <Button x:Name="BtnVerifyHash" Content="Verify" Margin="10,0,0,0" />
                                             <Button x:Name="BtnVirusTotal" Content="Check on VirusTotal" />
                                         </StackPanel>
@@ -1072,7 +1258,7 @@
                                     <StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                             <TextBlock Text="Length" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="PasswordLength" Width="60" Text="20" />
+                                            <TextBox x:Name="PasswordLength" Tag="Length" Width="60" Text="20" />
                                             <CheckBox x:Name="PwdUpper"   Content="A-Z" IsChecked="True" Margin="14,0,0,0" />
                                             <CheckBox x:Name="PwdLower"   Content="a-z" IsChecked="True" Margin="10,0,0,0" />
                                             <CheckBox x:Name="PwdDigits"  Content="0-9" IsChecked="True" Margin="10,0,0,0" />
@@ -1123,6 +1309,46 @@
                                         </GridView>
                                     </ListView.View>
                                 </ListView>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Threat hunting">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <Button x:Name="BtnEventTriage"  Content="Event log triage" Style="{StaticResource PrimaryButton}" />
+                                            <Button x:Name="BtnPersistence"  Content="Autostart and persistence" />
+                                            <Button x:Name="BtnExposure"     Content="Network exposure" />
+                                            <Button x:Name="BtnCertStore"    Content="Certificate inventory" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Endpoints" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="CertEndpoints" Width="440"
+                                                     Tag="intranet, dc01:636, vpn.example.com:443" />
+                                            <Button x:Name="BtnCheckEndpointCerts" Content="Check expiry" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnExportHunt"         Content="Export report" />
+                                        </StackPanel>
+
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,10,0,0"
+                                                   Text="All read only: nothing here changes the machine, which is what makes it safe to run first on a system whose state you do not want to disturb. Event triage needs an elevated instance, because the Security log is not readable otherwise." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="HuntOutput" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Auto"
+                                                 IsDocumentEnabled="True" />
+                                </Border>
                             </Grid>
                         </TabItem>
 

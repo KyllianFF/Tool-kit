@@ -337,7 +337,7 @@ function Get-TkSshKey {
     $sshDirectory = Join-Path -Path $env:USERPROFILE -ChildPath '.ssh'
 
     if (-not (Test-Path -LiteralPath $sshDirectory)) {
-        return , @()
+        return @()
     }
 
     $results = @()
@@ -361,7 +361,7 @@ function Get-TkSshKey {
         }
     }
 
-    return , $results
+    return $results
 }
 
 <#

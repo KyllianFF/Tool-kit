@@ -108,7 +108,9 @@ function Start-Toolkit {
         Initialize-TkTweaksPage
         Initialize-TkFixesPage
         Initialize-TkNetworkPage
+        Initialize-TkNetworkAdminPage
         Initialize-TkSecurityPage
+        Initialize-TkThreatHuntingPage
 
         Show-TkPage -Name 'System'
         Update-TkSystemPage
