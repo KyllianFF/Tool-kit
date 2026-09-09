@@ -4,6 +4,44 @@ All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Network administration tools**, a new tab on the Network page:
+  - **Path MTU discovery** by binary search with the do-not-fragment bit,
+    which is the measurement that explains a VPN that connects but stalls on
+    large transfers. Reports the MSS to clamp to.
+  - **Link quality**: loss, minimum, average and maximum latency, and jitter
+    as the mean deviation between consecutive round trips, which is the
+    figure voice and video actually depend on and the one an average hides.
+  - **Traceroute** with per hop timing and reverse resolution, several probes
+    per hop so a slow hop is distinguished from a hop that deprioritises the
+    ICMP it has to generate.
+  - **TLS certificate inspection**: subject, issuer, alternative names,
+    expiry with a countdown, protocol, key size, and a separately evaluated
+    chain status. Subject alternative name parsing is locale independent.
+  - **Wake-on-LAN** with a directed broadcast option, and the checklist of
+    why a machine does not wake.
+  - **Neighbour cache** with vendor names from a built in OUI table covering
+    the hardware met on a corporate LAN, including hypervisors.
+- **Network configuration**, a second new tab:
+  - **Adapter IP profiles**: capture the live configuration of an adapter,
+    save named static or DHCP profiles, and apply one per site. Validation
+    happens at save time rather than on site, and a gateway outside its own
+    prefix is flagged.
+  - **Routing table** with persistent route creation and removal, sorted
+    longest prefix first the way a router evaluates it.
+  - **Port forwarding** through netsh portproxy, with a reminder that a rule
+    forwards but does not open the firewall.
+- **IPv6 subnet calculator**, sharing the existing input box: the family is
+  detected from the address. Reports the prefix, first and last address, the
+  address count as an exact integer, how many /64 links a prefix contains,
+  the RFC scope and the interface identifier. Plus EUI-64 derivation from a
+  MAC address.
+- 33 further tests, covering IPv6 conversion and scoping, /64 counting,
+  EUI-64, OUI lookup and the shape of the OUI table.
+
 ## [1.0.0] - 2026-09-08
 
 First release.

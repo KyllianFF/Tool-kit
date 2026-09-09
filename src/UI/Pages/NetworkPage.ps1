@@ -107,6 +107,13 @@ function Invoke-TkSubnetCalculation {
         return
     }
 
+    # An IPv6 address is recognised by its colons, before any parsing, so the
+    # two calculators never have to guess at each other's input.
+    if ($expression -match ':') {
+        Show-TkIPv6SubnetResult -Expression $expression
+        return
+    }
+
     try {
         $info = Get-TkSubnetInfo -Address $expression
     }
@@ -149,6 +156,60 @@ function Invoke-TkSubnetCalculation {
 
     Set-TkOutput -ControlName 'SubnetOutput' -Text ($lines -join [Environment]::NewLine)
     Set-TkStatus -Text ('{0}: {1:N0} usable host(s).' -f $info.Cidr, $info.UsableHosts)
+}
+
+<#
+.SYNOPSIS
+    Renders an IPv6 prefix in the calculator output.
+
+.DESCRIPTION
+    IPv6 answers different questions from IPv4. There is no broadcast address
+    and no "minus two", so the useful figures are the prefix, the address
+    count, the scope, and how many /64 links the prefix contains, which is
+    what an addressing plan is actually built from.
+#>
+function Show-TkIPv6SubnetResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Expression
+    )
+
+    try {
+        $info = Get-TkIPv6SubnetInfo -Address $Expression
+    }
+    catch {
+        Set-TkOutput -ControlName 'SubnetOutput' -Text ('Error: {0}' -f $_.Exception.Message)
+        return
+    }
+
+    $lines = @(
+        'Input                 {0}' -f $info.Address
+        'Expanded              {0}' -f $info.AddressFull
+        ''
+        'Prefix                {0}' -f $info.Cidr
+        'Network               {0}' -f $info.Network
+        'Network expanded      {0}' -f $info.NetworkFull
+        ''
+        'First address         {0}' -f $info.FirstAddress
+        'Last address          {0}' -f $info.LastAddress
+        'Addresses             {0}' -f $info.AddressCount
+        '/64 links contained   {0}' -f $info.SubnetCount64
+        ''
+        'Scope                 {0}' -f $info.Scope
+    )
+
+    if ($info.InterfaceId) {
+        $lines += 'Interface identifier  {0}' -f $info.InterfaceId
+    }
+
+    $lines += ''
+    $lines += 'IPv6 has no broadcast address and reserves nothing inside a prefix, so'
+    $lines += 'every address counted here is usable. A /64 is the standard link size:'
+    $lines += 'SLAAC will not work on anything longer.'
+
+    Set-TkOutput -ControlName 'SubnetOutput' -Text ($lines -join [Environment]::NewLine)
+    Set-TkStatus -Text ('{0}: {1} addresses.' -f $info.Cidr, $info.AddressCount)
 }
 
 <#

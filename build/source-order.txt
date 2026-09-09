@@ -24,7 +24,10 @@ src/Features/Tweaks/TweakEngine.ps1
 src/Features/Fixes/SystemFixes.ps1
 src/Features/Fixes/AutoLogon.ps1
 src/Features/Network/SubnetCalculator.ps1
+src/Features/Network/IPv6Calculator.ps1
 src/Features/Network/NetworkTools.ps1
+src/Features/Network/NetworkDiagnostics.ps1
+src/Features/Network/NetworkConfiguration.ps1
 src/Features/Security/SshKeys.ps1
 src/Features/Security/FileIntegrity.ps1
 src/Features/Security/VirusTotal.ps1
@@ -39,6 +42,7 @@ src/UI/Pages/SoftwarePage.ps1
 src/UI/Pages/TweaksPage.ps1
 src/UI/Pages/FixesPage.ps1
 src/UI/Pages/NetworkPage.ps1
+src/UI/Pages/NetworkAdminPage.ps1
 src/UI/Pages/SecurityPage.ps1
 
 # --- Entry point -----------------------------------------------------------

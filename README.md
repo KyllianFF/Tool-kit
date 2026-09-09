@@ -12,8 +12,9 @@ is trusted.
 irm https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1 | iex
 ```
 
-> The repository is private for now, so that URL only resolves once it is
-> made public. Until then, see [Running it today](#running-it-today).
+> Read [On `irm | iex`](#on-irm--iex) before running that on a machine that
+> matters. Piping a download into `iex` executes whatever the server returns,
+> and the alternatives are one line longer.
 
 ---
 
@@ -25,7 +26,9 @@ irm https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1 |
 | **Software** | 146 applications across 12 categories, installed through winget with a search box and a category filter. Multi-select, batch install, uninstall, upgrade everything, and an installed-state indicator. |
 | **Tweaks** | 35 declarative tweaks over privacy, interface, performance, gaming, hardening and advanced settings. Every one of them is reversible, the current state is read from the registry rather than remembered, and a restore point is taken before a batch is applied. |
 | **Fixes** | 12 repair actions with the symptom each one addresses: network stack reset, Windows Update rebuild, sfc and DISM, spooler, search index, icon cache, temporary files. Plus automatic logon, configured properly (see below). |
-| **Network** | IPv4 subnet calculator (CIDR, VLSM splitting, "what prefix fits 300 hosts"), adapter inventory, connectivity chain test, port checks, subnet sweep, DNS lookups, listening sockets, a 16 topic knowledge base and a cross-vendor command reference for Cisco, Aruba, Fortinet, Ubiquiti, MikroTik, Juniper, Windows and Linux. |
+| **Network** | IPv4 **and IPv6** subnet calculator (CIDR, VLSM splitting, "what prefix fits 300 hosts", IPv6 scope and interface identifier, EUI-64), adapter inventory, connectivity chain test, port checks, subnet sweep, DNS lookups, listening sockets, a 16 topic knowledge base and a cross-vendor command reference for Cisco, Aruba, Fortinet, Ubiquiti, MikroTik, Juniper, Windows and Linux. |
+| **Network admin tools** | Path MTU discovery, link quality with loss and jitter, traceroute with per hop timing, TLS certificate inspection with expiry, Wake-on-LAN, and the neighbour cache with MAC vendor names. |
+| **Network configuration** | Named adapter IP profiles you can capture, save and apply per site, the routing table with persistent route management, and port forwarding through the built in Windows proxy. |
 | **Security** | SSH key generation, file hashing and signature inspection, VirusTotal lookups by hash, a cryptographic password and passphrase generator, a breach check using k-anonymity, and a 15 point local security audit with an exportable report. |
 
 ---
@@ -107,10 +110,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -STA -File $out
 
 ---
 
-## Running it today
+## Running it from a clone
 
-The repository is private, so the raw URL is not publicly reachable. Two
-options:
+Removes the network from the trust path entirely, which is the right choice
+for a machine you care about.
 
 **Clone and run**
 

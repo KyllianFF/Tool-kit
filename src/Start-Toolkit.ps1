@@ -108,6 +108,7 @@ function Start-Toolkit {
         Initialize-TkTweaksPage
         Initialize-TkFixesPage
         Initialize-TkNetworkPage
+        Initialize-TkNetworkAdminPage
         Initialize-TkSecurityPage
 
         Show-TkPage -Name 'System'

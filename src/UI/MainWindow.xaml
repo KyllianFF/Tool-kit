@@ -847,7 +847,7 @@
                                                 <Button x:Name="BtnPrefixForHosts" Content="Prefix for hosts" Margin="8,0,0,0" />
                                             </StackPanel>
                                             <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
-                                                       Text="Accepts CIDR notation or an address with a mask. /31 point to point links and /32 host routes are handled per RFC 3021." />
+                                                       Text="Accepts IPv4 or IPv6, in CIDR notation or with a mask. The family is detected from the address. /31 point to point links and /32 host routes follow RFC 3021; IPv6 prefixes report their scope and interface identifier." />
                                         </StackPanel>
                                     </Border>
 
@@ -921,6 +921,124 @@
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="NetworkOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Admin tools">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Host" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="AdminTarget" Width="230" Text="8.8.8.8" />
+                                            <Button x:Name="BtnPathMtu"     Content="Path MTU"     Style="{StaticResource PrimaryButton}" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnLinkQuality" Content="Link quality" />
+                                            <Button x:Name="BtnTraceRoute"  Content="Trace route" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="TLS" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="TlsHost" Width="230" Text="www.microsoft.com" />
+                                            <TextBlock Text="Port" VerticalAlignment="Center" Margin="12,0,8,0" />
+                                            <TextBox x:Name="TlsPort" Width="70" Text="443" />
+                                            <Button x:Name="BtnTlsCertificate" Content="Inspect certificate" Margin="12,0,0,0" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Wake" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="WolMac" Width="230" />
+                                            <TextBlock Text="Broadcast" VerticalAlignment="Center" Margin="12,0,8,0" />
+                                            <TextBox x:Name="WolBroadcast" Width="150" Text="255.255.255.255" />
+                                            <Button x:Name="BtnWakeOnLan"   Content="Send magic packet" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnNeighbours"  Content="Neighbour table" />
+                                        </StackPanel>
+
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,10,0,0"
+                                                   Text="Path MTU explains a link that connects but stalls on large transfers. Link quality reports loss and jitter, which an average latency hides. Wake-on-LAN needs the directed broadcast of the target subnet when it has to cross a router." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="AdminOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Configuration">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Adapter IP profiles" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Adapter" VerticalAlignment="Center" Width="70" />
+                                            <ComboBox x:Name="ProfileAdapter" Width="230" />
+                                            <TextBlock Text="Profile" VerticalAlignment="Center" Margin="12,0,8,0" />
+                                            <ComboBox x:Name="ProfileSelect" Width="220" />
+                                            <Button x:Name="BtnApplyProfile"  Content="Apply" Style="{StaticResource PrimaryButton}" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnDeleteProfile" Content="Delete" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Name" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="ProfileName" Width="230" />
+                                            <TextBox x:Name="ProfileAddress" Width="130" Margin="12,0,0,0" />
+                                            <TextBox x:Name="ProfilePrefix"  Width="50"  Margin="6,0,0,0" Text="24" />
+                                            <TextBox x:Name="ProfileGateway" Width="130" Margin="6,0,0,0" />
+                                            <TextBox x:Name="ProfileDns"     Width="180" Margin="6,0,0,0" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="BtnSaveProfile"    Content="Save static profile" Margin="70,0,0,0" />
+                                            <Button x:Name="BtnSaveDhcpProfile" Content="Save DHCP profile" />
+                                            <Button x:Name="BtnCaptureProfile" Content="Capture current" />
+                                        </StackPanel>
+
+                                        <TextBlock Style="{StaticResource Muted}" Margin="70,8,0,0"
+                                                   Text="Fields in order: name, address, prefix, gateway, DNS servers separated by commas. Applying a profile to the adapter carrying your remote session will disconnect it." />
+
+                                        <TextBlock Text="Routes and port forwarding" Style="{StaticResource SubHeading}" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Route" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="RoutePrefix"  Width="150" />
+                                            <TextBox x:Name="RouteNextHop" Width="130" Margin="6,0,0,0" />
+                                            <ComboBox x:Name="RouteAdapter" Width="180" Margin="6,0,0,0" />
+                                            <Button x:Name="BtnAddRoute"    Content="Add persistent" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnRemoveRoute" Content="Remove" />
+                                            <Button x:Name="BtnShowRoutes"  Content="Show table" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Forward" VerticalAlignment="Center" Width="70" />
+                                            <TextBox x:Name="ProxyListenPort"    Width="80" />
+                                            <TextBlock Text="to" VerticalAlignment="Center" Margin="8,0,8,0" />
+                                            <TextBox x:Name="ProxyConnectAddress" Width="130" />
+                                            <TextBox x:Name="ProxyConnectPort"    Width="80" Margin="6,0,0,0" />
+                                            <Button x:Name="BtnAddProxy"    Content="Publish" Margin="12,0,0,0" />
+                                            <Button x:Name="BtnRemoveProxy" Content="Remove" />
+                                            <Button x:Name="BtnShowProxies" Content="Show rules" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="ConfigOutput" Style="{StaticResource Mono}"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" />
                                 </Border>
