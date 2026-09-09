@@ -792,6 +792,99 @@ Describe 'Catalog integrity, extended' {
     }
 }
 
+Describe 'Vendor command catalog' {
+
+    BeforeAll {
+        $script:Vendors = (Import-TkCatalog -Name 'vendor-commands').vendors
+    }
+
+    It 'names every vendor uniquely' {
+        $names = @($script:Vendors | ForEach-Object { $_.name })
+        ($names | Select-Object -Unique).Count | Should -Be $names.Count
+    }
+
+    It 'gives every vendor a description and at least one section' {
+
+        foreach ($vendor in $script:Vendors) {
+            $vendor.description       | Should -Not -BeNullOrEmpty
+            @($vendor.sections).Count | Should -BeGreaterThan 0
+        }
+    }
+
+    It 'gives every command both a command and an explanation' {
+
+        foreach ($vendor in $script:Vendors) {
+
+            foreach ($section in $vendor.sections) {
+
+                $section.name | Should -Not -BeNullOrEmpty
+
+                foreach ($entry in $section.commands) {
+
+                    $entry.command     | Should -Not -BeNullOrEmpty -Because ('in {0}' -f $vendor.name)
+                    $entry.description | Should -Not -BeNullOrEmpty -Because (
+                        '{0} in {1} has no explanation' -f $entry.command, $vendor.name
+                    )
+                }
+            }
+        }
+    }
+
+    It 'covers the platforms a network engineer actually meets' {
+
+        $names = @($script:Vendors | ForEach-Object { $_.name })
+
+        foreach ($expected in @('Cisco', 'Aruba', 'Fortinet', 'Juniper', 'MikroTik',
+                                'Palo Alto', 'pfSense', 'Stormshield', 'Extreme',
+                                'Comware', 'Meraki', 'Ubiquiti')) {
+
+            ($names -join ' ') | Should -Match $expected
+        }
+    }
+}
+
+Describe 'Knowledge base coverage' {
+
+    BeforeAll {
+        $script:Topics = (Import-TkCatalog -Name 'network-knowledge').topics
+    }
+
+    It 'gives every topic a summary and some content' {
+
+        foreach ($topic in $script:Topics) {
+            $topic.title   | Should -Not -BeNullOrEmpty
+            $topic.summary | Should -Not -BeNullOrEmpty
+            @($topic.content).Count | Should -BeGreaterThan 0
+        }
+    }
+
+    It 'points every topic at a declared category' {
+
+        $catalog    = Import-TkCatalog -Name 'network-knowledge'
+        $categories = @($catalog.categories | ForEach-Object { $_.id })
+
+        foreach ($topic in $catalog.topics) {
+            $categories | Should -Contain $topic.category
+        }
+    }
+
+    It 'uses a unique identifier for every topic' {
+        $ids = @($script:Topics | ForEach-Object { $_.id })
+        ($ids | Select-Object -Unique).Count | Should -Be $ids.Count
+    }
+
+    It 'covers the subjects the toolkit claims to cover' {
+
+        $titles = (@($script:Topics | ForEach-Object { $_.title }) -join ' ')
+
+        foreach ($subject in @('OSI', '802.1X', 'Power over Ethernet', 'Quality of service',
+                               'BGP', 'IPv6', 'Certificates', 'DNS', 'VLAN', 'Wi-Fi')) {
+
+            $titles | Should -Match $subject
+        }
+    }
+}
+
 Describe 'Theme palettes' {
 
     It 'defines the same keys in both themes' {
