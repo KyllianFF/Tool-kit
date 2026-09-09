@@ -68,6 +68,10 @@ foreach ($line in (Get-Content -LiteralPath $orderFile)) {
 
 Write-Verbose ('{0} source files loaded.' -f $loaded)
 
+# Record the script the operator ran, so an elevation restart re-runs this
+# launcher rather than whichever source file declared the elevation function.
+$script:TkEntryScript = $PSCommandPath
+
 # --- Optional elevation ----------------------------------------------------
 if ($Elevated -and -not (Test-TkIsElevated)) {
 

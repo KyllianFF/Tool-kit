@@ -303,6 +303,11 @@ foreach (`$catalogName in `$script:TkEmbeddedCatalogsRaw.Keys) {
 # Entry point
 # ==========================================================================
 
+# The file the operator ran, used by an elevation restart. Empty when this
+# script was piped straight into the shell, in which case the source URL is
+# replayed instead.
+`$script:TkEntryScript = `$PSCommandPath
+
 if (`$NoGui) {
     Start-Toolkit -NoGui -SourceUri `$SourceUri
 }

@@ -219,12 +219,11 @@ function Invoke-TkSoftwareAction {
 
     $packageIds = @($selected | ForEach-Object { $_.PackageId })
 
-    # The comma keeps the array as a single argument instead of unrolling it
-    # into one argument per package.
-    $arguments = @((, $packageIds), $Action)
-
+    # Named parameters, not a positional list: a positional @($ids, $verb) is
+    # flattened by PowerShell into one argument per identifier followed by the
+    # verb, and the script block then binds a single identifier to $ids.
     Invoke-TkBackgroundAction -StatusText ('{0}ing {1} application(s)...' -f $Action, $packageIds.Count) `
-        -ArgumentList $arguments `
+        -ParameterList @{ ids = $packageIds; verb = $Action } `
         -ScriptBlock {
             param($ids, $verb)
 

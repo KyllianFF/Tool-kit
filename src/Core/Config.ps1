@@ -17,6 +17,11 @@ $script:TkAppVersion = '1.0.0'
 $script:TkAppCommit  = 'dev'
 $script:TkRepository = 'https://github.com/KyllianFF/Tool-kit'
 
+# Absolute path of the script the operator launched. Assigned by toolkit.ps1
+# during development and by the compiled build at run time. Empty when the
+# toolkit was piped straight into the shell, where there is no file to re-run.
+$script:TkEntryScript = ''
+
 <#
 .SYNOPSIS
     Creates the shared application context.
@@ -63,6 +68,13 @@ function Initialize-TkContext {
         # Origin of this instance, when it was launched from a remote one
         # liner. Replayed verbatim by an elevation restart.
         SourceUri     = ''
+
+        # The script the operator actually ran. Set by the launcher and by
+        # the compiled build. It is not $PSCommandPath: inside a function,
+        # that resolves to the file the function was declared in, which for a
+        # dot sourced code base is a source file that only defines functions
+        # and would relaunch into nothing.
+        EntryScript   = $script:TkEntryScript
 
         # --- Runtime facts (filled by Initialize-TkEnvironment) -----------
         IsElevated    = $false

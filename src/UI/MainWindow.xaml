@@ -23,20 +23,34 @@
 
     <Window.Resources>
 
-        <!-- ============================ Palette ============================ -->
-        <SolidColorBrush x:Key="AppBackground"  Color="#16181D" />
-        <SolidColorBrush x:Key="Surface"        Color="#1E2128" />
-        <SolidColorBrush x:Key="SurfaceRaised"  Color="#262A33" />
-        <SolidColorBrush x:Key="BorderSubtle"   Color="#333845" />
-        <SolidColorBrush x:Key="TextPrimary"    Color="#E7EAF0" />
-        <SolidColorBrush x:Key="TextMuted"      Color="#98A1B2" />
-        <SolidColorBrush x:Key="Accent"         Color="#4C8DFF" />
-        <SolidColorBrush x:Key="AccentMuted"    Color="#2A4C8A" />
-        <SolidColorBrush x:Key="Success"        Color="#3FB950" />
-        <SolidColorBrush x:Key="Warning"        Color="#D29922" />
-        <SolidColorBrush x:Key="Danger"         Color="#F85149" />
+        <!--
+            Palette.
 
-        <!-- ========================== Base styles ========================== -->
+            Declared once here as the dark values and swapped at run time by
+            Set-TkTheme, which replaces the brush objects behind these keys.
+            Every control below refers to them with DynamicResource, never
+            with a literal colour, so a theme change repaints the whole
+            window without rebuilding it.
+
+            Never hard code a colour on a control. The previous version did
+            that for the combo boxes and list views, which left black text on
+            a dark background in half the interface.
+        -->
+        <SolidColorBrush x:Key="AppBackground"   Color="#16181D" />
+        <SolidColorBrush x:Key="Surface"         Color="#1E2128" />
+        <SolidColorBrush x:Key="SurfaceRaised"   Color="#262A33" />
+        <SolidColorBrush x:Key="InputBackground" Color="#12141A" />
+        <SolidColorBrush x:Key="BorderSubtle"    Color="#333845" />
+        <SolidColorBrush x:Key="TextPrimary"     Color="#E7EAF0" />
+        <SolidColorBrush x:Key="TextMuted"       Color="#98A1B2" />
+        <SolidColorBrush x:Key="Accent"          Color="#4C8DFF" />
+        <SolidColorBrush x:Key="AccentMuted"     Color="#2A4C8A" />
+        <SolidColorBrush x:Key="Selection"       Color="#2F3A4F" />
+        <SolidColorBrush x:Key="Success"         Color="#3FB950" />
+        <SolidColorBrush x:Key="Warning"         Color="#D29922" />
+        <SolidColorBrush x:Key="Danger"          Color="#F85149" />
+
+        <!-- ============================ Text ============================ -->
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
             <Setter Property="FontFamily" Value="Segoe UI" />
@@ -63,6 +77,20 @@
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
 
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            <Setter Property="FontSize"   Value="11" />
+            <Setter Property="Margin"     Value="0,0,0,2" />
+        </Style>
+
+        <Style x:Key="FieldValue" TargetType="TextBlock">
+            <Setter Property="Foreground"   Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontSize"     Value="13" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin"       Value="0,0,0,12" />
+        </Style>
+
+        <!-- =========================== Buttons =========================== -->
         <Style TargetType="Button">
             <Setter Property="Background"      Value="{DynamicResource SurfaceRaised}" />
             <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
@@ -89,6 +117,9 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Accent}" />
                             </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selection}" />
+                            </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.4" />
                             </Trigger>
@@ -112,10 +143,29 @@
             <Setter Property="Padding"             Value="16,11" />
             <Setter Property="Margin"              Value="8,2,8,2" />
             <Setter Property="FontSize"            Value="13" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Left"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selection}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
+        <!-- ======================== Text entry ========================== -->
         <Style TargetType="TextBox">
-            <Setter Property="Background"      Value="{DynamicResource Surface}" />
+            <Setter Property="Background"      Value="{DynamicResource InputBackground}" />
             <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
             <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
             <Setter Property="BorderThickness" Value="1" />
@@ -123,37 +173,261 @@
             <Setter Property="FontFamily"      Value="Segoe UI" />
             <Setter Property="FontSize"        Value="13" />
             <Setter Property="CaretBrush"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="SelectionBrush"  Value="{DynamicResource Accent}" />
         </Style>
 
         <Style TargetType="PasswordBox">
-            <Setter Property="Background"      Value="{DynamicResource Surface}" />
+            <Setter Property="Background"      Value="{DynamicResource InputBackground}" />
             <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
             <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding"         Value="8,6" />
             <Setter Property="FontSize"        Value="13" />
+            <Setter Property="CaretBrush"      Value="{DynamicResource TextPrimary}" />
         </Style>
 
-        <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="{DynamicResource Surface}" />
-            <Setter Property="Foreground" Value="#111111" />
-            <Setter Property="Padding"    Value="6,4" />
-            <Setter Property="FontSize"   Value="13" />
+        <Style x:Key="Mono" TargetType="TextBox">
+            <Setter Property="FontFamily"     Value="Cascadia Mono, Consolas, Courier New" />
+            <Setter Property="FontSize"       Value="12" />
+            <Setter Property="IsReadOnly"     Value="True" />
+            <Setter Property="Background"     Value="{DynamicResource InputBackground}" />
+            <Setter Property="Foreground"     Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush"    Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="CaretBrush"     Value="{DynamicResource TextPrimary}" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="TextWrapping"   Value="NoWrap" />
         </Style>
 
+        <!-- ========================== CheckBox ========================== -->
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
             <Setter Property="FontSize"   Value="13" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Border x:Name="Box" Width="16" Height="16" CornerRadius="3"
+                                    VerticalAlignment="Center" Margin="0,0,8,0"
+                                    Background="{DynamicResource InputBackground}"
+                                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                <Path x:Name="Tick" Stretch="Uniform" Margin="3"
+                                      Stroke="{DynamicResource TextPrimary}" StrokeThickness="2"
+                                      Visibility="Collapsed"
+                                      Data="M 0 4 L 3 7 L 8 1" />
+                            </Border>
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box"  Property="Background"  Value="{DynamicResource AccentMuted}" />
+                                <Setter TargetName="Box"  Property="BorderBrush" Value="{DynamicResource Accent}" />
+                                <Setter TargetName="Tick" Property="Visibility"  Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ========================== ComboBox ==========================
+             A full template is required. The stock one paints its own popup
+             and toggle chrome from system colours, so setting Background and
+             Foreground alone leaves a white drop-down with black text in the
+             middle of a dark window.
+        -->
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Padding"    Value="8,6" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Chrome" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selection}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background"      Value="{DynamicResource InputBackground}" />
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding"         Value="8,6" />
+            <Setter Property="FontSize"        Value="13" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="Toggle" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Chrome" CornerRadius="5"
+                                                Background="{DynamicResource InputBackground}"
+                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                            <Path HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                  Margin="0,0,10,0" Data="M 0 0 L 4 4 L 8 0 Z"
+                                                  Fill="{DynamicResource TextMuted}" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <ContentPresenter IsHitTestVisible="False"
+                                              Margin="10,0,26,0" VerticalAlignment="Center"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              TextElement.Foreground="{DynamicResource TextPrimary}" />
+
+                            <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom"
+                                   AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                                <Border MinWidth="{TemplateBinding ActualWidth}" MaxHeight="320" CornerRadius="5"
+                                        Background="{DynamicResource Surface}"
+                                        BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                    <ScrollViewer>
+                                        <StackPanel IsItemsHost="True" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ====================== Lists and grids ======================= -->
+        <Style TargetType="ListBox">
+            <Setter Property="Background"      Value="{DynamicResource SurfaceRaised}" />
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Padding"    Value="10,7" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Chrome" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selection}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentMuted}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ListView">
+            <Setter Property="Background"      Value="{DynamicResource SurfaceRaised}" />
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style TargetType="ListViewItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="Chrome" Background="Transparent" Padding="0,4">
+                            <GridViewRowPresenter Columns="{TemplateBinding GridView.ColumnCollection}"
+                                                  TextElement.Foreground="{DynamicResource TextPrimary}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selection}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentMuted}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="GridViewColumnHeader">
+            <Setter Property="Foreground"  Value="{DynamicResource TextMuted}" />
+            <Setter Property="FontSize"    Value="12" />
+            <Setter Property="FontWeight"  Value="SemiBold" />
+            <Setter Property="Padding"     Value="8,6" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridViewColumnHeader">
+                        <Border Background="{DynamicResource Surface}"
+                                BorderBrush="{DynamicResource BorderSubtle}"
+                                BorderThickness="0,0,1,1" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ========================= TabControl ========================= -->
+        <Style TargetType="TabControl">
+            <Setter Property="Background"      Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
         </Style>
 
         <Style TargetType="TabItem">
-            <Setter Property="Background"  Value="{DynamicResource Surface}" />
-            <Setter Property="Foreground"  Value="#111111" />
-            <Setter Property="Padding"     Value="14,7" />
-            <Setter Property="FontSize"    Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            <Setter Property="FontSize"   Value="13" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Chrome" Padding="16,9" Margin="0,0,4,0"
+                                CornerRadius="6,6,0,0" Background="Transparent"
+                                BorderBrush="Transparent" BorderThickness="0,0,0,2">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Surface}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Chrome" Property="Background"  Value="{DynamicResource Surface}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
+        <!-- ========================== Expander ========================== -->
+        <Style TargetType="Expander">
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            <Setter Property="Background" Value="{DynamicResource Surface}" />
+        </Style>
+
+        <!-- ============================ Card ============================ -->
         <Style x:Key="Card" TargetType="Border">
             <Setter Property="Background"      Value="{DynamicResource Surface}" />
             <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
@@ -161,29 +435,6 @@
             <Setter Property="CornerRadius"    Value="8" />
             <Setter Property="Padding"         Value="16" />
             <Setter Property="Margin"          Value="0,0,0,12" />
-        </Style>
-
-        <Style x:Key="Mono" TargetType="TextBox">
-            <Setter Property="FontFamily"    Value="Cascadia Mono, Consolas, Courier New" />
-            <Setter Property="FontSize"      Value="12" />
-            <Setter Property="IsReadOnly"    Value="True" />
-            <Setter Property="Background"    Value="#11131A" />
-            <Setter Property="BorderBrush"   Value="{DynamicResource BorderSubtle}" />
-            <Setter Property="TextWrapping"  Value="NoWrap" />
-        </Style>
-
-        <!-- Label and value pair used across the inventory page. -->
-        <Style x:Key="FieldLabel" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
-            <Setter Property="FontSize"   Value="11" />
-            <Setter Property="Margin"     Value="0,0,0,2" />
-        </Style>
-
-        <Style x:Key="FieldValue" TargetType="TextBlock">
-            <Setter Property="Foreground"    Value="{DynamicResource TextPrimary}" />
-            <Setter Property="FontSize"      Value="13" />
-            <Setter Property="TextWrapping"  Value="Wrap" />
-            <Setter Property="Margin"        Value="0,0,0,12" />
         </Style>
 
     </Window.Resources>
@@ -216,6 +467,9 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Theme" Style="{StaticResource Muted}"
+                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox x:Name="ThemeSelect" Width="110" Margin="0,0,14,0" />
                     <Border x:Name="ElevationBadge" CornerRadius="4" Padding="10,4" Margin="0,0,10,0"
                             Background="{DynamicResource SurfaceRaised}"
                             BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
@@ -334,8 +588,7 @@
                                 </UniformGrid>
 
                                 <TextBlock Text="Volumes" Style="{StaticResource FieldLabel}" Margin="0,6,0,4" />
-                                <ListView x:Name="ListVolumes" Height="120" Background="{DynamicResource SurfaceRaised}"
-                                          BorderBrush="{DynamicResource BorderSubtle}" Foreground="#111111">
+                                <ListView x:Name="ListVolumes" Height="120">
                                     <ListView.View>
                                         <GridView>
                                             <GridViewColumn Header="Drive"  Width="60"  DisplayMemberBinding="{Binding Drive}" />
@@ -349,8 +602,7 @@
                                 </ListView>
 
                                 <TextBlock Text="Physical disks" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
-                                <ListView x:Name="ListDisks" Height="110" Background="{DynamicResource SurfaceRaised}"
-                                          BorderBrush="{DynamicResource BorderSubtle}" Foreground="#111111">
+                                <ListView x:Name="ListDisks" Height="110">
                                     <ListView.View>
                                         <GridView>
                                             <GridViewColumn Header="Model"  Width="320" DisplayMemberBinding="{Binding Name}" />
@@ -621,8 +873,7 @@
                                     <Button x:Name="BtnListeningPorts"  Content="Listening ports" />
                                 </StackPanel>
 
-                                <ListView Grid.Row="1" x:Name="ListAdapters" Background="{DynamicResource SurfaceRaised}"
-                                          BorderBrush="{DynamicResource BorderSubtle}" Foreground="#111111">
+                                <ListView Grid.Row="1" x:Name="ListAdapters">
                                     <ListView.View>
                                         <GridView>
                                             <GridViewColumn Header="Name"        Width="150" DisplayMemberBinding="{Binding Name}" />
@@ -689,8 +940,7 @@
 
                                 <TextBox Grid.Row="0" Grid.Column="0" x:Name="KnowledgeSearch" Margin="0,0,10,10" />
                                 <ListBox Grid.Row="1" Grid.Column="0" x:Name="KnowledgeList" Margin="0,0,10,0"
-                                         Background="{DynamicResource SurfaceRaised}" Foreground="#111111"
-                                         BorderBrush="{DynamicResource BorderSubtle}" />
+                                         />
 
                                 <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
                                     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -720,8 +970,7 @@
                                 </StackPanel>
 
                                 <ListBox Grid.Row="1" Grid.Column="0" x:Name="VendorSectionList" Margin="0,0,10,0"
-                                         Background="{DynamicResource SurfaceRaised}" Foreground="#111111"
-                                         BorderBrush="{DynamicResource BorderSubtle}" />
+                                         />
 
                                 <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
                                     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -863,8 +1112,7 @@
                                     <TextBlock x:Name="AuditSummary" VerticalAlignment="Center" Margin="16,0,0,0" Style="{StaticResource Muted}" />
                                 </StackPanel>
 
-                                <ListView Grid.Row="1" x:Name="ListAudit" Background="{DynamicResource SurfaceRaised}"
-                                          BorderBrush="{DynamicResource BorderSubtle}" Foreground="#111111">
+                                <ListView Grid.Row="1" x:Name="ListAudit">
                                     <ListView.View>
                                         <GridView>
                                             <GridViewColumn Header="Status"   Width="80"  DisplayMemberBinding="{Binding Status}" />

@@ -48,14 +48,24 @@ function Get-TkNetworkAdapterInfo {
             }
 
             # DHCP state lives on the interface binding, not on the adapter.
+            # Wrapped in try/catch because this CDXML cmdlet raises a
+            # terminating error, not a suppressible one, for an adapter with
+            # no IPv4 binding. Bluetooth and disconnected virtual adapters hit
+            # that every time, and the error surfaced in the task log as if
+            # the whole enumeration had failed.
             $dhcp = 'Unknown'
 
-            $binding = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex `
-                                          -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-                       Select-Object -First 1
+            try {
+                $binding = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex `
+                                              -AddressFamily IPv4 -ErrorAction Stop |
+                           Select-Object -First 1
 
-            if ($binding) {
-                $dhcp = $binding.Dhcp
+                if ($binding) {
+                    $dhcp = $binding.Dhcp
+                }
+            }
+            catch {
+                $dhcp = 'No IPv4 binding'
             }
 
             $results += [pscustomobject]@{
