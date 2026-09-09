@@ -37,7 +37,7 @@ function Get-TkTweak {
     $catalog = Import-TkCatalog -Name 'tweaks'
 
     if (-not $catalog) {
-        return , @()
+        return @()
     }
 
     $tweaks = @($catalog.tweaks)
@@ -46,7 +46,7 @@ function Get-TkTweak {
         $tweaks = @($tweaks | Where-Object { $_.category -eq $Category })
     }
 
-    return , $tweaks
+    return $tweaks
 }
 
 <#

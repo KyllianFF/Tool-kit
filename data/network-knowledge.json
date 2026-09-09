@@ -1,14 +1,35 @@
 {
   "schemaVersion": 1,
-  "description": "Networking reference. Written as working notes rather than exam answers: each topic says what the thing is, what it looks like when it breaks, and what to check first.",
+  "description": "Networking reference. Written as working notes rather than exam answers: each topic says what the thing is, what it looks like when it breaks, and what to check first. A topic may carry tables, which the interface renders as tables rather than as a run of prose.",
   "categories": [
-    { "id": "fundamentals", "name": "Fundamentals" },
-    { "id": "layer2",       "name": "Switching and VLANs" },
-    { "id": "layer3",       "name": "Routing and addressing" },
-    { "id": "services",     "name": "Network services" },
-    { "id": "security",     "name": "Network security" },
-    { "id": "wireless",     "name": "Wireless" },
-    { "id": "method",       "name": "Method and tooling" }
+    {
+      "id": "fundamentals",
+      "name": "Fundamentals"
+    },
+    {
+      "id": "layer2",
+      "name": "Switching and VLANs"
+    },
+    {
+      "id": "layer3",
+      "name": "Routing and addressing"
+    },
+    {
+      "id": "services",
+      "name": "Network services"
+    },
+    {
+      "id": "security",
+      "name": "Network security"
+    },
+    {
+      "id": "wireless",
+      "name": "Wireless"
+    },
+    {
+      "id": "method",
+      "name": "Method and tooling"
+    }
   ],
   "topics": [
     {
@@ -17,14 +38,8 @@
       "category": "fundamentals",
       "summary": "Seven layers used as a shared vocabulary and, more usefully, as a troubleshooting order.",
       "content": [
-        "The OSI model is not how any real stack is implemented; it is how engineers agree on where a problem lives. Its practical value is that it gives you a fixed order to eliminate causes, from the cable upwards.",
-        "Layer 1, physical: electrical and optical signals. Cable, connector, transceiver, port, link LED.",
-        "Layer 2, data link: framing and local addressing. Ethernet, MAC addresses, 802.1Q VLAN tags, switching, spanning tree.",
-        "Layer 3, network: logical addressing and forwarding between networks. IPv4 and IPv6, ICMP, routing tables.",
-        "Layer 4, transport: end to end delivery. TCP with its handshake and retransmission, UDP without either.",
-        "Layer 5, session: establishing and maintaining a dialogue. In practice folded into layers above it.",
-        "Layer 6, presentation: encoding, encryption and compression. TLS is normally placed here.",
-        "Layer 7, application: what the user sees. HTTP, DNS, SMB, SMTP."
+        "The OSI model is not how any real stack is implemented; it is how engineers agree on where a problem lives. Its practical value is that it gives you a fixed order in which to eliminate causes, from the cable upwards.",
+        "Encapsulation adds a header per layer on the way down and removes it on the way up. That is why MTU problems surface as large transfers failing while ping succeeds."
       ],
       "keyPoints": [
         "Troubleshoot upwards. A layer 3 symptom with a layer 1 cause is the most common wasted afternoon in this job.",
@@ -37,6 +52,61 @@
         "L3: is there an address, a mask and a gateway, does ping reach the gateway, does the route table have a path.",
         "L4: does the TCP port answer, is a firewall dropping or rejecting.",
         "L7: does the application resolve the name, does the certificate validate, does the service log the request."
+      ],
+      "tables": [
+        {
+          "title": "The seven layers, and what to check at each",
+          "columns": [
+            "Layer",
+            "Name",
+            "What lives there",
+            "What to check"
+          ],
+          "rows": [
+            [
+              "7",
+              "Application",
+              "HTTP, DNS, SMB, SMTP",
+              "Does the service log the request, does the certificate validate"
+            ],
+            [
+              "6",
+              "Presentation",
+              "Encoding, encryption, TLS",
+              "Protocol and cipher agreement, certificate chain"
+            ],
+            [
+              "5",
+              "Session",
+              "Dialogue setup, in practice folded upwards",
+              "Session timeouts, idle disconnects"
+            ],
+            [
+              "4",
+              "Transport",
+              "TCP, UDP, port numbers",
+              "Does the port answer, is a firewall dropping or rejecting"
+            ],
+            [
+              "3",
+              "Network",
+              "IPv4, IPv6, ICMP, routing",
+              "Address, mask, gateway, route table, ping the gateway"
+            ],
+            [
+              "2",
+              "Data link",
+              "Ethernet, MAC, 802.1Q VLAN tags",
+              "MAC table, port VLAN, spanning tree state, duplex"
+            ],
+            [
+              "1",
+              "Physical",
+              "Cable, connector, transceiver, port",
+              "Link LED, another cable, interface error counters"
+            ]
+          ]
+        }
       ]
     },
     {
@@ -136,6 +206,117 @@
         "Work in binary or use the calculator. The classic error is assuming 172.16.0.0/12 covers only 172.16.x.x when it covers 172.16 through 172.31.",
         "A host with a 169.254 address did not reach a DHCP server. That is a layer 2 or DHCP problem, never a layer 3 one.",
         "Plan subnets on a power of two boundary so they can be summarised later. A /23 starting at .1.0 cannot be summarised."
+      ],
+      "tables": [
+        {
+          "title": "Reserved ranges worth recognising on sight",
+          "columns": [
+            "Range",
+            "RFC",
+            "What it means"
+          ],
+          "rows": [
+            [
+              "10.0.0.0/8",
+              "RFC 1918",
+              "Private. One /8, usually carved up per site"
+            ],
+            [
+              "172.16.0.0/12",
+              "RFC 1918",
+              "Private. Covers 172.16 through 172.31, not just 172.16"
+            ],
+            [
+              "192.168.0.0/16",
+              "RFC 1918",
+              "Private. The small site default"
+            ],
+            [
+              "169.254.0.0/16",
+              "RFC 3927",
+              "APIPA. A host here never reached a DHCP server"
+            ],
+            [
+              "100.64.0.0/10",
+              "RFC 6598",
+              "Carrier grade NAT. Increasingly seen on consumer links"
+            ],
+            [
+              "127.0.0.0/8",
+              "RFC 1122",
+              "Loopback"
+            ],
+            [
+              "224.0.0.0/4",
+              "RFC 5771",
+              "Multicast"
+            ],
+            [
+              "192.0.2.0/24",
+              "RFC 5737",
+              "Documentation. Must never be routed"
+            ]
+          ]
+        },
+        {
+          "title": "Prefix sizes to know without thinking",
+          "columns": [
+            "Prefix",
+            "Mask",
+            "Usable hosts",
+            "Typical use"
+          ],
+          "rows": [
+            [
+              "/30",
+              "255.255.255.252",
+              "2",
+              "Point to point link, the classic way"
+            ],
+            [
+              "/31",
+              "255.255.255.254",
+              "2",
+              "Point to point link, RFC 3021, saves two addresses"
+            ],
+            [
+              "/32",
+              "255.255.255.255",
+              "1",
+              "Loopback, or a route to a single host"
+            ],
+            [
+              "/29",
+              "255.255.255.248",
+              "6",
+              "A handful of servers"
+            ],
+            [
+              "/26",
+              "255.255.255.192",
+              "62",
+              "Small VLAN"
+            ],
+            [
+              "/24",
+              "255.255.255.0",
+              "254",
+              "Standard user VLAN"
+            ],
+            [
+              "/23",
+              "255.255.254.0",
+              "510",
+              "When a /24 is not enough"
+            ],
+            [
+              "/22",
+              "255.255.252.0",
+              "1022",
+              "Large wireless pool"
+            ]
+          ]
+        }
       ]
     },
     {
@@ -302,17 +483,296 @@
       "id": "common-ports",
       "title": "Ports worth knowing by heart",
       "category": "method",
-      "summary": "The service and port pairs that come up daily.",
+      "summary": "The service and port pairs that come up daily, grouped by what they are for.",
       "content": [
-        "20 and 21 FTP, 22 SSH and SFTP, 23 Telnet, 25 SMTP, 53 DNS, 67 and 68 DHCP, 69 TFTP, 80 HTTP.",
-        "88 Kerberos, 110 POP3, 123 NTP, 135 RPC endpoint mapper, 137 to 139 NetBIOS, 143 IMAP, 161 and 162 SNMP.",
-        "389 LDAP, 443 HTTPS, 445 SMB, 465 SMTPS, 514 syslog, 587 SMTP submission, 636 LDAPS.",
-        "993 IMAPS, 995 POP3S, 1433 SQL Server, 1521 Oracle, 3268 global catalog, 3306 MySQL, 3389 RDP, 5432 PostgreSQL.",
-        "5060 SIP, 5900 VNC, 5985 and 5986 WinRM, 6379 Redis, 8006 Proxmox, 8080 HTTP alternate, 9100 raw printing, 27017 MongoDB."
+        "Knowing these by sight is what lets you read a firewall log or a port scan without looking anything up. The grouping matters more than the numbers: when 88, 389 and 445 all answer, you are looking at a domain controller."
       ],
       "keyPoints": [
-        "Active Directory needs far more than 389: Kerberos, DNS, RPC and a dynamic high port range. Use the documented port set rather than opening them one by one as failures appear.",
-        "A service on a non standard port is normal. Confirm with the application owner rather than assuming the scan is wrong."
+        "Active Directory needs far more than 389: Kerberos, DNS, RPC and a dynamic high port range. Use the documented port set rather than opening ports one at a time as failures appear.",
+        "A service on a non standard port is normal. Confirm with the application owner rather than assuming the scan is wrong.",
+        "UDP has no handshake, so a closed UDP port and a filtered one look identical from outside. That is why UDP scanning is slow and unreliable."
+      ],
+      "tables": [
+        {
+          "title": "Web and remote access",
+          "columns": [
+            "Port",
+            "Service",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "80",
+              "HTTP",
+              "Should redirect to 443 on anything public"
+            ],
+            [
+              "443",
+              "HTTPS",
+              "Also carries almost every tunnelled protocol today"
+            ],
+            [
+              "8080",
+              "HTTP alternate",
+              "Proxies and application servers"
+            ],
+            [
+              "8443",
+              "HTTPS alternate",
+              "Management interfaces"
+            ],
+            [
+              "22",
+              "SSH and SFTP",
+              "Never expose to the internet without key authentication"
+            ],
+            [
+              "23",
+              "Telnet",
+              "Clear text. Its presence is a finding in itself"
+            ],
+            [
+              "3389",
+              "RDP",
+              "Require Network Level Authentication, never expose directly"
+            ],
+            [
+              "5900",
+              "VNC",
+              "Often unauthenticated by default"
+            ],
+            [
+              "5985",
+              "WinRM HTTP",
+              "Encrypted at the message layer, not the transport"
+            ],
+            [
+              "5986",
+              "WinRM HTTPS",
+              "The one to allow across a trust boundary"
+            ]
+          ]
+        },
+        {
+          "title": "Directory, authentication and file services",
+          "columns": [
+            "Port",
+            "Service",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "88",
+              "Kerberos",
+              "TCP and UDP. Time skew over five minutes breaks it"
+            ],
+            [
+              "389",
+              "LDAP",
+              "Clear text bind unless StartTLS is negotiated"
+            ],
+            [
+              "636",
+              "LDAPS",
+              "LDAP over TLS"
+            ],
+            [
+              "3268",
+              "Global catalog",
+              "Forest wide searches"
+            ],
+            [
+              "3269",
+              "Global catalog TLS",
+              ""
+            ],
+            [
+              "445",
+              "SMB",
+              "File shares and named pipes. Never route it off site"
+            ],
+            [
+              "139",
+              "NetBIOS session",
+              "Legacy SMB. Remove it with SMBv1"
+            ],
+            [
+              "137",
+              "NetBIOS name",
+              "UDP. What NBT-NS poisoning abuses"
+            ],
+            [
+              "135",
+              "RPC endpoint mapper",
+              "Then a dynamic high port, which is why RPC is hard to firewall"
+            ]
+          ]
+        },
+        {
+          "title": "Infrastructure services",
+          "columns": [
+            "Port",
+            "Service",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "53",
+              "DNS",
+              "UDP for queries, TCP for zone transfers and long answers"
+            ],
+            [
+              "67",
+              "DHCP server",
+              "UDP broadcast, does not cross a router without a relay"
+            ],
+            [
+              "68",
+              "DHCP client",
+              "UDP"
+            ],
+            [
+              "69",
+              "TFTP",
+              "UDP, no authentication at all. Config backups on a trusted VLAN only"
+            ],
+            [
+              "123",
+              "NTP",
+              "UDP. Kerberos depends on it"
+            ],
+            [
+              "161",
+              "SNMP",
+              "UDP. v1 and v2c send the community string in clear"
+            ],
+            [
+              "162",
+              "SNMP trap",
+              "UDP, inbound to the manager"
+            ],
+            [
+              "514",
+              "Syslog",
+              "UDP by default, and therefore lossy"
+            ],
+            [
+              "1812",
+              "RADIUS auth",
+              "UDP. 802.1X and VPN authentication"
+            ],
+            [
+              "1813",
+              "RADIUS accounting",
+              "UDP"
+            ]
+          ]
+        },
+        {
+          "title": "Mail",
+          "columns": [
+            "Port",
+            "Service",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "25",
+              "SMTP",
+              "Server to server. Blocked outbound by most consumer ISPs"
+            ],
+            [
+              "587",
+              "SMTP submission",
+              "What a mail client should use"
+            ],
+            [
+              "465",
+              "SMTPS",
+              "Implicit TLS submission"
+            ],
+            [
+              "110",
+              "POP3",
+              "Clear text"
+            ],
+            [
+              "995",
+              "POP3S",
+              ""
+            ],
+            [
+              "143",
+              "IMAP",
+              "Clear text"
+            ],
+            [
+              "993",
+              "IMAPS",
+              ""
+            ]
+          ]
+        },
+        {
+          "title": "Databases, printing and voice",
+          "columns": [
+            "Port",
+            "Service",
+            "Notes"
+          ],
+          "rows": [
+            [
+              "1433",
+              "Microsoft SQL Server",
+              "Plus 1434 UDP for the browser service"
+            ],
+            [
+              "1521",
+              "Oracle",
+              ""
+            ],
+            [
+              "3306",
+              "MySQL and MariaDB",
+              ""
+            ],
+            [
+              "5432",
+              "PostgreSQL",
+              ""
+            ],
+            [
+              "6379",
+              "Redis",
+              "No authentication by default. Never expose it"
+            ],
+            [
+              "27017",
+              "MongoDB",
+              "Historically shipped unauthenticated"
+            ],
+            [
+              "9100",
+              "Raw printing",
+              "JetDirect. Unauthenticated by design"
+            ],
+            [
+              "5060",
+              "SIP",
+              "UDP and TCP. 5061 for TLS"
+            ],
+            [
+              "8006",
+              "Proxmox",
+              ""
+            ],
+            [
+              "1723",
+              "PPTP",
+              "Cryptographically broken. Replace it"
+            ]
+          ]
+        }
       ]
     }
   ]

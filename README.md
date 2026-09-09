@@ -30,6 +30,7 @@ irm https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1 |
 | **Network admin tools** | Path MTU discovery, link quality with loss and jitter, traceroute with per hop timing, TLS certificate inspection with expiry, Wake-on-LAN, and the neighbour cache with MAC vendor names. |
 | **Network configuration** | Named adapter IP profiles you can capture, save and apply per site, the routing table with persistent route management, and port forwarding through the built in Windows proxy. |
 | **Security** | SSH key generation, file hashing and signature inspection, VirusTotal lookups by hash, a cryptographic password and passphrase generator, a breach check using k-anonymity, and a 15 point local security audit with an exportable report. |
+| **Threat hunting** | Four read only investigations: event log triage (failed logons grouped by account, lockouts, services installed, logs cleared, privileged group changes), autostart and persistence with signature checking, network exposure joining listening sockets to the firewall policy, and a certificate inventory with batch endpoint expiry checking. |
 
 ---
 

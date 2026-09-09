@@ -673,6 +673,125 @@ Describe 'Get-TkOuiTable' {
     }
 }
 
+Describe 'Knowledge base tables' {
+
+    It 'gives every table the same number of cells as columns' {
+
+        foreach ($topic in (Import-TkCatalog -Name 'network-knowledge').topics) {
+
+            foreach ($table in (ConvertTo-TkArray $topic.tables)) {
+
+                $width = @($table.columns).Count
+                $width | Should -BeGreaterThan 0
+
+                foreach ($row in $table.rows) {
+                    @($row).Count | Should -Be $width -Because (
+                        'a row of {0} in "{1}" does not match its columns' -f $table.title, $topic.title
+                    )
+                }
+            }
+        }
+    }
+
+    It 'names every table' {
+
+        foreach ($topic in (Import-TkCatalog -Name 'network-knowledge').topics) {
+
+            foreach ($table in (ConvertTo-TkArray $topic.tables)) {
+                $table.title | Should -Not -BeNullOrEmpty
+            }
+        }
+    }
+
+    It 'keeps the port reference as tables rather than prose' {
+
+        $ports  = (Import-TkCatalog -Name 'network-knowledge').topics |
+                  Where-Object { $_.id -eq 'common-ports' }
+
+        $tables = ConvertTo-TkArray $ports.tables
+        $rows   = ($tables | ForEach-Object { @($_.rows).Count } | Measure-Object -Sum).Sum
+
+        $tables.Count | Should -BeGreaterThan 3
+        $rows         | Should -BeGreaterThan 30
+    }
+}
+
+Describe 'Get-TkSeverityBrushKey' {
+
+    It 'maps <Severity> to <Expected>' -TestCases @(
+        @{ Severity = 'Fail';    Expected = 'Danger' }
+        @{ Severity = 'Warning'; Expected = 'Warning' }
+        @{ Severity = 'Pass';    Expected = 'Success' }
+        @{ Severity = 'Info';    Expected = 'TextMuted' }
+        @{ Severity = '';        Expected = 'TextMuted' }
+    ) {
+        param($Severity, $Expected)
+        Get-TkSeverityBrushKey -Severity $Severity | Should -Be $Expected
+    }
+}
+
+Describe 'New-TkHuntFinding' {
+
+    It 'produces the shape the interface binds to' {
+
+        $finding = New-TkHuntFinding -Category 'Failed logons' -Count 3 `
+            -Detail 'three accounts' -Assessment 'nothing to see' -Severity 'Warning'
+
+        $finding.Severity   | Should -Be 'Warning'
+        $finding.Category   | Should -Be 'Failed logons'
+        $finding.Count      | Should -Be 3
+        $finding.Detail     | Should -Be 'three accounts'
+        $finding.Assessment | Should -Be 'nothing to see'
+    }
+
+    It 'refuses a severity outside the set' {
+        { New-TkHuntFinding -Category 'x' -Count 0 -Detail 'y' -Assessment 'z' -Severity 'Critical' } |
+            Should -Throw
+    }
+}
+
+Describe 'Test-TkPackageId with Store identifiers' {
+
+    It 'accepts the Store product id <Id>' -TestCases @(
+        @{ Id = '9NKSQGP7F2NH' }
+        @{ Id = '9N7R5S6B0ZZH' }
+        @{ Id = 'XPFCG5NZ9RC0P4' }
+    ) {
+        param($Id)
+        Test-TkPackageId -PackageId $Id | Should -BeTrue
+    }
+}
+
+Describe 'Catalog integrity, extended' {
+
+    It 'declares a revert value for every tweak registry entry that is not deleted' {
+
+        foreach ($tweak in (Import-TkCatalog -Name 'tweaks').tweaks) {
+
+            foreach ($entry in (ConvertTo-TkArray $tweak.registry)) {
+
+                $names = $entry.PSObject.Properties.Name
+
+                $names | Should -Contain 'default' -Because (
+                    '{0} must say what to restore for {1}' -f $tweak.id, $entry.name
+                )
+            }
+        }
+    }
+
+    It 'uses a supported registry type in every tweak' {
+
+        $supported = @('String', 'ExpandString', 'Binary', 'DWord', 'MultiString', 'QWord')
+
+        foreach ($tweak in (Import-TkCatalog -Name 'tweaks').tweaks) {
+
+            foreach ($entry in (ConvertTo-TkArray $tweak.registry)) {
+                $supported | Should -Contain $entry.type
+            }
+        }
+    }
+}
+
 Describe 'Theme palettes' {
 
     It 'defines the same keys in both themes' {

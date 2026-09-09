@@ -94,7 +94,11 @@ function Get-TkVirusTotalApiKey {
     }
 
     try {
-        $secure = Get-Content -LiteralPath $path -Raw | ConvertTo-SecureString -ErrorAction Stop
+        # Trimmed: Set-Content appends a newline, and ConvertTo-SecureString
+        # rejects the trailing character, so the key failed to decrypt
+        # immediately after it was saved.
+        $stored = (Get-Content -LiteralPath $path -Raw).Trim()
+        $secure = ConvertTo-SecureString -String $stored -ErrorAction Stop
         $bstr   = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
 
         try {

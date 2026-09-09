@@ -45,24 +45,24 @@ function Get-TkAdapterProfile {
     $path = Get-TkAdapterProfilePath
 
     if (-not (Test-Path -LiteralPath $path)) {
-        return , @()
+        return @()
     }
 
     try {
         $content = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
 
         if ([string]::IsNullOrWhiteSpace($content)) {
-            return , @()
+            return @()
         }
 
-        return , @($content | ConvertFrom-Json -ErrorAction Stop)
+        return @($content | ConvertFrom-Json -ErrorAction Stop)
     }
     catch {
         Write-TkLog -Level Error -Category 'Network' -Message (
             'The saved adapter profiles could not be read: {0}' -f $_.Exception.Message
         )
 
-        return , @()
+        return @()
     }
 }
 
@@ -479,7 +479,7 @@ function Get-TkRouteTable {
         )
     }
 
-    return , @($results | Sort-Object -Property @{ Expression = 'PrefixLength'; Descending = $true },
+    return @($results | Sort-Object -Property @{ Expression = 'PrefixLength'; Descending = $true },
                                                  @{ Expression = 'Metric'; Descending = $false })
 }
 
@@ -683,7 +683,7 @@ function Get-TkPortProxy {
         }
     }
 
-    return , $rules
+    return $rules
 }
 
 <#

@@ -611,7 +611,7 @@ function Get-TkTraceRoute {
         $ping.Dispose()
     }
 
-    return , $results
+    return $results
 }
 
 <#
@@ -1043,5 +1043,5 @@ function Get-TkNeighborTable {
         )
     }
 
-    return , @($results | Sort-Object -Property { [version] ($_.Address -replace '[^0-9.]', '') } -ErrorAction SilentlyContinue)
+    return @($results | Sort-Object -Property { [version] ($_.Address -replace '[^0-9.]', '') } -ErrorAction SilentlyContinue)
 }

@@ -244,16 +244,32 @@ function Start-TkTaskPump {
 
             $output = $null
             $errors = @()
+            $notes  = @()
 
             try {
                 $output = $task.Shell.EndInvoke($task.Handle)
                 $errors = @($task.Shell.Streams.Error)
+
+                # Write-TkLog uses Write-Host, which lands in the information
+                # stream. In a worker runspace it has no window to write to,
+                # so those lines were written to the log file and never
+                # appeared in the output panel. They are replayed here, on the
+                # UI thread, where the panel exists.
+                $notes += @($task.Shell.Streams.Information | ForEach-Object { [string] $_ })
+                $notes += @($task.Shell.Streams.Warning     | ForEach-Object { [string] $_ })
             }
             catch {
                 $errors = @($_)
             }
             finally {
                 $task.Shell.Dispose()
+            }
+
+            foreach ($note in $notes) {
+
+                if (-not [string]::IsNullOrWhiteSpace($note)) {
+                    Write-TkUiConsole -Line $note
+                }
             }
 
             foreach ($record in $errors) {

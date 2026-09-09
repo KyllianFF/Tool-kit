@@ -33,10 +33,12 @@ src/Features/Security/FileIntegrity.ps1
 src/Features/Security/VirusTotal.ps1
 src/Features/Security/CredentialTools.ps1
 src/Features/Security/SecurityAudit.ps1
+src/Features/Security/ThreatHunting.ps1
 
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1
 src/UI/Window.ps1
+src/UI/RichText.ps1
 src/UI/Pages/SystemPage.ps1
 src/UI/Pages/SoftwarePage.ps1
 src/UI/Pages/TweaksPage.ps1
@@ -44,6 +46,7 @@ src/UI/Pages/FixesPage.ps1
 src/UI/Pages/NetworkPage.ps1
 src/UI/Pages/NetworkAdminPage.ps1
 src/UI/Pages/SecurityPage.ps1
+src/UI/Pages/ThreatHuntingPage.ps1
 
 # --- Entry point -----------------------------------------------------------
 src/Start-Toolkit.ps1
