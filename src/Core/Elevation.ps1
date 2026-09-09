@@ -78,9 +78,14 @@ function Invoke-TkElevation {
 
     $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA')
 
-    if ($PSCommandPath -and (Test-Path -LiteralPath $PSCommandPath)) {
+    # The entry script, never $PSCommandPath. Inside this function the latter
+    # points at src/Core/Elevation.ps1, which only declares functions, so the
+    # elevated process would start, define them, and exit without a window.
+    $entryScript = (Get-TkContext).EntryScript
 
-        $arguments += @('-File', ('"{0}"' -f $PSCommandPath))
+    if ($entryScript -and (Test-Path -LiteralPath $entryScript)) {
+
+        $arguments += @('-File', ('"{0}"' -f $entryScript))
     }
     elseif ($SourceUri) {
 
@@ -95,7 +100,10 @@ function Invoke-TkElevation {
         $arguments += @('-Command', ('"{0}"' -f $command))
     }
     else {
-        Write-TkLog -Level Error -Category 'Elevation' -Message 'No script path and no source URI: cannot elevate.'
+        Write-TkLog -Level Error -Category 'Elevation' -Message (
+            'No entry script and no source URI: cannot restart elevated. Start the toolkit again from an elevated console.'
+        )
+
         return $false
     }
 

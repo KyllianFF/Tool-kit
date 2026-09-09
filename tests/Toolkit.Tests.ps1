@@ -545,6 +545,58 @@ Describe 'Test-TkFileHash' {
     }
 }
 
+Describe 'Theme palettes' {
+
+    It 'defines the same keys in both themes' {
+
+        # A key present in one palette and missing from the other keeps its
+        # previous value on a swap, which is how a half-converted, unreadable
+        # window happens.
+        $dark  = Get-TkThemePalette -Name Dark
+        $light = Get-TkThemePalette -Name Light
+
+        ($dark.Keys  | Sort-Object) -join ',' | Should -Be (($light.Keys | Sort-Object) -join ',')
+    }
+
+    It 'gives every colour in <Theme> a valid hex value' -TestCases @(
+        @{ Theme = 'Dark' }
+        @{ Theme = 'Light' }
+    ) {
+        param($Theme)
+
+        foreach ($value in (Get-TkThemePalette -Name $Theme).Values) {
+            $value | Should -Match '^#[0-9A-Fa-f]{6}$'
+        }
+    }
+
+    It 'keeps text and background far apart in <Theme>' -TestCases @(
+        @{ Theme = 'Dark' }
+        @{ Theme = 'Light' }
+    ) {
+        param($Theme)
+
+        # A crude luminance gap check. It will not catch a subtle contrast
+        # failure, but it does catch the mistake that actually happens: a
+        # foreground copied from the wrong palette.
+        $palette = Get-TkThemePalette -Name $Theme
+
+        $luminance = {
+            param($hex)
+
+            $r = [Convert]::ToInt32($hex.Substring(1, 2), 16)
+            $g = [Convert]::ToInt32($hex.Substring(3, 2), 16)
+            $b = [Convert]::ToInt32($hex.Substring(5, 2), 16)
+
+            return (0.299 * $r + 0.587 * $g + 0.114 * $b)
+        }
+
+        $textLuminance    = & $luminance $palette['TextPrimary']
+        $surfaceLuminance = & $luminance $palette['Surface']
+
+        [math]::Abs($textLuminance - $surfaceLuminance) | Should -BeGreaterThan 120
+    }
+}
+
 Describe 'Get-TkWellKnownService' {
 
     It 'names port <Port> as <Expected>' -TestCases @(

@@ -198,7 +198,9 @@ function Show-TkPage {
         }
 
         if ($page -eq $Name) {
-            $button.Background = $ctx.Window.FindResource('SurfaceRaised')
+            # Looked up on every call: a frozen brush captured once would keep
+            # the palette that was active when the page was first shown.
+            $button.Background = $ctx.Window.Resources['Selection']
             $button.FontWeight = [System.Windows.FontWeights]::SemiBold
         }
         else {
@@ -257,7 +259,12 @@ function Set-TkStatus {
     Work to run in the background runspace. Receives $ArgumentList.
 
 .PARAMETER ArgumentList
-    Plain values only. WPF objects must not cross the thread boundary.
+    Positional values, scalars only. WPF objects must not cross the thread
+    boundary.
+
+.PARAMETER ParameterList
+    Named parameters as a hashtable. The only safe way to pass a collection:
+    a positional array is flattened by PowerShell before the call is made.
 
 .PARAMETER OnComplete
     Runs on the UI thread with the task result.
@@ -273,6 +280,9 @@ function Invoke-TkBackgroundAction {
 
         [Parameter()]
         [object[]] $ArgumentList = @(),
+
+        [Parameter()]
+        [hashtable] $ParameterList,
 
         [Parameter()]
         [scriptblock] $OnComplete,
@@ -293,8 +303,18 @@ function Invoke-TkBackgroundAction {
         }
     }.GetNewClosure()
 
-    Start-TkTask -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList `
-                 -OnComplete $wrapper -Name $StatusText | Out-Null
+    $taskParameters = @{
+        ScriptBlock  = $ScriptBlock
+        ArgumentList = $ArgumentList
+        OnComplete   = $wrapper
+        Name         = $StatusText
+    }
+
+    if ($ParameterList) {
+        $taskParameters['ParameterList'] = $ParameterList
+    }
+
+    Start-TkTask @taskParameters | Out-Null
 }
 
 <#
@@ -460,6 +480,7 @@ function Initialize-TkShell {
         $hostLabel.Text = '{0} - {1} - PowerShell {2}' -f $env:COMPUTERNAME, $ctx.OSCaption, $ctx.PSVersion
     }
 
+    Initialize-TkThemeSelector
     Update-TkElevationBadge
 
     # --- Navigation -------------------------------------------------------
@@ -552,7 +573,7 @@ function Update-TkElevationBadge {
         $text.Text = 'Administrator'
 
         if ($badge) {
-            $badge.BorderBrush = $ctx.Window.FindResource('Success')
+            $badge.BorderBrush = $ctx.Window.Resources['Success']
         }
 
         if ($button) {
@@ -563,7 +584,7 @@ function Update-TkElevationBadge {
         $text.Text = 'Standard user - system changes disabled'
 
         if ($badge) {
-            $badge.BorderBrush = $ctx.Window.FindResource('Warning')
+            $badge.BorderBrush = $ctx.Window.Resources['Warning']
         }
     }
 }

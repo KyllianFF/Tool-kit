@@ -24,6 +24,14 @@
     background job can call the same helpers as the UI thread. Size is capped
     to keep a technician laptop usable while a scan runs.
 
+    Functions alone are not enough. A function carries its code but not the
+    script scope it was defined in, so a helper that reads a module level
+    variable finds $null in a child runspace. Write-TkLog indexes into
+    $script:TkLogLevels, which meant every background task that logged
+    anything died with "cannot index into a null array" and the page it was
+    feeding stayed empty. The shared variables below are therefore declared
+    in the session state as well.
+
 .PARAMETER MaxRunspaces
     Upper bound on concurrent background jobs.
 #>
@@ -46,7 +54,14 @@ function Initialize-TkRunspacePool {
     # the definitions is what lets background code call Write-TkLog or
     # Invoke-TkProcess without importing a module from disk, which matters
     # because the toolkit often runs with no files on disk at all.
-    foreach ($function in (Get-ChildItem -Path 'Function:\Tk*', 'Function:\*-Tk*' -ErrorAction SilentlyContinue)) {
+    #
+    # Enumerated through Get-Command rather than the Function: drive: a drive
+    # path that matches nothing is an error on PowerShell 7, and the pattern
+    # for a prefix like Tk* legitimately matches nothing here.
+    $functions = Get-Command -CommandType Function -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -like '*-Tk*' -or $_.Name -eq 'Start-Toolkit' }
+
+    foreach ($function in $functions) {
 
         $entry = New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry(
             $function.Name,
@@ -54,6 +69,35 @@ function Initialize-TkRunspacePool {
         )
 
         $sessionState.Commands.Add($entry)
+    }
+
+    # Shared state the functions above read. This is an explicit allow list,
+    # not a sweep of every Tk variable: the application context holds WPF
+    # objects that must not be touched off the dispatcher thread, and the
+    # page level variables can hold a generated secret. Neither belongs in a
+    # worker.
+    $sharedVariables = @(
+        'TkAppName', 'TkAppVersion', 'TkAppCommit', 'TkRepository',
+        'TkLogLevels', 'TkMinimumLogLevel',
+        'TkPackageIdPattern', 'TkVirusTotalBaseUri',
+        'TkEmbeddedCatalogs'
+    )
+
+    foreach ($name in $sharedVariables) {
+
+        $variable = Get-Variable -Name $name -Scope Script -ErrorAction SilentlyContinue
+
+        if ($null -eq $variable) {
+            continue
+        }
+
+        $entry = New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry(
+            $name,
+            $variable.Value,
+            ''
+        )
+
+        $sessionState.Variables.Add($entry)
     }
 
     $pool = [runspacefactory]::CreateRunspacePool(1, $MaxRunspaces, $sessionState, $Host)
@@ -80,8 +124,19 @@ function Initialize-TkRunspacePool {
     Work to perform. Receives $ArgumentList through the params it declares.
 
 .PARAMETER ArgumentList
-    Values passed to the script block. Must be serialisable plain data: never
-    pass WPF controls or the application context across the thread boundary.
+    Positional values for the script block. Must be plain data: never pass
+    WPF controls or the application context across the thread boundary.
+
+    Only use it when every value is a scalar. A PowerShell array literal
+    flattens nested arrays, so @($ids, $verb) becomes one argument per
+    identifier followed by the verb, and the script block binds the wrong
+    values. There is no way to fix that at the call site because the
+    flattening happens before the call. Use ParameterList instead.
+
+.PARAMETER ParameterList
+    Named parameters for the script block, as a hashtable. Bound through
+    AddParameters, which preserves an array value intact, so this is the
+    correct way to pass a collection to background work.
 
 .PARAMETER OnComplete
     Script block run on the UI thread once the work returns. Receives a
@@ -104,6 +159,9 @@ function Start-TkTask {
         [object[]] $ArgumentList = @(),
 
         [Parameter()]
+        [hashtable] $ParameterList,
+
+        [Parameter()]
         [scriptblock] $OnComplete,
 
         [Parameter()]
@@ -120,6 +178,10 @@ function Start-TkTask {
     $shell.RunspacePool = $ctx.RunspacePool
 
     [void] $shell.AddScript($ScriptBlock)
+
+    if ($ParameterList -and $ParameterList.Count -gt 0) {
+        [void] $shell.AddParameters($ParameterList)
+    }
 
     foreach ($argument in $ArgumentList) {
         [void] $shell.AddArgument($argument)

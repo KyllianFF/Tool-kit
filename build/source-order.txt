@@ -32,6 +32,7 @@ src/Features/Security/CredentialTools.ps1
 src/Features/Security/SecurityAudit.ps1
 
 # --- Interface: depends on core and features -------------------------------
+src/UI/Theme.ps1
 src/UI/Window.ps1
 src/UI/Pages/SystemPage.ps1
 src/UI/Pages/SoftwarePage.ps1

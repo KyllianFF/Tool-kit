@@ -221,7 +221,7 @@ function Invoke-TkTweakUiAction {
     $ids = @($selected | ForEach-Object { $_.Id })
 
     Invoke-TkBackgroundAction -StatusText ('{0}ing {1} tweak(s)...' -f $Action, $ids.Count) `
-        -ArgumentList @((, $ids), $Action) `
+        -ParameterList @{ tweakIds = $ids; verb = $Action } `
         -ScriptBlock {
             param($tweakIds, $verb)
 
