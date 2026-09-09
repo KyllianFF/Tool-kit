@@ -111,6 +111,7 @@ function Start-Toolkit {
         Initialize-TkNetworkAdminPage
         Initialize-TkSecurityPage
         Initialize-TkThreatHuntingPage
+        Initialize-TkDiagnosticsPage
 
         Show-TkPage -Name 'System'
         Update-TkSystemPage

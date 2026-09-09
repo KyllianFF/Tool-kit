@@ -222,8 +222,11 @@ function Invoke-TkPersistenceFromUi {
 
             Add-TkHeading -Document $document -Text 'Everything outside the Windows directory' -Level 2
 
+            # The comma is required. Without it PowerShell flattens the inner
+            # arrays into one long list of values and every row ends up with a
+            # single cell, which is why these tables rendered as a list.
             $rows = @($outside | ForEach-Object {
-                @($_.Kind, $_.Name, $_.Signer, $_.Command)
+                , @($_.Kind, $_.Name, $_.Signer, $_.Command)
             })
 
             if ($rows.Count -gt 0) {
@@ -292,7 +295,7 @@ function Invoke-TkExposureFromUi {
 
             Add-TkTable -Document $document -Column @('Port', 'Service', 'Address', 'Process', 'Reachable') `
                         -Row @($rows | ForEach-Object {
-                            @($_.Port, $_.Service, $_.Address, $_.ProcessName, $(if ($_.Exposed) { 'yes' } else { 'no' }))
+                            , @($_.Port, $_.Service, $_.Address, $_.ProcessName, $(if ($_.Exposed) { 'yes' } else { 'no' }))
                         })
 
             Set-TkDocument -ControlName 'HuntOutput' -Document $document
@@ -344,7 +347,7 @@ function Invoke-TkCertificateInventoryFromUi {
 
             Add-TkTable -Document $document -Column @('Days', 'Subject', 'Algorithm', 'Store') `
                         -Row @($rows | ForEach-Object {
-                            @($_.DaysRemaining, $_.Subject, $_.Algorithm, $_.Store)
+                            , @($_.DaysRemaining, $_.Subject, $_.Algorithm, $_.Store)
                         })
 
             Set-TkDocument -ControlName 'HuntOutput' -Document $document

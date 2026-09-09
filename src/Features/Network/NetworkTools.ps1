@@ -36,6 +36,21 @@ function Get-TkNetworkAdapterInfo {
 
         foreach ($adapter in $adapters) {
 
+            # InterfaceIndex is the real CIM property; ifIndex is an alias
+            # added by the module's type data, which is not always loaded in
+            # every host and comes back null when it is not. Reading the real
+            # property first, and skipping an adapter with no index at all,
+            # removes a whole class of "argument is null" failures.
+            $index = $adapter.InterfaceIndex
+
+            if ($null -eq $index) {
+                $index = $adapter.ifIndex
+            }
+
+            if ($null -eq $index) {
+                continue
+            }
+
             # Ignore, not SilentlyContinue. Get-NetIPConfiguration writes a
             # record for every adapter with no connection profile or no IPv4
             # address, and SilentlyContinue only hides the display: the record
@@ -44,7 +59,7 @@ function Get-TkNetworkAdapterInfo {
             # Bluetooth adapters that was dozens of alarming lines in the
             # output panel for a call that had actually succeeded. Ignore is
             # the only preference that records nothing at all.
-            $configuration = Get-NetIPConfiguration -InterfaceIndex $adapter.ifIndex -ErrorAction Ignore
+            $configuration = Get-NetIPConfiguration -InterfaceIndex $index -ErrorAction Ignore
 
             $ipv4 = $configuration.IPv4Address | Select-Object -First 1
             $dns  = @()
@@ -63,7 +78,7 @@ function Get-TkNetworkAdapterInfo {
             # the whole enumeration had failed.
             $dhcp = 'Unknown'
 
-            $binding = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex `
+            $binding = Get-NetIPInterface -InterfaceIndex $index `
                                           -AddressFamily IPv4 -ErrorAction Ignore |
                        Select-Object -First 1
 
@@ -86,7 +101,7 @@ function Get-TkNetworkAdapterInfo {
                 Gateway        = if ($configuration.IPv4DefaultGateway) { $configuration.IPv4DefaultGateway.NextHop } else { 'None' }
                 DnsServers     = ($dns -join ', ')
                 Dhcp           = $dhcp
-                InterfaceIndex = $adapter.ifIndex
+                InterfaceIndex = $index
             }
         }
     }

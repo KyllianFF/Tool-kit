@@ -263,18 +263,38 @@ function Add-TkBulletList {
 
 <#
 .SYNOPSIS
-    Appends a real table to a document.
+    Appends a table to a document, with proportional and resizable columns.
 
 .DESCRIPTION
-    A table, not aligned text. The port list is the reason this exists: as a
-    run of prose, finding which service owns port 3268 means reading the whole
-    thing.
+    Built as a Grid hosted in a BlockUIContainer rather than as a FlowDocument
+    Table. The FlowDocument Table accepts star widths and then ignores them:
+    the port reference came out with one wide column and the rest squeezed to
+    nothing, which is worse than no table at all.
+
+    A Grid honours star sizing, wraps its cell text instead of truncating it,
+    and takes a GridSplitter between columns, so a column can be widened by
+    dragging its edge when a value is long.
 
 .PARAMETER Column
     Column headings.
 
 .PARAMETER Row
-    Rows, each an array of cell values matching the columns.
+    Rows, each an array of cell values matching the columns. Build them with
+    the comma operator inside a pipeline, otherwise PowerShell flattens the
+    inner arrays and every row arrives with one cell.
+
+.PARAMETER Weight
+    Relative column widths. Defaults to a narrow first column for the key
+    being looked up and progressively wider ones after it.
+
+.PARAMETER Highlight
+    Search term to mark inside the cells.
+
+.EXAMPLE
+    Add-TkTable -Document $document -Column @('Port', 'Service') -Row @(
+        , @('443', 'HTTPS')
+        , @('22',  'SSH')
+    )
 #>
 function Add-TkTable {
     [CmdletBinding()]
@@ -286,101 +306,156 @@ function Add-TkTable {
         [string[]] $Column,
 
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [object[]] $Row,
+
+        [Parameter()]
+        [double[]] $Weight = @(),
 
         [Parameter()]
         [AllowEmptyString()]
         [string] $Highlight = ''
     )
 
-    $table = New-Object System.Windows.Documents.Table
-    $table.CellSpacing = 0
-    $table.Margin      = New-Object System.Windows.Thickness(0, 0, 0, 14)
+    if ($Column.Count -eq 0) {
+        return
+    }
 
-    # The first column is narrow because it holds the key being looked up, a
-    # port or a prefix; the last takes the remaining width for the note.
+    $grid = New-Object System.Windows.Controls.Grid
+    $grid.Margin = New-Object System.Windows.Thickness(0, 2, 0, 16)
+    $grid.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+
+    # --- Column widths ----------------------------------------------------
+    # The first column holds the value being looked up, a port or a prefix,
+    # and stays narrow. The last takes the remaining width because it holds
+    # the explanation.
     for ($i = 0; $i -lt $Column.Count; $i++) {
 
-        $definition = New-Object System.Windows.Documents.TableColumn
+        # Not named $weight: PowerShell variable names are case insensitive,
+        # so that would assign to the $Weight parameter itself and the second
+        # column would size from whatever the first one wrote there.
+        $columnWeight = if ($i -lt $Weight.Count) { $Weight[$i] }
+                        elseif ($i -eq 0) { 0.8 }
+                        elseif ($i -eq ($Column.Count - 1)) { 2.6 }
+                        else { 1.4 }
 
-        if ($i -eq 0) {
-            $definition.Width = New-Object System.Windows.GridLength(90)
-        }
-        elseif ($i -lt ($Column.Count - 1)) {
-            $definition.Width = New-Object System.Windows.GridLength(1.2, [System.Windows.GridUnitType]::Star)
-        }
-        else {
-            $definition.Width = New-Object System.Windows.GridLength(2.4, [System.Windows.GridUnitType]::Star)
-        }
+        # The constructor is called directly rather than through New-Object.
+        # New-Object resolves the overload from the runtime types of the
+        # arguments, and a weight that arrived as an untyped object makes it
+        # fail to find the two argument form.
+        $definition = New-Object System.Windows.Controls.ColumnDefinition
+        $definition.Width    = [System.Windows.GridLength]::new([double] $columnWeight, [System.Windows.GridUnitType]::Star)
+        $definition.MinWidth = 48
 
-        $table.Columns.Add($definition)
+        $grid.ColumnDefinitions.Add($definition)
+    }
+
+    # --- Rows -------------------------------------------------------------
+    $headerRow = New-Object System.Windows.Controls.RowDefinition
+    $headerRow.Height = [System.Windows.GridLength]::Auto
+    $grid.RowDefinitions.Add($headerRow)
+
+    foreach ($ignored in $Row) {
+
+        $definition = New-Object System.Windows.Controls.RowDefinition
+        $definition.Height = [System.Windows.GridLength]::Auto
+        $grid.RowDefinitions.Add($definition)
     }
 
     $border     = Get-TkBrush -Key 'BorderSubtle'
     $headerFill = Get-TkBrush -Key 'SurfaceRaised'
+    $muted      = Get-TkBrush -Key 'TextMuted'
+    $primary    = Get-TkBrush -Key 'TextPrimary'
 
-    # --- Header ----------------------------------------------------------
-    $headerGroup = New-Object System.Windows.Documents.TableRowGroup
-    $headerRow   = New-Object System.Windows.Documents.TableRow
+    # --- Header cells -----------------------------------------------------
+    for ($i = 0; $i -lt $Column.Count; $i++) {
 
-    foreach ($heading in $Column) {
+        $text = New-Object System.Windows.Controls.TextBlock
+        $text.Text         = $Column[$i]
+        $text.Foreground   = $muted
+        $text.FontSize     = 12
+        $text.FontWeight   = [System.Windows.FontWeights]::SemiBold
+        $text.TextWrapping = [System.Windows.TextWrapping]::Wrap
 
-        $paragraph = New-Object System.Windows.Documents.Paragraph(
-            (New-Object System.Windows.Documents.Run($heading))
-        )
-
-        $cell = New-Object System.Windows.Documents.TableCell($paragraph)
+        $cell = New-Object System.Windows.Controls.Border
         $cell.Background      = $headerFill
         $cell.BorderBrush     = $border
-        $cell.BorderThickness = New-Object System.Windows.Thickness(0, 0, 0, 1)
+        $cell.BorderThickness = New-Object System.Windows.Thickness(0, 0, 1, 1)
         $cell.Padding         = New-Object System.Windows.Thickness(8, 6, 8, 6)
-        $cell.Foreground      = Get-TkBrush -Key 'TextMuted'
-        $cell.FontWeight      = [System.Windows.FontWeights]::SemiBold
-        $cell.FontSize        = 12
+        $cell.Child           = $text
 
-        $headerRow.Cells.Add($cell)
+        [System.Windows.Controls.Grid]::SetColumn($cell, $i)
+        [System.Windows.Controls.Grid]::SetRow($cell, 0)
+
+        [void] $grid.Children.Add($cell)
     }
 
-    $headerGroup.Rows.Add($headerRow)
-    $table.RowGroups.Add($headerGroup)
-
-    # --- Body -------------------------------------------------------------
-    $bodyGroup = New-Object System.Windows.Documents.TableRowGroup
+    # --- Body cells -------------------------------------------------------
+    $rowIndex = 1
 
     foreach ($values in $Row) {
 
-        $tableRow = New-Object System.Windows.Documents.TableRow
-        $index    = 0
+        $cells = @($values)
 
-        foreach ($value in @($values)) {
+        for ($i = 0; $i -lt $Column.Count; $i++) {
 
-            $paragraph = New-Object System.Windows.Documents.Paragraph
-            $paragraph.LineHeight = 17
+            $value = if ($i -lt $cells.Count) { [string] $cells[$i] } else { '' }
 
-            foreach ($run in (New-TkTextRuns -Text ([string] $value) -Highlight $Highlight)) {
-                $paragraph.Inlines.Add($run)
-            }
-
-            $cell = New-Object System.Windows.Documents.TableCell($paragraph)
-            $cell.BorderBrush     = $border
-            $cell.BorderThickness = New-Object System.Windows.Thickness(0, 0, 0, 1)
-            $cell.Padding         = New-Object System.Windows.Thickness(8, 5, 8, 5)
+            $text = New-Object System.Windows.Controls.TextBlock
+            $text.TextWrapping = [System.Windows.TextWrapping]::Wrap
+            $text.Foreground   = $primary
+            $text.FontSize     = 12.5
 
             # The lookup key is monospaced so a column of ports lines up.
-            if ($index -eq 0) {
-                $cell.FontFamily = New-Object System.Windows.Media.FontFamily('Cascadia Mono, Consolas')
-                $cell.FontWeight = [System.Windows.FontWeights]::SemiBold
+            if ($i -eq 0) {
+                $text.FontFamily = New-Object System.Windows.Media.FontFamily('Cascadia Mono, Consolas')
+                $text.FontWeight = [System.Windows.FontWeights]::SemiBold
             }
 
-            $tableRow.Cells.Add($cell)
-            $index++
+            foreach ($run in (New-TkTextRuns -Text $value -Highlight $Highlight)) {
+                [void] $text.Inlines.Add($run)
+            }
+
+            $cell = New-Object System.Windows.Controls.Border
+            $cell.BorderBrush     = $border
+            $cell.BorderThickness = New-Object System.Windows.Thickness(0, 0, 1, 1)
+            $cell.Padding         = New-Object System.Windows.Thickness(8, 5, 8, 5)
+            $cell.Child           = $text
+
+            [System.Windows.Controls.Grid]::SetColumn($cell, $i)
+            [System.Windows.Controls.Grid]::SetRow($cell, $rowIndex)
+
+            [void] $grid.Children.Add($cell)
         }
 
-        $bodyGroup.Rows.Add($tableRow)
+        $rowIndex++
     }
 
-    $table.RowGroups.Add($bodyGroup)
-    $Document.Blocks.Add($table)
+    # --- Resize handles ---------------------------------------------------
+    # One splitter per boundary, spanning every row, so a column can be
+    # widened by dragging its right edge when a value needs the room.
+    for ($i = 0; $i -lt ($Column.Count - 1); $i++) {
+
+        $splitter = New-Object System.Windows.Controls.GridSplitter
+        $splitter.Width               = 5
+        $splitter.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Right
+        $splitter.VerticalAlignment   = [System.Windows.VerticalAlignment]::Stretch
+        $splitter.Background          = [System.Windows.Media.Brushes]::Transparent
+        $splitter.Cursor              = [System.Windows.Input.Cursors]::SizeWE
+        $splitter.ResizeBehavior      = [System.Windows.Controls.GridResizeBehavior]::CurrentAndNext
+        $splitter.ToolTip             = 'Drag to widen this column'
+
+        [System.Windows.Controls.Grid]::SetColumn($splitter, $i)
+        [System.Windows.Controls.Grid]::SetRow($splitter, 0)
+        [System.Windows.Controls.Grid]::SetRowSpan($splitter, $grid.RowDefinitions.Count)
+
+        [void] $grid.Children.Add($splitter)
+    }
+
+    $container = New-Object System.Windows.Documents.BlockUIContainer($grid)
+    $container.Margin = New-Object System.Windows.Thickness(0)
+
+    $Document.Blocks.Add($container)
 }
 
 <#
