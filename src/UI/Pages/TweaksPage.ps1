@@ -12,6 +12,42 @@ $script:TkTweakView  = $null
 
 <#
 .SYNOPSIS
+    Returns the icon character for a tweak category.
+
+.DESCRIPTION
+    From the Windows icon font, like the application tiles. See
+    Get-TkCategoryGlyph for why the icons are glyphs rather than images, and
+    for the rule that a code point is verified by rendering it before it is
+    used here.
+
+.OUTPUTS
+    System.String
+#>
+function Get-TkTweakGlyph {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Key
+    )
+
+    $glyphs = @{
+        'advanced'    = 0xE713  # gear
+        'gaming'      = 0xE7FC  # game controller
+        'hardening'   = 0xEA18  # shield
+        'interface'   = 0xECAA  # window panes
+        'performance' = 0xE945  # lightning
+        'privacy'     = 0xE72E  # padlock
+    }
+
+    $point = if ($Key -and $glyphs.ContainsKey($Key)) { $glyphs[$Key] } else { 0xE9E9 }
+
+    return [string] [char] $point
+}
+
+<#
+.SYNOPSIS
     Wires the Tweaks page and loads the catalog.
 #>
 function Initialize-TkTweaksPage {
@@ -43,6 +79,13 @@ function Initialize-TkTweaksPage {
             Category     = $tweak.category
             CategoryName = $categoryNames[$tweak.category]
             StateText    = ''
+
+            # The same tile the Software list uses, so the two pages are
+            # read the same way. A tweak has no publisher category, so the
+            # icon marks what kind of change it is.
+            Glyph        = Get-TkTweakGlyph -Key $tweak.category
+            TileBrush    = Get-TkTileBrush  -Key 'tweak'
+
             Definition   = $tweak
         })
     }

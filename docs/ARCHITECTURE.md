@@ -227,7 +227,37 @@ contains its own terminator, and catalogs are edited by people.
 | A network topic or vendor command | `data/network-knowledge.json`, `data/vendor-commands.json` |
 | A vendor support profile | `data/vendor-support.json` |
 | A fix | A function in `SystemFixes.ps1` **and** an entry in `Get-TkFixDispatchTable` |
+| A table anywhere | `Set-TkObjectTable`, or `Show-TkTableWindow` for one in its own window |
+| Work on a page's first open | `Register-TkFirstShow -PageName <page> -Action { ... }` |
 | A whole feature area | A file under `src/Features/`, a page under `src/UI/Pages/`, a panel in `MainWindow.xaml`, an entry in `source-order.txt`, and a nav button |
 
 Adding a page is intentionally the only change that touches several files:
 navigation, markup and wiring genuinely are three different concerns.
+
+---
+
+## 9. Two interface rules worth knowing before you change the UI
+
+**There is one table renderer.** `Add-TkTable` builds a `Grid` inside a
+`BlockUIContainer`, and `Set-TkObjectTable` is the call a page makes. It gives
+selectable cells, banded rows, draggable column edges and live theme
+following. The application used to have a second mechanism, `GridView` inside
+a `ListView`, and every one of those four behaviours had to be implemented
+twice; the column resize handle went missing from one of them for exactly that
+reason. There is no `ListView` left, and adding one back means reimplementing
+all four.
+
+**Never clear a control's `Template` to remove its chrome.** A `TextBox` with
+`Template = $null` has no visual tree: it measures correctly and draws
+nothing. That emptied every table and every finding card at once, and it looks
+like missing data rather than a rendering fault, which is what made it
+expensive to find. Remove chrome with a style carrying a minimal template, as
+`SelectableText` does, and keep the `PART_ContentHost` the control renders
+into. `tests/Toolkit.Tests.ps1` asserts the rendered visual tree is not empty
+so this cannot come back quietly.
+
+Icons are code points from **Segoe Fluent Icons**, falling back to **Segoe MDL2
+Assets**. Both ship with Windows, so they add nothing to the build and take the
+foreground colour of whatever draws them. A code point the font does not carry
+draws an empty box and is invisible to every other kind of check, so the test
+suite verifies each one against the installed font.

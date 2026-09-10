@@ -52,6 +52,7 @@ function Get-TkThemePalette {
             Accent          = '#4C8DFF'
             AccentMuted     = '#2A4C8A'
             Selection       = '#2F3A4F'
+            RowAlternate    = '#252932'
             Success         = '#3FB950'
             Warning         = '#D29922'
             Danger          = '#F85149'
@@ -62,6 +63,10 @@ function Get-TkThemePalette {
     # Accent and AccentMuted are darkened so white text on the primary button
     # still clears the 4.5:1 contrast ratio, and Success and Warning are
     # deepened because the dark theme values are unreadable on white.
+    #
+    # RowAlternate is the banding on every other table row. It is a colour per
+    # theme rather than a transparency, because a transparency that reads as a
+    # faint lift on the dark surface reads as dirt on the light one.
     return @{
         AppBackground   = '#F4F5F7'
         Surface         = '#FFFFFF'
@@ -73,6 +78,7 @@ function Get-TkThemePalette {
         Accent          = '#1F63D6'
         AccentMuted     = '#DCE7FB'
         Selection       = '#E3EBF9'
+        RowAlternate    = '#EFF1F5'
         Success         = '#1A7F37'
         Warning         = '#9A6700'
         Danger          = '#C0342B'

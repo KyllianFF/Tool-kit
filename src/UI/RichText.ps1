@@ -60,7 +60,7 @@ function New-TkFlowDocument {
 
     $document.FontFamily      = New-Object System.Windows.Media.FontFamily('Segoe UI')
     $document.FontSize        = 13
-    $document.Foreground      = Get-TkBrush -Key 'TextPrimary'
+    $document.SetResourceReference([System.Windows.Documents.FlowDocument]::ForegroundProperty, 'TextPrimary')
     $document.Background      = [System.Windows.Media.Brushes]::Transparent
     $document.PagePadding     = New-Object System.Windows.Thickness(4)
     $document.TextAlignment   = [System.Windows.TextAlignment]::Left
@@ -267,13 +267,22 @@ function Add-TkBulletList {
 
 .DESCRIPTION
     Built as a Grid hosted in a BlockUIContainer rather than as a FlowDocument
-    Table. The FlowDocument Table accepts star widths and then ignores them:
-    the port reference came out with one wide column and the rest squeezed to
-    nothing, which is worse than no table at all.
+    Table, because the FlowDocument Table accepts star widths and then ignores
+    them. A Grid honours star sizing, wraps its cell text instead of
+    truncating it, and takes a GridSplitter between columns.
 
-    A Grid honours star sizing, wraps its cell text instead of truncating it,
-    and takes a GridSplitter between columns, so a column can be widened by
-    dragging its edge when a value is long.
+    Two decisions worth knowing about.
+
+    Colours are attached with SetResourceReference rather than assigned. An
+    assigned brush is a snapshot: the table kept the palette it was built with
+    and stayed unreadable after a theme change until the page was rebuilt.
+    A resource reference is the code equivalent of DynamicResource and follows
+    the swap.
+
+    Cells are read only TextBoxes rather than TextBlocks, because a TextBlock
+    cannot be selected and a table nobody can copy out of is half a table.
+    The cost is that a search term cannot be marked inside the text, so a
+    matching cell is tinted whole instead.
 
 .PARAMETER Column
     Column headings.
@@ -288,7 +297,7 @@ function Add-TkBulletList {
     being looked up and progressively wider ones after it.
 
 .PARAMETER Highlight
-    Search term to mark inside the cells.
+    Search term. A cell containing it is tinted.
 
 .EXAMPLE
     Add-TkTable -Document $document -Column @('Port', 'Service') -Row @(
@@ -326,23 +335,15 @@ function Add-TkTable {
     $grid.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
 
     # --- Column widths ----------------------------------------------------
-    # The first column holds the value being looked up, a port or a prefix,
-    # and stays narrow. The last takes the remaining width because it holds
-    # the explanation.
     for ($i = 0; $i -lt $Column.Count; $i++) {
 
         # Not named $weight: PowerShell variable names are case insensitive,
-        # so that would assign to the $Weight parameter itself and the second
-        # column would size from whatever the first one wrote there.
+        # so that would assign to the $Weight parameter itself.
         $columnWeight = if ($i -lt $Weight.Count) { $Weight[$i] }
                         elseif ($i -eq 0) { 0.8 }
                         elseif ($i -eq ($Column.Count - 1)) { 2.6 }
                         else { 1.4 }
 
-        # The constructor is called directly rather than through New-Object.
-        # New-Object resolves the overload from the runtime types of the
-        # arguments, and a weight that arrived as an untyped object makes it
-        # fail to find the two argument form.
         $definition = New-Object System.Windows.Controls.ColumnDefinition
         $definition.Width    = [System.Windows.GridLength]::new([double] $columnWeight, [System.Windows.GridUnitType]::Star)
         $definition.MinWidth = 48
@@ -350,39 +351,30 @@ function Add-TkTable {
         $grid.ColumnDefinitions.Add($definition)
     }
 
-    # --- Rows -------------------------------------------------------------
-    $headerRow = New-Object System.Windows.Controls.RowDefinition
-    $headerRow.Height = [System.Windows.GridLength]::Auto
-    $grid.RowDefinitions.Add($headerRow)
+    $grid.RowDefinitions.Add((New-TkAutoRow))
 
     foreach ($ignored in $Row) {
-
-        $definition = New-Object System.Windows.Controls.RowDefinition
-        $definition.Height = [System.Windows.GridLength]::Auto
-        $grid.RowDefinitions.Add($definition)
+        $grid.RowDefinitions.Add((New-TkAutoRow))
     }
-
-    $border     = Get-TkBrush -Key 'BorderSubtle'
-    $headerFill = Get-TkBrush -Key 'SurfaceRaised'
-    $muted      = Get-TkBrush -Key 'TextMuted'
-    $primary    = Get-TkBrush -Key 'TextPrimary'
 
     # --- Header cells -----------------------------------------------------
     for ($i = 0; $i -lt $Column.Count; $i++) {
 
         $text = New-Object System.Windows.Controls.TextBlock
         $text.Text         = $Column[$i]
-        $text.Foreground   = $muted
         $text.FontSize     = 12
         $text.FontWeight   = [System.Windows.FontWeights]::SemiBold
         $text.TextWrapping = [System.Windows.TextWrapping]::Wrap
 
+        $text.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMuted')
+
         $cell = New-Object System.Windows.Controls.Border
-        $cell.Background      = $headerFill
-        $cell.BorderBrush     = $border
         $cell.BorderThickness = New-Object System.Windows.Thickness(0, 0, 1, 1)
         $cell.Padding         = New-Object System.Windows.Thickness(8, 6, 8, 6)
         $cell.Child           = $text
+
+        $cell.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
+        $cell.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
 
         [System.Windows.Controls.Grid]::SetColumn($cell, $i)
         [System.Windows.Controls.Grid]::SetRow($cell, 0)
@@ -401,10 +393,9 @@ function Add-TkTable {
 
             $value = if ($i -lt $cells.Count) { [string] $cells[$i] } else { '' }
 
-            $text = New-Object System.Windows.Controls.TextBlock
-            $text.TextWrapping = [System.Windows.TextWrapping]::Wrap
-            $text.Foreground   = $primary
-            $text.FontSize     = 12.5
+            $text = New-TkSelectableText -Value $value
+
+            $text.FontSize = 12.5
 
             # The lookup key is monospaced so a column of ports lines up.
             if ($i -eq 0) {
@@ -412,15 +403,30 @@ function Add-TkTable {
                 $text.FontWeight = [System.Windows.FontWeights]::SemiBold
             }
 
-            foreach ($run in (New-TkTextRuns -Text $value -Highlight $Highlight)) {
-                [void] $text.Inlines.Add($run)
+            $cell = New-Object System.Windows.Controls.Border
+            $cell.BorderThickness = New-Object System.Windows.Thickness(0, 0, 1, 1)
+            $cell.Padding         = New-Object System.Windows.Thickness(6, 4, 6, 4)
+            $cell.Child           = $text
+
+            $cell.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+
+            # Every other row carries a faint tint. Reading along a wide row
+            # without one means losing the line halfway across, which is the
+            # whole reason a table is hard to scan. RowAlternate is a palette
+            # key, so the banding is calculated for each theme rather than
+            # being a transparency that only works on one of them.
+            if ($rowIndex % 2 -eq 0) {
+                $cell.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'RowAlternate')
             }
 
-            $cell = New-Object System.Windows.Controls.Border
-            $cell.BorderBrush     = $border
-            $cell.BorderThickness = New-Object System.Windows.Thickness(0, 0, 1, 1)
-            $cell.Padding         = New-Object System.Windows.Thickness(8, 5, 8, 5)
-            $cell.Child           = $text
+            # A matching cell is tinted whole, over the banding. Marking the
+            # term inside the text would mean giving up selection, which
+            # matters more.
+            if ($Highlight -and $value -and
+                $value.IndexOf($Highlight, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+
+                $cell.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Selection')
+            }
 
             [System.Windows.Controls.Grid]::SetColumn($cell, $i)
             [System.Windows.Controls.Grid]::SetRow($cell, $rowIndex)
@@ -437,7 +443,7 @@ function Add-TkTable {
     for ($i = 0; $i -lt ($Column.Count - 1); $i++) {
 
         $splitter = New-Object System.Windows.Controls.GridSplitter
-        $splitter.Width               = 5
+        $splitter.Width               = 6
         $splitter.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Right
         $splitter.VerticalAlignment   = [System.Windows.VerticalAlignment]::Stretch
         $splitter.Background          = [System.Windows.Media.Brushes]::Transparent
@@ -456,6 +462,211 @@ function Add-TkTable {
     $container.Margin = New-Object System.Windows.Thickness(0)
 
     $Document.Blocks.Add($container)
+}
+
+<#
+.SYNOPSIS
+    Turns objects into the row array Add-TkTable expects.
+
+.DESCRIPTION
+    Reads the named properties from each object in order. Exists because the
+    comma operator is required here and is easy to leave out: without it
+    PowerShell flattens each row into the outer array and every row arrives
+    holding a single cell, which renders as a column of stripes rather than a
+    table. Doing it in one place means getting it right in one place.
+
+.PARAMETER InputObject
+    The objects to read.
+
+.PARAMETER Property
+    Property names, in column order.
+
+.OUTPUTS
+    System.Object[] of string arrays.
+#>
+function ConvertTo-TkTableRow {
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        $InputObject,
+
+        [Parameter(Mandatory, Position = 1)]
+        [string[]] $Property
+    )
+
+    $rows = @()
+
+    foreach ($item in (ConvertTo-TkArray $InputObject)) {
+
+        $cells = @()
+
+        foreach ($name in $Property) {
+            $cells += [string] $item.$name
+        }
+
+        $rows += , $cells
+    }
+
+    return , $rows
+}
+
+<#
+.SYNOPSIS
+    Renders objects as a table into a rich text control.
+
+.DESCRIPTION
+    The one call a page makes to show a list of things. Everything the tables
+    are expected to do now lives behind it: selectable cells, banded rows,
+    draggable column edges and a palette that follows a theme change.
+
+.PARAMETER ControlName
+    Name of the RichTextBox to fill.
+
+.PARAMETER InputObject
+    The objects to show.
+
+.PARAMETER Property
+    Property names, in column order.
+
+.PARAMETER Column
+    Headings. Defaults to the property names.
+
+.PARAMETER Weight
+    Relative column widths.
+
+.PARAMETER Title
+    Optional heading above the table.
+
+.PARAMETER EmptyText
+    Shown instead of the table when there is nothing to list. A table with a
+    header and no rows looks like a failure; a sentence saying there is
+    nothing does not.
+#>
+function Set-TkObjectTable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ControlName,
+
+        [Parameter(Mandatory)]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        $InputObject,
+
+        [Parameter(Mandatory)]
+        [string[]] $Property,
+
+        [Parameter()]
+        [string[]] $Column = @(),
+
+        [Parameter()]
+        [double[]] $Weight = @(),
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Title = '',
+
+        [Parameter()]
+        [string] $EmptyText = 'Nothing to show.'
+    )
+
+    $items    = ConvertTo-TkArray $InputObject
+    $document = New-TkFlowDocument
+
+    if ($Title) {
+        Add-TkHeading -Document $document -Text $Title -Level 2
+    }
+
+    if ($items.Count -eq 0) {
+        Add-TkParagraph -Document $document -Text $EmptyText -Muted
+    }
+    else {
+
+        $headings = if ($Column.Count -gt 0) { $Column } else { $Property }
+
+        Add-TkTable -Document $document `
+            -Column $headings `
+            -Row (ConvertTo-TkTableRow $items $Property) `
+            -Weight $Weight
+    }
+
+    Set-TkDocument -ControlName $ControlName -Document $document
+}
+
+<#
+.SYNOPSIS
+    Returns a Grid row definition sized to its content.
+
+.OUTPUTS
+    System.Windows.Controls.RowDefinition
+#>
+function New-TkAutoRow {
+    [CmdletBinding()]
+    [OutputType([System.Windows.Controls.RowDefinition])]
+    param()
+
+    $definition = New-Object System.Windows.Controls.RowDefinition
+    $definition.Height = [System.Windows.GridLength]::Auto
+
+    return $definition
+}
+
+<#
+.SYNOPSIS
+    Builds a read only text control whose content can be selected and copied.
+
+.DESCRIPTION
+    A TextBlock cannot be selected on .NET Framework, and a report nobody can
+    copy a path or a thumbprint out of is half a report. A read only TextBox
+    with no chrome looks identical and behaves the way people expect.
+
+    The chrome is removed by applying the SelectableText style, which carries
+    a template of its own. Clearing Template instead removes the control's
+    entire visual tree: a TextBox with no template has nowhere to render its
+    text and draws nothing at all. That is what emptied every table and every
+    finding card, and it is worth stating plainly because the control still
+    reports a correct size while showing nothing.
+
+    The style is attached by resource reference rather than looked up once,
+    so the control follows a theme change instead of keeping the palette it
+    was created with. A caller may still override any single property
+    afterwards: a local value beats a style setter.
+
+.OUTPUTS
+    System.Windows.Controls.TextBox
+#>
+function New-TkSelectableText {
+    [CmdletBinding()]
+    [OutputType([System.Windows.Controls.TextBox])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Value
+    )
+
+    $text = New-Object System.Windows.Controls.TextBox
+
+    $text.Text = $Value
+
+    # Set here rather than left to the style, because a resource reference is
+    # resolved only when the control joins a tree that carries the resource.
+    # Until then the control has no style at all, and anything reading it in
+    # between, a test or a console session, would see a plain text box.
+    $text.IsReadOnly      = $true
+    $text.BorderThickness = New-Object System.Windows.Thickness(0)
+    $text.Background      = [System.Windows.Media.Brushes]::Transparent
+    $text.Padding         = New-Object System.Windows.Thickness(0)
+    $text.TextWrapping    = [System.Windows.TextWrapping]::Wrap
+    $text.IsTabStop       = $false
+
+    # The template and the theme colours come from the style. A reference
+    # rather than a one time lookup, so the control follows a theme change.
+    $text.SetResourceReference([System.Windows.Controls.TextBox]::StyleProperty, 'SelectableText')
+
+    return $text
 }
 
 <#
@@ -496,6 +707,324 @@ function Add-TkCodeBlock {
     }
 
     $Document.Blocks.Add($paragraph)
+}
+
+<#
+.SYNOPSIS
+    Returns the resource key a severity should be drawn in.
+
+.DESCRIPTION
+    Lives here rather than on a page, because the cards, the chips and every
+    report renderer share it.
+
+.OUTPUTS
+    System.String
+#>
+function Get-TkSeverityBrushKey {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Severity
+    )
+
+    switch ($Severity) {
+        'Fail'    { return 'Danger' }
+        'Warning' { return 'Warning' }
+        'Pass'    { return 'Success' }
+        default   { return 'TextMuted' }
+    }
+}
+
+<#
+.SYNOPSIS
+    Appends a finding as a self contained card.
+
+.DESCRIPTION
+    Replaces the flat run of coloured words the reports used to be. A page of
+    those reads as one undifferentiated block, which is exactly the complaint:
+    nothing separates one finding from the next, and the eye has nowhere to
+    rest.
+
+    A card gives each finding a boundary, a severity chip that carries the
+    verdict at a glance, a title line, and the explanation set apart
+    underneath. Where a safe single step correction exists, the card carries
+    the button for it.
+
+    Colours are attached by resource reference so a card follows a theme
+    change, and every piece of text is selectable.
+
+.PARAMETER Severity
+    Pass, Info, Warning or Fail.
+
+.PARAMETER Title
+    What the finding is about.
+
+.PARAMETER State
+    The measured value, shown to the right of the title.
+
+.PARAMETER Detail
+    The explanation. Set in muted text under the title.
+
+.PARAMETER Action
+    What to change, shown in its own band under the detail.
+
+.PARAMETER RemediationId
+    Key into the remediation allow list. When given and the correction is
+    available, the card carries a button that applies it.
+#>
+function Add-TkFindingCard {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Documents.FlowDocument] $Document,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Severity,
+
+        [Parameter(Mandatory)]
+        [string] $Title,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $State = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Detail = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Action = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $RemediationId = ''
+    )
+
+    $card = New-Object System.Windows.Controls.Border
+    $card.BorderThickness = New-Object System.Windows.Thickness(1)
+    $card.CornerRadius    = New-Object System.Windows.CornerRadius(7)
+    $card.Padding         = New-Object System.Windows.Thickness(14, 11, 14, 11)
+    $card.Margin          = New-Object System.Windows.Thickness(0, 0, 0, 9)
+
+    $card.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Surface')
+    $card.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+
+    $stack = New-Object System.Windows.Controls.StackPanel
+    $card.Child = $stack
+
+    # --- Title line: chip, title, state -----------------------------------
+    $header = New-Object System.Windows.Controls.Grid
+
+    foreach ($width in @('Auto', 'Star', 'Auto')) {
+
+        $definition = New-Object System.Windows.Controls.ColumnDefinition
+
+        $definition.Width = if ($width -eq 'Auto') { [System.Windows.GridLength]::Auto }
+                            else { [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
+
+        $header.ColumnDefinitions.Add($definition)
+    }
+
+    $chip = New-TkSeverityChip -Severity $Severity
+    [System.Windows.Controls.Grid]::SetColumn($chip, 0)
+    [void] $header.Children.Add($chip)
+
+    $titleText = New-TkSelectableText -Value $Title
+    $titleText.FontWeight        = [System.Windows.FontWeights]::SemiBold
+    $titleText.FontSize          = 13.5
+    $titleText.Margin            = New-Object System.Windows.Thickness(10, 0, 10, 0)
+    $titleText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+
+    [System.Windows.Controls.Grid]::SetColumn($titleText, 1)
+    [void] $header.Children.Add($titleText)
+
+    if ($State) {
+
+        $stateText = New-TkSelectableText -Value $State
+        $stateText.FontSize          = 12
+        $stateText.TextWrapping      = [System.Windows.TextWrapping]::NoWrap
+        $stateText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+        $stateText.SetResourceReference([System.Windows.Controls.TextBox]::ForegroundProperty, 'TextMuted')
+
+        [System.Windows.Controls.Grid]::SetColumn($stateText, 2)
+        [void] $header.Children.Add($stateText)
+    }
+
+    [void] $stack.Children.Add($header)
+
+    # --- Explanation ------------------------------------------------------
+    if ($Detail) {
+
+        $detailText = New-TkSelectableText -Value $Detail
+        $detailText.FontSize = 12
+        $detailText.Margin   = New-Object System.Windows.Thickness(0, 7, 0, 0)
+        $detailText.SetResourceReference([System.Windows.Controls.TextBox]::ForegroundProperty, 'TextMuted')
+
+        [void] $stack.Children.Add($detailText)
+    }
+
+    # --- What to change, and the button that does it ----------------------
+    if ($Action -or $RemediationId) {
+
+        $band = New-Object System.Windows.Controls.Border
+        $band.BorderThickness = New-Object System.Windows.Thickness(0, 1, 0, 0)
+        $band.Padding         = New-Object System.Windows.Thickness(0, 9, 0, 0)
+        $band.Margin          = New-Object System.Windows.Thickness(0, 9, 0, 0)
+        $band.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+
+        $bandGrid = New-Object System.Windows.Controls.Grid
+
+        foreach ($width in @('Star', 'Auto')) {
+
+            $definition = New-Object System.Windows.Controls.ColumnDefinition
+
+            $definition.Width = if ($width -eq 'Auto') { [System.Windows.GridLength]::Auto }
+                                else { [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
+
+            $bandGrid.ColumnDefinitions.Add($definition)
+        }
+
+        if ($Action) {
+
+            $actionText = New-TkSelectableText -Value $Action
+            $actionText.FontSize          = 12
+            $actionText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+            $actionText.SetResourceReference([System.Windows.Controls.TextBox]::ForegroundProperty, 'TextPrimary')
+
+            [System.Windows.Controls.Grid]::SetColumn($actionText, 0)
+            [void] $bandGrid.Children.Add($actionText)
+        }
+
+        $button = New-TkRemediationButton -RemediationId $RemediationId
+
+        if ($button) {
+            [System.Windows.Controls.Grid]::SetColumn($button, 1)
+            [void] $bandGrid.Children.Add($button)
+        }
+
+        $band.Child = $bandGrid
+        [void] $stack.Children.Add($band)
+    }
+
+    $container = New-Object System.Windows.Documents.BlockUIContainer($card)
+    $container.Margin = New-Object System.Windows.Thickness(0)
+
+    $Document.Blocks.Add($container)
+}
+
+<#
+.SYNOPSIS
+    Builds the coloured severity chip shown on a finding card.
+
+.OUTPUTS
+    System.Windows.Controls.Border
+#>
+function New-TkSeverityChip {
+    [CmdletBinding()]
+    [OutputType([System.Windows.Controls.Border])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Severity
+    )
+
+    $label = if ($Severity) { $Severity.ToUpperInvariant() } else { 'INFO' }
+
+    $text = New-Object System.Windows.Controls.TextBlock
+    $text.Text       = $label
+    $text.FontSize   = 10
+    $text.FontWeight = [System.Windows.FontWeights]::Bold
+    $text.FontFamily = New-Object System.Windows.Media.FontFamily('Cascadia Mono, Consolas')
+    $text.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
+
+    $text.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty,
+                               (Get-TkSeverityBrushKey -Severity $Severity))
+
+    $chip = New-Object System.Windows.Controls.Border
+    $chip.CornerRadius      = New-Object System.Windows.CornerRadius(4)
+    $chip.BorderThickness   = New-Object System.Windows.Thickness(1)
+    $chip.Padding           = New-Object System.Windows.Thickness(7, 3, 7, 3)
+    $chip.MinWidth          = 66
+    $chip.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+    $chip.Child             = $text
+
+    $chip.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty,
+                               (Get-TkSeverityBrushKey -Severity $Severity))
+    $chip.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
+
+    return $chip
+}
+
+<#
+.SYNOPSIS
+    Builds the button that applies a correction, or nothing when there is none.
+
+.DESCRIPTION
+    Returns $null when the identifier is empty or is not in the allow list, so
+    a finding with no safe single step fix simply has no button rather than a
+    button that does something approximate.
+
+    The button is disabled, with the reason in its tooltip, when the
+    correction needs rights this instance does not have.
+
+.OUTPUTS
+    System.Windows.Controls.Button, or $null.
+#>
+function New-TkRemediationButton {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $RemediationId
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RemediationId)) {
+        return $null
+    }
+
+    $table = Get-TkRemediationTable
+
+    if (-not $table.ContainsKey($RemediationId)) {
+        return $null
+    }
+
+    $entry = $table[$RemediationId]
+
+    $button = New-Object System.Windows.Controls.Button
+    $button.Content    = 'Fix this'
+    $button.Tag        = $RemediationId
+    $button.Margin     = New-Object System.Windows.Thickness(12, 0, 0, 0)
+    $button.MinWidth   = 90
+    $button.Cursor     = [System.Windows.Input.Cursors]::Hand
+    $button.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+
+    $button.SetResourceReference([System.Windows.Controls.Button]::StyleProperty, 'PrimaryButton')
+
+    if ($entry.Elevated -and -not (Test-TkIsElevated)) {
+
+        $button.IsEnabled = $false
+        $button.ToolTip   = 'Needs administrator rights. Use "Restart as administrator" in the header.'
+    }
+    else {
+        $button.ToolTip = $entry.Explanation
+    }
+
+    $button.Add_Click({
+        # Not named $sender or $eventArgs: both are automatic variables.
+        param($clicked, $clickArgs)
+
+        $id = [string] $clicked.Tag
+
+        if ($id) {
+            Invoke-TkRemediationFromUi -RemediationId $id
+        }
+    })
+
+    return $button
 }
 
 <#

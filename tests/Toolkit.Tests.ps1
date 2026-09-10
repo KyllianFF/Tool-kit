@@ -953,3 +953,266 @@ Describe 'Get-TkWellKnownService' {
         Get-TkWellKnownService -Port 54321 | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Interface rendering' {
+
+    BeforeAll {
+
+        Add-Type -AssemblyName PresentationFramework
+        Add-Type -AssemblyName PresentationCore
+        Add-Type -AssemblyName WindowsBase
+
+        # Parsed, not shown. Building the object graph is enough to assert the
+        # styles and the templates, and a test suite must not need a desktop.
+        $script:Window = [System.Windows.Markup.XamlReader]::Parse((Get-TkMainWindowXaml))
+    }
+
+    Context 'Selectable text' {
+
+        # The regression this guards against emptied every table and every
+        # finding card in the application at once. A TextBox whose Template is
+        # null has no visual tree: it reports a correct size and draws
+        # nothing, so the rows were the right height and blank. The template
+        # has to contain a ScrollViewer named PART_ContentHost, which is where
+        # TextBoxBase renders the text.
+
+        It 'declares a SelectableText style' {
+            $script:Window.Resources['SelectableText'] | Should -Not -BeNullOrEmpty
+        }
+
+        It 'renders a selectable text box into a visual tree' {
+
+            $text = New-TkSelectableText -Value 'thumbprint 3B:9A:00'
+
+            $text.Text       | Should -Be 'thumbprint 3B:9A:00'
+            $text.IsReadOnly | Should -BeTrue
+
+            # The style is attached by resource reference, which resolves only
+            # once the control joins a tree carrying that resource. Checking it
+            # detached would pass whatever the style said.
+            $holder = New-Object System.Windows.Controls.ContentControl
+            $holder.Resources = $script:Window.Resources
+            $holder.Content   = $text
+
+            $holder.Measure((New-Object System.Windows.Size(600, 120)))
+            $holder.Arrange((New-Object System.Windows.Rect(0, 0, 600, 120)))
+            $holder.UpdateLayout()
+
+            $text.Template | Should -Not -BeNullOrEmpty
+
+            # The assertion that matters. With the template cleared this was
+            # zero: a control of the correct size drawing nothing at all.
+            [System.Windows.Media.VisualTreeHelper]::GetChildrenCount($text) |
+                Should -BeGreaterThan 0
+
+            $text.Template.FindName('PART_ContentHost', $text) | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context 'Tables' {
+
+        It 'renders a row per record plus the header' {
+
+            $document = New-TkFlowDocument
+
+            Add-TkTable -Document $document -Column @('Port', 'Service') -Row @(
+                , @('22',  'SSH')
+                , @('443', 'HTTPS')
+            )
+
+            $grid = @($document.Blocks)[0].Child
+
+            $grid.RowDefinitions.Count | Should -Be 3
+        }
+
+        It 'puts the value of every cell into the tree' {
+
+            $document = New-TkFlowDocument
+
+            Add-TkTable -Document $document -Column @('Port', 'Service') -Row @(
+                , @('22', 'SSH')
+            )
+
+            $grid = @($document.Blocks)[0].Child
+
+            $values = @($grid.Children |
+                        Where-Object { $_ -is [System.Windows.Controls.Border] -and
+                                       $_.Child -is [System.Windows.Controls.TextBox] } |
+                        ForEach-Object { $_.Child.Text })
+
+            $values | Should -Contain '22'
+            $values | Should -Contain 'SSH'
+        }
+
+        It 'gives every column boundary a resize handle' {
+
+            $document = New-TkFlowDocument
+
+            Add-TkTable -Document $document -Column @('A', 'B', 'C') -Row @(, @('1', '2', '3'))
+
+            $grid = @($document.Blocks)[0].Child
+
+            $splitters = @($grid.Children |
+                           Where-Object { $_ -is [System.Windows.Controls.GridSplitter] })
+
+            # One fewer than the columns: the last edge is the table edge.
+            $splitters.Count | Should -Be 2
+        }
+
+        It 'bands alternate rows' {
+
+            $document = New-TkFlowDocument
+
+            Add-TkTable -Document $document -Column @('A') -Row @(
+                , @('one')
+                , @('two')
+            )
+
+            $grid = @($document.Blocks)[0].Child
+
+            $banded = @($grid.Children |
+                        Where-Object {
+                            $_ -is [System.Windows.Controls.Border] -and
+                            $_.ReadLocalValue([System.Windows.Controls.Border]::BackgroundProperty) -ne
+                                [System.Windows.DependencyProperty]::UnsetValue
+                        })
+
+            # The header carries one, and one of the two data rows.
+            $banded.Count | Should -BeGreaterThan 1
+        }
+
+        It 'converts objects into one row each' {
+
+            $rows = ConvertTo-TkTableRow @(
+                [pscustomobject] @{ Name = 'eth0';  State = 'Up' }
+                [pscustomobject] @{ Name = 'wlan0'; State = 'Down' }
+            ) @('Name', 'State')
+
+            # The comma operator is what stops these being flattened into one
+            # long list of cells, which renders as a single column.
+            $rows.Count       | Should -Be 2
+            $rows[0].Count    | Should -Be 2
+            $rows[1][0]       | Should -Be 'wlan0'
+        }
+    }
+
+    Context 'Icons' {
+
+        BeforeAll {
+
+            $family = New-Object System.Windows.Media.FontFamily('Segoe Fluent Icons, Segoe MDL2 Assets')
+
+            $typeface = New-Object System.Windows.Media.Typeface($family,
+                [System.Windows.FontStyles]::Normal,
+                [System.Windows.FontWeights]::Normal,
+                [System.Windows.FontStretches]::Normal)
+
+            $found = $null
+
+            $script:GlyphTypeface = if ($typeface.TryGetGlyphTypeface([ref] $found)) { $found } else { $null }
+        }
+
+        It 'draws every navigation icon from a code point the font carries' {
+
+            if ($null -eq $script:GlyphTypeface) {
+                Set-ItResult -Skipped -Because 'neither Windows icon font is installed on this machine'
+                return
+            }
+
+            # A code point the font does not carry renders as an empty box.
+            # Nothing else in the suite can see that.
+            foreach ($name in @('NavSystem', 'NavSoftware', 'NavTweaks', 'NavFixes',
+                                'NavNetwork', 'NavDiagnostics', 'NavSecurity')) {
+
+                $button = $script:Window.FindName($name)
+
+                $button | Should -Not -BeNullOrEmpty -Because ('{0} should exist' -f $name)
+
+                $point = [int] [char] ([string] $button.Tag)
+
+                $script:GlyphTypeface.CharacterToGlyphMap.ContainsKey($point) |
+                    Should -BeTrue -Because ('{0} uses U+{1:X4}, which the icon font does not carry' -f $name, $point)
+            }
+        }
+
+        It 'draws every list tile icon from a code point the font carries' {
+
+            if ($null -eq $script:GlyphTypeface) {
+                Set-ItResult -Skipped -Because 'neither Windows icon font is installed on this machine'
+                return
+            }
+
+            $catalog = Import-TkCatalog -Name 'applications'
+
+            $keys = @(@($catalog.categories | ForEach-Object { $_.id }) +
+                      @('advanced', 'gaming', 'hardening', 'interface', 'performance', 'privacy') +
+                      @('Low', 'Medium', 'High'))
+
+            foreach ($key in $keys) {
+
+                $glyphs = @(
+                    (Get-TkCategoryGlyph -Key $key)
+                    (Get-TkTweakGlyph    -Key $key)
+                    (Get-TkFixGlyph      -Key $key)
+                )
+
+                foreach ($glyph in $glyphs) {
+
+                    $point = [int] [char] $glyph
+
+                    $script:GlyphTypeface.CharacterToGlyphMap.ContainsKey($point) |
+                        Should -BeTrue -Because ('"{0}" maps to U+{1:X4}, which the icon font does not carry' -f $key, $point)
+                }
+            }
+        }
+    }
+
+    Context 'Disabled actions' {
+
+        It 'lets a disabled button still show its tooltip' {
+
+            # WPF hides a tooltip on a disabled control by default, which
+            # silences exactly the message explaining why it is disabled.
+            $style = $script:Window.Resources[[System.Windows.Controls.Button]]
+
+            $setter = @($style.Setters |
+                        Where-Object { $_.Property.Name -eq 'ShowOnDisabled' } |
+                        Select-Object -First 1)
+
+            $setter.Value | Should -BeTrue
+        }
+    }
+
+    Context 'Report choosers' {
+
+        It 'stops the <Name> list from scrolling sideways' -TestCases @(
+            @{ Name = 'DiagnosticChoices' }
+            @{ Name = 'HuntChoices' }
+        ) {
+            param($Name)
+
+            # With horizontal scrolling on, an entry is measured at its natural
+            # width and the panel grows past its frame instead of wrapping
+            # inside it, which is what put a scroll bar under both choosers.
+            $list = $script:Window.FindName($Name)
+
+            $list | Should -Not -BeNullOrEmpty
+
+            [System.Windows.Controls.ScrollViewer]::GetHorizontalScrollBarVisibility($list) |
+                Should -Be ([System.Windows.Controls.ScrollBarVisibility]::Disabled)
+        }
+
+        It 'keeps the explanation of every <Name> entry in a tooltip' -TestCases @(
+            @{ Name = 'DiagnosticChoices' }
+            @{ Name = 'HuntChoices' }
+        ) {
+            param($Name)
+
+            $list = $script:Window.FindName($Name)
+
+            foreach ($item in $list.Items) {
+                $item.ToolTip | Should -Not -BeNullOrEmpty
+            }
+        }
+    }
+}

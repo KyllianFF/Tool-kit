@@ -40,11 +40,33 @@ function Initialize-TkNetworkPage {
 
     Register-TkClick -Name 'BtnPublicIp' -Action {
 
+        $field = Get-TkControl -Name 'PublicAddressValue'
+
+        if ($field) {
+            $field.Text = 'asking...'
+        }
+
         Invoke-TkBackgroundAction -StatusText 'Querying the public address...' `
             -ScriptBlock { Get-TkPublicIpAddress } `
             -OnComplete {
                 param($result)
-                Set-TkStatus -Text ('Public address: {0}' -f (@($result.Output) | Select-Object -Last 1))
+
+                $address = @($result.Output) | Select-Object -Last 1
+
+                if ([string]::IsNullOrWhiteSpace($address)) {
+                    $address = 'no answer'
+                }
+
+                # Written into the page, not only to the console. The console
+                # is collapsed by default, so an answer sent only there is an
+                # answer the operator has to go looking for.
+                $target = Get-TkControl -Name 'PublicAddressValue'
+
+                if ($target) {
+                    $target.Text = [string] $address
+                }
+
+                Set-TkStatus -Text ('Public address: {0}' -f $address)
             }
     }
 
@@ -55,13 +77,15 @@ function Initialize-TkNetworkPage {
             -OnComplete {
                 param($result)
 
-                $tabs = Get-TkControl -Name 'NetworkTabs'
+                # Its own window rather than the Diagnostics output box. This
+                # used to switch tabs, which answered the question and took
+                # the adapter list away at the same time.
+                Show-TkTableWindow -Title 'Listening ports' -InputObject $result.Output `
+                    -Description ('Sockets accepting connections on this machine, with the process behind each one. ' +
+                                  'A socket bound to 127.0.0.1 is reachable only from here; one bound to 0.0.0.0 is ' +
+                                  'reachable from anywhere the firewall allows.')
 
-                if ($tabs) {
-                    $tabs.SelectedIndex = 2
-                }
-
-                Set-TkOutput -ControlName 'NetworkOutput' -Text (Format-TkTableText -InputObject $result.Output)
+                Set-TkStatus -Text ('{0} listening socket(s).' -f @($result.Output).Count)
             }
     }
 
@@ -302,13 +326,17 @@ function Update-TkAdapterList {
         -OnComplete {
             param($result)
 
-            $list = Get-TkControl -Name 'ListAdapters'
+            $adapters = ConvertTo-TkArray $result.Output
 
-            if ($list) {
-                $list.ItemsSource = @($result.Output)
-            }
+            Set-TkObjectTable -ControlName 'DocAdapters' -InputObject $adapters `
+                -Property @('Name', 'Status', 'IPv4Address', 'SubnetMask', 'Gateway',
+                            'DnsServers', 'Dhcp', 'MacAddress', 'LinkSpeed') `
+                -Column   @('Name', 'Status', 'IPv4', 'Mask', 'Gateway',
+                            'DNS', 'DHCP', 'MAC', 'Speed') `
+                -Weight   @(1.6, 0.8, 1.3, 1.3, 1.3, 1.8, 0.7, 1.5, 0.9) `
+                -EmptyText 'No adapter was returned.'
 
-            Set-TkStatus -Text ('{0} adapter(s).' -f @($result.Output).Count)
+            Set-TkStatus -Text ('{0} adapter(s).' -f $adapters.Count)
         }
 }
 

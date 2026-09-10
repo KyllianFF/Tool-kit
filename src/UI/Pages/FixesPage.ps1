@@ -8,6 +8,39 @@
 
 <#
 .SYNOPSIS
+    Returns the icon character for a risk level.
+
+.DESCRIPTION
+    The tile colour already ranks the three levels. The glyph repeats it in a
+    second channel, which is what makes the ranking survive a colour blind
+    reader and a bad screen. See Get-TkCategoryGlyph for the icon rules.
+
+.OUTPUTS
+    System.String
+#>
+function Get-TkFixGlyph {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Key
+    )
+
+    $glyphs = @{
+        'low'    = 0xE73E  # tick
+        'medium' = 0xE946  # information
+        'high'   = 0xE7BA  # warning triangle
+    }
+
+    $lookup = if ($Key) { $Key.ToLowerInvariant() } else { '' }
+    $point  = if ($lookup -and $glyphs.ContainsKey($lookup)) { $glyphs[$lookup] } else { 0xE90F }
+
+    return [string] [char] $point
+}
+
+<#
+.SYNOPSIS
     Wires the Fixes page and loads the catalog.
 #>
 function Initialize-TkFixesPage {
@@ -16,9 +49,15 @@ function Initialize-TkFixesPage {
 
     $fixes = Get-TkFix
 
+    # Read once. Elevation cannot change without restarting the process, so
+    # asking per row would give the same answer every time.
+    $elevated = Test-TkIsElevated
+
     $items = @()
 
     foreach ($fix in $fixes) {
+
+        $needsRights = $fix.requiresElevation -and -not $elevated
 
         $items += [pscustomobject]@{
             Id          = $fix.id
@@ -26,6 +65,24 @@ function Initialize-TkFixesPage {
             Description = $fix.description
             WhenToUse   = 'When to use: ' + $fix.whenToUse
             RiskText    = '{0} risk' -f $fix.risk
+
+            # Tile colour carries the risk, which is the one thing worth
+            # seeing before reading the name.
+            Glyph       = Get-TkFixGlyph  -Key $fix.risk
+            TileBrush   = Get-TkTileBrush -Key ('fix-{0}' -f $fix.risk.ToLowerInvariant())
+
+            # A fix that cannot run is shown greyed with the reason on it,
+            # rather than accepting the click and reporting the refusal
+            # afterwards. Which fixes need rights differs per fix, so this is
+            # decided per row instead of disabling the whole page.
+            CanRun      = (-not $needsRights)
+            RunTooltip  = if ($needsRights) {
+                              'Needs administrator rights. Use "Restart as administrator" in the header.'
+                          }
+                          else {
+                              'Asks for confirmation, and says what it will do, before anything runs.'
+                          }
+
             Definition  = $fix
         }
     }

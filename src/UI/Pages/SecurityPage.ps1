@@ -12,6 +12,9 @@
 # as it is copied.
 $script:TkLastGeneratedSecret = ''
 
+# Last audit result, kept so the export button has something to write.
+$script:TkLastAudit = $null
+
 <#
 .SYNOPSIS
     Wires the Security page.
@@ -531,7 +534,13 @@ function Invoke-TkBreachCheck {
 
 <#
 .SYNOPSIS
-    Runs the local security audit.
+    Runs the local security audit and renders it as findings.
+
+.DESCRIPTION
+    Rendered as cards rather than as a grid, because a finding is not a row of
+    data: it needs its explanation next to it, and where a safe correction
+    exists it needs the button that applies it. Genuinely tabular output, such
+    as the adapter list, stays in a grid.
 #>
 function Invoke-TkAuditFromUi {
     [CmdletBinding()]
@@ -543,31 +552,60 @@ function Invoke-TkAuditFromUi {
             param($result)
 
             $findings = @($result.Output)
+            $script:TkLastAudit = $findings
 
-            $list = Get-TkControl -Name 'ListAudit'
+            $document = New-TkFlowDocument
 
-            if ($list) {
-                $list.ItemsSource = $findings
+            Add-TkHeading -Document $document -Text ('Local audit of {0}' -f $env:COMPUTERNAME) -Level 1
+
+            $counts = @{
+                Fail    = @($findings | Where-Object { $_.Status -eq 'Fail' }).Count
+                Warning = @($findings | Where-Object { $_.Status -eq 'Warning' }).Count
+                Pass    = @($findings | Where-Object { $_.Status -eq 'Pass' }).Count
+                Info    = @($findings | Where-Object { $_.Status -eq 'Info' }).Count
             }
+
+            Add-TkParagraph -Document $document -Muted -Text (
+                '{0} checks: {1} failing, {2} worth attention, {3} passing, {4} not readable. A hygiene check, not a compliance audit: it does not replace a CIS or ANSSI benchmark run.' -f
+                    $findings.Count, $counts.Fail, $counts.Warning, $counts.Pass, $counts.Info
+            )
+
+            if (-not (Test-TkIsElevated)) {
+                Add-TkParagraph -Document $document -Muted -Text (
+                    'Running as a standard user, so several checks could not read what they needed and reported "Info" rather than a real result.'
+                )
+            }
+
+            # Failing first, then warnings, then the rest: the order someone
+            # reads a report in.
+            $order = @{ 'Fail' = 0; 'Warning' = 1; 'Info' = 2; 'Pass' = 3 }
+
+            foreach ($category in (@($findings | ForEach-Object { $_.Category }) | Select-Object -Unique)) {
+
+                Add-TkHeading -Document $document -Text $category -Level 2
+
+                $inCategory = $findings |
+                              Where-Object { $_.Category -eq $category } |
+                              Sort-Object -Property @{ Expression = { $order[$_.Status] } }, 'Name'
+
+                foreach ($finding in $inCategory) {
+
+                    Add-TkFindingCard -Document $document -Severity $finding.Status `
+                        -Title $finding.Name -State $finding.Id -Detail $finding.Detail `
+                        -Action $finding.Recommendation -RemediationId $finding.RemediationId
+                }
+            }
+
+            Set-TkDocument -ControlName 'AuditOutput' -Document $document
 
             $summary = Get-TkControl -Name 'AuditSummary'
 
             if ($summary) {
-
                 $summary.Text = '{0} checks: {1} pass, {2} fail, {3} warning, {4} informational.' -f
-                    $findings.Count,
-                    @($findings | Where-Object { $_.Status -eq 'Pass' }).Count,
-                    @($findings | Where-Object { $_.Status -eq 'Fail' }).Count,
-                    @($findings | Where-Object { $_.Status -eq 'Warning' }).Count,
-                    @($findings | Where-Object { $_.Status -eq 'Info' }).Count
+                    $findings.Count, $counts.Pass, $counts.Fail, $counts.Warning, $counts.Info
             }
 
-            if (-not (Test-TkIsElevated)) {
-
-                Write-TkLog -Level Warning -Category 'Audit' -Message (
-                    'Several checks need elevation and reported "Info" instead of a real result.'
-                )
-            }
+            Set-TkStatus -Text ('Audit: {0} failing, {1} warnings.' -f $counts.Fail, $counts.Warning)
         }
 }
 
@@ -579,9 +617,7 @@ function Export-TkAuditFromUi {
     [CmdletBinding()]
     param()
 
-    $list = Get-TkControl -Name 'ListAudit'
-
-    if (-not $list -or -not $list.ItemsSource) {
+    if (-not $script:TkLastAudit) {
         Set-TkStatus -Text 'Run the audit first.'
         return
     }
@@ -595,7 +631,7 @@ function Export-TkAuditFromUi {
         return
     }
 
-    $written = Export-TkSecurityAuditReport -Path $dialog.FileName -Findings @($list.ItemsSource) -Confirm:$false
+    $written = Export-TkSecurityAuditReport -Path $dialog.FileName -Findings $script:TkLastAudit -Confirm:$false
 
     if ($written) {
         Set-TkStatus -Text ('Audit report written to {0}' -f $written)

@@ -90,7 +90,13 @@ function New-TkAuditFinding {
         [string] $Status,
 
         [Parameter(Mandatory)] [string] $Detail,
-        [Parameter()]          [string] $Recommendation = ''
+        [Parameter()]          [string] $Recommendation = '',
+
+        # Key into the remediation allow list, when the finding has a safe
+        # single step correction. Left empty when the fix needs a decision
+        # the toolkit cannot make, which is more honest than a button that
+        # does something approximate.
+        [Parameter()]          [string] $RemediationId = ''
     )
 
     return [pscustomobject]@{
@@ -100,6 +106,7 @@ function New-TkAuditFinding {
         Status         = $Status
         Detail         = $Detail
         Recommendation = $Recommendation
+        RemediationId  = $RemediationId
     }
 }
 
@@ -211,7 +218,7 @@ function Test-TkAuditDefender {
 
             return New-TkAuditFinding -Id 'AV-001' -Name 'Antivirus' -Category 'Endpoint' `
                 -Status 'Warning' -Detail ('Signatures are {0} days old.' -f [int] $age.TotalDays) `
-                -Recommendation 'Run Update-MpSignature or check that the machine reaches the update service.'
+                -Recommendation 'Run Update-MpSignature or check that the machine reaches the update service.' -RemediationId 'update-signatures'
         }
 
         return New-TkAuditFinding -Id 'AV-001' -Name 'Antivirus' -Category 'Endpoint' `
@@ -243,7 +250,7 @@ function Test-TkAuditFirewall {
 
         return New-TkAuditFinding -Id 'FW-001' -Name 'Windows Firewall' -Category 'Network' `
             -Status 'Fail' -Detail ('Disabled profile(s): {0}.' -f (($disabled.Name) -join ', ')) `
-            -Recommendation 'Enable every profile. The public profile is the one that matters on hotel and client networks.'
+            -Recommendation 'Enable every profile. The public profile is the one that matters on hotel and client networks.' -RemediationId 'enable-firewall'
     }
     catch {
         return New-TkAuditFinding -Id 'FW-001' -Name 'Windows Firewall' -Category 'Network' `
@@ -266,7 +273,7 @@ function Test-TkAuditSmbV1 {
 
             return New-TkAuditFinding -Id 'SMB-001' -Name 'SMBv1' -Category 'Network' `
                 -Status 'Fail' -Detail 'SMBv1 is enabled.' `
-                -Recommendation 'Remove it. SMBv1 is the protocol WannaCry and NotPetya spread over, and nothing modern needs it.'
+                -Recommendation 'Remove it. SMBv1 is the protocol WannaCry and NotPetya spread over, and nothing modern needs it.' -RemediationId 'disable-smbv1'
         }
 
         return New-TkAuditFinding -Id 'SMB-001' -Name 'SMBv1' -Category 'Network' `
@@ -297,7 +304,7 @@ function Test-TkAuditLlmnr {
 
     return New-TkAuditFinding -Id 'NET-001' -Name 'LLMNR' -Category 'Network' `
         -Status 'Warning' -Detail 'LLMNR is not disabled.' `
-        -Recommendation 'Disable it by policy. LLMNR and NBT-NS name resolution is what Responder abuses to capture NTLM hashes on a flat network.'
+        -Recommendation 'Disable it by policy. LLMNR and NBT-NS name resolution is what Responder abuses to capture NTLM hashes on a flat network.' -RemediationId 'disable-llmnr'
 }
 
 <#
@@ -315,7 +322,7 @@ function Test-TkAuditPowerShellV2 {
 
             return New-TkAuditFinding -Id 'PS-001' -Name 'PowerShell 2.0 engine' -Category 'Endpoint' `
                 -Status 'Fail' -Detail 'The PowerShell 2.0 engine is installed.' `
-                -Recommendation 'Remove it. It bypasses script block logging, AMSI and constrained language mode, which is why attackers ask for it by name.'
+                -Recommendation 'Remove it. It bypasses script block logging, AMSI and constrained language mode, which is why attackers ask for it by name.' -RemediationId 'disable-powershell-v2'
         }
 
         return New-TkAuditFinding -Id 'PS-001' -Name 'PowerShell 2.0 engine' -Category 'Endpoint' `
@@ -406,7 +413,7 @@ function Test-TkAuditGuestAccount {
 
             return New-TkAuditFinding -Id 'ACC-001' -Name 'Guest account' -Category 'Accounts' `
                 -Status 'Fail' -Detail ('The Guest account ({0}) is enabled.' -f $guest.Name) `
-                -Recommendation 'Disable it. It permits unauthenticated access to shared resources.'
+                -Recommendation 'Disable it. It permits unauthenticated access to shared resources.' -RemediationId 'disable-guest'
         }
 
         return New-TkAuditFinding -Id 'ACC-001' -Name 'Guest account' -Category 'Accounts' `
@@ -509,7 +516,7 @@ function Test-TkAuditAutoPlay {
 
     return New-TkAuditFinding -Id 'USB-001' -Name 'AutoRun' -Category 'Endpoint' `
         -Status 'Warning' -Detail 'AutoRun is not fully disabled.' `
-        -Recommendation 'Set NoDriveTypeAutoRun to 255. A dropped USB stick should not be able to start anything on insertion.'
+        -Recommendation 'Set NoDriveTypeAutoRun to 255. A dropped USB stick should not be able to start anything on insertion.' -RemediationId 'disable-autorun'
 }
 
 <#
