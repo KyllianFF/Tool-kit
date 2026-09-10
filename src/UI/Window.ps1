@@ -549,6 +549,62 @@ function Initialize-TkShell {
 
 <#
 .SYNOPSIS
+    Disables the controls whose action cannot work without administrator
+    rights, and says why.
+
+.DESCRIPTION
+    A button that looks available and then reports a refusal is worse than one
+    that is plainly unavailable. Everything named here is disabled when the
+    instance is not elevated, with the reason in its tooltip and the way out
+    named: the restart button sits in the header.
+
+    Only actions that strictly need elevation are listed. Applying tweaks is
+    not, because several of them write to the current user hive and work
+    perfectly well without it.
+#>
+function Update-TkPrivilegedControls {
+    [CmdletBinding()]
+    param()
+
+    $elevated = Test-TkIsElevated
+
+    $controls = @{
+        'BtnInstallSelected'   = 'Installing software machine wide'
+        'BtnUninstallSelected' = 'Removing software machine wide'
+        'BtnUpgradeAll'        = 'Upgrading installed packages'
+        'BtnVendorTool'        = 'Installing the vendor firmware utility'
+        'BtnRestorePoint'      = 'Creating a system restore point'
+        'BtnAutoLogon'         = 'Configuring automatic logon'
+        'BtnApplyProfile'      = 'Changing an adapter configuration'
+        'BtnAddRoute'          = 'Adding a persistent route'
+        'BtnRemoveRoute'       = 'Removing a route'
+        'BtnAddProxy'          = 'Publishing a port'
+        'BtnRemoveProxy'       = 'Removing a port proxy rule'
+    }
+
+    foreach ($name in $controls.Keys) {
+
+        $control = Get-TkControl -Name $name
+
+        if ($null -eq $control) {
+            continue
+        }
+
+        $control.IsEnabled = $elevated
+
+        $control.ToolTip = if ($elevated) { $controls[$name] }
+                           else {
+                               '{0} needs administrator rights. Use "Restart as administrator" at the top right.' -f $controls[$name]
+                           }
+    }
+
+    Write-TkLog -Level Debug -Category 'UI' -Message (
+        'Privileged controls {0}.' -f $(if ($elevated) { 'enabled' } else { 'disabled' })
+    )
+}
+
+<#
+.SYNOPSIS
     Updates the elevation badge in the header.
 
 .DESCRIPTION

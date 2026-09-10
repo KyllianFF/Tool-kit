@@ -35,6 +35,7 @@ src/Features/Security/CredentialTools.ps1
 src/Features/Security/SecurityAudit.ps1
 src/Features/Security/ThreatHunting.ps1
 src/Features/Security/HardeningCheck.ps1
+src/Features/Security/Remediation.ps1
 src/Features/Diagnostics/WorkstationDiagnostics.ps1
 
 # --- Interface: depends on core and features -------------------------------

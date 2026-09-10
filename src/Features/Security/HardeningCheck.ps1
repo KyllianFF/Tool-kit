@@ -84,16 +84,22 @@ function New-TkHardeningFinding {
 
         [Parameter(Mandatory)] [AllowEmptyString()] [string] $State,
         [Parameter(Mandatory)] [AllowEmptyString()] [string] $Why,
-        [Parameter()]          [AllowEmptyString()] [string] $Fix = ''
+        [Parameter()]          [AllowEmptyString()] [string] $Fix = '',
+
+        # Key into the remediation allow list. Empty where the correction
+        # needs a decision the toolkit cannot make: enabling BitLocker and
+        # deploying LAPS both belong in that category.
+        [Parameter()]          [AllowEmptyString()] [string] $RemediationId = ''
     )
 
     return [pscustomobject]@{
-        Severity = $Severity
-        Area     = $Area
-        Name     = $Name
-        State    = $State
-        Why      = $Why
-        Fix      = $Fix
+        Severity      = $Severity
+        Area          = $Area
+        Name          = $Name
+        State         = $State
+        Why           = $Why
+        Fix           = $Fix
+        RemediationId = $RemediationId
     }
 }
 
@@ -149,7 +155,8 @@ function Test-TkLsaProtection {
         -Severity $(if ($enabled) { 'Pass' } else { 'Warning' }) `
         -State $(if ($enabled) { 'Enabled ({0})' -f $value } else { 'Disabled' }) `
         -Why 'A protected LSASS cannot be opened by an ordinary administrator process, which blocks the most direct route to credential dumping.' `
-        -Fix $(if ($enabled) { '' } else { 'Set HKLM\SYSTEM\CurrentControlSet\Control\Lsa\RunAsPPL to 1, then restart. Verify no security product depends on injecting into LSASS first.' })
+        -Fix $(if ($enabled) { '' } else { 'Set RunAsPPL to 1, then restart. Verify no security product depends on injecting into LSASS first.' }) `
+        -RemediationId $(if ($enabled) { '' } else { 'enable-lsa-protection' })
 }
 
 <#
@@ -170,7 +177,8 @@ function Test-TkWdigest {
         -Severity $(if ($unsafe) { 'Fail' } else { 'Pass' }) `
         -State $(if ($unsafe) { 'Enabled: plain text passwords are held in memory' } else { 'Disabled' }) `
         -Why 'With UseLogonCredential set to 1, Windows keeps the plain text password in LSASS. It is the first thing an attacker sets, because it turns a hash dump into a password dump.' `
-        -Fix $(if ($unsafe) { 'Set UseLogonCredential to 0 and investigate why it was ever enabled: nothing modern requires it.' } else { '' })
+        -Fix $(if ($unsafe) { 'Set UseLogonCredential to 0 and investigate why it was ever enabled: nothing modern requires it.' } else { '' }) `
+        -RemediationId $(if ($unsafe) { 'disable-wdigest' } else { '' })
 }
 
 # ---------------------------------------------------------------------------
@@ -262,7 +270,8 @@ function Test-TkPowerShellLogging {
     return New-TkHardeningFinding -Area 'Logging' -Name 'PowerShell logging' `
         -Severity $(if ($enabled) { 'Pass' } else { 'Warning' }) -State $state `
         -Why 'Script block logging records PowerShell after it has been de-obfuscated, which is the single most useful piece of telemetry on Windows during an investigation.' `
-        -Fix $(if ($enabled) { '' } else { 'Enable it by policy. The Tweaks page has it under security hardening.' })
+        -Fix $(if ($enabled) { '' } else { 'Enable it by policy. The Tweaks page has it under security hardening.' }) `
+        -RemediationId $(if ($enabled) { '' } else { 'enable-script-block-logging' })
 }
 
 <#
@@ -357,7 +366,8 @@ function Test-TkNtlmRestriction {
         -Severity $(if ($safe) { 'Pass' } elseif ($null -eq $level) { 'Warning' } else { 'Warning' }) `
         -State $(if ($null -eq $level) { 'Not configured, using the default' } else { 'Level {0}' -f $level }) `
         -Why 'Anything below level 5 permits LM or NTLMv1 responses, which are trivially crackable when captured. Level 5 sends NTLMv2 only and refuses the rest.' `
-        -Fix $(if ($safe) { '' } else { 'Set LmCompatibilityLevel to 5 by policy, after confirming no legacy appliance still needs NTLMv1.' })
+        -Fix $(if ($safe) { '' } else { 'Set LmCompatibilityLevel to 5 by policy, after confirming no legacy appliance still needs NTLMv1.' }) `
+        -RemediationId $(if ($safe) { '' } else { 'set-lm-level' })
 }
 
 # ---------------------------------------------------------------------------

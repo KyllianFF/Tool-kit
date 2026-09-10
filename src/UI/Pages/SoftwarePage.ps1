@@ -13,6 +13,100 @@ $script:TkApplicationView  = $null
 
 <#
 .SYNOPSIS
+    Returns the one or two letters shown on an application tile.
+
+.DESCRIPTION
+    A stand in for the publisher icon. There is no offline source for those:
+    winget ships no images, so a real icon would mean either bundling a
+    hundred and fifty files or fetching one per application over the network
+    every time the page opens. A coloured initial identifies a tile at a
+    glance without either cost.
+
+.OUTPUTS
+    System.String
+#>
+function Get-TkInitials {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        return '?'
+    }
+
+    # Punctuation is dropped first so "7-Zip" gives 7Z and ".NET SDK" gives NS.
+    $words = @($Name -split '[\s\-_.]+' | Where-Object { $_ -match '[A-Za-z0-9]' })
+
+    if ($words.Count -eq 0) {
+        return $Name.Substring(0, 1).ToUpperInvariant()
+    }
+
+    if ($words.Count -eq 1) {
+
+        $word = $words[0]
+
+        if ($word.Length -ge 2) {
+            return $word.Substring(0, 2).ToUpperInvariant()
+        }
+
+        return $word.ToUpperInvariant()
+    }
+
+    return ($words[0].Substring(0, 1) + $words[1].Substring(0, 1)).ToUpperInvariant()
+}
+
+<#
+.SYNOPSIS
+    Returns the tile colour for a category.
+
+.DESCRIPTION
+    One colour per category, so the eye can group a filtered list without
+    reading it. Deliberately fixed rather than themed: these are identity
+    colours, and they have to stay recognisable in both palettes. Every one is
+    dark enough to carry white text.
+
+.OUTPUTS
+    System.Windows.Media.SolidColorBrush
+#>
+function Get-TkAvatarBrush {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Key
+    )
+
+    $palette = @{
+        'browsers'      = '#2F6FD0'
+        'communication' = '#2E8B7A'
+        'documents'     = '#8A5AA8'
+        'development'   = '#3B6EA5'
+        'games'         = '#A8484F'
+        'microsoft'     = '#2C7BB6'
+        'multimedia'    = '#B06A2C'
+        'protools'      = '#5B6B8C'
+        'networking'    = '#2E7D6B'
+        'security'      = '#9B3B4A'
+        'selfhosted'    = '#4A7A46'
+        'utilities'     = '#6B6B7B'
+    }
+
+    $colour = if ($Key -and $palette.ContainsKey($Key)) { $palette[$Key] } else { '#5B6B8C' }
+
+    $converter = New-Object System.Windows.Media.BrushConverter
+    $brush     = $converter.ConvertFromString($colour)
+
+    $brush.Freeze()
+
+    return $brush
+}
+
+<#
+.SYNOPSIS
     Wires the Software page and loads the catalog.
 #>
 function Initialize-TkSoftwarePage {
@@ -46,6 +140,8 @@ function Initialize-TkSoftwarePage {
             Category     = $application.category
             CategoryName = $categoryNames[$application.category]
             StateText    = ''
+            Initials     = Get-TkInitials    -Name $application.name
+            AvatarBrush  = Get-TkAvatarBrush -Key  $application.category
         })
     }
 

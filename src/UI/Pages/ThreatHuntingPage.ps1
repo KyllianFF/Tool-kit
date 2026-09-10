@@ -22,45 +22,48 @@ function Initialize-TkThreatHuntingPage {
     [CmdletBinding()]
     param()
 
-    Register-TkClick -Name 'BtnEventTriage'         -Action { Invoke-TkEventTriageFromUi }
-    Register-TkClick -Name 'BtnPersistence'         -Action { Invoke-TkPersistenceFromUi }
-    Register-TkClick -Name 'BtnExposure'            -Action { Invoke-TkExposureFromUi }
-    Register-TkClick -Name 'BtnCertStore'           -Action { Invoke-TkCertificateInventoryFromUi }
-    Register-TkClick -Name 'BtnCheckEndpointCerts'  -Action { Invoke-TkEndpointCertificateFromUi }
-    Register-TkClick -Name 'BtnExportHunt'          -Action { Export-TkHuntReportFromUi }
-}
+    $choices = Get-TkControl -Name 'HuntChoices'
 
-<#
-.SYNOPSIS
-    Returns the brush a severity should be shown in.
+    if ($choices) {
 
-.OUTPUTS
-    System.String - a resource key.
-#>
-function Get-TkSeverityBrushKey {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)]
-        [AllowEmptyString()]
-        [string] $Severity
-    )
+        $choices.Add_SelectionChanged({
 
-    switch ($Severity) {
-        'Fail'    { return 'Danger' }
-        'Warning' { return 'Warning' }
-        'Pass'    { return 'Success' }
-        default   { return 'TextMuted' }
+            switch ((Get-TkControl -Name 'HuntChoices').SelectedIndex) {
+                0 { Invoke-TkEventTriageFromUi           ; break }
+                1 { Invoke-TkPersistenceFromUi           ; break }
+                2 { Invoke-TkExposureFromUi              ; break }
+                3 { Invoke-TkCertificateInventoryFromUi  ; break }
+            }
+        })
     }
+
+    Register-TkClick -Name 'BtnCheckEndpointCerts' -Action { Invoke-TkEndpointCertificateFromUi }
+    Register-TkClick -Name 'BtnExportHunt'         -Action { Export-TkHuntReportFromUi }
 }
 
 <#
 .SYNOPSIS
-    Adds a severity marker followed by a line of text.
+    Adds a finding to a document.
 
 .DESCRIPTION
-    One coloured word carries the verdict, so a long report can be skimmed
-    for the lines that need attention without reading any of the detail.
+    Kept as a thin wrapper over Add-TkFindingCard so every existing caller
+    draws a card without being rewritten. The old flat layout put a page of
+    findings in one undifferentiated block; a card gives each one a boundary.
+
+.PARAMETER Heading
+    What the finding is about.
+
+.PARAMETER Detail
+    The measured value, shown to the right of the heading.
+
+.PARAMETER Note
+    The explanation, set underneath.
+
+.PARAMETER Action
+    What to change, shown in its own band.
+
+.PARAMETER RemediationId
+    Key into the remediation allow list, when a safe correction exists.
 #>
 function Add-TkSeverityLine {
     [CmdletBinding()]
@@ -81,44 +84,88 @@ function Add-TkSeverityLine {
 
         [Parameter()]
         [AllowEmptyString()]
-        [string] $Note = ''
+        [string] $Note = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Action = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $RemediationId = ''
     )
 
-    $paragraph = New-Object System.Windows.Documents.Paragraph
-    $paragraph.Margin     = New-Object System.Windows.Thickness(0, 0, 0, 4)
-    $paragraph.LineHeight = 19
+    Add-TkFindingCard -Document $Document -Severity $Severity -Title $Heading `
+                      -State $Detail -Detail $Note -Action $Action `
+                      -RemediationId $RemediationId
+}
 
-    $marker = New-Object System.Windows.Documents.Run(('{0,-8}' -f $Severity.ToUpper()))
-    $marker.Foreground = Get-TkBrush -Key (Get-TkSeverityBrushKey -Severity $Severity)
-    $marker.FontFamily = New-Object System.Windows.Media.FontFamily('Cascadia Mono, Consolas')
-    $marker.FontWeight = [System.Windows.FontWeights]::Bold
+<#
+.SYNOPSIS
+    Confirms a correction, showing exactly what will run, then applies it.
 
-    $paragraph.Inlines.Add($marker)
+.DESCRIPTION
+    The confirmation shows the command rather than a description of it. A
+    button that changes a machine without saying what it is about to do is
+    not something a technician should trust, and the operator is the one who
+    has to answer for the change afterwards.
 
-    $title = New-Object System.Windows.Documents.Run($Heading)
-    $title.FontWeight = [System.Windows.FontWeights]::SemiBold
+.PARAMETER RemediationId
+    Key into the remediation allow list.
+#>
+function Invoke-TkRemediationFromUi {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $RemediationId
+    )
 
-    $paragraph.Inlines.Add($title)
+    $table = Get-TkRemediationTable
 
-    if ($Detail) {
-        $paragraph.Inlines.Add((New-Object System.Windows.Documents.Run(('  -  ' + $Detail))))
+    if (-not $table.ContainsKey($RemediationId)) {
+        Set-TkStatus -Text ('Unknown correction: {0}' -f $RemediationId)
+        return
     }
 
-    $Document.Blocks.Add($paragraph)
+    $entry = $table[$RemediationId]
 
-    if ($Note) {
-
-        $notePara = New-Object System.Windows.Documents.Paragraph(
-            (New-Object System.Windows.Documents.Run($Note))
-        )
-
-        $notePara.Margin     = New-Object System.Windows.Thickness(58, 0, 0, 12)
-        $notePara.Foreground = Get-TkBrush -Key 'TextMuted'
-        $notePara.FontSize   = 12
-        $notePara.LineHeight = 17
-
-        $Document.Blocks.Add($notePara)
+    if ($entry.Elevated -and -not (Test-TkIsElevated)) {
+        Set-TkStatus -Text 'This correction needs an elevated instance.'
+        return
     }
+
+    $message = @(
+        $entry.Explanation
+        ''
+        'This will run:'
+        ''
+        '    ' + $entry.Command
+        ''
+        'To undo it: ' + $entry.Reversible
+        ''
+        'Apply it now?'
+    ) -join [Environment]::NewLine
+
+    if (-not (Confirm-TkAction -Title $entry.Name -Message $message)) {
+        return
+    }
+
+    Invoke-TkBackgroundAction -StatusText ('Applying: {0}...' -f $entry.Name) `
+        -ParameterList @{ id = $RemediationId } `
+        -ScriptBlock {
+            param($id)
+            Invoke-TkRemediation -Id $id -Confirm:$false
+        } `
+        -OnComplete {
+            param($result)
+
+            if (@($result.Output) -contains $true) {
+                Set-TkStatus -Text ('Applied: {0}. Re-run the check to confirm.' -f $entry.Name)
+            }
+            else {
+                Set-TkStatus -Text ('Failed: {0}. See the output panel.' -f $entry.Name)
+            }
+        }.GetNewClosure()
 }
 
 # ---------------------------------------------------------------------------

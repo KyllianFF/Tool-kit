@@ -21,13 +21,25 @@ function Initialize-TkDiagnosticsPage {
     [CmdletBinding()]
     param()
 
-    Register-TkClick -Name 'BtnDiagOverview'  -Action { Invoke-TkDiagnosticOverview }
-    Register-TkClick -Name 'BtnDiagReboot'    -Action { Show-TkRebootStatus }
-    Register-TkClick -Name 'BtnDiagStorage'   -Action { Show-TkStorageHealth }
-    Register-TkClick -Name 'BtnDiagStability' -Action { Show-TkStabilityReport }
-    Register-TkClick -Name 'BtnDiagUpdates'   -Action { Show-TkUpdateHistory }
-    Register-TkClick -Name 'BtnDiagPrinting'  -Action { Show-TkPrintingReport }
-    Register-TkClick -Name 'BtnDiagUser'      -Action { Show-TkUserContext }
+    # The chooser drives the page: selecting an entry runs it. Index order
+    # matches the ListBox declared in the markup.
+    $choices = Get-TkControl -Name 'DiagnosticChoices'
+
+    if ($choices) {
+
+        $choices.Add_SelectionChanged({
+
+            switch ((Get-TkControl -Name 'DiagnosticChoices').SelectedIndex) {
+                0 { Invoke-TkDiagnosticOverview ; break }
+                1 { Show-TkRebootStatus         ; break }
+                2 { Show-TkStorageHealth        ; break }
+                3 { Show-TkStabilityReport      ; break }
+                4 { Show-TkUpdateHistory        ; break }
+                5 { Show-TkPrintingReport       ; break }
+                6 { Show-TkUserContext          ; break }
+            }
+        })
+    }
 
     Register-TkClick -Name 'BtnDiagExport' -Action {
         Export-TkDiagnosticReport -ControlName 'DiagnosticsOutput'
@@ -122,9 +134,13 @@ function Show-TkStorageHealth {
 
             foreach ($row in ($rows | Where-Object { $_.Severity -ne 'Pass' })) {
 
+                # A full volume has one safe first move: clear the temporary
+                # files and measure again.
+                $remediation = if ($row.Kind -eq 'Volume') { 'clear-temp' } else { '' }
+
                 Add-TkSeverityLine -Document $document -Severity $row.Severity `
                     -Heading ('{0}: {1}' -f $row.Kind, $row.Name) `
-                    -Detail $row.Health -Note $row.Notes
+                    -Detail $row.Health -Note $row.Notes -RemediationId $remediation
             }
 
             Add-TkHeading -Document $document -Text 'Every drive and volume' -Level 2
@@ -248,9 +264,13 @@ function Show-TkPrintingReport {
 
             foreach ($row in $rows) {
 
+                # The spooler is the one printing problem with a safe one step
+                # correction, so it is the one that gets a button.
+                $remediation = if ($row.Kind -eq 'Spooler' -and $row.Severity -eq 'Fail') { 'start-spooler' } else { '' }
+
                 Add-TkSeverityLine -Document $document -Severity $row.Severity `
                     -Heading ('{0}: {1}' -f $row.Kind, $row.Name) `
-                    -Detail $row.Status -Note $row.Detail
+                    -Detail $row.Status -Note $row.Detail -RemediationId $remediation
             }
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
@@ -427,14 +447,9 @@ function Show-TkHardeningCheck {
 
                 foreach ($finding in ($findings | Where-Object { $_.Area -eq $area })) {
 
-                    $note = $finding.Why
-
-                    if ($finding.Fix) {
-                        $note += '  What to change: ' + $finding.Fix
-                    }
-
-                    Add-TkSeverityLine -Document $document -Severity $finding.Severity `
-                        -Heading $finding.Name -Detail $finding.State -Note $note
+                    Add-TkFindingCard -Document $document -Severity $finding.Severity `
+                        -Title $finding.Name -State $finding.State -Detail $finding.Why `
+                        -Action $finding.Fix -RemediationId $finding.RemediationId
                 }
             }
 
