@@ -46,9 +46,38 @@
         <SolidColorBrush x:Key="Accent"          Color="#4C8DFF" />
         <SolidColorBrush x:Key="AccentMuted"     Color="#2A4C8A" />
         <SolidColorBrush x:Key="Selection"       Color="#2F3A4F" />
+        <SolidColorBrush x:Key="RowAlternate"    Color="#252932" />
         <SolidColorBrush x:Key="Success"         Color="#3FB950" />
         <SolidColorBrush x:Key="Warning"         Color="#D29922" />
         <SolidColorBrush x:Key="Danger"          Color="#F85149" />
+
+        <!-- ============================ Icons ============================
+            Segoe Fluent Icons ships with Windows 11 and Segoe MDL2 Assets
+            with Windows 10, so the glyphs cost nothing to distribute: no
+            image files, no download, and they take the foreground colour of
+            whatever draws them, which means they follow a theme change for
+            free. The fallback order covers both releases.
+
+            Every code point below was chosen by rendering the font inventory
+            and looking at it. Guessing one produces an empty box.
+        -->
+        <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+        <Style x:Key="Glyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource IconFont}" />
+            <Setter Property="FontSize"   Value="15" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="VerticalAlignment"   Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="TextAlignment"       Value="Center" />
+        </Style>
+
+        <!-- The glyph that leads a button label. -->
+        <Style x:Key="ButtonGlyph" TargetType="TextBlock" BasedOn="{StaticResource Glyph}">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Margin"   Value="0,0,7,0" />
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+        </Style>
 
         <!-- ============================ Text ============================ -->
         <Style TargetType="TextBlock">
@@ -106,6 +135,27 @@
         <Style x:Key="ItemCheckBox" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}" />
 
         <Style x:Key="ItemButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}" />
+
+        <!--
+            The coloured square that opens a list row.
+
+            Its fill is an identity colour set from the page code, deliberately
+            outside the palette: it has to mean the same thing in both themes.
+            Each one is dark enough to carry a white glyph, which is why the
+            glyph colour is literal here and nowhere else.
+        -->
+        <Style x:Key="ItemTile" TargetType="Border">
+            <Setter Property="Width"        Value="38" />
+            <Setter Property="Height"       Value="38" />
+            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin"       Value="0,0,13,0" />
+        </Style>
+
+        <Style x:Key="TileGlyph" TargetType="TextBlock" BasedOn="{StaticResource Glyph}">
+            <Setter Property="FontSize"   Value="18" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
 
         <!--
             A selectable card. The border and a tinted fill carry the selected
@@ -205,6 +255,14 @@
 
         <!-- =========================== Buttons =========================== -->
         <Style TargetType="Button">
+            <!--
+                A tooltip on a disabled control is hidden by default, which
+                defeats the one case it is most needed for: a greyed action
+                whose tooltip is the explanation of why it is greyed. Set
+                here so every button in the application inherits it, styles
+                based on this one included.
+            -->
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
             <Setter Property="Background"      Value="{DynamicResource SurfaceRaised}" />
             <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
             <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
@@ -248,6 +306,130 @@
             <Setter Property="FontWeight"  Value="SemiBold" />
         </Style>
 
+        <!--
+            A button that leads with an icon.
+
+            The glyph comes from Tag rather than from a nested TextBlock in
+            the content, because a TextBlock declared in content picks up the
+            implicit style and its explicit Foreground, which overrides the
+            inherited one and leaves a label in the wrong colour on the accent
+            fill. Read from the template, it takes the button's own
+            foreground and stays correct in both themes and when disabled.
+
+            Only for buttons whose Tag is free. The ones that carry an
+            identifier in Tag, such as the fix runners, keep the plain style.
+        -->
+        <Style x:Key="GlyphButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5">
+                            <StackPanel Orientation="Horizontal" Margin="{TemplateBinding Padding}">
+                                <TextBlock Text="{TemplateBinding Tag}"
+                                           FontFamily="{DynamicResource IconFont}"
+                                           FontSize="14"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,7,0" />
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selection}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="GlyphPrimaryButton" TargetType="Button" BasedOn="{StaticResource GlyphButton}">
+            <Setter Property="Background"  Value="{DynamicResource AccentMuted}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="FontWeight"  Value="SemiBold" />
+        </Style>
+
+        <!--
+            Actions that all operate on the field beside them.
+
+            A loose row of buttons after a text box says nothing about which
+            of them uses it, and the network tabs had three or four per row
+            with no visual tie to their input at all. Enclosing them in one
+            container makes the relationship structural: this box holds the
+            things you can do to that field. A divider between them keeps
+            them readable as separate actions rather than one long strip.
+        -->
+        <Style x:Key="ActionGroup" TargetType="Border">
+            <Setter Property="Background"      Value="{DynamicResource SurfaceRaised}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius"    Value="6" />
+            <Setter Property="Padding"         Value="3" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment"   Value="Center" />
+            <Setter Property="Margin"          Value="12,0,0,0" />
+        </Style>
+
+        <Style x:Key="GroupedButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background"      Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Margin"          Value="0" />
+            <Setter Property="Padding"         Value="13,6" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="4">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selection}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentMuted}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The action a group runs if you only press one thing. -->
+        <Style x:Key="GroupedPrimaryButton" TargetType="Button" BasedOn="{StaticResource GroupedButton}">
+            <Setter Property="Background" Value="{DynamicResource AccentMuted}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="GroupDivider" TargetType="Rectangle">
+            <Setter Property="Width"  Value="1" />
+            <Setter Property="Fill"   Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="Margin" Value="2,7" />
+        </Style>
+
+        <!-- The label in front of a form field. Kept to one width per tab
+             with SharedSizeGroup, so the fields line up down the card. -->
+        <Style x:Key="FormLabel" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="Foreground"        Value="{DynamicResource TextMuted}" />
+            <Setter Property="FontSize"          Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin"            Value="0,0,12,0" />
+        </Style>
+
         <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background"          Value="Transparent" />
             <Setter Property="BorderThickness"     Value="0" />
@@ -262,9 +444,16 @@
                         <Border x:Name="Chrome"
                                 Background="{TemplateBinding Background}"
                                 CornerRadius="5">
-                            <ContentPresenter HorizontalAlignment="Left"
-                                              VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}" />
+                            <StackPanel Orientation="Horizontal" Margin="{TemplateBinding Padding}">
+                                <TextBlock Text="{TemplateBinding Tag}"
+                                           FontFamily="{DynamicResource IconFont}"
+                                           FontSize="16"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           VerticalAlignment="Center"
+                                           Width="24" />
+                                <ContentPresenter HorizontalAlignment="Left"
+                                                  VerticalAlignment="Center" />
+                            </StackPanel>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -327,6 +516,47 @@
                                 <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+            Text that can be selected and copied but looks like a label.
+
+            A TextBlock cannot be selected on .NET Framework, and a table
+            nobody can copy a thumbprint or a path out of is half a table. A
+            read only TextBox behaves correctly, but the implicit style above
+            would give it a border, a fill and a hint, so it needs a template
+            of its own.
+
+            The template must contain a ScrollViewer named PART_ContentHost:
+            that is where TextBoxBase renders the text. Clearing the template
+            instead leaves the control with no visual tree at all, which is
+            not an invisible border but an invisible control. Every table and
+            every finding card rendered blank until this replaced it.
+        -->
+        <Style x:Key="SelectableText" TargetType="TextBox">
+            <Setter Property="IsReadOnly"      Value="True" />
+            <Setter Property="Background"      Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding"         Value="0" />
+            <Setter Property="FontFamily"      Value="Segoe UI" />
+            <Setter Property="FontSize"        Value="13" />
+            <Setter Property="TextWrapping"    Value="Wrap" />
+            <Setter Property="IsTabStop"       Value="False" />
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="CaretBrush"      Value="{DynamicResource TextPrimary}" />
+            <Setter Property="SelectionBrush"  Value="{DynamicResource Accent}" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="VerticalScrollBarVisibility"   Value="Disabled" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                      Margin="{TemplateBinding Padding}"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Disabled" />
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -503,79 +733,15 @@
             </Setter>
         </Style>
 
-        <Style TargetType="ListView">
-            <Setter Property="Background"      Value="{DynamicResource SurfaceRaised}" />
-            <Setter Property="Foreground"      Value="{DynamicResource TextPrimary}" />
-            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtle}" />
-            <Setter Property="BorderThickness" Value="1" />
-        </Style>
-
-        <Style TargetType="ListViewItem">
-            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ListViewItem">
-                        <Border x:Name="Chrome" Background="Transparent" Padding="0,4">
-                            <!--
-                                Content must be bound explicitly. A
-                                GridViewRowPresenter is not a ContentPresenter
-                                and does not inherit it, so leaving it out
-                                produced rows of the right height with nothing
-                                in them, which is exactly what the audit and
-                                adapter tables were showing.
-                            -->
-                            <GridViewRowPresenter Content="{TemplateBinding Content}"
-                                                  Columns="{TemplateBinding GridView.ColumnCollection}"
-                                                  TextElement.Foreground="{DynamicResource TextPrimary}" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selection}" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentMuted}" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style TargetType="GridViewColumnHeader">
-            <Setter Property="Foreground"  Value="{DynamicResource TextMuted}" />
-            <Setter Property="FontSize"    Value="12" />
-            <Setter Property="FontWeight"  Value="SemiBold" />
-            <Setter Property="Padding"     Value="8,6" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="GridViewColumnHeader">
-                        <Grid>
-                            <Border Background="{DynamicResource SurfaceRaised}"
-                                    BorderBrush="{DynamicResource BorderSubtle}"
-                                    BorderThickness="0,0,1,1" Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
-                            </Border>
-
-                            <!--
-                                The gripper is what makes a column resizable.
-                                The stock template carries one; a replacement
-                                template that omits it silently removes the
-                                behaviour, which is what happened to every
-                                list view in the application.
-                            -->
-                            <Thumb x:Name="PART_HeaderGripper" Width="8"
-                                   HorizontalAlignment="Right" Cursor="SizeWE">
-                                <Thumb.Template>
-                                    <ControlTemplate TargetType="Thumb">
-                                        <Border Background="Transparent" Width="8" />
-                                    </ControlTemplate>
-                                </Thumb.Template>
-                            </Thumb>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!--
+            The list view styles that used to live here are gone with the last
+            GridView. Every table in the application is now built by
+            Add-TkTable, which gives selectable cells, banded rows, draggable
+            column edges and live theme following from one place. Keeping a
+            second table mechanism meant fixing each of those twice, and the
+            column resize handle went missing from one of them for exactly
+            that reason.
+        -->
 
         <!-- ========================= TabControl ========================= -->
         <Style TargetType="TabControl">
@@ -673,7 +839,7 @@
                             BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
                         <TextBlock x:Name="ElevationText" Text="Standard user" FontSize="12" />
                     </Border>
-                    <Button x:Name="BtnElevate" Content="Restart as administrator" />
+                    <Button x:Name="BtnElevate" Content="Restart as administrator" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xEA18;" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -690,13 +856,14 @@
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,1,0">
                 <DockPanel LastChildFill="False">
                     <StackPanel DockPanel.Dock="Top" Margin="0,12,0,0">
-                        <Button x:Name="NavSystem"   Content="System"       Style="{StaticResource NavButton}" Tag="System" />
-                        <Button x:Name="NavSoftware" Content="Software"     Style="{StaticResource NavButton}" Tag="Software" />
-                        <Button x:Name="NavTweaks"   Content="Tweaks"       Style="{StaticResource NavButton}" Tag="Tweaks" />
-                        <Button x:Name="NavFixes"    Content="Fixes"        Style="{StaticResource NavButton}" Tag="Fixes" />
-                        <Button x:Name="NavNetwork"  Content="Network"      Style="{StaticResource NavButton}" Tag="Network" />
-                        <Button x:Name="NavDiagnostics" Content="Diagnostics" Style="{StaticResource NavButton}" Tag="Diagnostics" />
-                        <Button x:Name="NavSecurity" Content="Security"     Style="{StaticResource NavButton}" Tag="Security" />
+                        <!-- Tag carries the icon code point; see the IconFont note above. -->
+                        <Button x:Name="NavSystem"      Content="System"      Style="{StaticResource NavButton}" Tag="&#xEC4E;" />
+                        <Button x:Name="NavSoftware"    Content="Software"    Style="{StaticResource NavButton}" Tag="&#xECA5;" />
+                        <Button x:Name="NavTweaks"      Content="Tweaks"      Style="{StaticResource NavButton}" Tag="&#xE9E9;" />
+                        <Button x:Name="NavFixes"       Content="Fixes"       Style="{StaticResource NavButton}" Tag="&#xE90F;" />
+                        <Button x:Name="NavNetwork"     Content="Network"     Style="{StaticResource NavButton}" Tag="&#xEC26;" />
+                        <Button x:Name="NavDiagnostics" Content="Diagnostics" Style="{StaticResource NavButton}" Tag="&#xE95E;" />
+                        <Button x:Name="NavSecurity"    Content="Security"    Style="{StaticResource NavButton}" Tag="&#xEA18;" />
                     </StackPanel>
 
                     <StackPanel DockPanel.Dock="Bottom" Margin="16,0,16,16">
@@ -717,12 +884,12 @@
                                    Text="Machine identity read from SMBIOS, operating system state and platform security posture. Everything on this page is read only and works without elevation." />
 
                         <StackPanel Orientation="Horizontal" Margin="0,16,0,4">
-                            <Button x:Name="BtnRefreshSystem" Content="Refresh" Style="{StaticResource PrimaryButton}" />
-                            <Button x:Name="BtnCopySerial"    Content="Copy serial number" />
+                            <Button x:Name="BtnRefreshSystem" Content="Refresh" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
+                            <Button x:Name="BtnCopySerial"    Content="Copy serial number" Style="{StaticResource GlyphButton}" Tag="&#xE8C8;" />
                             <Button x:Name="BtnVendorDrivers" Content="Vendor drivers" />
                             <Button x:Name="BtnVendorWarranty" Content="Warranty" />
                             <Button x:Name="BtnVendorTool"    Content="Install firmware utility" />
-                            <Button x:Name="BtnExportReport"  Content="Export report" />
+                            <Button x:Name="BtnExportReport"  Content="Export report" Style="{StaticResource GlyphButton}" Tag="&#xE74E;" />
                         </StackPanel>
 
                         <!-- Identity -->
@@ -786,32 +953,24 @@
                                     <StackPanel><TextBlock Text="Graphics"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValGpu"      Style="{StaticResource FieldValue}" /></StackPanel>
                                 </UniformGrid>
 
+                                <!--
+                                    Rendered by the shared table builder
+                                    rather than a GridView. One renderer
+                                    means one set of behaviours everywhere:
+                                    selectable cells, banded rows, draggable
+                                    column edges and a palette that follows a
+                                    theme change. A GridView gives none of
+                                    those without a template per column.
+                                -->
                                 <TextBlock Text="Volumes" Style="{StaticResource FieldLabel}" Margin="0,6,0,4" />
-                                <ListView x:Name="ListVolumes" Height="120">
-                                    <ListView.View>
-                                        <GridView>
-                                            <GridViewColumn Header="Drive"  Width="60"  DisplayMemberBinding="{Binding Drive}" />
-                                            <GridViewColumn Header="Label"  Width="160" DisplayMemberBinding="{Binding Label}" />
-                                            <GridViewColumn Header="File system" Width="90" DisplayMemberBinding="{Binding FileSystem}" />
-                                            <GridViewColumn Header="Size"   Width="110" DisplayMemberBinding="{Binding Size}" />
-                                            <GridViewColumn Header="Free"   Width="110" DisplayMemberBinding="{Binding Free}" />
-                                            <GridViewColumn Header="Used %" Width="70"  DisplayMemberBinding="{Binding UsedPercent}" />
-                                        </GridView>
-                                    </ListView.View>
-                                </ListView>
+                                <RichTextBox x:Name="DocVolumes" IsReadOnly="True" MaxHeight="200"
+                                             VerticalScrollBarVisibility="Auto"
+                                             HorizontalScrollBarVisibility="Disabled" />
 
                                 <TextBlock Text="Physical disks" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
-                                <ListView x:Name="ListDisks" Height="110">
-                                    <ListView.View>
-                                        <GridView>
-                                            <GridViewColumn Header="Model"  Width="320" DisplayMemberBinding="{Binding Name}" />
-                                            <GridViewColumn Header="Size"   Width="110" DisplayMemberBinding="{Binding Size}" />
-                                            <GridViewColumn Header="Type"   Width="90"  DisplayMemberBinding="{Binding MediaType}" />
-                                            <GridViewColumn Header="Bus"    Width="90"  DisplayMemberBinding="{Binding BusType}" />
-                                            <GridViewColumn Header="Health" Width="90"  DisplayMemberBinding="{Binding Health}" />
-                                        </GridView>
-                                    </ListView.View>
-                                </ListView>
+                                <RichTextBox x:Name="DocDisks" IsReadOnly="True" MaxHeight="200"
+                                             VerticalScrollBarVisibility="Auto"
+                                             HorizontalScrollBarVisibility="Disabled" />
                             </StackPanel>
                         </Border>
 
@@ -854,11 +1013,11 @@
                         <TextBox Grid.Column="0" x:Name="SoftwareSearch" Tag="Search applications by name, description or package id" Margin="0,0,10,0" />
                         <ComboBox Grid.Column="1" x:Name="SoftwareCategory" Width="200" Margin="0,0,10,0" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal">
-                            <Button x:Name="BtnInstallSelected"   Content="Install selected" Style="{StaticResource PrimaryButton}" />
-                            <Button x:Name="BtnUninstallSelected" Content="Uninstall" />
-                            <Button x:Name="BtnUpgradeAll"        Content="Upgrade all" />
-                            <Button x:Name="BtnRefreshInstalled"  Content="Refresh state" />
-                            <Button x:Name="BtnClearSelection"    Content="Clear" Margin="0" />
+                            <Button x:Name="BtnInstallSelected"   Content="Install selected" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE896;" />
+                            <Button x:Name="BtnUninstallSelected" Content="Uninstall"        Style="{StaticResource GlyphButton}" Tag="&#xE74D;" />
+                            <Button x:Name="BtnUpgradeAll"        Content="Upgrade all"      Style="{StaticResource GlyphButton}" Tag="&#xE895;" />
+                            <Button x:Name="BtnRefreshInstalled"  Content="Refresh state"    Style="{StaticResource GlyphButton}" Tag="&#xE72C;" />
+                            <Button x:Name="BtnClearSelection"    Content="Clear"            Style="{StaticResource GlyphButton}" Tag="&#xE711;" Margin="0" />
                         </StackPanel>
                     </Grid>
 
@@ -884,12 +1043,9 @@
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
 
-                                                <Border Grid.Column="0" Width="38" Height="38" CornerRadius="9"
-                                                        Background="{Binding AvatarBrush}"
-                                                        VerticalAlignment="Center" Margin="0,0,13,0">
-                                                    <TextBlock Text="{Binding Initials}" Foreground="White"
-                                                               FontSize="14" FontWeight="Bold"
-                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                <Border Grid.Column="0" Style="{StaticResource ItemTile}"
+                                                        Background="{Binding TileBrush}">
+                                                    <TextBlock Text="{Binding Glyph}" Style="{StaticResource TileGlyph}" />
                                                 </Border>
 
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -948,9 +1104,9 @@
                         <TextBox Grid.Column="0" x:Name="TweakSearch" Tag="Search tweaks" Margin="0,0,10,0" />
                         <ComboBox Grid.Column="1" x:Name="TweakCategory" Width="200" Margin="0,0,10,0" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal">
-                            <Button x:Name="BtnApplyTweaks"   Content="Apply selected" Style="{StaticResource PrimaryButton}" />
-                            <Button x:Name="BtnRevertTweaks"  Content="Revert selected" />
-                            <Button x:Name="BtnRefreshTweaks" Content="Refresh state" Margin="0" />
+                            <Button x:Name="BtnApplyTweaks"   Content="Apply selected" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE73E;" />
+                            <Button x:Name="BtnRevertTweaks"  Content="Revert selected" Style="{StaticResource GlyphButton}" Tag="&#xE7A7;" />
+                            <Button x:Name="BtnRefreshTweaks" Content="Refresh state"  Style="{StaticResource GlyphButton}" Tag="&#xE72C;" Margin="0" />
                         </StackPanel>
                     </Grid>
 
@@ -959,9 +1115,15 @@
                             <ItemsControl x:Name="TweakList">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="{DynamicResource SurfaceRaised}" CornerRadius="6"
-                                                Margin="6,4" Padding="12,9"
-                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                        <!--
+                                            Same card as the Software list:
+                                            the whole row is the toggle. Two
+                                            lists that do the same thing
+                                            should not be operated in two
+                                            different ways.
+                                        -->
+                                        <ToggleButton Style="{StaticResource AppCard}"
+                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto" />
@@ -969,10 +1131,12 @@
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
 
-                                                <CheckBox Grid.Column="0" Style="{StaticResource ItemCheckBox}" IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                          VerticalAlignment="Top" Margin="0,2,12,0" />
+                                                <Border Grid.Column="0" Style="{StaticResource ItemTile}"
+                                                        Background="{Binding TileBrush}">
+                                                    <TextBlock Text="{Binding Glyph}" Style="{StaticResource TileGlyph}" />
+                                                </Border>
 
-                                                <StackPanel Grid.Column="1">
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                     <StackPanel Orientation="Horizontal">
                                                         <TextBlock Text="{Binding Name}" Style="{StaticResource ItemTitle}" />
                                                         <Border CornerRadius="3" Padding="6,1" Margin="10,0,0,0"
@@ -984,11 +1148,23 @@
                                                     <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" Margin="0,3,0,0" />
                                                 </StackPanel>
 
-                                                <TextBlock Grid.Column="2" Text="{Binding StateText}"
-                                                           Style="{StaticResource ItemState}"
-                                                           VerticalAlignment="Center" Margin="12,0,0,0" />
+                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding StateText}"
+                                                               Style="{StaticResource ItemState}"
+                                                               VerticalAlignment="Center" Margin="12,0,10,0" />
+                                                    <Path x:Name="SelectedMark" Width="15" Height="15"
+                                                          Stretch="Uniform" Visibility="Hidden"
+                                                          Fill="{DynamicResource Accent}"
+                                                          Data="M 6 11.2 L 1.8 7 L 0.4 8.4 L 6 14 L 18 2 L 16.6 0.6 Z" />
+                                                </StackPanel>
                                             </Grid>
-                                        </Border>
+                                        </ToggleButton>
+
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter TargetName="SelectedMark" Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -1008,8 +1184,8 @@
                         <TextBlock Style="{StaticResource Muted}"
                                    Text="Repair actions with the symptom each one addresses. Read the note before running anything marked high risk." />
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                            <Button x:Name="BtnAutoLogon"     Content="Automatic logon" Style="{StaticResource PrimaryButton}" />
-                            <Button x:Name="BtnRestorePoint"  Content="Create a restore point" />
+                            <Button x:Name="BtnAutoLogon"     Content="Automatic logon" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE8D7;" />
+                            <Button x:Name="BtnRestorePoint"  Content="Create a restore point" Style="{StaticResource GlyphButton}" Tag="&#xE74E;" />
                         </StackPanel>
                     </StackPanel>
 
@@ -1018,16 +1194,32 @@
                             <ItemsControl x:Name="FixList">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="{DynamicResource SurfaceRaised}" CornerRadius="6"
+                                        <!--
+                                            The same card shape as Software
+                                            and Tweaks, but a plain border
+                                            rather than a toggle: a fix is
+                                            run, not selected, so there is
+                                            nothing for a checked state to
+                                            mean. The Run button keeps the
+                                            plain style because its Tag
+                                            carries the fix identifier.
+                                        -->
+                                        <Border Background="{DynamicResource SurfaceRaised}" CornerRadius="8"
                                                 Margin="6,4" Padding="12,10"
                                                 BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
 
-                                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                                <Border Grid.Column="0" Style="{StaticResource ItemTile}"
+                                                        Background="{Binding TileBrush}">
+                                                    <TextBlock Text="{Binding Glyph}" Style="{StaticResource TileGlyph}" />
+                                                </Border>
+
+                                                <StackPanel Grid.Column="1" Margin="0,0,16,0" VerticalAlignment="Center">
                                                     <StackPanel Orientation="Horizontal">
                                                         <TextBlock Text="{Binding Name}" Style="{StaticResource ItemTitle}" />
                                                         <Border CornerRadius="3" Padding="6,1" Margin="10,0,0,0"
@@ -1041,7 +1233,8 @@
                                                                Margin="0,3,0,0" FontStyle="Italic" Opacity="0.8" />
                                                 </StackPanel>
 
-                                                <Button Grid.Column="1" Content="Run" Tag="{Binding Id}" Style="{StaticResource ItemButton}"
+                                                <Button Grid.Column="2" Content="Run" Tag="{Binding Id}" Style="{StaticResource ItemButton}"
+                                                        IsEnabled="{Binding CanRun}" ToolTip="{Binding RunTooltip}"
                                                         VerticalAlignment="Center" Margin="0" MinWidth="80" />
                                             </Grid>
                                         </Border>
@@ -1091,27 +1284,54 @@
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
-                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                                    <Button x:Name="BtnRefreshAdapters" Content="Refresh" Style="{StaticResource PrimaryButton}" />
-                                    <Button x:Name="BtnPublicIp"        Content="Show public address" />
-                                    <Button x:Name="BtnListeningPorts"  Content="Listening ports" />
-                                </StackPanel>
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
 
-                                <ListView Grid.Row="1" x:Name="ListAdapters">
-                                    <ListView.View>
-                                        <GridView>
-                                            <GridViewColumn Header="Name"        Width="150" DisplayMemberBinding="{Binding Name}" />
-                                            <GridViewColumn Header="Status"      Width="70"  DisplayMemberBinding="{Binding Status}" />
-                                            <GridViewColumn Header="IPv4"        Width="130" DisplayMemberBinding="{Binding IPv4Address}" />
-                                            <GridViewColumn Header="Mask"        Width="130" DisplayMemberBinding="{Binding SubnetMask}" />
-                                            <GridViewColumn Header="Gateway"     Width="130" DisplayMemberBinding="{Binding Gateway}" />
-                                            <GridViewColumn Header="DNS"         Width="200" DisplayMemberBinding="{Binding DnsServers}" />
-                                            <GridViewColumn Header="DHCP"        Width="70"  DisplayMemberBinding="{Binding Dhcp}" />
-                                            <GridViewColumn Header="MAC"         Width="140" DisplayMemberBinding="{Binding MacAddress}" />
-                                            <GridViewColumn Header="Speed"       Width="90"  DisplayMemberBinding="{Binding LinkSpeed}" />
-                                        </GridView>
-                                    </ListView.View>
-                                </ListView>
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                            <Button x:Name="BtnRefreshAdapters" Content="Refresh"
+                                                    Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
+                                            <Button x:Name="BtnPublicIp" Content="Show public address"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xEC27;"
+                                                    ToolTip="Asks an external service what address the internet sees. The answer appears in the field on the right." />
+                                            <Button x:Name="BtnListeningPorts" Content="Listening ports"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE7F4;"
+                                                    ToolTip="Opens the listening sockets in a window of their own, so this tab keeps its place." />
+                                        </StackPanel>
+
+                                        <!--
+                                            The public address is shown here
+                                            rather than only in the console.
+                                            The console is collapsed by
+                                            default, so an answer written
+                                            only there is an answer nobody
+                                            sees.
+                                        -->
+                                        <Border Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                Background="{DynamicResource InputBackground}"
+                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1"
+                                                CornerRadius="5" Padding="12,7" Margin="16,0,0,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Public address" Style="{StaticResource FieldLabel}"
+                                                           VerticalAlignment="Center" Margin="0,0,10,0" />
+                                                <TextBox x:Name="PublicAddressValue"
+                                                         Style="{StaticResource SelectableText}"
+                                                         FontFamily="Cascadia Mono, Consolas"
+                                                         FontSize="13" MinWidth="130"
+                                                         Text="not queried yet" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="DocAdapters" IsReadOnly="True"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled" />
+                                </Border>
                             </Grid>
                         </TabItem>
 
@@ -1123,24 +1343,71 @@
                                 </Grid.RowDefinitions>
 
                                 <Border Grid.Row="0" Style="{StaticResource Card}">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="Target" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="DiagTarget" Tag="Host, or a network in CIDR form for the sweep" Width="240" Text="192.168.1.1" />
-                                            <Button x:Name="BtnTestConnectivity" Content="Connectivity chain" Style="{StaticResource PrimaryButton}" Margin="12,0,0,0" />
-                                            <Button x:Name="BtnPortScan"         Content="Common ports" />
-                                            <Button x:Name="BtnSweep"            Content="Sweep subnet" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="DNS name" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="DnsName" Tag="Name to resolve" Width="240" Text="www.microsoft.com" />
-                                            <ComboBox x:Name="DnsType" Width="90" Margin="10,0,0,0" />
-                                            <TextBox x:Name="DnsServer" Tag="DNS server (optional)" Width="150" Margin="10,0,0,0" />
-                                            <Button x:Name="BtnResolveDns" Content="Resolve" Margin="10,0,0,0" />
-                                        </StackPanel>
-                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                    <Grid Grid.IsSharedSizeScope="True">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <!-- Reachability -->
+                                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DiagLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="Target" Style="{StaticResource FormLabel}" />
+                                            <TextBox Grid.Column="1" x:Name="DiagTarget" Width="260"
+                                                     Tag="Host, or a network in CIDR form for the sweep"
+                                                     Text="192.168.1.1" />
+
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnTestConnectivity" Content="Connectivity chain"
+                                                            Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Gateway, DNS and internet in order, so the first broken hop is the answer." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnPortScan" Content="Common ports"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Tries the usual service ports on that one host." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnSweep" Content="Sweep subnet"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Pings every address of the network written in CIDR form. Refuses anything wider than /22." />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+
+                                        <!-- Name resolution -->
+                                        <Grid Grid.Row="1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DiagLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="DNS name" Style="{StaticResource FormLabel}" />
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <TextBox x:Name="DnsName" Tag="Name to resolve" Width="260"
+                                                         Text="www.microsoft.com" />
+                                                <ComboBox x:Name="DnsType" Width="90" Margin="8,0,0,0"
+                                                          ToolTip="Record type to ask for." />
+                                                <TextBox x:Name="DnsServer" Tag="Server (optional)" Width="150" Margin="8,0,0,0"
+                                                         ToolTip="Ask this resolver instead of the one the adapter is configured with. Useful for comparing an internal answer with a public one." />
+                                            </StackPanel>
+
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <Button x:Name="BtnResolveDns" Content="Resolve"
+                                                        Style="{StaticResource GroupedPrimaryButton}" />
+                                            </Border>
+                                        </Grid>
+
+                                        <TextBlock Grid.Row="2" Style="{StaticResource Muted}" Margin="0,10,0,0"
                                                    Text="Port checks and sweeps are for networks you administer. The sweep refuses any prefix shorter than /22 and every target is written to the log." />
-                                    </StackPanel>
+                                    </Grid>
                                 </Border>
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
@@ -1159,35 +1426,99 @@
                                 </Grid.RowDefinitions>
 
                                 <Border Grid.Row="0" Style="{StaticResource Card}">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="Host" VerticalAlignment="Center" Width="70" />
-                                            <TextBox x:Name="AdminTarget" Tag="Host name or IP address" Width="230" Text="8.8.8.8" />
-                                            <Button x:Name="BtnPathMtu"     Content="Path MTU"     Style="{StaticResource PrimaryButton}" Margin="12,0,0,0" />
-                                            <Button x:Name="BtnLinkQuality" Content="Link quality" />
-                                            <Button x:Name="BtnTraceRoute"  Content="Trace route" />
-                                        </StackPanel>
+                                    <Grid Grid.IsSharedSizeScope="True">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
 
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="TLS" VerticalAlignment="Center" Width="70" />
-                                            <TextBox x:Name="TlsHost" Tag="Host name" Width="230" Text="www.microsoft.com" />
-                                            <TextBlock Text="Port" VerticalAlignment="Center" Margin="12,0,8,0" />
-                                            <TextBox x:Name="TlsPort" Tag="Port" Width="70" Text="443" />
-                                            <Button x:Name="BtnTlsCertificate" Content="Inspect certificate" Margin="12,0,0,0" />
-                                        </StackPanel>
+                                        <!-- Path behaviour -->
+                                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AdminLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
 
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Wake" VerticalAlignment="Center" Width="70" />
-                                            <TextBox x:Name="WolMac" Tag="MAC 00:1A:2B:3C:4D:5E" Width="230" />
-                                            <TextBlock Text="Broadcast" VerticalAlignment="Center" Margin="12,0,8,0" />
-                                            <TextBox x:Name="WolBroadcast" Tag="Broadcast address" Width="150" Text="255.255.255.255" />
-                                            <Button x:Name="BtnWakeOnLan"   Content="Send magic packet" Margin="12,0,0,0" />
-                                            <Button x:Name="BtnNeighbours"  Content="Neighbour table" />
-                                        </StackPanel>
+                                            <TextBlock Grid.Column="0" Text="Host" Style="{StaticResource FormLabel}" />
+                                            <TextBox Grid.Column="1" x:Name="AdminTarget" Width="260"
+                                                     Tag="Host name or IP address" Text="8.8.8.8" />
 
-                                        <TextBlock Style="{StaticResource Muted}" Margin="0,10,0,0"
-                                                   Text="Path MTU explains a link that connects but stalls on large transfers. Link quality reports loss and jitter, which an average latency hides. Wake-on-LAN needs the directed broadcast of the target subnet when it has to cross a router." />
-                                    </StackPanel>
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnPathMtu" Content="Path MTU"
+                                                            Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Finds the largest packet that survives the path. Explains a link that connects but stalls on large transfers." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnLinkQuality" Content="Link quality"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Loss and jitter over a run of probes, which an average latency hides." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnTraceRoute" Content="Trace route"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Every hop between here and the host." />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+
+                                        <!-- Transport security -->
+                                        <Grid Grid.Row="1" Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AdminLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="TLS" Style="{StaticResource FormLabel}" />
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <TextBox x:Name="TlsHost" Tag="Host name" Width="260"
+                                                         Text="www.microsoft.com" />
+                                                <TextBox x:Name="TlsPort" Tag="Port" Width="80" Margin="8,0,0,0"
+                                                         Text="443" ToolTip="Port to open the session on." />
+                                            </StackPanel>
+
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <Button x:Name="BtnTlsCertificate" Content="Inspect certificate"
+                                                        Style="{StaticResource GroupedPrimaryButton}"
+                                                        ToolTip="Subject, issuer, validity and signature algorithm of the certificate that host presents." />
+                                            </Border>
+                                        </Grid>
+
+                                        <!-- Layer two -->
+                                        <Grid Grid.Row="2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AdminLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="Wake" Style="{StaticResource FormLabel}" />
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <TextBox x:Name="WolMac" Tag="MAC 00:1A:2B:3C:4D:5E" Width="260" />
+                                                <TextBox x:Name="WolBroadcast" Tag="Broadcast address" Width="160" Margin="8,0,0,0"
+                                                         Text="255.255.255.255"
+                                                         ToolTip="Wake-on-LAN needs the directed broadcast of the target subnet when the packet has to cross a router." />
+                                            </StackPanel>
+
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnWakeOnLan" Content="Send magic packet"
+                                                            Style="{StaticResource GroupedPrimaryButton}" />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnNeighbours" Content="Neighbour table"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="The local ARP and neighbour cache: which MAC answers for which address." />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+
+                                        <TextBlock Grid.Row="3" Style="{StaticResource Muted}" Margin="0,10,0,0"
+                                                   Text="Hover any action for what it reports. Everything on this tab is read only except the magic packet, which only asks a machine to power on." />
+                                    </Grid>
                                 </Border>
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
@@ -1206,59 +1537,165 @@
                                 </Grid.RowDefinitions>
 
                                 <Border Grid.Row="0" Style="{StaticResource Card}">
-                                    <StackPanel>
-                                        <TextBlock Text="Adapter IP profiles" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                    <Grid Grid.IsSharedSizeScope="True">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
 
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="Adapter" VerticalAlignment="Center" Width="70" />
-                                            <ComboBox x:Name="ProfileAdapter" Width="230" />
-                                            <TextBlock Text="Profile" VerticalAlignment="Center" Margin="12,0,8,0" />
-                                            <ComboBox x:Name="ProfileSelect" Width="220" />
-                                            <Button x:Name="BtnApplyProfile"  Content="Apply" Style="{StaticResource PrimaryButton}" Margin="12,0,0,0" />
-                                            <Button x:Name="BtnDeleteProfile" Content="Delete" />
-                                        </StackPanel>
+                                        <TextBlock Grid.Row="0" Text="Adapter IP profiles"
+                                                   Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
 
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="Name" VerticalAlignment="Center" Width="70" />
-                                            <TextBox x:Name="ProfileName" Tag="Profile name, e.g. Site Lyon VLAN 30" Width="230" />
-                                            <TextBox x:Name="ProfileAddress" Tag="Address 192.168.50.10" Width="130" Margin="12,0,0,0" />
-                                            <TextBox x:Name="ProfilePrefix" Tag="Prefix"  Width="50"  Margin="6,0,0,0" Text="24" />
-                                            <TextBox x:Name="ProfileGateway" Tag="Gateway 192.168.50.1" Width="130" Margin="6,0,0,0" />
-                                            <TextBox x:Name="ProfileDns" Tag="DNS 1.1.1.1, 9.9.9.9"     Width="180" Margin="6,0,0,0" />
-                                        </StackPanel>
+                                        <!-- Pick an adapter and a saved profile, then apply it. -->
+                                        <Grid Grid.Row="1" Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="ConfigLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
 
-                                        <StackPanel Orientation="Horizontal">
-                                            <Button x:Name="BtnSaveProfile"    Content="Save static profile" Margin="70,0,0,0" />
-                                            <Button x:Name="BtnSaveDhcpProfile" Content="Save DHCP profile" />
-                                            <Button x:Name="BtnCaptureProfile" Content="Capture current" />
-                                        </StackPanel>
+                                            <TextBlock Grid.Column="0" Text="Adapter" Style="{StaticResource FormLabel}" />
 
-                                        <TextBlock Style="{StaticResource Muted}" Margin="70,8,0,0"
-                                                   Text="Fields in order: name, address, prefix, gateway, DNS servers separated by commas. Applying a profile to the adapter carrying your remote session will disconnect it." />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <ComboBox x:Name="ProfileAdapter" Width="230"
+                                                          ToolTip="The adapter a profile is applied to." />
+                                                <ComboBox x:Name="ProfileSelect" Width="230" Margin="8,0,0,0"
+                                                          ToolTip="A profile saved earlier." />
+                                            </StackPanel>
 
-                                        <TextBlock Text="Routes and port forwarding" Style="{StaticResource SubHeading}" />
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnApplyProfile" Content="Apply"
+                                                            Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Writes the selected profile onto the selected adapter." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnDeleteProfile" Content="Delete"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Removes the saved profile. Does not change the adapter." />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
 
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="Route" VerticalAlignment="Center" Width="70" />
-                                            <TextBox x:Name="RoutePrefix" Tag="Destination 10.50.0.0/16"  Width="150" />
-                                            <TextBox x:Name="RouteNextHop" Tag="Next hop 192.168.1.254" Width="130" Margin="6,0,0,0" />
-                                            <ComboBox x:Name="RouteAdapter" Width="180" Margin="6,0,0,0" />
-                                            <Button x:Name="BtnAddRoute"    Content="Add persistent" Margin="12,0,0,0" />
-                                            <Button x:Name="BtnRemoveRoute" Content="Remove" />
-                                            <Button x:Name="BtnShowRoutes"  Content="Show table" />
-                                        </StackPanel>
+                                        <!-- Compose a new profile. -->
+                                        <Grid Grid.Row="2" Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="ConfigLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
 
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Forward" VerticalAlignment="Center" Width="70" />
-                                            <TextBox x:Name="ProxyListenPort" Tag="Listen 8080"    Width="80" />
-                                            <TextBlock Text="to" VerticalAlignment="Center" Margin="8,0,8,0" />
-                                            <TextBox x:Name="ProxyConnectAddress" Tag="Forward to 172.28.5.2" Width="130" />
-                                            <TextBox x:Name="ProxyConnectPort" Tag="Port 80"    Width="80" Margin="6,0,0,0" />
-                                            <Button x:Name="BtnAddProxy"    Content="Publish" Margin="12,0,0,0" />
-                                            <Button x:Name="BtnRemoveProxy" Content="Remove" />
-                                            <Button x:Name="BtnShowProxies" Content="Show rules" />
-                                        </StackPanel>
-                                    </StackPanel>
+                                            <TextBlock Grid.Column="0" Text="New profile" Style="{StaticResource FormLabel}" />
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <TextBox x:Name="ProfileName" Width="180"
+                                                         Tag="Name, e.g. Site Lyon VLAN 30" />
+                                                <TextBox x:Name="ProfileAddress" Width="140" Margin="8,0,0,0"
+                                                         Tag="Address" ToolTip="Address 192.168.50.10" />
+                                                <TextBox x:Name="ProfilePrefix" Width="56" Margin="6,0,0,0"
+                                                         Text="24" Tag="/" ToolTip="Prefix length" />
+                                                <TextBox x:Name="ProfileGateway" Width="140" Margin="6,0,0,0"
+                                                         Tag="Gateway" ToolTip="Gateway 192.168.50.1" />
+                                                <TextBox x:Name="ProfileDns" Width="170" Margin="6,0,0,0"
+                                                         Tag="DNS servers" ToolTip="Separated by commas: 1.1.1.1, 9.9.9.9" />
+                                            </StackPanel>
+
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnSaveProfile" Content="Save static"
+                                                            Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Saves the fields on the left as a fixed address profile." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnSaveDhcpProfile" Content="Save DHCP"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Saves a profile that puts the adapter back on DHCP. Only the name is used." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnCaptureProfile" Content="Capture current"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Fills the fields from what the selected adapter is configured with right now." />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+
+                                        <TextBlock Grid.Row="3" Style="{StaticResource Muted}" Margin="0,0,0,4"
+                                                   Text="Applying a profile to the adapter carrying your remote session will disconnect it." />
+
+                                        <TextBlock Grid.Row="4" Text="Routes and port forwarding"
+                                                   Style="{StaticResource SubHeading}" />
+
+                                        <Grid Grid.Row="5" Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="ConfigLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="Route" Style="{StaticResource FormLabel}" />
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <TextBox x:Name="RoutePrefix" Width="180"
+                                                         Tag="Destination" ToolTip="In CIDR form: 10.50.0.0/16" />
+                                                <TextBox x:Name="RouteNextHop" Width="150" Margin="8,0,0,0"
+                                                         Tag="Next hop" ToolTip="The router that reaches it: 192.168.1.254" />
+                                                <ComboBox x:Name="RouteAdapter" Width="190" Margin="8,0,0,0"
+                                                          ToolTip="The adapter the route leaves by." />
+                                            </StackPanel>
+
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnAddRoute" Content="Add persistent"
+                                                            Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Adds the route and keeps it across restarts." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnRemoveRoute" Content="Remove"
+                                                            Style="{StaticResource GroupedButton}" />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnShowRoutes" Content="Show table"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="The whole routing table, in a window of its own." />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+
+                                        <Grid Grid.Row="6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="ConfigLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="Forward" Style="{StaticResource FormLabel}" />
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <TextBox x:Name="ProxyListenPort" Width="100"
+                                                         Tag="Listen port" ToolTip="The port opened on this machine, e.g. 8080" />
+                                                <TextBlock Text="to" Style="{StaticResource FormLabel}" Margin="10,0,10,0" />
+                                                <TextBox x:Name="ProxyConnectAddress" Width="170"
+                                                         Tag="Forward to" ToolTip="Destination address: 172.28.5.2" />
+                                                <TextBox x:Name="ProxyConnectPort" Width="100" Margin="8,0,0,0"
+                                                         Tag="Port" ToolTip="Destination port, e.g. 80" />
+                                            </StackPanel>
+
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnAddProxy" Content="Publish"
+                                                            Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Opens the listening port and forwards it. Remember the firewall rule." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnRemoveProxy" Content="Remove"
+                                                            Style="{StaticResource GroupedButton}" />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnShowProxies" Content="Show rules"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Every forwarding rule on this machine, in a window of its own." />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
                                 </Border>
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
@@ -1349,48 +1786,36 @@
                         <Button x:Name="BtnDiagExport" DockPanel.Dock="Bottom"
                                 Content="Export the last report" Margin="0,10,0,0"
                                 HorizontalAlignment="Stretch" />
-                        <ListBox x:Name="DiagnosticChoices" Background="Transparent" BorderThickness="0">
-                            <ListBoxItem Style="{StaticResource ReportChoice}">
-                                <StackPanel>
-                                    <TextBlock Text="Full check" Style="{StaticResource ChoiceTitle}" />
-                                    <TextBlock Text="Every check below, in order." Style="{StaticResource ChoiceHint}" />
-                                </StackPanel>
+                        <ListBox x:Name="DiagnosticChoices" Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Every check below, in order.">
+                                <TextBlock Text="Full check" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}">
-                                <StackPanel>
-                                    <TextBlock Text="Pending reboot" Style="{StaticResource ChoiceTitle}" />
-                                    <TextBlock Text="All six places Windows records one, including the invisible ones." Style="{StaticResource ChoiceHint}" />
-                                </StackPanel>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="All six places Windows records one, including the invisible ones.">
+                                <TextBlock Text="Pending reboot" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}">
-                                <StackPanel>
-                                    <TextBlock Text="Storage health" Style="{StaticResource ChoiceTitle}" />
-                                    <TextBlock Text="Reliability counters joined to free space, with SSD wear." Style="{StaticResource ChoiceHint}" />
-                                </StackPanel>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Reliability counters joined to free space, with SSD wear.">
+                                <TextBlock Text="Storage health" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}">
-                                <StackPanel>
-                                    <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
-                                    <TextBlock Text="Bug checks, unexpected shutdowns and repeated application faults." Style="{StaticResource ChoiceHint}" />
-                                </StackPanel>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Bug checks, unexpected shutdowns and repeated application faults.">
+                                <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}">
-                                <StackPanel>
-                                    <TextBlock Text="Update history" Style="{StaticResource ChoiceTitle}" />
-                                    <TextBlock Text="Through the update session, so driver and feature updates appear." Style="{StaticResource ChoiceHint}" />
-                                </StackPanel>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Through the update session, so driver and feature updates appear.">
+                                <TextBlock Text="Update history" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}">
-                                <StackPanel>
-                                    <TextBlock Text="Printing" Style="{StaticResource ChoiceTitle}" />
-                                    <TextBlock Text="Spooler, printers, ports, drivers and queue depth." Style="{StaticResource ChoiceHint}" />
-                                </StackPanel>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Spooler, printers, ports, drivers and queue depth.">
+                                <TextBlock Text="Printing" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}">
-                                <StackPanel>
-                                    <TextBlock Text="Profiles and policy" Style="{StaticResource ChoiceTitle}" />
-                                    <TextBlock Text="Profile sizes, mapped drives, domain channel, logon timing." Style="{StaticResource ChoiceHint}" />
-                                </StackPanel>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Profile sizes, mapped drives, domain channel, logon timing.">
+                                <TextBlock Text="Profiles and policy" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                         </ListBox>
                     </DockPanel>
@@ -1598,30 +2023,24 @@
                                                 HorizontalAlignment="Stretch" Margin="0" />
                                     </StackPanel>
 
-                                    <ListBox x:Name="HuntChoices" Background="Transparent" BorderThickness="0">
-                                        <ListBoxItem Style="{StaticResource ReportChoice}">
-                                            <StackPanel>
+                                    <ListBox x:Name="HuntChoices" Background="Transparent" BorderThickness="0"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Failed logons, lockouts, services installed, logs cleared.">
                                             <TextBlock Text="Event log triage" Style="{StaticResource ChoiceTitle}" />
-                                            <TextBlock Text="Failed logons, lockouts, services installed, logs cleared." Style="{StaticResource ChoiceHint}" />
-                                            </StackPanel>
                                         </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}">
-                                            <StackPanel>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Run keys, services, tasks and WMI subscriptions, signature checked.">
                                             <TextBlock Text="Autostart and persistence" Style="{StaticResource ChoiceTitle}" />
-                                            <TextBlock Text="Run keys, services, tasks and WMI subscriptions, signature checked." Style="{StaticResource ChoiceHint}" />
-                                            </StackPanel>
                                         </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}">
-                                            <StackPanel>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Listening sockets joined to the inbound firewall policy.">
                                             <TextBlock Text="Network exposure" Style="{StaticResource ChoiceTitle}" />
-                                            <TextBlock Text="Listening sockets joined to the inbound firewall policy." Style="{StaticResource ChoiceHint}" />
-                                            </StackPanel>
                                         </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}">
-                                            <StackPanel>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Machine and user stores: expiry, SHA-1, weak keys.">
                                             <TextBlock Text="Certificate inventory" Style="{StaticResource ChoiceTitle}" />
-                                            <TextBlock Text="Machine and user stores: expiry, SHA-1, weak keys." Style="{StaticResource ChoiceHint}" />
-                                            </StackPanel>
                                         </ListBoxItem>
                                     </ListBox>
                                 </DockPanel>

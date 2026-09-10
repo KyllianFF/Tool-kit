@@ -10,6 +10,12 @@
 # development, where the XAML is read from disk instead.
 $script:TkEmbeddedXaml = ''
 
+# Work a page wants done the first time it is opened, and the record of which
+# pages have already been opened. Kept here rather than as a flag on each
+# page so that adding one to a new page is a single Register call.
+$script:TkFirstShowAction = @{}
+$script:TkPageOpened      = @{}
+
 <#
 .SYNOPSIS
     Returns the main window XAML.
@@ -157,6 +163,39 @@ function Register-TkClick {
 
 <#
 .SYNOPSIS
+    Registers work to run the first time a page is opened.
+
+.DESCRIPTION
+    Some pages are only truthful once they have read the machine. The Software
+    list is the clear case: until the installed packages have been read, every
+    entry looks available, including the twenty already on the disk. Making
+    the operator press Refresh to find that out puts the burden the wrong way
+    round.
+
+    The work runs on first open rather than at start up, because it costs a
+    winget call and a page nobody visits should not pay for it.
+
+.PARAMETER PageName
+    Page key, as passed to Show-TkPage.
+
+.PARAMETER Action
+    Script block to run once.
+#>
+function Register-TkFirstShow {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $PageName,
+
+        [Parameter(Mandatory)]
+        [scriptblock] $Action
+    )
+
+    $script:TkFirstShowAction[$PageName] = $Action
+}
+
+<#
+.SYNOPSIS
     Shows one feature page and hides the others.
 
 .PARAMETER Name
@@ -210,6 +249,25 @@ function Show-TkPage {
     }
 
     $ctx.Settings['LastPage'] = $Name
+
+    # First open only. The flag is set before the action runs, so an action
+    # that throws does not queue itself again on the next visit.
+    if (-not $script:TkPageOpened.ContainsKey($Name)) {
+
+        $script:TkPageOpened[$Name] = $true
+
+        if ($script:TkFirstShowAction.ContainsKey($Name)) {
+
+            try {
+                & $script:TkFirstShowAction[$Name]
+            }
+            catch {
+                Write-TkLog -Level Warning -Category 'Interface' -Message (
+                    'The {0} page could not finish its first load: {1}' -f $Name, $_.Exception.Message
+                )
+            }
+        }
+    }
 }
 
 <#
@@ -455,6 +513,132 @@ function Confirm-TkAction {
     )
 
     return ($result -eq [System.Windows.MessageBoxResult]::Yes)
+}
+
+<#
+.SYNOPSIS
+    Shows a set of objects as a table in a window of its own.
+
+.DESCRIPTION
+    For answers that are a list rather than a value: the listening sockets,
+    the routing table, the forwarding rules. Three things were wrong with
+    where those used to go.
+
+    Writing them to the console at the foot of the window hides them, because
+    the console is collapsed by default. Writing them into another tab's
+    output box moves the operator away from what they were doing, which is
+    what the listening ports button did: it jumped to Diagnostics and left
+    Adapters behind. And neither can be kept open beside the thing it
+    explains.
+
+    A window can. It is modeless on purpose, so several can be compared side
+    by side, and it borrows the main window's resource dictionary rather than
+    copying it, which is what makes a theme change repaint it too.
+
+.PARAMETER Title
+    Window title and heading.
+
+.PARAMETER InputObject
+    Rows. Any object with properties.
+
+.PARAMETER Column
+    Property names to show, in order. Taken from the first row when omitted.
+
+.PARAMETER Description
+    One line under the heading explaining what is being shown.
+
+.PARAMETER EmptyText
+    Shown instead of the table when there is nothing to list.
+#>
+function Show-TkTableWindow {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Title,
+
+        [Parameter(Mandatory)]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        $InputObject,
+
+        [Parameter()]
+        [string[]] $Column = @(),
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Description = '',
+
+        [Parameter()]
+        [string] $EmptyText = 'Nothing to show.'
+    )
+
+    $ctx = Get-TkContext
+
+    if ($null -eq $ctx.Window) {
+        return
+    }
+
+    $rows = ConvertTo-TkArray $InputObject
+
+    # Take the shape from the data when the caller did not state it.
+    if ($Column.Count -eq 0 -and $rows.Count -gt 0) {
+
+        $Column = @(
+            $rows[0].PSObject.Properties |
+            Where-Object { $_.MemberType -eq 'NoteProperty' -or $_.MemberType -eq 'Property' } |
+            Select-Object -ExpandProperty Name
+        )
+    }
+
+    $document = New-TkFlowDocument
+
+    Add-TkHeading -Document $document -Text $Title -Level 1
+
+    if ($Description) {
+        Add-TkParagraph -Document $document -Text $Description -Muted
+    }
+
+    if ($rows.Count -eq 0 -or $Column.Count -eq 0) {
+        Add-TkParagraph -Document $document -Text $EmptyText -Muted
+    }
+    else {
+        Add-TkTable -Document $document -Column $Column -Row (ConvertTo-TkTableRow $rows $Column)
+    }
+
+    $viewer = New-Object System.Windows.Controls.RichTextBox
+    $viewer.Document        = $document
+    $viewer.IsReadOnly      = $true
+    $viewer.BorderThickness = New-Object System.Windows.Thickness(0)
+    $viewer.Padding         = New-Object System.Windows.Thickness(18, 14, 18, 14)
+    $viewer.VerticalScrollBarVisibility   = [System.Windows.Controls.ScrollBarVisibility]::Auto
+    $viewer.HorizontalScrollBarVisibility = [System.Windows.Controls.ScrollBarVisibility]::Disabled
+
+    $viewer.SetResourceReference([System.Windows.Controls.RichTextBox]::BackgroundProperty, 'AppBackground')
+    $viewer.SetResourceReference([System.Windows.Controls.RichTextBox]::ForegroundProperty, 'TextPrimary')
+    $viewer.SetResourceReference([System.Windows.Controls.Primitives.TextBoxBase]::SelectionBrushProperty, 'Accent')
+
+    $window = New-Object System.Windows.Window
+
+    $window.Title  = '{0} - {1}' -f $ctx.AppName, $Title
+    $window.Width  = 940
+    $window.Height = 620
+    $window.Owner  = $ctx.Window
+    $window.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterOwner
+    $window.Content = $viewer
+
+    # The same dictionary instance, not a copy: Set-TkTheme replaces the brush
+    # objects inside it, so sharing it is what makes this window follow.
+    $window.Resources = $ctx.Window.Resources
+
+    $window.SetResourceReference([System.Windows.Window]::BackgroundProperty, 'AppBackground')
+
+    # Modeless, so two of these can be compared and the main window stays
+    # usable behind them.
+    $window.Show()
+
+    Write-TkLog -Level Debug -Category 'Interface' -Message (
+        'Opened the "{0}" table window with {1} row(s).' -f $Title, $rows.Count
+    )
 }
 
 <#

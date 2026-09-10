@@ -194,17 +194,17 @@ function Write-TkSystemPageFields {
         }
     }
 
-    $volumes = Get-TkControl -Name 'ListVolumes'
+    Set-TkObjectTable -ControlName 'DocVolumes' -InputObject $hardware.Volumes `
+        -Property @('Drive', 'Label', 'FileSystem', 'Size', 'Free', 'UsedPercent') `
+        -Column   @('Drive', 'Label', 'File system', 'Size', 'Free', 'Used %') `
+        -Weight   @(0.6, 1.6, 0.9, 1.0, 1.0, 0.7) `
+        -EmptyText 'No volume was returned.'
 
-    if ($volumes) {
-        $volumes.ItemsSource = @($hardware.Volumes)
-    }
-
-    $disks = Get-TkControl -Name 'ListDisks'
-
-    if ($disks) {
-        $disks.ItemsSource = @($hardware.Disks)
-    }
+    Set-TkObjectTable -ControlName 'DocDisks' -InputObject $hardware.Disks `
+        -Property @('Name', 'Size', 'MediaType', 'BusType', 'Health') `
+        -Column   @('Model', 'Size', 'Type', 'Bus', 'Health') `
+        -Weight   @(3.0, 1.0, 0.9, 0.9, 0.9) `
+        -EmptyText 'No physical disk was returned.'
 }
 
 <#

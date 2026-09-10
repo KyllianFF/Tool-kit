@@ -40,12 +40,15 @@ function Initialize-TkNetworkAdminPage {
             -OnComplete {
                 param($result)
 
-                Set-TkOutput -ControlName 'ConfigOutput' -Text (
-                    'Routing table, longest prefix first, which is the order a router evaluates it in.' +
-                    [Environment]::NewLine + [Environment]::NewLine +
-                    (Format-TkTableText -InputObject (@($result.Output) |
-                        Select-Object Destination, NextHop, Interface, Metric, Persistent, Origin))
-                )
+                # A window rather than the output box under the form: the
+                # routing table is what you check the fields against, so it
+                # has to be readable at the same time as they are.
+                Show-TkTableWindow -Title 'Routing table' -InputObject $result.Output `
+                    -Column @('Destination', 'NextHop', 'Interface', 'Metric', 'Persistent', 'Origin') `
+                    -Description 'Longest prefix first, which is the order a router evaluates it in.' `
+                    -EmptyText 'The routing table came back empty, which should not happen. Check the log.'
+
+                Set-TkStatus -Text ('{0} route(s).' -f @($result.Output).Count)
             }
     }
 
@@ -59,15 +62,12 @@ function Initialize-TkNetworkAdminPage {
             -OnComplete {
                 param($result)
 
-                $rules = @($result.Output)
+                Show-TkTableWindow -Title 'Port forwarding rules' -InputObject $result.Output `
+                    -Description ('A rule only forwards. Windows Firewall must also allow the listening ' +
+                                  'port inbound, otherwise the rule is correct and nothing arrives.') `
+                    -EmptyText 'No port proxy rule is configured on this machine.'
 
-                $text = if ($rules.Count -eq 0) { 'No port proxy rule is configured.' }
-                        else { Format-TkTableText -InputObject $rules }
-
-                Set-TkOutput -ControlName 'ConfigOutput' -Text (
-                    $text + [Environment]::NewLine + [Environment]::NewLine +
-                    'A rule only forwards. Windows Firewall must also allow the listening port inbound.'
-                )
+                Set-TkStatus -Text ('{0} forwarding rule(s).' -f @($result.Output).Count)
             }
     }
 

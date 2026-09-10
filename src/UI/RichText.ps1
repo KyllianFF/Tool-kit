@@ -410,8 +410,18 @@ function Add-TkTable {
 
             $cell.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
 
-            # A matching cell is tinted whole. Marking the term inside the
-            # text would mean giving up selection, which matters more.
+            # Every other row carries a faint tint. Reading along a wide row
+            # without one means losing the line halfway across, which is the
+            # whole reason a table is hard to scan. RowAlternate is a palette
+            # key, so the banding is calculated for each theme rather than
+            # being a transparency that only works on one of them.
+            if ($rowIndex % 2 -eq 0) {
+                $cell.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'RowAlternate')
+            }
+
+            # A matching cell is tinted whole, over the banding. Marking the
+            # term inside the text would mean giving up selection, which
+            # matters more.
             if ($Highlight -and $value -and
                 $value.IndexOf($Highlight, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
 
@@ -456,6 +466,138 @@ function Add-TkTable {
 
 <#
 .SYNOPSIS
+    Turns objects into the row array Add-TkTable expects.
+
+.DESCRIPTION
+    Reads the named properties from each object in order. Exists because the
+    comma operator is required here and is easy to leave out: without it
+    PowerShell flattens each row into the outer array and every row arrives
+    holding a single cell, which renders as a column of stripes rather than a
+    table. Doing it in one place means getting it right in one place.
+
+.PARAMETER InputObject
+    The objects to read.
+
+.PARAMETER Property
+    Property names, in column order.
+
+.OUTPUTS
+    System.Object[] of string arrays.
+#>
+function ConvertTo-TkTableRow {
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        $InputObject,
+
+        [Parameter(Mandatory, Position = 1)]
+        [string[]] $Property
+    )
+
+    $rows = @()
+
+    foreach ($item in (ConvertTo-TkArray $InputObject)) {
+
+        $cells = @()
+
+        foreach ($name in $Property) {
+            $cells += [string] $item.$name
+        }
+
+        $rows += , $cells
+    }
+
+    return , $rows
+}
+
+<#
+.SYNOPSIS
+    Renders objects as a table into a rich text control.
+
+.DESCRIPTION
+    The one call a page makes to show a list of things. Everything the tables
+    are expected to do now lives behind it: selectable cells, banded rows,
+    draggable column edges and a palette that follows a theme change.
+
+.PARAMETER ControlName
+    Name of the RichTextBox to fill.
+
+.PARAMETER InputObject
+    The objects to show.
+
+.PARAMETER Property
+    Property names, in column order.
+
+.PARAMETER Column
+    Headings. Defaults to the property names.
+
+.PARAMETER Weight
+    Relative column widths.
+
+.PARAMETER Title
+    Optional heading above the table.
+
+.PARAMETER EmptyText
+    Shown instead of the table when there is nothing to list. A table with a
+    header and no rows looks like a failure; a sentence saying there is
+    nothing does not.
+#>
+function Set-TkObjectTable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ControlName,
+
+        [Parameter(Mandatory)]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        $InputObject,
+
+        [Parameter(Mandatory)]
+        [string[]] $Property,
+
+        [Parameter()]
+        [string[]] $Column = @(),
+
+        [Parameter()]
+        [double[]] $Weight = @(),
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Title = '',
+
+        [Parameter()]
+        [string] $EmptyText = 'Nothing to show.'
+    )
+
+    $items    = ConvertTo-TkArray $InputObject
+    $document = New-TkFlowDocument
+
+    if ($Title) {
+        Add-TkHeading -Document $document -Text $Title -Level 2
+    }
+
+    if ($items.Count -eq 0) {
+        Add-TkParagraph -Document $document -Text $EmptyText -Muted
+    }
+    else {
+
+        $headings = if ($Column.Count -gt 0) { $Column } else { $Property }
+
+        Add-TkTable -Document $document `
+            -Column $headings `
+            -Row (ConvertTo-TkTableRow $items $Property) `
+            -Weight $Weight
+    }
+
+    Set-TkDocument -ControlName $ControlName -Document $document
+}
+
+<#
+.SYNOPSIS
     Returns a Grid row definition sized to its content.
 
 .OUTPUTS
@@ -481,8 +623,17 @@ function New-TkAutoRow {
     copy a path or a thumbprint out of is half a report. A read only TextBox
     with no chrome looks identical and behaves the way people expect.
 
-    Colours are attached by resource reference so the control follows a theme
-    change instead of keeping the palette it was created with.
+    The chrome is removed by applying the SelectableText style, which carries
+    a template of its own. Clearing Template instead removes the control's
+    entire visual tree: a TextBox with no template has nowhere to render its
+    text and draws nothing at all. That is what emptied every table and every
+    finding card, and it is worth stating plainly because the control still
+    reports a correct size while showing nothing.
+
+    The style is attached by resource reference rather than looked up once,
+    so the control follows a theme change instead of keeping the palette it
+    was created with. A caller may still override any single property
+    afterwards: a local value beats a style setter.
 
 .OUTPUTS
     System.Windows.Controls.TextBox
@@ -498,7 +649,12 @@ function New-TkSelectableText {
 
     $text = New-Object System.Windows.Controls.TextBox
 
-    $text.Text            = $Value
+    $text.Text = $Value
+
+    # Set here rather than left to the style, because a resource reference is
+    # resolved only when the control joins a tree that carries the resource.
+    # Until then the control has no style at all, and anything reading it in
+    # between, a test or a console session, would see a plain text box.
     $text.IsReadOnly      = $true
     $text.BorderThickness = New-Object System.Windows.Thickness(0)
     $text.Background      = [System.Windows.Media.Brushes]::Transparent
@@ -506,14 +662,9 @@ function New-TkSelectableText {
     $text.TextWrapping    = [System.Windows.TextWrapping]::Wrap
     $text.IsTabStop       = $false
 
-    # The stock template would put the content in a centred, non scrolling
-    # host and draw the hint the application style adds to every text box.
-    $text.Template = $null
-    $text.Style    = $null
-
-    $text.SetResourceReference([System.Windows.Controls.TextBox]::ForegroundProperty, 'TextPrimary')
-    $text.SetResourceReference([System.Windows.Controls.TextBox]::SelectionBrushProperty, 'Accent')
-    $text.SetResourceReference([System.Windows.Controls.TextBox]::CaretBrushProperty, 'TextPrimary')
+    # The template and the theme colours come from the style. A reference
+    # rather than a one time lookup, so the control follows a theme change.
+    $text.SetResourceReference([System.Windows.Controls.TextBox]::StyleProperty, 'SelectableText')
 
     return $text
 }

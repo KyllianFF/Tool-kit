@@ -13,50 +13,53 @@ $script:TkApplicationView  = $null
 
 <#
 .SYNOPSIS
-    Returns the one or two letters shown on an application tile.
+    Returns the icon character shown on an application tile.
 
 .DESCRIPTION
-    A stand in for the publisher icon. There is no offline source for those:
-    winget ships no images, so a real icon would mean either bundling a
-    hundred and fifty files or fetching one per application over the network
-    every time the page opens. A coloured initial identifies a tile at a
-    glance without either cost.
+    Drawn from the Windows icon font, which costs nothing to ship: it is part
+    of the operating system, so there is no file to bundle and nothing to
+    download. The alternative, a real publisher icon per application, has no
+    offline source at all. Winget ships no images, so it would mean either
+    carrying a hundred and forty files in the build or fetching one per
+    application over the network every time the page opens.
+
+    The icon therefore says what kind of application it is rather than which
+    one, and the tile colour separates the categories from each other. The
+    name is right beside it and does the identifying.
+
+    Every code point below was chosen by rendering the font and looking at
+    it. An unverified one draws an empty box.
 
 .OUTPUTS
     System.String
 #>
-function Get-TkInitials {
+function Get-TkCategoryGlyph {
     [CmdletBinding()]
     [OutputType([string])]
     param(
         [Parameter(Mandatory)]
         [AllowEmptyString()]
-        [string] $Name
+        [string] $Key
     )
 
-    if ([string]::IsNullOrWhiteSpace($Name)) {
-        return '?'
+    $glyphs = @{
+        'browsers'      = 0xE774  # globe
+        'communication' = 0xE8BD  # speech bubble
+        'documents'     = 0xE8A5  # page
+        'development'   = 0xE943  # braces
+        'games'         = 0xE7FC  # game controller
+        'microsoft'     = 0xECAA  # window panes
+        'multimedia'    = 0xEC4F  # note
+        'protools'      = 0xE719  # briefcase
+        'networking'    = 0xEC05  # antenna
+        'security'      = 0xEA18  # shield
+        'selfhosted'    = 0xE968  # server
+        'utilities'     = 0xEC7A  # crossed tools
     }
 
-    # Punctuation is dropped first so "7-Zip" gives 7Z and ".NET SDK" gives NS.
-    $words = @($Name -split '[\s\-_.]+' | Where-Object { $_ -match '[A-Za-z0-9]' })
+    $point = if ($Key -and $glyphs.ContainsKey($Key)) { $glyphs[$Key] } else { 0xECA5 }
 
-    if ($words.Count -eq 0) {
-        return $Name.Substring(0, 1).ToUpperInvariant()
-    }
-
-    if ($words.Count -eq 1) {
-
-        $word = $words[0]
-
-        if ($word.Length -ge 2) {
-            return $word.Substring(0, 2).ToUpperInvariant()
-        }
-
-        return $word.ToUpperInvariant()
-    }
-
-    return ($words[0].Substring(0, 1) + $words[1].Substring(0, 1)).ToUpperInvariant()
+    return [string] [char] $point
 }
 
 <#
@@ -67,12 +70,12 @@ function Get-TkInitials {
     One colour per category, so the eye can group a filtered list without
     reading it. Deliberately fixed rather than themed: these are identity
     colours, and they have to stay recognisable in both palettes. Every one is
-    dark enough to carry white text.
+    dark enough to carry a white glyph.
 
 .OUTPUTS
     System.Windows.Media.SolidColorBrush
 #>
-function Get-TkAvatarBrush {
+function Get-TkTileBrush {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -93,6 +96,12 @@ function Get-TkAvatarBrush {
         'security'      = '#9B3B4A'
         'selfhosted'    = '#4A7A46'
         'utilities'     = '#6B6B7B'
+
+        # Used by the Tweaks and Fixes lists, which share the tile.
+        'tweak'         = '#4A5A8C'
+        'fix-low'       = '#4A7A46'
+        'fix-medium'    = '#B06A2C'
+        'fix-high'      = '#9B3B4A'
     }
 
     $colour = if ($Key -and $palette.ContainsKey($Key)) { $palette[$Key] } else { '#5B6B8C' }
@@ -140,8 +149,8 @@ function Initialize-TkSoftwarePage {
             Category     = $application.category
             CategoryName = $categoryNames[$application.category]
             StateText    = ''
-            Initials     = Get-TkInitials    -Name $application.name
-            AvatarBrush  = Get-TkAvatarBrush -Key  $application.category
+            Glyph        = Get-TkCategoryGlyph -Key $application.category
+            TileBrush    = Get-TkTileBrush     -Key $application.category
         })
     }
 
@@ -195,6 +204,12 @@ function Initialize-TkSoftwarePage {
         $script:TkApplicationView.Refresh()
         Set-TkStatus -Text 'Selection cleared.'
     }
+
+    # Read what is already on the machine the first time the page is opened.
+    # Without this the list claims every application is available until
+    # somebody presses Refresh, which is a wrong answer rather than a missing
+    # one.
+    Register-TkFirstShow -PageName 'Software' -Action { Update-TkInstalledState }
 
     Update-TkWingetStatusText
 }
