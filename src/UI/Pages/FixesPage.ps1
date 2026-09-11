@@ -1,9 +1,10 @@
 <#
     Toolkit - UI / Fixes page
 
-    Each fix is a card with a Run button. The button lives inside a data
-    template, so instead of naming every one it is handled by a single class
-    handler on the list, reading the fix identifier from the button tag.
+    Each fix is a card, and the card is the button: the row you are reading is
+    the row you press. The cards live inside a data template, so instead of
+    naming every one they are handled by a single class handler on the list,
+    reading the fix identifier from the tag of whichever card was pressed.
 #>
 
 <#
@@ -93,8 +94,12 @@ function Initialize-TkFixesPage {
 
         $list.ItemsSource = $items
 
-        # One handler for every Run button in the template. The alternative,
-        # naming each button, does not work inside a DataTemplate.
+        # One handler for every card in the template. The alternative, naming
+        # each one, does not work inside a DataTemplate.
+        #
+        # The card is itself the button now, and ButtonBase raises Click with
+        # itself as the original source, so the identifier in Tag is reachable
+        # however deep inside the card the pointer actually landed.
         $list.AddHandler(
             [System.Windows.Controls.Button]::ClickEvent,
             [System.Windows.RoutedEventHandler] {

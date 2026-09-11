@@ -145,15 +145,15 @@
             glyph colour is literal here and nowhere else.
         -->
         <Style x:Key="ItemTile" TargetType="Border">
-            <Setter Property="Width"        Value="38" />
-            <Setter Property="Height"       Value="38" />
-            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="Width"        Value="34" />
+            <Setter Property="Height"       Value="34" />
+            <Setter Property="CornerRadius" Value="8" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Margin"       Value="0,0,13,0" />
+            <Setter Property="Margin"       Value="0,0,11,0" />
         </Style>
 
         <Style x:Key="TileGlyph" TargetType="TextBlock" BasedOn="{StaticResource Glyph}">
-            <Setter Property="FontSize"   Value="18" />
+            <Setter Property="FontSize"   Value="16" />
             <Setter Property="Foreground" Value="White" />
         </Style>
 
@@ -165,8 +165,8 @@
         <Style x:Key="AppCard" TargetType="ToggleButton">
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Cursor"    Value="Hand" />
-            <Setter Property="Margin"    Value="6,4" />
-            <Setter Property="Padding"   Value="12,9" />
+            <Setter Property="Margin"    Value="4,3" />
+            <Setter Property="Padding"   Value="10,7" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -186,7 +186,55 @@
                                 <Setter TargetName="Chrome" Property="BorderBrush"     Value="{DynamicResource Accent}" />
                                 <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
                                 <Setter TargetName="Chrome" Property="Background"      Value="{DynamicResource Selection}" />
-                                <Setter TargetName="Chrome" Property="Padding"         Value="11,8" />
+                                <Setter TargetName="Chrome" Property="Padding"         Value="9,6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+            A card that is itself the action.
+
+            The same shape as AppCard, but a Button rather than a ToggleButton
+            because a fix is run, not selected. It replaces a small Run button
+            at the end of the row: the row was already the thing you were
+            reading and pointing at, so making the row the target removes a
+            second, smaller one. The chevron on the right says so, and the
+            border lighting up under the pointer confirms it.
+
+            Disabled state matters here. A fix that needs rights this instance
+            does not have is greyed whole, with the reason in its tooltip,
+            rather than accepting the click and refusing afterwards.
+        -->
+        <Style x:Key="ActionCard" TargetType="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor"     Value="Hand" />
+            <Setter Property="Margin"     Value="4,3" />
+            <Setter Property="Padding"    Value="12,10" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" CornerRadius="8"
+                                Background="{DynamicResource SurfaceRaised}"
+                                BorderBrush="{DynamicResource BorderSubtle}"
+                                BorderThickness="1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                                <Setter TargetName="Chrome" Property="Background"  Value="{DynamicResource Selection}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentMuted}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
+                                <Setter Property="Cursor" Value="Arrow" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -1024,6 +1072,20 @@
                     <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0" Padding="4">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ItemsControl x:Name="SoftwareList">
+                                <!--
+                                    Two columns when there is room for two,
+                                    one when there is not. A hundred and forty
+                                    full width rows is a lot of scrolling for
+                                    a list whose entries are a name and a
+                                    line of description; Initialize-TkSoftware
+                                    Page sets Columns from the panel width.
+                                -->
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid x:Name="SoftwarePanel" Columns="2" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <!--
@@ -1035,7 +1097,10 @@
                                             targets instead of twenty large.
                                         -->
                                         <ToggleButton Style="{StaticResource AppCard}"
-                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}">
+                                                      ToolTip="{Binding PackageId}">
+                                            <ToggleButton.IsChecked>
+                                                <Binding Path="IsSelected" Mode="TwoWay" />
+                                            </ToggleButton.IsChecked>
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto" />
@@ -1043,24 +1108,49 @@
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
 
+                                                <!--
+                                                    The real publisher icon
+                                                    when the catalogue has
+                                                    one, the category icon
+                                                    otherwise. Exactly one of
+                                                    the two is ever visible.
+                                                -->
                                                 <Border Grid.Column="0" Style="{StaticResource ItemTile}"
                                                         Background="{Binding TileBrush}">
-                                                    <TextBlock Text="{Binding Glyph}" Style="{StaticResource TileGlyph}" />
+                                                    <Grid>
+                                                        <TextBlock x:Name="CategoryGlyph"
+                                                                   Text="{Binding Glyph}"
+                                                                   Style="{StaticResource TileGlyph}" />
+                                                        <Path x:Name="BrandIcon"
+                                                              Data="{Binding IconGeometry}"
+                                                              Fill="White" Stretch="Uniform"
+                                                              Width="17" Height="17"
+                                                              Visibility="Collapsed"
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center" />
+                                                    </Grid>
                                                 </Border>
 
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Name}" Style="{StaticResource ItemTitle}" />
+                                                    <TextBlock Text="{Binding Name}" Style="{StaticResource ItemTitle}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <!--
+                                                        The package identifier
+                                                        moved to the card's
+                                                        tooltip: it is what
+                                                        you check once, not
+                                                        what you read down a
+                                                        list.
+                                                    -->
                                                     <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}"
                                                                TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Text="{Binding PackageId}" Style="{StaticResource Muted}"
-                                                               FontFamily="Cascadia Mono, Consolas" Opacity="0.6" />
                                                 </StackPanel>
 
                                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding StateText}"
                                                                Style="{StaticResource ItemState}"
-                                                               VerticalAlignment="Center" Margin="0,0,10,0" />
-                                                    <Path x:Name="SelectedMark" Width="15" Height="15"
+                                                               VerticalAlignment="Center" Margin="8,0,8,0" />
+                                                    <Path x:Name="SelectedMark" Width="14" Height="14"
                                                           Stretch="Uniform" Visibility="Hidden"
                                                           Fill="{DynamicResource Accent}"
                                                           Data="M 6 11.2 L 1.8 7 L 0.4 8.4 L 6 14 L 18 2 L 16.6 0.6 Z" />
@@ -1071,6 +1161,10 @@
                                         <DataTemplate.Triggers>
                                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                 <Setter TargetName="SelectedMark" Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding HasIcon}" Value="True">
+                                                <Setter TargetName="BrandIcon"     Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="CategoryGlyph" Property="Visibility" Value="Collapsed" />
                                             </DataTrigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>
@@ -1204,9 +1298,10 @@
                                             plain style because its Tag
                                             carries the fix identifier.
                                         -->
-                                        <Border Background="{DynamicResource SurfaceRaised}" CornerRadius="8"
-                                                Margin="6,4" Padding="12,10"
-                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                        <Button Style="{StaticResource ActionCard}"
+                                                Tag="{Binding Id}"
+                                                IsEnabled="{Binding CanRun}"
+                                                ToolTip="{Binding RunTooltip}">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto" />
@@ -1233,11 +1328,14 @@
                                                                Margin="0,3,0,0" FontStyle="Italic" Opacity="0.8" />
                                                 </StackPanel>
 
-                                                <Button Grid.Column="2" Content="Run" Tag="{Binding Id}" Style="{StaticResource ItemButton}"
-                                                        IsEnabled="{Binding CanRun}" ToolTip="{Binding RunTooltip}"
-                                                        VerticalAlignment="Center" Margin="0" MinWidth="80" />
+                                                <!-- Says the row is the target. -->
+                                                <TextBlock Grid.Column="2" Text="&#xE76C;"
+                                                           Style="{StaticResource Glyph}"
+                                                           FontSize="13"
+                                                           Foreground="{DynamicResource TextMuted}"
+                                                           VerticalAlignment="Center" Margin="4,0,2,0" />
                                             </Grid>
-                                        </Border>
+                                        </Button>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

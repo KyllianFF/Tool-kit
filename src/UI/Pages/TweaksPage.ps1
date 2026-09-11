@@ -281,12 +281,10 @@ function Invoke-TkTweakUiAction {
 
                 if ($summary.RequiresRestart) {
 
-                    [System.Windows.MessageBox]::Show(
-                        (Get-TkContext).Window,
-                        'One or more of these changes only takes effect after a restart.',
-                        'Restart required',
-                        [System.Windows.MessageBoxButton]::OK,
-                        [System.Windows.MessageBoxImage]::Information) | Out-Null
+                    Show-TkDialog -Title 'Restart required' -Kind 'Information' -NoticeOnly `
+                        -Message ('One or more of these changes only takes effect after a restart. ' +
+                                  'Nothing is lost in the meantime: the setting is written, the ' +
+                                  'component reading it has not reloaded yet.') | Out-Null
                 }
             }
 

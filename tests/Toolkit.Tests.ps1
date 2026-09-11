@@ -1216,3 +1216,84 @@ Describe 'Interface rendering' {
         }
     }
 }
+
+Describe 'Application icons' {
+
+    BeforeAll {
+
+        Add-Type -AssemblyName PresentationFramework
+        Add-Type -AssemblyName PresentationCore
+        Add-Type -AssemblyName WindowsBase
+
+        $script:IconCatalog = Import-TkCatalog -Name 'app-icons'
+        $script:AppCatalog  = Import-TkCatalog -Name 'applications'
+    }
+
+    It 'loads the icon catalogue' {
+        $script:IconCatalog       | Should -Not -BeNullOrEmpty
+        $script:IconCatalog.icons | Should -Not -BeNullOrEmpty
+    }
+
+    It 'parses every icon as a geometry' {
+
+        # A malformed path throws when the list is built, which would take the
+        # whole page down rather than lose one tile.
+        foreach ($entry in $script:IconCatalog.icons.PSObject.Properties) {
+
+            { [System.Windows.Media.Geometry]::Parse($entry.Value.path) } |
+                Should -Not -Throw -Because ('{0} should be a valid path' -f $entry.Name)
+        }
+    }
+
+    It 'points every icon at an application in the catalogue' {
+
+        # An icon keyed to a package that no longer exists is dead weight in
+        # the build and a sign the catalogue moved without it.
+        $packages = @($script:AppCatalog.applications | ForEach-Object { $_.packageId })
+
+        foreach ($entry in $script:IconCatalog.icons.PSObject.Properties) {
+            $packages | Should -Contain $entry.Name
+        }
+    }
+
+    It 'returns a geometry for a package that has one' {
+
+        $geometry = Get-TkAppIconGeometry -PackageId 'Mozilla.Firefox'
+
+        $geometry | Should -Not -BeNullOrEmpty
+        $geometry.IsFrozen | Should -BeTrue -Because 'a shared geometry must be frozen to be reused safely'
+    }
+
+    It 'returns nothing for a package that has none' {
+
+        # The deliberate gap: these fall back to the category icon, so the
+        # lookup has to say "no icon" rather than invent one.
+        Get-TkAppIconGeometry -PackageId 'Microsoft.PowerToys' | Should -BeNullOrEmpty
+        Get-TkAppIconGeometry -PackageId '' | Should -BeNullOrEmpty
+    }
+
+    It 'draws every dialog icon from a code point the font carries' {
+
+        $family = New-Object System.Windows.Media.FontFamily('Segoe Fluent Icons, Segoe MDL2 Assets')
+
+        $typeface = New-Object System.Windows.Media.Typeface($family,
+            [System.Windows.FontStyles]::Normal,
+            [System.Windows.FontWeights]::Normal,
+            [System.Windows.FontStretches]::Normal)
+
+        $glyphTypeface = $null
+
+        if (-not $typeface.TryGetGlyphTypeface([ref] $glyphTypeface)) {
+            Set-ItResult -Skipped -Because 'neither Windows icon font is installed on this machine'
+            return
+        }
+
+        foreach ($kind in @('Question', 'Warning', 'Information', 'Danger')) {
+
+            $point = [int] [char] (Get-TkDialogGlyph -Kind $kind)
+
+            $glyphTypeface.CharacterToGlyphMap.ContainsKey($point) |
+                Should -BeTrue -Because ('the {0} dialog uses U+{1:X4}' -f $kind, $point)
+        }
+    }
+}

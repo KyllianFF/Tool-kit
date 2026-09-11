@@ -11,21 +11,95 @@
 $script:TkApplicationItems = $null
 $script:TkApplicationView  = $null
 
+# Path geometries are parsed once and reused. Parsing is the expensive part,
+# and the list rebuilds its items on every filter change.
+$script:TkAppIconCache = $null
+
+<#
+.SYNOPSIS
+    Returns the brand icon for a package, or nothing when there is none.
+
+.DESCRIPTION
+    Real publisher icons, drawn as vector outlines rather than bitmaps. An
+    outline is a few hundred characters of path data, so the whole set costs
+    about ninety kilobytes in the single file build, and it stays sharp at
+    any scale and on any display. A set of bitmaps would be several megabytes
+    for a worse result.
+
+    They are drawn in one colour on the category tile rather than in the
+    brand colours. That is a deliberate choice: a hundred and forty brand
+    palettes cannot all stay legible against both themes, and a consistent
+    silhouette reads faster in a long list than a wall of competing colours.
+
+    The catalogue is deliberately incomplete. Simple Icons carries no icon
+    for most Windows utilities, so roughly a third of the applications have
+    none. Those fall back to the icon for their category, which is why this
+    returns nothing rather than a placeholder.
+
+.OUTPUTS
+    System.Windows.Media.Geometry, or $null.
+#>
+function Get-TkAppIconGeometry {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $PackageId
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PackageId)) {
+        return $null
+    }
+
+    if ($null -eq $script:TkAppIconCache) {
+
+        $script:TkAppIconCache = @{}
+
+        $catalog = Import-TkCatalog -Name 'app-icons'
+
+        if ($catalog -and $catalog.icons) {
+
+            foreach ($entry in $catalog.icons.PSObject.Properties) {
+
+                try {
+                    $geometry = [System.Windows.Media.Geometry]::Parse($entry.Value.path)
+
+                    # Frozen so the same geometry can be shared by every
+                    # element that draws it, across threads, without copying.
+                    $geometry.Freeze()
+
+                    $script:TkAppIconCache[$entry.Name] = $geometry
+                }
+                catch {
+                    Write-TkLog -Level Warning -Category 'UI' -Message (
+                        'The icon for {0} could not be parsed and was skipped: {1}' -f
+                            $entry.Name, $_.Exception.Message
+                    )
+                }
+            }
+        }
+    }
+
+    if ($script:TkAppIconCache.ContainsKey($PackageId)) {
+        return $script:TkAppIconCache[$PackageId]
+    }
+
+    return $null
+}
+
 <#
 .SYNOPSIS
     Returns the icon character shown on an application tile.
 
 .DESCRIPTION
-    Drawn from the Windows icon font, which costs nothing to ship: it is part
-    of the operating system, so there is no file to bundle and nothing to
-    download. The alternative, a real publisher icon per application, has no
-    offline source at all. Winget ships no images, so it would mean either
-    carrying a hundred and forty files in the build or fetching one per
-    application over the network every time the page opens.
+    The fallback for an application with no brand icon, and the icon used
+    everywhere outside the software list. Drawn from the Windows icon font,
+    which costs nothing to ship: it is part of the operating system, so there
+    is no file to bundle and nothing to download.
 
-    The icon therefore says what kind of application it is rather than which
-    one, and the tile colour separates the categories from each other. The
-    name is right beside it and does the identifying.
+    This one says what kind of application it is rather than which one, and
+    the tile colour separates the categories. Where a real publisher icon
+    exists, Get-TkAppIconGeometry supplies it instead.
 
     Every code point below was chosen by rendering the font and looking at
     it. An unverified one draws an empty box.
@@ -140,6 +214,8 @@ function Initialize-TkSoftwarePage {
 
     foreach ($application in $catalog.applications) {
 
+        $iconGeometry = Get-TkAppIconGeometry -PackageId $application.packageId
+
         $items.Add([pscustomobject]@{
             IsSelected   = $false
             Id           = $application.id
@@ -149,6 +225,12 @@ function Initialize-TkSoftwarePage {
             Category     = $application.category
             CategoryName = $categoryNames[$application.category]
             StateText    = ''
+
+            # The real publisher icon where one exists, and the icon for the
+            # category where it does not. The template shows whichever of the
+            # two is present, so both have to be here.
+            IconGeometry = $iconGeometry
+            HasIcon      = ($null -ne $iconGeometry)
             Glyph        = Get-TkCategoryGlyph -Key $application.category
             TileBrush    = Get-TkTileBrush     -Key $application.category
         })
@@ -205,6 +287,11 @@ function Initialize-TkSoftwarePage {
         Set-TkStatus -Text 'Selection cleared.'
     }
 
+    # Two columns when the window is wide enough for two.
+    if ($list) {
+        $list.Add_SizeChanged({ Update-TkSoftwareColumns })
+    }
+
     # Read what is already on the machine the first time the page is opened.
     # Without this the list claims every application is available until
     # somebody presses Refresh, which is a wrong answer rather than a missing
@@ -212,6 +299,44 @@ function Initialize-TkSoftwarePage {
     Register-TkFirstShow -PageName 'Software' -Action { Update-TkInstalledState }
 
     Update-TkWingetStatusText
+}
+
+<#
+.SYNOPSIS
+    Sets the application list to one or two columns for the current width.
+
+.DESCRIPTION
+    Two columns halve the scrolling through a hundred and forty entries, but
+    only while each card still has room for a name and a line of description.
+    Below the threshold the second column would turn both into ellipses, so
+    the list drops back to one.
+
+    The panel is found through the visual tree because it is declared in an
+    ItemsPanelTemplate and so has no name the window can resolve.
+#>
+function Update-TkSoftwareColumns {
+    [CmdletBinding()]
+    param()
+
+    $list = Get-TkControl -Name 'SoftwareList'
+
+    if ($null -eq $list) {
+        return
+    }
+
+    $panel = Find-TkVisualChild -Parent $list -TypeName 'UniformGrid'
+
+    if ($null -eq $panel) {
+        return
+    }
+
+    # Measured against the card contents: below this a two column card cannot
+    # show a description without trimming it to nothing.
+    $columns = if ($list.ActualWidth -ge 860) { 2 } else { 1 }
+
+    if ($panel.Columns -ne $columns) {
+        $panel.Columns = $columns
+    }
 }
 
 <#

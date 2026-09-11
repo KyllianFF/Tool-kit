@@ -161,8 +161,9 @@ Tool-kit/
     Features/              System, Software, Tweaks, Fixes, Network, Security
     UI/                    MainWindow.xaml, shell wiring, one file per page
     Start-Toolkit.ps1      Entry point
-  data/                    JSON catalogs: applications, tweaks, fixes, network
-                           knowledge, vendor commands, vendor support
+  data/                    JSON catalogs: applications, application icons,
+                           tweaks, fixes, network knowledge, vendor commands,
+                           vendor support
   dist/                    Build output (toolkit.ps1 and its SHA256)
   tests/                   Pester 5 suite
   docs/                    Architecture, security policy, contributing
@@ -241,3 +242,15 @@ parse or whose catalogs are not valid JSON.
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+### Third party content
+
+`data/app-icons.json` carries publisher icons from
+[Simple Icons](https://simpleicons.org), released under CC0 1.0. Each one is a
+single vector outline used to identify the application it belongs to. The
+marks themselves remain the property of their owners; they are used here to
+name the product being installed, not to claim any association with it.
+
+Interface icons are code points from the Segoe Fluent Icons and Segoe MDL2
+Assets fonts that ship with Windows. Nothing is redistributed: the toolkit
+refers to the fonts already on the machine.
