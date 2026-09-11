@@ -1425,3 +1425,180 @@ Describe 'Runspace state' {
         }
     }
 }
+
+Describe 'Keyboard map' {
+
+    BeforeAll {
+        $script:Map = Get-TkKeyboardMap
+    }
+
+    It 'returns rows of keys rather than one flat list' {
+
+        # PowerShell enumerates bare array literals written as separate
+        # statements, which once collapsed every row into a single list of
+        # key definitions and gave every key a width of zero.
+        $script:Map.Count | Should -BeGreaterThan 5
+
+        foreach ($row in $script:Map) {
+            $row.Count | Should -BeGreaterThan 1
+        }
+    }
+
+    It 'gives every key a width and a label' {
+
+        foreach ($row in $script:Map) {
+            foreach ($key in $row) {
+                $key.Width | Should -BeGreaterThan 0
+                $key.Label | Should -Not -BeNullOrEmpty
+            }
+        }
+    }
+
+    It 'identifies every key uniquely by scan code and extended flag' {
+
+        # The invariant the whole test rests on. The navigation cluster and
+        # the keypad deliberately share scan codes and are told apart only by
+        # the extended flag, so if the pair were not unique, pressing one key
+        # would light two and a dead key could hide behind a live one.
+        $seen = @{}
+
+        foreach ($row in $script:Map) {
+            foreach ($key in $row) {
+
+                $seen.ContainsKey($key.Key) |
+                    Should -BeFalse -Because ('{0} is drawn twice' -f $key.Label)
+
+                $seen[$key.Key] = $true
+            }
+        }
+
+        $seen.Count | Should -BeGreaterThan 80
+    }
+
+    It 'covers the keys Windows would otherwise act on' {
+
+        # These are the reason the test needs a hook at all.
+        $keys = @()
+
+        foreach ($row in $script:Map) {
+            $keys += $row
+        }
+
+        # Left Windows, right Windows, left Alt, AltGr, both Ctrl keys.
+        foreach ($identity in @('91:1', '92:1', '56:0', '56:1', '29:0', '29:1')) {
+            @($keys | ForEach-Object { $_.Key }) | Should -Contain $identity
+        }
+    }
+
+    It 'leaves the keypad out when asked for a compact board' {
+
+        $compact = Get-TkKeyboardMap -Compact
+
+        $compact.Count | Should -BeLessThan $script:Map.Count
+    }
+
+    It 'says which keys cannot be observed' {
+
+        # Ctrl+Alt+Delete is handled on a desktop no application can reach.
+        # Saying so beats letting those keys look broken.
+        $notes = Get-TkUntestableKeyNote
+
+        $notes.Count | Should -BeGreaterThan 0
+        ($notes -join ' ') | Should -BeLike '*Ctrl+Alt+Delete*'
+    }
+}
+
+Describe 'Test tone' {
+
+    It 'writes a valid RIFF WAVE header' {
+
+        $stream = New-TkToneStream -Channel 'Both' -Seconds 1
+        $bytes  = $stream.ToArray()
+        $stream.Dispose()
+
+        [System.Text.Encoding]::ASCII.GetString($bytes, 0, 4)  | Should -Be 'RIFF'
+        [System.Text.Encoding]::ASCII.GetString($bytes, 8, 4)  | Should -Be 'WAVE'
+        [System.Text.Encoding]::ASCII.GetString($bytes, 12, 4) | Should -Be 'fmt '
+
+        # Stereo, sixteen bit, 44100.
+        [System.BitConverter]::ToInt16($bytes, 22) | Should -Be 2
+        [System.BitConverter]::ToInt32($bytes, 24) | Should -Be 44100
+        [System.BitConverter]::ToInt16($bytes, 34) | Should -Be 16
+
+        # The size in the header has to match what follows it, or the player
+        # reads past the end and throws.
+        [System.BitConverter]::ToInt32($bytes, 4) | Should -Be ($bytes.Length - 8)
+    }
+
+    It 'puts sound in the <Channel> channel only' -TestCases @(
+        @{ Channel = 'Left';  Silent = 'Right' }
+        @{ Channel = 'Right'; Silent = 'Left' }
+    ) {
+        param($Channel, $Silent)
+
+        # The point of the sound test. A tone played on both channels cannot
+        # tell a working speaker from a dead one.
+        $stream = New-TkToneStream -Channel $Channel -Seconds 1
+        $bytes  = $stream.ToArray()
+        $stream.Dispose()
+
+        $leftPeak  = 0
+        $rightPeak = 0
+
+        # 44 bytes of header, then interleaved sixteen bit pairs.
+        for ($i = 44; $i -lt ($bytes.Length - 4); $i += 4) {
+
+            $left  = [math]::Abs([System.BitConverter]::ToInt16($bytes, $i))
+            $right = [math]::Abs([System.BitConverter]::ToInt16($bytes, $i + 2))
+
+            if ($left  -gt $leftPeak)  { $leftPeak  = $left }
+            if ($right -gt $rightPeak) { $rightPeak = $right }
+        }
+
+        if ($Silent -eq 'Right') {
+            $rightPeak | Should -Be 0
+            $leftPeak  | Should -BeGreaterThan 1000
+        }
+        else {
+            $leftPeak  | Should -Be 0
+            $rightPeak | Should -BeGreaterThan 1000
+        }
+    }
+
+    It 'drives both channels when asked for both' {
+
+        $stream = New-TkToneStream -Channel 'Both' -Seconds 1
+        $bytes  = $stream.ToArray()
+        $stream.Dispose()
+
+        $leftPeak  = 0
+        $rightPeak = 0
+
+        for ($i = 44; $i -lt ($bytes.Length - 4); $i += 4) {
+
+            $left  = [math]::Abs([System.BitConverter]::ToInt16($bytes, $i))
+            $right = [math]::Abs([System.BitConverter]::ToInt16($bytes, $i + 2))
+
+            if ($left  -gt $leftPeak)  { $leftPeak  = $left }
+            if ($right -gt $rightPeak) { $rightPeak = $right }
+        }
+
+        $leftPeak  | Should -BeGreaterThan 1000
+        $rightPeak | Should -BeGreaterThan 1000
+    }
+}
+
+Describe 'WMI string decoding' {
+
+    It 'turns a zero padded character array into text' {
+
+        # WMI returns these as arrays of character codes with trailing zeros.
+        $code = @(68, 69, 76, 76, 0, 0, 0)
+
+        ConvertTo-TkWmiString -Code $code | Should -Be 'DELL'
+    }
+
+    It 'returns nothing for a missing value' {
+        ConvertTo-TkWmiString -Code $null | Should -Be ''
+    }
+}

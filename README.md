@@ -158,7 +158,8 @@ Tool-kit/
     source-order.txt       Load order, shared by the launcher and the build
   src/
     Core/                  Context, logging, elevation, process, threading, data
-    Features/              System, Software, Tweaks, Fixes, Network, Security
+    Features/              System, Software, Tweaks, Fixes, Network, Security,
+                           Diagnostics and hardware tests
     UI/                    MainWindow.xaml, shell wiring, one file per page
     Start-Toolkit.ps1      Entry point
   data/                    JSON catalogs: applications, application icons,

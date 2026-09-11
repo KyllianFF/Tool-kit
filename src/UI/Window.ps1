@@ -265,13 +265,13 @@ function Show-TkPage {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Security')]
+        [ValidateSet('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')]
         [string] $Name
     )
 
     $ctx = Get-TkContext
 
-    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Security')) {
+    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')) {
 
         $control = Get-TkControl -Name ('Page{0}' -f $page)
 
@@ -288,7 +288,7 @@ function Show-TkPage {
     }
 
     # Highlight the active navigation entry.
-    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Security')) {
+    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')) {
 
         $button = Get-TkControl -Name ('Nav{0}' -f $page)
 
@@ -979,7 +979,7 @@ function Initialize-TkShell {
     Update-TkElevationBadge
 
     # --- Navigation -------------------------------------------------------
-    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Security')) {
+    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')) {
 
         $name = 'Nav{0}' -f $page
 

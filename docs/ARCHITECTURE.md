@@ -228,6 +228,7 @@ contains its own terminator, and catalogs are edited by people.
 | A vendor support profile | `data/vendor-support.json` |
 | A fix | A function in `SystemFixes.ps1` **and** an entry in `Get-TkFixDispatchTable` |
 | A table anywhere | `Set-TkObjectTable`, or `Show-TkTableWindow` for one in its own window |
+| A hardware check | A function in `HardwareTests.ps1`, a panel in the Hardware page, and an entry in its chooser |
 | Work on a page's first open | `Register-TkFirstShow -PageName <page> -Action { ... }` |
 | A whole feature area | A file under `src/Features/`, a page under `src/UI/Pages/`, a panel in `MainWindow.xaml`, an entry in `source-order.txt`, and a nav button |
 
@@ -281,3 +282,44 @@ representative data, `Show()` it at negative coordinates and capture it with
 `RenderTargetBitmap`. It is how the interface work gets checked without a
 person looking at a screen, and it is worth rebuilding whenever the UI changes
 substantially.
+
+---
+
+## 10. The keyboard test, and why it needs a hook
+
+A keyboard test has to observe keys that Windows treats as commands rather
+than as input. Press the Windows key over an ordinary window and the Start
+menu opens and takes the focus; Alt goes to the menu bar, Alt+Tab switches
+away, Alt+F4 closes the thing being tested. None of those ever reach the
+application, so none can be ticked off a list, and each one interrupts the
+test.
+
+`src/Core/KeyboardHook.ps1` installs a `WH_KEYBOARD_LL` hook, which runs
+before the shell sees the key. Returning a non-zero value from the callback
+consumes it: the key is recorded and Windows never acts on it. Three things
+about that code are not decoration.
+
+The callback is held in a static field of a compiled type. Windows keeps a raw
+pointer to it, so a PowerShell script block or a local delegate would be
+collected and the process would fault on the next key press.
+
+Suppression is tied to the test window being the active one, and the page
+clears it on `Deactivated`. Holding keys back while another window is in front
+would take the keyboard away from whatever the operator switched to.
+
+The hook belongs to the process that installed it and dies with it, so a crash
+cannot leave a machine unable to type.
+
+**Ctrl+Alt+Delete cannot be captured by anything.** It is the secure attention
+sequence, handled by Winlogon on a separate desktop. That is a deliberate part
+of the Windows security model rather than a limitation to work around, and the
+page says so instead of letting those keys sit unticked and look faulty.
+
+The virtual keyboard is drawn by **scan code**, the physical position, and
+each key is labelled by asking Windows what that position produces under the
+current layout. Drawing it by virtual key instead would put A where a French
+operator's A is not: on AZERTY the key that sends `VK_A` sits where QWERTY has
+Q. Identity is the pair of scan code and extended flag, because the navigation
+cluster and the numeric keypad share scan codes and are told apart only by
+that flag; the test suite asserts the pair is unique across the whole map.
+
