@@ -228,6 +228,7 @@ contains its own terminator, and catalogs are edited by people.
 | A vendor support profile | `data/vendor-support.json` |
 | A fix | A function in `SystemFixes.ps1` **and** an entry in `Get-TkFixDispatchTable` |
 | A table anywhere | `Set-TkObjectTable`, or `Show-TkTableWindow` for one in its own window |
+| A hardware check | A function in `HardwareTests.ps1`, a panel in the Hardware page, and an entry in its chooser |
 | Work on a page's first open | `Register-TkFirstShow -PageName <page> -Action { ... }` |
 | A whole feature area | A file under `src/Features/`, a page under `src/UI/Pages/`, a panel in `MainWindow.xaml`, an entry in `source-order.txt`, and a nav button |
 
@@ -281,3 +282,47 @@ representative data, `Show()` it at negative coordinates and capture it with
 `RenderTargetBitmap`. It is how the interface work gets checked without a
 person looking at a screen, and it is worth rebuilding whenever the UI changes
 substantially.
+
+---
+
+## 10. The keyboard test, and why it does NOT use a hook
+
+The obvious way to build a keyboard test is a low level `WH_KEYBOARD_LL`
+hook: it sees every key before the shell does, and returning a non-zero value
+from the callback consumes it, so the Windows key would not open the Start
+menu and Alt+Tab would not switch away mid-test. The first version did exactly
+that.
+
+**It was removed, on purpose.** A global hook that records and swallows every
+keystroke is, at the level of the Windows API, indistinguishable from a
+keylogger, and antivirus software is right to treat it as one. ESET blocked
+the tool outright, and a diagnostic that trips the antivirus on the machines
+it is meant to help is not a diagnostic. No amount of obfuscation should be
+used to get such code past an antivirus — hiding a keylogging technique from
+detection is the technique's most dangerous property, not a bug to route
+around.
+
+So the test reads keys the way a local application should: a `PreviewKeyDown`
+handler on its own window (`Start-TkKeyboardTest` in `HardwarePage.ps1`),
+added with `handledEventsToo` so it still sees a key a focused control already
+marked handled. It sees keys only while its window has focus, captures
+nothing system wide, and installs no hook. Each key is marked handled so Tab
+does not move the focus and Space does not press a button, which keeps the
+test from being disrupted by the very keys it is checking.
+
+The cost is real and worth stating: the shell claims the Windows key, Alt+Tab
+and Ctrl+Alt+Delete before any application sees them, so those cannot be
+ticked off and the result note says so. That inability is not a shortcoming to
+engineer around — it is the same boundary that stops a keylogger, and being on
+the right side of it is what lets the tool run on any machine.
+
+The one native call that remains is `MapVirtualKey`, in
+`src/Core/KeyboardLayout.ps1`. It is a stateless lookup that answers "what
+character is on this key" and is what on screen keyboards have always used; it
+sees and records nothing. It is what draws an AZERTY board as AZERTY: the map
+is labelled by asking Windows what each key produces under the current layout,
+so the French key that sends `VK_A` is drawn where it physically sits. Identity
+is the **WPF Key** value, which already tells the numeric keypad apart from the
+navigation cluster (NumPad7 is not Home); the test suite asserts every key on
+the map casts to a real `Key` and that no key is drawn twice.
+
