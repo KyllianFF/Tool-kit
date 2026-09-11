@@ -1621,3 +1621,57 @@ Describe 'WMI string decoding' {
         ConvertTo-TkWmiString -Code $null | Should -Be ''
     }
 }
+
+Describe 'Support bundle' {
+
+    It 'renders a titled section from objects' {
+
+        $text = ConvertTo-TkBundleText -Title 'Adapters' -As Table -InputObject @(
+            [pscustomobject] @{ Name = 'Ethernet'; Status = 'Up' }
+        )
+
+        $text | Should -BeLike '*Adapters*'
+        $text | Should -BeLike '*Ethernet*'
+    }
+
+    It 'says so rather than drawing an empty table for no data' {
+
+        $text = ConvertTo-TkBundleText -Title 'Listening ports' -InputObject @()
+
+        $text | Should -BeLike '*nothing to report*'
+    }
+
+    It 'keeps a failing collector from sinking the bundle' {
+
+        # The rule the whole bundle rests on: one section that throws is
+        # recorded and the rest still get written.
+        $errors = New-Object 'System.Collections.Generic.List[string]'
+
+        $text = Get-TkBundleSection -Title 'Network' -Errors $errors -Collector {
+            throw 'the adapter service is down'
+        }
+
+        $errors.Count | Should -Be 1
+        $errors[0]    | Should -BeLike '*adapter service is down*'
+        $text         | Should -BeLike '*could not be collected*'
+    }
+
+    It 'returns the collector text when it succeeds, and records no error' {
+
+        $errors = New-Object 'System.Collections.Generic.List[string]'
+
+        $text = Get-TkBundleSection -Title 'System' -Errors $errors -Collector { 'a clean section' }
+
+        $text          | Should -Be 'a clean section'
+        $errors.Count  | Should -Be 0
+    }
+
+    It 'bounds the recent error events to the cap' {
+
+        # A machine mid meltdown must not turn the bundle into a gigabyte of
+        # event text.
+        $events = Get-TkRecentErrorEvent -Days 3 -Maximum 25
+
+        @($events).Count | Should -BeLessOrEqual 25
+    }
+}

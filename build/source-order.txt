@@ -38,6 +38,7 @@ src/Features/Security/HardeningCheck.ps1
 src/Features/Security/Remediation.ps1
 src/Features/Diagnostics/WorkstationDiagnostics.ps1
 src/Features/Diagnostics/HardwareTests.ps1
+src/Features/Diagnostics/SupportBundle.ps1
 
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1

@@ -229,6 +229,7 @@ contains its own terminator, and catalogs are edited by people.
 | A fix | A function in `SystemFixes.ps1` **and** an entry in `Get-TkFixDispatchTable` |
 | A table anywhere | `Set-TkObjectTable`, or `Show-TkTableWindow` for one in its own window |
 | A hardware check | A function in `HardwareTests.ps1`, a panel in the Hardware page, and an entry in its chooser |
+| A section in the support bundle | A `Get-TkBundleSection` block in `New-TkSupportBundle` |
 | Work on a page's first open | `Register-TkFirstShow -PageName <page> -Action { ... }` |
 | A whole feature area | A file under `src/Features/`, a page under `src/UI/Pages/`, a panel in `MainWindow.xaml`, an entry in `source-order.txt`, and a nav button |
 
