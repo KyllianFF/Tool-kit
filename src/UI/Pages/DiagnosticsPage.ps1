@@ -45,10 +45,55 @@ function Initialize-TkDiagnosticsPage {
         Export-TkDiagnosticReport -ControlName 'DiagnosticsOutput'
     }
 
+    Register-TkClick -Name 'BtnSupportBundle' -Action { Invoke-TkSupportBundleFromUi }
+
     Register-TkClick -Name 'BtnHardening'       -Action { Show-TkHardeningCheck }
     Register-TkClick -Name 'BtnExportHardening' -Action {
         Export-TkDiagnosticReport -ControlName 'HardeningOutput'
     }
+}
+
+<#
+.SYNOPSIS
+    Builds the support bundle in the background and opens the folder.
+
+.DESCRIPTION
+    A background action because it reads the whole machine and can take a
+    minute; the interface stays live while it runs, the same as every other
+    diagnostic. When it finishes it selects the ZIP in Explorer so the
+    operator can attach it without hunting for the path.
+#>
+function Invoke-TkSupportBundleFromUi {
+    [CmdletBinding()]
+    param()
+
+    Set-TkStatus -Text 'Building the support bundle. This reads the whole machine and can take a minute...'
+
+    Invoke-TkBackgroundAction -StatusText 'Building the support bundle...' `
+        -ScriptBlock { New-TkSupportBundle } `
+        -OnComplete {
+            param($result)
+
+            $path = @($result.Output) | Where-Object { $_ } | Select-Object -Last 1
+
+            if (-not $path) {
+                Set-TkStatus -Text 'The support bundle could not be created. See the output for details.'
+                return
+            }
+
+            Set-TkStatus -Text ('Support bundle written to {0}' -f $path)
+
+            # Select it in Explorer rather than opening it, so the operator can
+            # drag it straight onto a ticket.
+            try {
+                Start-Process -FilePath 'explorer.exe' -ArgumentList ('/select,"{0}"' -f $path) -ErrorAction Stop
+            }
+            catch {
+                Write-TkLog -Level Warning -Category 'Bundle' -Message (
+                    'The bundle was written but Explorer could not be opened at it: {0}' -f $_.Exception.Message
+                )
+            }
+        }
 }
 
 <#
