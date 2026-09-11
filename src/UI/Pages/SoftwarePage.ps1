@@ -436,10 +436,17 @@ function Invoke-TkSoftwareAction {
         return
     }
 
-    if (-not (Test-TkIsElevated)) {
+    # The warning used to say the opposite, that installs need elevation and
+    # will fail without it. That is not how winget works: it is meant to run
+    # as the signed in user, Windows raises its own prompt for an installer
+    # that needs rights, and a package that installs into the user profile
+    # needs none at all. Requiring elevation only hid those prompts and shut
+    # standard users out of installs they were entitled to make.
+    if (Test-TkIsElevated) {
 
-        Write-TkLog -Level Warning -Category 'Software' -Message (
-            'Not elevated: machine wide packages will fail. Restart as administrator for a reliable install.'
+        Write-TkLog -Level Information -Category 'Software' -Message (
+            'Installing from an elevated instance, so Windows will not prompt for rights. ' +
+            'Anything installed now goes in machine wide where the package allows it.'
         )
     }
 

@@ -1061,10 +1061,16 @@ function Update-TkPrivilegedControls {
 
     $elevated = Test-TkIsElevated
 
+    # Software installation is deliberately absent from this list.
+    #
+    # winget is designed to run as the signed in user: Windows prompts for
+    # rights per installer that needs them, and a package that installs into
+    # the user profile needs none at all. Running winget from an elevated
+    # toolkit is worse, not better. It suppresses those prompts, and when the
+    # elevation used a different administrator account winget reads its
+    # sources from that other profile, finds none, and reports every package
+    # as not found. That is what "nothing installs at all" turned out to be.
     $controls = @{
-        'BtnInstallSelected'   = 'Installing software machine wide'
-        'BtnUninstallSelected' = 'Removing software machine wide'
-        'BtnUpgradeAll'        = 'Upgrading installed packages'
         'BtnVendorTool'        = 'Installing the vendor firmware utility'
         'BtnRestorePoint'      = 'Creating a system restore point'
         'BtnAutoLogon'         = 'Configuring automatic logon'

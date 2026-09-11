@@ -79,7 +79,7 @@ function Initialize-TkRunspacePool {
     $sharedVariables = @(
         'TkAppName', 'TkAppVersion', 'TkAppCommit', 'TkRepository',
         'TkLogLevels', 'TkMinimumLogLevel',
-        'TkPackageIdPattern', 'TkVirusTotalBaseUri',
+        'TkVirusTotalBaseUri',
         'TkEmbeddedCatalogs'
     )
 
