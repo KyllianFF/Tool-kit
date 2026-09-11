@@ -39,8 +39,13 @@ function Get-TkKeyboardMap {
         [switch] $Compact
     )
 
-    # Scan code, fallback label, width, extended flag.
-    # The fallback is used for keys that produce no character of their own.
+    # WPF key name, fallback label, width in key units.
+    #
+    # Identity is the WPF Key value, because that is what the key events hand
+    # the test to match against, and because it already tells the numeric
+    # keypad apart from the navigation cluster: NumPad7 is not Home, Divide is
+    # not Oem2. That removes the scan code plus extended flag pair the earlier
+    # version needed, along with the global hook that produced them.
     #
     # Each row is appended with the comma operator. Written as bare @(...)
     # literals one per line they are separate statements, so PowerShell
@@ -49,74 +54,74 @@ function Get-TkKeyboardMap {
     $rows = @()
 
     $rows += , @(
-        @(0x01, 'Esc', 1.0, $false), @(0x3B, 'F1', 1.0, $false), @(0x3C, 'F2', 1.0, $false),
-        @(0x3D, 'F3', 1.0, $false),  @(0x3E, 'F4', 1.0, $false), @(0x3F, 'F5', 1.0, $false),
-        @(0x40, 'F6', 1.0, $false),  @(0x41, 'F7', 1.0, $false), @(0x42, 'F8', 1.0, $false),
-        @(0x43, 'F9', 1.0, $false),  @(0x44, 'F10', 1.0, $false), @(0x57, 'F11', 1.0, $false),
-        @(0x58, 'F12', 1.0, $false)
+        @('Escape', 'Esc', 1.0), @('F1', 'F1', 1.0), @('F2', 'F2', 1.0),
+        @('F3', 'F3', 1.0),  @('F4', 'F4', 1.0), @('F5', 'F5', 1.0),
+        @('F6', 'F6', 1.0),  @('F7', 'F7', 1.0), @('F8', 'F8', 1.0),
+        @('F9', 'F9', 1.0),  @('F10', 'F10', 1.0), @('F11', 'F11', 1.0),
+        @('F12', 'F12', 1.0)
     )
 
     $rows += , @(
-        @(0x29, '`', 1.0, $false), @(0x02, '1', 1.0, $false), @(0x03, '2', 1.0, $false),
-        @(0x04, '3', 1.0, $false), @(0x05, '4', 1.0, $false), @(0x06, '5', 1.0, $false),
-        @(0x07, '6', 1.0, $false), @(0x08, '7', 1.0, $false), @(0x09, '8', 1.0, $false),
-        @(0x0A, '9', 1.0, $false), @(0x0B, '0', 1.0, $false), @(0x0C, '-', 1.0, $false),
-        @(0x0D, '=', 1.0, $false), @(0x0E, 'Backspace', 2.0, $false)
+        @('Oem3', '`', 1.0), @('D1', '1', 1.0), @('D2', '2', 1.0),
+        @('D3', '3', 1.0), @('D4', '4', 1.0), @('D5', '5', 1.0),
+        @('D6', '6', 1.0), @('D7', '7', 1.0), @('D8', '8', 1.0),
+        @('D9', '9', 1.0), @('D0', '0', 1.0), @('OemMinus', '-', 1.0),
+        @('OemPlus', '=', 1.0), @('Back', 'Backspace', 2.0)
     )
 
     $rows += , @(
-        @(0x0F, 'Tab', 1.5, $false), @(0x10, 'Q', 1.0, $false), @(0x11, 'W', 1.0, $false),
-        @(0x12, 'E', 1.0, $false), @(0x13, 'R', 1.0, $false), @(0x14, 'T', 1.0, $false),
-        @(0x15, 'Y', 1.0, $false), @(0x16, 'U', 1.0, $false), @(0x17, 'I', 1.0, $false),
-        @(0x18, 'O', 1.0, $false), @(0x19, 'P', 1.0, $false), @(0x1A, '[', 1.0, $false),
-        @(0x1B, ']', 1.0, $false), @(0x2B, '\', 1.5, $false)
+        @('Tab', 'Tab', 1.5), @('Q', 'Q', 1.0), @('W', 'W', 1.0),
+        @('E', 'E', 1.0), @('R', 'R', 1.0), @('T', 'T', 1.0),
+        @('Y', 'Y', 1.0), @('U', 'U', 1.0), @('I', 'I', 1.0),
+        @('O', 'O', 1.0), @('P', 'P', 1.0), @('OemOpenBrackets', '[', 1.0),
+        @('Oem6', ']', 1.0), @('Oem5', '\', 1.5)
     )
 
     $rows += , @(
-        @(0x3A, 'Caps', 1.75, $false), @(0x1E, 'A', 1.0, $false), @(0x1F, 'S', 1.0, $false),
-        @(0x20, 'D', 1.0, $false), @(0x21, 'F', 1.0, $false), @(0x22, 'G', 1.0, $false),
-        @(0x23, 'H', 1.0, $false), @(0x24, 'J', 1.0, $false), @(0x25, 'K', 1.0, $false),
-        @(0x26, 'L', 1.0, $false), @(0x27, ';', 1.0, $false), @(0x28, "'", 1.0, $false),
-        @(0x1C, 'Enter', 2.25, $false)
+        @('CapsLock', 'Caps', 1.75), @('A', 'A', 1.0), @('S', 'S', 1.0),
+        @('D', 'D', 1.0), @('F', 'F', 1.0), @('G', 'G', 1.0),
+        @('H', 'H', 1.0), @('J', 'J', 1.0), @('K', 'K', 1.0),
+        @('L', 'L', 1.0), @('Oem1', ';', 1.0), @('Oem7', "'", 1.0),
+        @('Return', 'Enter', 2.25)
     )
 
     $rows += , @(
-        @(0x2A, 'Shift', 2.25, $false), @(0x2C, 'Z', 1.0, $false), @(0x2D, 'X', 1.0, $false),
-        @(0x2E, 'C', 1.0, $false), @(0x2F, 'V', 1.0, $false), @(0x30, 'B', 1.0, $false),
-        @(0x31, 'N', 1.0, $false), @(0x32, 'M', 1.0, $false), @(0x33, ',', 1.0, $false),
-        @(0x34, '.', 1.0, $false), @(0x35, '/', 1.0, $false), @(0x36, 'Shift', 2.75, $false)
+        @('LeftShift', 'Shift', 2.25), @('Z', 'Z', 1.0), @('X', 'X', 1.0),
+        @('C', 'C', 1.0), @('V', 'V', 1.0), @('B', 'B', 1.0),
+        @('N', 'N', 1.0), @('M', 'M', 1.0), @('OemComma', ',', 1.0),
+        @('OemPeriod', '.', 1.0), @('Oem2', '/', 1.0), @('RightShift', 'Shift', 2.75)
     )
 
     $rows += , @(
-        @(0x1D, 'Ctrl', 1.25, $false), @(0x5B, 'Win', 1.25, $true), @(0x38, 'Alt', 1.25, $false),
-        @(0x39, 'Space', 6.25, $false), @(0x38, 'AltGr', 1.25, $true), @(0x5C, 'Win', 1.25, $true),
-        @(0x5D, 'Menu', 1.25, $true), @(0x1D, 'Ctrl', 1.25, $true)
+        @('LeftCtrl', 'Ctrl', 1.25), @('LWin', 'Win', 1.25), @('LeftAlt', 'Alt', 1.25),
+        @('Space', 'Space', 6.25), @('RightAlt', 'AltGr', 1.25), @('RWin', 'Win', 1.25),
+        @('Apps', 'Menu', 1.25), @('RightCtrl', 'Ctrl', 1.25)
     )
 
     if (-not $Compact) {
 
         # The navigation cluster and the arrows, on their own rows so they sit
-        # under the main block rather than beside it. Every one is extended.
+        # under the main block rather than beside it.
         $rows += , @(
-            @(0x52, 'Ins', 1.0, $true), @(0x47, 'Home', 1.0, $true), @(0x49, 'PgUp', 1.0, $true),
-            @(0x53, 'Del', 1.0, $true), @(0x4F, 'End', 1.0, $true), @(0x51, 'PgDn', 1.0, $true),
-            @(0x48, 'Up', 1.0, $true), @(0x4B, 'Left', 1.0, $true), @(0x50, 'Down', 1.0, $true),
-            @(0x4D, 'Right', 1.0, $true)
+            @('Insert', 'Ins', 1.0), @('Home', 'Home', 1.0), @('PageUp', 'PgUp', 1.0),
+            @('Delete', 'Del', 1.0), @('End', 'End', 1.0), @('Next', 'PgDn', 1.0),
+            @('Up', 'Up', 1.0), @('Left', 'Left', 1.0), @('Down', 'Down', 1.0),
+            @('Right', 'Right', 1.0)
         )
 
-        # The keypad. These repeat the scan codes above without the extended
-        # flag, which is exactly how Windows tells the two apart.
+        # The keypad. WPF gives these keys of their own, so they no longer
+        # collide with the navigation cluster the way raw scan codes did.
         $rows += , @(
-            @(0x45, 'NumLk', 1.0, $false), @(0x35, 'N /', 1.0, $true), @(0x37, 'N *', 1.0, $false),
-            @(0x4A, 'N -', 1.0, $false), @(0x47, 'N 7', 1.0, $false), @(0x48, 'N 8', 1.0, $false),
-            @(0x49, 'N 9', 1.0, $false), @(0x4E, 'N +', 1.0, $false), @(0x4B, 'N 4', 1.0, $false),
-            @(0x4C, 'N 5', 1.0, $false), @(0x4D, 'N 6', 1.0, $false), @(0x4F, 'N 1', 1.0, $false),
-            @(0x50, 'N 2', 1.0, $false), @(0x51, 'N 3', 1.0, $false), @(0x52, 'N 0', 1.0, $false),
-            @(0x53, 'N .', 1.0, $false), @(0x1C, 'N Ent', 1.0, $true)
+            @('NumLock', 'NumLk', 1.0), @('Divide', 'N /', 1.0), @('Multiply', 'N *', 1.0),
+            @('Subtract', 'N -', 1.0), @('NumPad7', 'N 7', 1.0), @('NumPad8', 'N 8', 1.0),
+            @('NumPad9', 'N 9', 1.0), @('Add', 'N +', 1.0), @('NumPad4', 'N 4', 1.0),
+            @('NumPad5', 'N 5', 1.0), @('NumPad6', 'N 6', 1.0), @('NumPad1', 'N 1', 1.0),
+            @('NumPad2', 'N 2', 1.0), @('NumPad3', 'N 3', 1.0), @('NumPad0', 'N 0', 1.0),
+            @('Decimal', 'N .', 1.0)
         )
     }
 
-    $hookReady = Initialize-TkKeyboardHook
+    $layoutReady = Initialize-TkKeyboardLayout
 
     $result = @()
 
@@ -126,19 +131,20 @@ function Get-TkKeyboardMap {
 
         foreach ($definition in $row) {
 
-            $scanCode = [int] $definition[0]
+            $keyName  = [string] $definition[0]
             $fallback = [string] $definition[1]
             $width    = [double] $definition[2]
-            $extended = [bool] $definition[3]
 
             $label = $fallback
 
-            # Ask Windows what this physical key produces here. Only for the
-            # character keys: a label of "Backspace" is more use than nothing,
-            # and more use than the control character it maps to.
-            if ($hookReady -and $fallback.Length -eq 1) {
+            # Ask Windows what this key produces under the current layout, but
+            # only for the character keys: "Backspace" is more use than the
+            # control character it maps to. This is what draws an AZERTY board
+            # as AZERTY.
+            if ($layoutReady -and $fallback.Length -eq 1) {
 
-                $actual = [TkKeyboardHook]::GetKeyLabel($scanCode, $extended)
+                $wpfKey = [System.Windows.Input.Key] $keyName
+                $actual = Get-TkKeyLabel -Key $wpfKey
 
                 if ($actual) {
                     $label = $actual.ToUpperInvariant()
@@ -146,11 +152,10 @@ function Get-TkKeyboardMap {
             }
 
             $keys += [pscustomobject] @{
-                ScanCode = $scanCode
-                Extended = $extended
-                Key      = '{0}:{1}' -f $scanCode, [int] $extended
-                Label    = $label
-                Width    = $width
+                KeyName = $keyName
+                Key     = $keyName
+                Label   = $label
+                Width   = $width
             }
         }
 
@@ -178,7 +183,7 @@ function Get-TkUntestableKeyNote {
     param()
 
     return @(
-        'Ctrl+Alt+Delete is handled by Windows itself, on a desktop no application can reach. Pressing it ends the test rather than registering.',
+        'The Windows key, Alt+Tab and Ctrl+Alt+Delete are claimed by the Windows shell before any application sees them, so they open the Start menu or switch windows rather than registering here. This test reads keys only while its own window has focus, on purpose: capturing them system wide is what a keylogger does, and antivirus software blocks it.',
         'A Fn key is usually wired in the keyboard rather than sent to Windows, so it will not light up. The keys it modifies still will.',
         'Keys the keyboard remaps in its own firmware, such as a media layer, report as whatever they are remapped to.'
     )

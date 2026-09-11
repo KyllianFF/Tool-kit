@@ -1959,7 +1959,7 @@
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Every key on the board, ticked off as you press it. System keys are held back so the Start menu cannot interrupt the test.">
+                                         ToolTip="Every key on the board, ticked off as you press it, while this window has focus.">
                                 <TextBlock Text="Keyboard" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
@@ -2006,7 +2006,7 @@
                                         Background="{DynamicResource SurfaceRaised}"
                                         BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
                                     <TextBlock x:Name="KeyboardHint" Style="{StaticResource Muted}"
-                                               Text="While the test runs, the Windows key, Alt and Alt+Tab are held back so nothing steals the focus. Press Escape twice to stop. Ctrl+Alt+Delete belongs to Windows and cannot be captured by anything." />
+                                               Text="Keep this window in front and press every key; each lights up as it registers. Press Escape twice to stop. The Windows key, Alt+Tab and Ctrl+Alt+Delete are claimed by Windows before any application sees them, so they will not light up: this test reads keys only while its own window is focused, which is why nothing mistakes it for a keylogger." />
                                 </Border>
 
                                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"

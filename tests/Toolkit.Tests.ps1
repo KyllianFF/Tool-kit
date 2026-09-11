@@ -1429,6 +1429,12 @@ Describe 'Runspace state' {
 Describe 'Keyboard map' {
 
     BeforeAll {
+
+        # The map labels itself through WPF key values, so the presentation
+        # assemblies have to be loaded even in the headless test host.
+        Add-Type -AssemblyName PresentationCore
+        Add-Type -AssemblyName WindowsBase
+
         $script:Map = Get-TkKeyboardMap
     }
 
@@ -1454,12 +1460,12 @@ Describe 'Keyboard map' {
         }
     }
 
-    It 'identifies every key uniquely by scan code and extended flag' {
+    It 'identifies every key uniquely by its WPF key name' {
 
-        # The invariant the whole test rests on. The navigation cluster and
-        # the keypad deliberately share scan codes and are told apart only by
-        # the extended flag, so if the pair were not unique, pressing one key
-        # would light two and a dead key could hide behind a live one.
+        # The invariant the whole test rests on: pressing one physical key must
+        # light exactly one block. The WPF Key value gives each key its own
+        # identity, telling the numeric keypad apart from the navigation
+        # cluster (NumPad7 is not Home), which raw scan codes did not.
         $seen = @{}
 
         foreach ($row in $script:Map) {
@@ -1475,18 +1481,31 @@ Describe 'Keyboard map' {
         $seen.Count | Should -BeGreaterThan 80
     }
 
-    It 'covers the keys Windows would otherwise act on' {
+    It 'names every key with a real WPF Key value' {
 
-        # These are the reason the test needs a hook at all.
-        $keys = @()
+        # A misspelled key name would silently never match a key press, so the
+        # key would look permanently dead. Casting proves each one is real.
+        foreach ($row in $script:Map) {
+            foreach ($key in $row) {
+                { [System.Windows.Input.Key] $key.KeyName } |
+                    Should -Not -Throw -Because ('{0} should be a WPF Key' -f $key.KeyName)
+            }
+        }
+    }
+
+    It 'draws the keys the shell claims, so their absence is visible' {
+
+        # The Windows keys, both Alts and both Ctrls are on the board even
+        # though the shell eats some of them, so a genuinely dead one is a gap
+        # rather than simply missing from the map.
+        $names = @()
 
         foreach ($row in $script:Map) {
-            $keys += $row
+            $names += @($row | ForEach-Object { $_.KeyName })
         }
 
-        # Left Windows, right Windows, left Alt, AltGr, both Ctrl keys.
-        foreach ($identity in @('91:1', '92:1', '56:0', '56:1', '29:0', '29:1')) {
-            @($keys | ForEach-Object { $_.Key }) | Should -Contain $identity
+        foreach ($expected in @('LWin', 'RWin', 'LeftAlt', 'RightAlt', 'LeftCtrl', 'RightCtrl')) {
+            $names | Should -Contain $expected
         }
     }
 
