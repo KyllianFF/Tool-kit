@@ -157,6 +157,7 @@ function Import-TkAllCatalogs {
 
     $names = @(
         'applications',
+        'app-icons',
         'tweaks',
         'fixes',
         'network-knowledge',

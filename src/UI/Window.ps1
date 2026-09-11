@@ -163,6 +163,66 @@ function Register-TkClick {
 
 <#
 .SYNOPSIS
+    Finds the first descendant of a given type in a control's visual tree.
+
+.DESCRIPTION
+    For reaching an element that lives inside a template, where FindName
+    cannot see it: the items panel of an ItemsControl is declared in an
+    ItemsPanelTemplate and is not a named part of the window.
+
+    Breadth first, so the nearest match wins rather than whichever branch is
+    deepest. Returns nothing when there is no match, and when the control has
+    not been laid out yet, which is the usual reason to find nothing.
+
+.PARAMETER Parent
+    Where to start.
+
+.PARAMETER TypeName
+    Short type name, for example UniformGrid.
+
+.OUTPUTS
+    System.Windows.DependencyObject, or $null.
+#>
+function Find-TkVisualChild {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowNull()]
+        [System.Windows.DependencyObject] $Parent,
+
+        [Parameter(Mandatory)]
+        [string] $TypeName
+    )
+
+    if ($null -eq $Parent) {
+        return $null
+    }
+
+    $queue = New-Object 'System.Collections.Generic.Queue[System.Windows.DependencyObject]'
+    $queue.Enqueue($Parent)
+
+    while ($queue.Count -gt 0) {
+
+        $current = $queue.Dequeue()
+        $count   = [System.Windows.Media.VisualTreeHelper]::GetChildrenCount($current)
+
+        for ($i = 0; $i -lt $count; $i++) {
+
+            $child = [System.Windows.Media.VisualTreeHelper]::GetChild($current, $i)
+
+            if ($child.GetType().Name -eq $TypeName) {
+                return $child
+            }
+
+            $queue.Enqueue($child)
+        }
+    }
+
+    return $null
+}
+
+<#
+.SYNOPSIS
     Registers work to run the first time a page is opened.
 
 .DESCRIPTION
@@ -502,17 +562,268 @@ function Confirm-TkAction {
         [string] $Title = 'Confirm'
     )
 
-    $ctx = Get-TkContext
+    return (Show-TkDialog -Title $Title -Message $Message -Kind 'Warning' `
+                          -AcceptText 'Yes, do it' -RejectText 'Cancel')
+}
 
-    $result = [System.Windows.MessageBox]::Show(
-        $ctx.Window,
-        $Message,
-        $Title,
-        [System.Windows.MessageBoxButton]::YesNo,
-        [System.Windows.MessageBoxImage]::Warning
+<#
+.SYNOPSIS
+    Returns the icon character for a dialog of a given kind.
+
+.OUTPUTS
+    System.String
+#>
+function Get-TkDialogGlyph {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Kind
     )
 
-    return ($result -eq [System.Windows.MessageBoxResult]::Yes)
+    $glyphs = @{
+        'Question'    = 0xE9CE  # question in a circle
+        'Warning'     = 0xE7BA  # warning triangle
+        'Information' = 0xE946  # information
+        'Danger'      = 0xE783  # error
+    }
+
+    $point = if ($glyphs.ContainsKey($Kind)) { $glyphs[$Kind] } else { $glyphs['Information'] }
+
+    return [string] [char] $point
+}
+
+<#
+.SYNOPSIS
+    Shows a modal dialog drawn in the application's own palette.
+
+.DESCRIPTION
+    Replaces the system message box. Three reasons it was worth replacing.
+
+    It ignored the theme: a white box with black text in front of the dark
+    window, every time. It could not be read from, because its text cannot be
+    selected, and these dialogs list the exact tweaks or the exact adapter
+    about to be changed. And its buttons said Yes and No, which say nothing
+    about what is about to happen.
+
+    Built in code rather than in MainWindow.xaml because it is a separate
+    window: it borrows the main window's resource dictionary rather than
+    copying it, which is what makes a theme change repaint it as well.
+
+    Falls back to the system message box when there is no main window, so the
+    function stays callable from a console session and from the tests.
+
+.PARAMETER Title
+    Shown in the title bar and as the heading.
+
+.PARAMETER Message
+    The body. Line breaks are kept, and the text can be selected and copied.
+
+.PARAMETER Kind
+    Question, Warning, Information or Danger. Sets the icon and its colour.
+
+.PARAMETER AcceptText
+    The affirmative button. Name the action rather than saying Yes.
+
+.PARAMETER RejectText
+    The dismissive button. Omitted entirely for a notice.
+
+.PARAMETER NoticeOnly
+    One button that dismisses. Always returns true.
+
+.OUTPUTS
+    System.Boolean. True when the accept button was pressed.
+#>
+function Show-TkDialog {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Title,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Message,
+
+        [Parameter()]
+        [ValidateSet('Question', 'Warning', 'Information', 'Danger')]
+        [string] $Kind = 'Question',
+
+        [Parameter()]
+        [string] $AcceptText = 'Continue',
+
+        [Parameter()]
+        [string] $RejectText = 'Cancel',
+
+        [Parameter()]
+        [switch] $NoticeOnly
+    )
+
+    $ctx = Get-TkContext
+
+    if ($null -eq $ctx.Window) {
+
+        # No window to borrow a palette from, and nothing to own the dialog.
+        $buttons = if ($NoticeOnly) { [System.Windows.MessageBoxButton]::OK }
+                   else { [System.Windows.MessageBoxButton]::YesNo }
+
+        $answer = [System.Windows.MessageBox]::Show($Message, $Title, $buttons)
+
+        return ($answer -in @([System.Windows.MessageBoxResult]::Yes,
+                              [System.Windows.MessageBoxResult]::OK))
+    }
+
+    $accepted = $false
+
+    # --- Shell -----------------------------------------------------------
+    $window = New-Object System.Windows.Window
+
+    $window.Title  = $Title
+    $window.Width  = 560
+    $window.Owner  = $ctx.Window
+    $window.SizeToContent         = [System.Windows.SizeToContent]::Height
+    $window.ResizeMode            = [System.Windows.ResizeMode]::NoResize
+    $window.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterOwner
+    $window.ShowInTaskbar         = $false
+
+    # The same dictionary instance, so a theme change reaches this too.
+    $window.Resources = $ctx.Window.Resources
+    $window.SetResourceReference([System.Windows.Window]::BackgroundProperty, 'AppBackground')
+
+    $layout = New-Object System.Windows.Controls.Grid
+    $layout.Margin = New-Object System.Windows.Thickness(22, 20, 22, 18)
+
+    foreach ($height in @('Auto', 'Auto')) {
+
+        $row = New-Object System.Windows.Controls.RowDefinition
+        $row.Height = [System.Windows.GridLength]::Auto
+
+        $layout.RowDefinitions.Add($row)
+    }
+
+    # --- Icon and text ----------------------------------------------------
+    $body = New-Object System.Windows.Controls.Grid
+
+    foreach ($width in @('Auto', 'Star')) {
+
+        $column = New-Object System.Windows.Controls.ColumnDefinition
+
+        $column.Width = if ($width -eq 'Auto') { [System.Windows.GridLength]::Auto }
+                        else { [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
+
+        $body.ColumnDefinitions.Add($column)
+    }
+
+    $icon = New-Object System.Windows.Controls.TextBlock
+    $icon.Text              = Get-TkDialogGlyph -Kind $Kind
+    $icon.FontSize          = 26
+    $icon.Margin            = New-Object System.Windows.Thickness(0, 1, 16, 0)
+    $icon.VerticalAlignment = [System.Windows.VerticalAlignment]::Top
+
+    $icon.SetResourceReference([System.Windows.Controls.TextBlock]::FontFamilyProperty, 'IconFont')
+
+    $iconKey = switch ($Kind) {
+        'Warning'     { 'Warning' }
+        'Danger'      { 'Danger' }
+        'Question'    { 'Accent' }
+        default       { 'Accent' }
+    }
+
+    $icon.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, $iconKey)
+
+    [System.Windows.Controls.Grid]::SetColumn($icon, 0)
+    [void] $body.Children.Add($icon)
+
+    $stack = New-Object System.Windows.Controls.StackPanel
+    [System.Windows.Controls.Grid]::SetColumn($stack, 1)
+
+    $heading = New-Object System.Windows.Controls.TextBlock
+    $heading.Text         = $Title
+    $heading.FontSize     = 15
+    $heading.FontWeight   = [System.Windows.FontWeights]::SemiBold
+    $heading.TextWrapping = [System.Windows.TextWrapping]::Wrap
+    $heading.Margin       = New-Object System.Windows.Thickness(0, 0, 0, 8)
+
+    $heading.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextPrimary')
+
+    [void] $stack.Children.Add($heading)
+
+    # Selectable, because these dialogs list the exact names about to change
+    # and an operator writing a change record has to be able to copy them.
+    $text = New-TkSelectableText -Value $Message
+    $text.FontSize       = 13
+    $text.AcceptsReturn  = $true
+    $text.MaxHeight      = 320
+    $text.VerticalScrollBarVisibility = [System.Windows.Controls.ScrollBarVisibility]::Auto
+
+    [void] $stack.Children.Add($text)
+    [void] $body.Children.Add($stack)
+
+    [System.Windows.Controls.Grid]::SetRow($body, 0)
+    [void] $layout.Children.Add($body)
+
+    # --- Buttons ----------------------------------------------------------
+    $bar = New-Object System.Windows.Controls.StackPanel
+    $bar.Orientation         = [System.Windows.Controls.Orientation]::Horizontal
+    $bar.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Right
+    $bar.Margin              = New-Object System.Windows.Thickness(0, 20, 0, 0)
+
+    if (-not $NoticeOnly) {
+
+        $reject = New-Object System.Windows.Controls.Button
+        $reject.Content   = $RejectText
+        $reject.MinWidth  = 104
+        $reject.IsCancel  = $true
+        $reject.Margin    = New-Object System.Windows.Thickness(0, 0, 10, 0)
+
+        $reject.Add_Click({
+            param($clicked, $clickArgs)
+            $clicked.Tag.DialogResult = $false
+        })
+
+        $reject.Tag = $window
+
+        [void] $bar.Children.Add($reject)
+    }
+
+    $accept = New-Object System.Windows.Controls.Button
+    $accept.Content   = if ($NoticeOnly) { 'Close' } else { $AcceptText }
+    $accept.MinWidth  = 104
+    $accept.IsDefault = $true
+    $accept.Margin    = New-Object System.Windows.Thickness(0)
+    $accept.Tag       = $window
+
+    $accept.SetResourceReference([System.Windows.Controls.Button]::StyleProperty, 'PrimaryButton')
+
+    $accept.Add_Click({
+        param($clicked, $clickArgs)
+        $clicked.Tag.DialogResult = $true
+    })
+
+    [void] $bar.Children.Add($accept)
+
+    [System.Windows.Controls.Grid]::SetRow($bar, 1)
+    [void] $layout.Children.Add($bar)
+
+    $window.Content = $layout
+
+    # Focus the safe choice: Enter on a confirmation should not be the way a
+    # destructive action gets run by someone who was typing.
+    $window.Add_ContentRendered({
+        param($shown, $renderArgs)
+        $shown.MoveFocus((New-Object System.Windows.Input.TraversalRequest(
+            [System.Windows.Input.FocusNavigationDirection]::First))) | Out-Null
+    })
+
+    $result = $window.ShowDialog()
+
+    $accepted = ($result -eq $true)
+
+    Write-TkLog -Level Debug -Category 'UI' -Message (
+        'Dialog "{0}" answered {1}.' -f $Title, $(if ($accepted) { 'yes' } else { 'no' })
+    )
+
+    return $accepted
 }
 
 <#
@@ -716,9 +1027,7 @@ function Initialize-TkShell {
             'the machine requires an elevated instance and is written to the log.'
         ) -join [Environment]::NewLine
 
-        [System.Windows.MessageBox]::Show($ctx.Window, $message, 'About',
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Information) | Out-Null
+        Show-TkDialog -Title 'About' -Message $message -Kind 'Information' -NoticeOnly | Out-Null
     }
 
     # --- Window lifetime --------------------------------------------------
@@ -752,10 +1061,16 @@ function Update-TkPrivilegedControls {
 
     $elevated = Test-TkIsElevated
 
+    # Software installation is deliberately absent from this list.
+    #
+    # winget is designed to run as the signed in user: Windows prompts for
+    # rights per installer that needs them, and a package that installs into
+    # the user profile needs none at all. Running winget from an elevated
+    # toolkit is worse, not better. It suppresses those prompts, and when the
+    # elevation used a different administrator account winget reads its
+    # sources from that other profile, finds none, and reports every package
+    # as not found. That is what "nothing installs at all" turned out to be.
     $controls = @{
-        'BtnInstallSelected'   = 'Installing software machine wide'
-        'BtnUninstallSelected' = 'Removing software machine wide'
-        'BtnUpgradeAll'        = 'Upgrading installed packages'
         'BtnVendorTool'        = 'Installing the vendor firmware utility'
         'BtnRestorePoint'      = 'Creating a system restore point'
         'BtnAutoLogon'         = 'Configuring automatic logon'

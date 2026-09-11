@@ -14,14 +14,102 @@
          convenience.
 #>
 
-# A winget identifier is a dotted name. Anything outside this set is rejected
-# before the value is used to build a command line.
-$script:TkPackageIdPattern = '^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}(\.[A-Za-z0-9._+-]{1,128})*$'
+<#
+.SYNOPSIS
+    Tells whether an identifier is a Microsoft Store product id.
 
-# A Microsoft Store product identifier: twelve characters starting with 9 or X.
-# These exist only in the msstore source, so pinning every install to the
-# winget source made them fail with "no applicable installer found".
-$script:TkStoreIdPattern = '^[9X][A-Z0-9]{11}$'
+.DESCRIPTION
+    Twelve characters starting with 9 or X. Store products exist only in the
+    msstore source, and everything else only in the winget source, so this
+    decides which source an install is pinned to.
+
+    The pattern is a literal inside the function rather than a script scoped
+    variable, and that is the whole point of the function existing.
+
+    Installs run in a background runspace, which is seeded with the Tk
+    functions and with an explicit list of script variables. A variable left
+    off that list is simply $null inside the runspace, and PowerShell treats
+    "-cmatch $null" as a match against the empty pattern, which matches every
+    string. Every package therefore looked like a Store product, every install
+    was pinned to msstore, and every one failed with "no package found" in
+    about half a second. A function cannot be forgotten that way: it is seeded
+    by name, and its pattern travels with it.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Test-TkStoreProductId {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $PackageId
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PackageId)) {
+        return $false
+    }
+
+    return ($PackageId -cmatch '^[9X][A-Z0-9]{11}$')
+}
+
+<#
+.SYNOPSIS
+    Translates a winget exit code into a sentence.
+
+.DESCRIPTION
+    winget reports failure as a large negative number and, with interactivity
+    disabled, often says nothing else useful. These are its own symbol names,
+    read back from "winget error <code>" rather than written from memory: an
+    earlier version of this table was wrong by one row in three, which turned
+    the log into a source of confident misinformation. The worst of them
+    reported a failed installer hash, which can mean a tampered download, as
+    "more than one package matched".
+
+    Unknown codes fall through to the caller, which prints whatever winget
+    actually wrote.
+
+.OUTPUTS
+    System.String, or an empty string when the code is not in the table.
+#>
+function Get-TkWingetErrorText {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [int] $ExitCode,
+
+        [Parameter()]
+        [string] $Source = 'winget'
+    )
+
+    switch ($ExitCode) {
+
+        -1978335231 { return 'winget hit an internal error' }
+        -1978335216 { return 'none of the installers in the manifest suit this machine' }
+        -1978335215 { return 'the installer hash does not match the manifest, so the download was refused' }
+        -1978335214 { return ('the source "{0}" is not configured on this machine' -f $Source) }
+        -1978335212 { return ('no package with that identifier was found in the {0} source' -f $Source) }
+        -1978335211 { return 'no package sources are configured' }
+        -1978335210 { return 'more than one package matched' }
+        -1978335209 { return 'no manifest was found for that package' }
+        -1978335207 { return 'winget requires administrator rights for this' }
+        -1978335206 { return 'the source is not served over a secure connection' }
+        -1978335167 { return 'the package agreements were not accepted' }
+        -1978335163 { return 'the package source could not be opened' }
+        -1978334975 { return 'the package is in use; close it and try again' }
+        -1978334974 { return 'another install is already running' }
+        -1978334973 { return 'a file the installer needs is in use' }
+        -1978334972 { return 'a dependency is missing' }
+        -1978334971 { return 'the disk is full' }
+        -1978334970 { return 'there is not enough memory' }
+        -1978334969 { return 'the installer could not reach the network' }
+        -1978334968 { return 'the installer failed and asks you to contact its publisher' }
+        -1978334967 { return 'the machine must be restarted to finish' }
+        default     { return '' }
+    }
+}
 
 <#
 .SYNOPSIS
@@ -87,7 +175,14 @@ function Test-TkPackageId {
         return $false
     }
 
-    if ($PackageId -notmatch $script:TkPackageIdPattern) {
+    # The pattern is a literal here for the same reason as in
+    # Test-TkStoreProductId, and the stakes are higher. This gate is what
+    # keeps a catalogue entry from reaching a command line with a semicolon
+    # in it. As a script variable it would be $null inside a background
+    # runspace that forgot to seed it, and "-notmatch $null" is false for
+    # every string, so the guard would wave everything through while still
+    # looking present in the source.
+    if ($PackageId -notmatch '^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}(\.[A-Za-z0-9._+-]{1,128})*$') {
 
         Write-TkLog -Level Error -Category 'Software' -Message (
             'Rejected package identifier "{0}": it does not match the expected format.' -f $PackageId
@@ -142,7 +237,7 @@ function Install-TkWingetPackage {
     # fixed. Pinning a source is what keeps an install from being resolved
     # somewhere unexpected, but a Store product id only exists in msstore and
     # pinning winget for it guarantees failure.
-    $source = if ($PackageId -cmatch $script:TkStoreIdPattern) { 'msstore' } else { 'winget' }
+    $source = if (Test-TkStoreProductId -PackageId $PackageId) { 'msstore' } else { 'winget' }
 
     $arguments = @(
         'install',
@@ -171,20 +266,36 @@ function Install-TkWingetPackage {
 
     if (-not $success) {
 
-        # winget reports failures as a large negative number and nothing else
-        # useful on stderr, so the common ones are translated here.
-        $reason = switch ($result.ExitCode) {
-            -1978335212 { 'no applicable installer for this machine, or the package is not in the {0} source' -f $source ; break }
-            -1978335216 { 'no package matched that identifier in the {0} source' -f $source ; break }
-            -1978335215 { 'more than one package matched' ; break }
-            -1978335231 { 'the installer failed' ; break }
-            -1978334967 { 'the machine must be restarted to finish' ; break }
-            default     { Get-TkFirstLine -Text ($result.StandardError + $result.StandardOutput) }
+        $reason = Get-TkWingetErrorText -ExitCode $result.ExitCode -Source $source
+
+        if (-not $reason) {
+            $reason = Get-TkFirstLine -Text ($result.StandardError + $result.StandardOutput)
         }
 
         Write-TkLog -Level Error -Category 'Software' -Message (
             'winget install {0} failed ({1}): {2}' -f $PackageId, $result.ExitCode, $reason
         )
+
+        # winget's own words, always, not only when the code is unrecognised.
+        # The translated sentence is a summary and a summary can be wrong;
+        # this is the primary evidence and it costs one log line.
+        $output = Get-TkFirstLine -Text ($result.StandardError + $result.StandardOutput)
+
+        if ($output -and $output -ne $reason) {
+            Write-TkLog -Level Debug -Category 'Software' -Message ('winget said: {0}' -f $output)
+        }
+
+        # "Not found" for an identifier that is in the catalogue means winget
+        # was asked for the wrong source, so say which one was used. That is
+        # the fact that would have identified this module's own worst bug in
+        # one reading of the log instead of several.
+        if ($result.ExitCode -eq -1978335212) {
+
+            Write-TkLog -Level Warning -Category 'Software' -Message (
+                'The catalogue lists {0}, so check the source: this install asked the "{1}" source. ' +
+                'Store products live only in msstore and everything else only in winget.' -f $PackageId, $source
+            )
+        }
     }
 
     Stop-TkOperation -Name ('Install {0}' -f $PackageId) -Stopwatch $stopwatch `

@@ -256,8 +256,28 @@ expensive to find. Remove chrome with a style carrying a minimal template, as
 into. `tests/Toolkit.Tests.ps1` asserts the rendered visual tree is not empty
 so this cannot come back quietly.
 
-Icons are code points from **Segoe Fluent Icons**, falling back to **Segoe MDL2
-Assets**. Both ship with Windows, so they add nothing to the build and take the
-foreground colour of whatever draws them. A code point the font does not carry
-draws an empty box and is invisible to every other kind of check, so the test
-suite verifies each one against the installed font.
+Icons come from two places. Interface icons are code points from **Segoe Fluent
+Icons**, falling back to **Segoe MDL2 Assets**. Both ship with Windows, so they
+add nothing to the build and take the foreground colour of whatever draws them.
+A code point the font does not carry draws an empty box and is invisible to
+every other kind of check, so the test suite verifies each one against the
+installed font.
+
+Publisher icons for the software list live in `data/app-icons.json` as single
+SVG outlines, about ninety kilobytes for the set. Vectors rather than bitmaps:
+sharp at any scale, a fraction of the size, and one colour so they read on both
+themes. The file is deliberately incomplete — there is no icon for most Windows
+utilities — and an application without one falls back to the icon for its
+category, so `Get-TkAppIconGeometry` returns nothing rather than a placeholder.
+
+Both sets were checked by rendering them and looking at the result, which is
+the only way to catch the failure that matters here: an icon that is present,
+sharp, and wrong. Two of the automatic matches were a different product with a
+similar name, and no amount of type checking would have found them.
+
+**The window can be photographed.** `Render-Window.ps1` in the scratchpad shows
+the pattern: load the sources, build the window, fill the pages with
+representative data, `Show()` it at negative coordinates and capture it with
+`RenderTargetBitmap`. It is how the interface work gets checked without a
+person looking at a screen, and it is worth rebuilding whenever the UI changes
+substantially.

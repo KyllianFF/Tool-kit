@@ -1216,3 +1216,212 @@ Describe 'Interface rendering' {
         }
     }
 }
+
+Describe 'Application icons' {
+
+    BeforeAll {
+
+        Add-Type -AssemblyName PresentationFramework
+        Add-Type -AssemblyName PresentationCore
+        Add-Type -AssemblyName WindowsBase
+
+        $script:IconCatalog = Import-TkCatalog -Name 'app-icons'
+        $script:AppCatalog  = Import-TkCatalog -Name 'applications'
+    }
+
+    It 'loads the icon catalogue' {
+        $script:IconCatalog       | Should -Not -BeNullOrEmpty
+        $script:IconCatalog.icons | Should -Not -BeNullOrEmpty
+    }
+
+    It 'parses every icon as a geometry' {
+
+        # A malformed path throws when the list is built, which would take the
+        # whole page down rather than lose one tile.
+        foreach ($entry in $script:IconCatalog.icons.PSObject.Properties) {
+
+            { [System.Windows.Media.Geometry]::Parse($entry.Value.path) } |
+                Should -Not -Throw -Because ('{0} should be a valid path' -f $entry.Name)
+        }
+    }
+
+    It 'points every icon at an application in the catalogue' {
+
+        # An icon keyed to a package that no longer exists is dead weight in
+        # the build and a sign the catalogue moved without it.
+        $packages = @($script:AppCatalog.applications | ForEach-Object { $_.packageId })
+
+        foreach ($entry in $script:IconCatalog.icons.PSObject.Properties) {
+            $packages | Should -Contain $entry.Name
+        }
+    }
+
+    It 'returns a geometry for a package that has one' {
+
+        $geometry = Get-TkAppIconGeometry -PackageId 'Mozilla.Firefox'
+
+        $geometry | Should -Not -BeNullOrEmpty
+        $geometry.IsFrozen | Should -BeTrue -Because 'a shared geometry must be frozen to be reused safely'
+    }
+
+    It 'returns nothing for a package that has none' {
+
+        # The deliberate gap: these fall back to the category icon, so the
+        # lookup has to say "no icon" rather than invent one.
+        Get-TkAppIconGeometry -PackageId 'Microsoft.PowerToys' | Should -BeNullOrEmpty
+        Get-TkAppIconGeometry -PackageId '' | Should -BeNullOrEmpty
+    }
+
+    It 'draws every dialog icon from a code point the font carries' {
+
+        $family = New-Object System.Windows.Media.FontFamily('Segoe Fluent Icons, Segoe MDL2 Assets')
+
+        $typeface = New-Object System.Windows.Media.Typeface($family,
+            [System.Windows.FontStyles]::Normal,
+            [System.Windows.FontWeights]::Normal,
+            [System.Windows.FontStretches]::Normal)
+
+        $glyphTypeface = $null
+
+        if (-not $typeface.TryGetGlyphTypeface([ref] $glyphTypeface)) {
+            Set-ItResult -Skipped -Because 'neither Windows icon font is installed on this machine'
+            return
+        }
+
+        foreach ($kind in @('Question', 'Warning', 'Information', 'Danger')) {
+
+            $point = [int] [char] (Get-TkDialogGlyph -Kind $kind)
+
+            $glyphTypeface.CharacterToGlyphMap.ContainsKey($point) |
+                Should -BeTrue -Because ('the {0} dialog uses U+{1:X4}' -f $kind, $point)
+        }
+    }
+}
+
+Describe 'winget exit codes' {
+
+    # This table was wrong by one row in three before it was checked against
+    # winget itself, and the log then reported a refused installer hash as
+    # "more than one package matched". The symbol names below are locale
+    # independent, which is what makes comparing them safe on any machine.
+
+    It 'gives <Code> a sentence' -TestCases @(
+        @{ Code = -1978335231; Word = 'internal' }
+        @{ Code = -1978335216; Word = 'installers' }
+        @{ Code = -1978335215; Word = 'hash' }
+        @{ Code = -1978335212; Word = 'found' }
+        @{ Code = -1978335211; Word = 'sources' }
+        @{ Code = -1978335210; Word = 'more than one' }
+        @{ Code = -1978334971; Word = 'disk is full' }
+        @{ Code = -1978334967; Word = 'restarted' }
+    ) {
+        param($Code, $Word)
+
+        Get-TkWingetErrorText -ExitCode $Code | Should -BeLike ('*{0}*' -f $Word)
+    }
+
+    It 'returns nothing for a code it does not know' {
+
+        # The caller then prints whatever winget actually wrote, which is
+        # better than inventing a reason.
+        Get-TkWingetErrorText -ExitCode 12345 | Should -BeNullOrEmpty
+    }
+
+    It 'agrees with winget about what each code means' {
+
+        if (-not (Get-Command -Name 'winget' -ErrorAction SilentlyContinue)) {
+            Set-ItResult -Skipped -Because 'winget is not installed on this machine'
+            return
+        }
+
+        # Symbol names rather than messages: winget speaks the machine's
+        # language, and this suite has to pass on any of them.
+        $expected = @{
+            -1978335216 = 'NO_APPLICABLE_INSTALLER'
+            -1978335215 = 'INSTALLER_HASH_MISMATCH'
+            -1978335212 = 'NO_APPLICATIONS_FOUND'
+            -1978335210 = 'MULTIPLE_APPLICATIONS_FOUND'
+        }
+
+        foreach ($code in $expected.Keys) {
+
+            $hex    = '0x{0:X8}' -f [uint32] ([int64] $code + 4294967296)
+            $answer = (& winget error $hex 2>&1 | Out-String)
+
+            $answer | Should -BeLike ('*{0}*' -f $expected[$code]) -Because (
+                'the table claims {0} is "{1}"' -f $code, (Get-TkWingetErrorText -ExitCode $code)
+            )
+        }
+    }
+}
+
+Describe 'Package source selection' {
+
+    # The bug this guards against: the Store id pattern lived in a script
+    # variable that was never seeded into the background runspace, so inside
+    # it the pattern was $null. PowerShell reads "-cmatch $null" as a match
+    # against the empty pattern, which matches every string, so every package
+    # looked like a Store product and every install was pinned to msstore,
+    # where none of them exist. Every install failed with "no package found"
+    # in about half a second, for every application in the catalogue.
+
+    It 'treats <PackageId> as a Store product: <Expected>' -TestCases @(
+        @{ PackageId = '9NKSQGP7F2NH'; Expected = $true }
+        @{ PackageId = 'XPDC2RH70K22MN'; Expected = $false }   # too long
+        @{ PackageId = 'Mozilla.Firefox'; Expected = $false }
+        @{ PackageId = 'TorProject.TorBrowser'; Expected = $false }
+        @{ PackageId = 'ZAP.ZAP'; Expected = $false }
+        @{ PackageId = '7zip.7zip'; Expected = $false }
+        @{ PackageId = ''; Expected = $false }
+    ) {
+        param($PackageId, $Expected)
+
+        Test-TkStoreProductId -PackageId $PackageId | Should -Be $Expected
+    }
+
+    It 'still rejects an identifier that could reach a command line' {
+
+        # The same fragility applies to this guard, and matters more: a null
+        # pattern would make "-notmatch" false for every string and wave
+        # everything through while still looking present in the source.
+        Test-TkPackageId -PackageId 'Google.Chrome; rm -rf /' | Should -BeFalse
+        Test-TkPackageId -PackageId 'Google.Chrome && calc'   | Should -BeFalse
+        Test-TkPackageId -PackageId 'Google Chrome'           | Should -BeFalse
+        Test-TkPackageId -PackageId 'Google.Chrome'           | Should -BeTrue
+    }
+}
+
+Describe 'Runspace state' {
+
+    It 'seeds every feature script variable into the background runspaces' {
+
+        # Feature code runs in a runspace. A script variable it reads that is
+        # not on the shared list is $null there, silently, and the failure
+        # shows up as wrong behaviour rather than an error. Anything defined
+        # at file scope under src/Features therefore has to be declared.
+        $root = Split-Path -Path $PSScriptRoot -Parent
+
+        $threading = Get-Content -LiteralPath (Join-Path $root 'src\Core\Threading.ps1') -Raw
+        $declared  = @([regex]::Matches($threading, "'(?<name>Tk[A-Za-z0-9]+)'") |
+                       ForEach-Object { $_.Groups['name'].Value })
+
+        $defined = @()
+
+        foreach ($file in (Get-ChildItem -Path (Join-Path $root 'src\Features') -Filter '*.ps1' -Recurse)) {
+
+            $text = Get-Content -LiteralPath $file.FullName -Raw
+
+            foreach ($match in [regex]::Matches($text, '(?m)^\$script:(?<name>Tk[A-Za-z0-9]+)\s*=')) {
+                $defined += $match.Groups['name'].Value
+            }
+        }
+
+        foreach ($name in ($defined | Sort-Object -Unique)) {
+
+            $declared | Should -Contain $name -Because (
+                '$script:{0} is read inside a background runspace and would be $null there ' +
+                'unless Initialize-TkRunspacePool seeds it' -f $name
+            )
+        }
+    }
+}
