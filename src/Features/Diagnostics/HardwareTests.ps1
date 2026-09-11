@@ -11,17 +11,18 @@
 
 <#
 .SYNOPSIS
-    Returns the physical keyboard as rows of keys.
+    Returns a French AZERTY (ISO) keyboard as rows of keys.
 
 .DESCRIPTION
-    Described by scan code, which is the position of the key on the board and
-    is the same on every layout, rather than by virtual key, which moves with
-    the layout. Labels are asked of Windows per key, so an AZERTY board draws
-    as AZERTY without this table knowing anything about it.
+    A fixed French AZERTY layout: the AZERTY letter rows, the accented number
+    row, the extra key between the left Shift and W that marks an ISO board,
+    and the tall Enter. Drawn as this one layout rather than read from the
+    machine, because the operators work on French keyboards and a board that
+    matches the keycaps in front of them is the point.
 
-    A scan code alone is not unique: the navigation cluster and the numeric
-    keypad share theirs and are told apart by the extended flag, which is why
-    each key carries one and why identity is the pair.
+    Each key carries its WPF Key name, which is what the key events hand the
+    test to match against, and which is unique per physical key: the numeric
+    keypad has keys of its own, distinct from the navigation cluster.
 
     Widths are in key units, where a normal key is 1.
 
@@ -39,14 +40,28 @@ function Get-TkKeyboardMap {
         [switch] $Compact
     )
 
-    # WPF key name, fallback label, width in key units.
+    # A French AZERTY (ISO) keyboard, position for position: the AZERTY letter
+    # rows, the number row that carries the accented characters, the extra
+    # key between the left Shift and W that is the mark of an ISO board, and
+    # the tall Enter. It is drawn as this one fixed layout rather than read
+    # from the machine, because the tool's operators work on French keyboards
+    # and a board that matches the keycaps in front of them is the point.
     #
-    # Identity is the WPF Key value, because that is what the key events hand
-    # the test to match against, and because it already tells the numeric
-    # keypad apart from the navigation cluster: NumPad7 is not Home, Divide is
-    # not Oem2. That removes the scan code plus extended flag pair the earlier
-    # version needed, along with the global hook that produced them.
+    # Each cell is @(WPF key name, label, width in key units). Identity is the
+    # WPF Key value, which is what the key events hand the test to match
+    # against and which already tells the numeric keypad apart from the
+    # navigation cluster: NumPad7 is not Home, Divide is not Oem2.
     #
+    # The accented labels are built from character codes rather than written
+    # as literals, so the file stays plain ASCII and reads the same under
+    # Windows PowerShell and PowerShell 7 whatever the encoding.
+    $super2 = [string][char]0x00B2   # superscript two, the top left key
+    $eAcute = [string][char]0x00E9   # e acute
+    $eGrave = [string][char]0x00E8   # e grave
+    $cCedil = [string][char]0x00E7   # c cedilla
+    $aGrave = [string][char]0x00E0   # a grave
+    $uGrave = [string][char]0x00F9   # u grave
+
     # Each row is appended with the comma operator. Written as bare @(...)
     # literals one per line they are separate statements, so PowerShell
     # enumerates them into the outer array and the rows collapse into one
@@ -61,35 +76,40 @@ function Get-TkKeyboardMap {
         @('F12', 'F12', 1.0)
     )
 
+    # Number row: the AZERTY top row, digits reached with Shift.
     $rows += , @(
-        @('Oem3', '`', 1.0), @('D1', '1', 1.0), @('D2', '2', 1.0),
-        @('D3', '3', 1.0), @('D4', '4', 1.0), @('D5', '5', 1.0),
-        @('D6', '6', 1.0), @('D7', '7', 1.0), @('D8', '8', 1.0),
-        @('D9', '9', 1.0), @('D0', '0', 1.0), @('OemMinus', '-', 1.0),
+        @('Oem7', $super2, 1.0), @('D1', '&', 1.0), @('D2', $eAcute, 1.0),
+        @('D3', '"', 1.0), @('D4', "'", 1.0), @('D5', '(', 1.0),
+        @('D6', '-', 1.0), @('D7', $eGrave, 1.0), @('D8', '_', 1.0),
+        @('D9', $cCedil, 1.0), @('D0', $aGrave, 1.0), @('Oem4', ')', 1.0),
         @('OemPlus', '=', 1.0), @('Back', 'Backspace', 2.0)
     )
 
+    # A Z E R T Y, then the circumflex dead key and the currency key.
     $rows += , @(
-        @('Tab', 'Tab', 1.5), @('Q', 'Q', 1.0), @('W', 'W', 1.0),
+        @('Tab', 'Tab', 1.5), @('A', 'A', 1.0), @('Z', 'Z', 1.0),
         @('E', 'E', 1.0), @('R', 'R', 1.0), @('T', 'T', 1.0),
         @('Y', 'Y', 1.0), @('U', 'U', 1.0), @('I', 'I', 1.0),
-        @('O', 'O', 1.0), @('P', 'P', 1.0), @('OemOpenBrackets', '[', 1.0),
-        @('Oem6', ']', 1.0), @('Oem5', '\', 1.5)
+        @('O', 'O', 1.0), @('P', 'P', 1.0), @('Oem6', '^', 1.0),
+        @('Oem1', '$', 1.0)
     )
 
+    # Q S D F G H J K L M, then u grave and the star key, then Enter.
     $rows += , @(
-        @('CapsLock', 'Caps', 1.75), @('A', 'A', 1.0), @('S', 'S', 1.0),
+        @('CapsLock', 'Caps', 1.75), @('Q', 'Q', 1.0), @('S', 'S', 1.0),
         @('D', 'D', 1.0), @('F', 'F', 1.0), @('G', 'G', 1.0),
         @('H', 'H', 1.0), @('J', 'J', 1.0), @('K', 'K', 1.0),
-        @('L', 'L', 1.0), @('Oem1', ';', 1.0), @('Oem7', "'", 1.0),
-        @('Return', 'Enter', 2.25)
+        @('L', 'L', 1.0), @('M', 'M', 1.0), @('Oem3', $uGrave, 1.0),
+        @('Oem5', '*', 1.0), @('Return', 'Enter', 1.75)
     )
 
+    # The ISO row: a shorter left Shift, the extra < > key, then W X C V B N.
     $rows += , @(
-        @('LeftShift', 'Shift', 2.25), @('Z', 'Z', 1.0), @('X', 'X', 1.0),
-        @('C', 'C', 1.0), @('V', 'V', 1.0), @('B', 'B', 1.0),
-        @('N', 'N', 1.0), @('M', 'M', 1.0), @('OemComma', ',', 1.0),
-        @('OemPeriod', '.', 1.0), @('Oem2', '/', 1.0), @('RightShift', 'Shift', 2.75)
+        @('LeftShift', 'Shift', 1.25), @('Oem102', '<', 1.0), @('W', 'W', 1.0),
+        @('X', 'X', 1.0), @('C', 'C', 1.0), @('V', 'V', 1.0),
+        @('B', 'B', 1.0), @('N', 'N', 1.0), @('OemComma', ',', 1.0),
+        @('OemPeriod', ';', 1.0), @('Oem2', ':', 1.0), @('Oem8', '!', 1.0),
+        @('RightShift', 'Shift', 2.75)
     )
 
     $rows += , @(
@@ -121,8 +141,6 @@ function Get-TkKeyboardMap {
         )
     }
 
-    $layoutReady = Initialize-TkKeyboardLayout
-
     $result = @()
 
     foreach ($row in $rows) {
@@ -131,31 +149,11 @@ function Get-TkKeyboardMap {
 
         foreach ($definition in $row) {
 
-            $keyName  = [string] $definition[0]
-            $fallback = [string] $definition[1]
-            $width    = [double] $definition[2]
-
-            $label = $fallback
-
-            # Ask Windows what this key produces under the current layout, but
-            # only for the character keys: "Backspace" is more use than the
-            # control character it maps to. This is what draws an AZERTY board
-            # as AZERTY.
-            if ($layoutReady -and $fallback.Length -eq 1) {
-
-                $wpfKey = [System.Windows.Input.Key] $keyName
-                $actual = Get-TkKeyLabel -Key $wpfKey
-
-                if ($actual) {
-                    $label = $actual.ToUpperInvariant()
-                }
-            }
-
             $keys += [pscustomobject] @{
-                KeyName = $keyName
-                Key     = $keyName
-                Label   = $label
-                Width   = $width
+                KeyName = [string] $definition[0]
+                Key     = [string] $definition[0]
+                Label   = [string] $definition[1]
+                Width   = [double] $definition[2]
             }
         }
 

@@ -15,7 +15,6 @@ src/Core/Elevation.ps1
 src/Core/Utilities.ps1
 src/Core/Threading.ps1
 src/Core/DataLoader.ps1
-src/Core/KeyboardLayout.ps1
 
 # --- Features: depend on core only -----------------------------------------
 src/Features/System/SystemInventory.ps1
