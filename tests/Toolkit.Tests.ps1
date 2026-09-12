@@ -1167,6 +1167,32 @@ Describe 'Interface rendering' {
         }
     }
 
+    Context 'Text field placeholders' {
+
+        It 'aligns the placeholder with the caret' {
+
+            # The hint and the real text are siblings in the same grid, so two
+            # independent insets drifted apart: a literal margin on one and a
+            # template binding on the other. Bound to the same Padding they
+            # cannot separate again, whatever a control sets.
+            # Read from the markup rather than the built template: XamlWriter
+            # serialises a template with its bindings already resolved, so the
+            # very thing under test disappears from the output.
+            $markup = Get-TkMainWindowXaml
+
+            $start = $markup.IndexOf('<Style TargetType="TextBox">')
+            $start | Should -BeGreaterThan 0
+
+            $body = $markup.Substring($start, 3000)
+
+            # The hint and the content host both take their inset from Padding.
+            ([regex]::Matches($body, 'Margin="\{TemplateBinding Padding\}"')).Count |
+                Should -BeGreaterOrEqual 2
+
+            $body | Should -Not -Match 'Margin="9,6,9,6"'
+        }
+    }
+
     Context 'Disabled actions' {
 
         It 'lets a disabled button still show its tooltip' {
@@ -1429,91 +1455,142 @@ Describe 'Runspace state' {
 Describe 'Keyboard map' {
 
     BeforeAll {
-
-        # The map labels itself through WPF key values, so the presentation
-        # assemblies have to be loaded even in the headless test host.
-        Add-Type -AssemblyName PresentationCore
-        Add-Type -AssemblyName WindowsBase
-
-        $script:Map = Get-TkKeyboardMap
+        $script:Layouts = Get-TkKeyboardLayoutName
+        $script:Map     = Get-TkKeyboardMap
     }
 
-    It 'returns rows of keys rather than one flat list' {
+    It 'offers the four layouts, French first' {
 
-        # PowerShell enumerates bare array literals written as separate
-        # statements, which once collapsed every row into a single list of
-        # key definitions and gave every key a width of zero.
-        $script:Map.Count | Should -BeGreaterThan 5
+        $script:Layouts.Count | Should -Be 4
+        $script:Layouts[0]    | Should -BeLike 'FR*'
+        ($script:Layouts -join ' ') | Should -BeLike '*QWERTZ*'
+    }
 
-        foreach ($row in $script:Map) {
-            $row.Count | Should -BeGreaterThan 1
+    It 'draws three blocks rather than one stack of rows' {
+
+        # The navigation cluster and the keypad sit beside the main block on a
+        # real board. Stacking all three underneath each other is what made the
+        # old board read as a heap of keys.
+        $script:Map.Main.Count       | Should -BeGreaterThan 4
+        $script:Map.Navigation.Count | Should -BeGreaterThan 1
+        $script:Map.Numpad.Count     | Should -BeGreaterThan 1
+    }
+
+    It 'draws 105 keys for <Layout>' -TestCases @(
+        @{ Layout = 'FR AZERTY (French)' }
+        @{ Layout = 'US QWERTY (US/International)' }
+        @{ Layout = 'GB QWERTY (United Kingdom)' }
+        @{ Layout = 'DE QWERTZ (German)' }
+    ) {
+        param($Layout)
+
+        # Every layout is the same ISO board with a different legend, so the
+        # count and the geometry must not move between them.
+        $keys = Get-TkKeyboardKey -Map (Get-TkKeyboardMap -Layout $Layout)
+
+        @($keys).Count | Should -Be 105
+    }
+
+    It 'identifies every key uniquely by physical position, on <Layout>' -TestCases @(
+        @{ Layout = 'FR AZERTY (French)' }
+        @{ Layout = 'US QWERTY (US/International)' }
+        @{ Layout = 'GB QWERTY (United Kingdom)' }
+        @{ Layout = 'DE QWERTZ (German)' }
+    ) {
+        param($Layout)
+
+        # The invariant the whole test rests on: pressing one physical key must
+        # light exactly one block. The navigation cluster and the keypad share
+        # scan codes and are told apart only by the extended flag, and Pause
+        # shares one with Num Lock without either being extended.
+        $keys = Get-TkKeyboardKey -Map (Get-TkKeyboardMap -Layout $Layout)
+        $seen = @{}
+
+        foreach ($key in $keys) {
+
+            $seen.ContainsKey($key.Key) |
+                Should -BeFalse -Because ('{0} is drawn twice' -f $key.Label)
+
+            $seen[$key.Key] = $true
         }
+
+        $seen.Count | Should -Be 105
     }
 
     It 'gives every key a width and a label' {
 
-        foreach ($row in $script:Map) {
-            foreach ($key in $row) {
-                $key.Width | Should -BeGreaterThan 0
-                $key.Label | Should -Not -BeNullOrEmpty
-            }
+        foreach ($key in (Get-TkKeyboardKey -Map $script:Map)) {
+            $key.Width | Should -BeGreaterThan 0
+            $key.Label | Should -Not -BeNullOrEmpty
         }
     }
 
-    It 'identifies every key uniquely by its WPF key name' {
+    It 'tells the keypad Enter from the main Enter' {
 
-        # The invariant the whole test rests on: pressing one physical key must
-        # light exactly one block. The WPF Key value gives each key its own
-        # identity, telling the numeric keypad apart from the navigation
-        # cluster (NumPad7 is not Home), which raw scan codes did not.
-        $seen = @{}
+        # The one key WPF cannot distinguish: both report Key.Return. Only the
+        # extended flag on the scan code separates them, which is why the test
+        # reads the window message rather than the WPF event.
+        $enters = @(Get-TkKeyboardKey -Map $script:Map | Where-Object { $_.ScanCode -eq 0x1C })
 
-        foreach ($row in $script:Map) {
-            foreach ($key in $row) {
-
-                $seen.ContainsKey($key.Key) |
-                    Should -BeFalse -Because ('{0} is drawn twice' -f $key.Label)
-
-                $seen[$key.Key] = $true
-            }
-        }
-
-        $seen.Count | Should -BeGreaterThan 80
+        $enters.Count | Should -Be 2
+        @($enters | Where-Object { $_.Extended }).Count     | Should -Be 1
+        @($enters | Where-Object { -not $_.Extended }).Count | Should -Be 1
     }
 
-    It 'names every key with a real WPF Key value' {
+    It 'separates Pause from Num Lock by virtual key' {
 
-        # A misspelled key name would silently never match a key press, so the
-        # key would look permanently dead. Casting proves each one is real.
-        foreach ($row in $script:Map) {
-            foreach ($key in $row) {
-                { [System.Windows.Input.Key] $key.KeyName } |
-                    Should -Not -Throw -Because ('{0} should be a WPF Key' -f $key.KeyName)
-            }
-        }
+        # Both are scan code 0x45 and neither is extended.
+        $shared = @(Get-TkKeyboardKey -Map $script:Map | Where-Object { $_.ScanCode -eq 0x45 })
+
+        $shared.Count | Should -Be 2
+        @($shared | ForEach-Object { $_.VirtualKey }) | Should -Not -Contain 0
     }
 
-    It 'draws the keys the shell claims, so their absence is visible' {
+    It 'keeps the ISO key and both hands of every modifier' {
 
-        # The Windows keys, both Alts and both Ctrls are on the board even
-        # though the shell eats some of them, so a genuinely dead one is a gap
-        # rather than simply missing from the map.
-        $names = @()
+        $keys = Get-TkKeyboardKey -Map $script:Map
 
-        foreach ($row in $script:Map) {
-            $names += @($row | ForEach-Object { $_.KeyName })
-        }
+        # The extra key beside the left Shift is what makes a board ISO rather
+        # than ANSI, and it is missing from a 104 key layout.
+        @($keys | Where-Object { $_.ScanCode -eq 0x56 }).Count | Should -Be 1
 
-        foreach ($expected in @('LWin', 'RWin', 'LeftAlt', 'RightAlt', 'LeftCtrl', 'RightCtrl')) {
-            $names | Should -Contain $expected
+        foreach ($scanCode in @(0x1D, 0x38)) {   # Ctrl, Alt
+            @($keys | Where-Object { $_.ScanCode -eq $scanCode }).Count | Should -Be 2
         }
     }
 
-    It 'leaves the keypad out when asked for a compact board' {
+    It 'redraws the same geometry with a different legend' {
 
-        $compact = Get-TkKeyboardMap -Compact
+        # A layout change must move letters, not keys: same positions, same
+        # widths, different labels.
+        $french = Get-TkKeyboardKey -Map (Get-TkKeyboardMap -Layout 'FR AZERTY (French)')
+        $german = Get-TkKeyboardKey -Map (Get-TkKeyboardMap -Layout 'DE QWERTZ (German)')
 
-        $compact.Count | Should -BeLessThan $script:Map.Count
+        @($french | ForEach-Object { $_.Key }) -join ',' |
+            Should -Be (@($german | ForEach-Object { $_.Key }) -join ',')
+
+        # The Y and Z positions swap between AZERTY and QWERTZ, so the legends
+        # cannot be identical.
+        @($french | ForEach-Object { $_.Label }) -join ',' |
+            Should -Not -Be (@($german | ForEach-Object { $_.Label }) -join ',')
+    }
+
+    It 'names every key the way the message reader will' {
+
+        # The contract that makes the whole test work: the identity the map
+        # stores has to be the identity Update-TkKeyboardFromMessage rebuilds
+        # from a key message, or every press would look like an unknown key.
+        foreach ($key in (Get-TkKeyboardKey -Map $script:Map)) {
+
+            $expected = if ($key.VirtualKey -gt 0) {
+                            '{0}:{1}:{2}' -f $key.ScanCode, [int] $key.Extended, $key.VirtualKey
+                        }
+                        else {
+                            '{0}:{1}' -f $key.ScanCode, [int] $key.Extended
+                        }
+
+            $key.Key | Should -Be $expected
+        }
     }
 
     It 'says which keys cannot be observed' {

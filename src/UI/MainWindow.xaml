@@ -539,9 +539,19 @@
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="5">
                             <Grid>
+                                <!--
+                                    The hint takes its inset from Padding, the
+                                    same source the content host uses below. As
+                                    two independent values, a literal here and a
+                                    template binding there, they drifted: the
+                                    placeholder sat one pixel off from where the
+                                    caret appears, and any control that set its
+                                    own Padding moved the caret without moving
+                                    the placeholder.
+                                -->
                                 <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}"
                                            Foreground="{DynamicResource TextMuted}"
-                                           Margin="9,6,9,6"
+                                           Margin="{TemplateBinding Padding}"
                                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                            FontSize="{TemplateBinding FontSize}"
                                            IsHitTestVisible="False" Visibility="Collapsed"
@@ -1995,23 +2005,36 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
-                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                                    <Button x:Name="BtnKeyboardStart" Content="Start the test"
-                                            Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE768;" />
-                                    <Button x:Name="BtnKeyboardStop" Content="Stop"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE711;" IsEnabled="False" />
-                                    <Button x:Name="BtnKeyboardReset" Content="Clear"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE72C;" />
-                                    <TextBlock x:Name="KeyboardProgress" Style="{StaticResource FieldValue}"
-                                               VerticalAlignment="Center" Margin="16,0,0,0"
-                                               Text="Not started." />
-                                </StackPanel>
+                                <!--
+                                    No start button. The test runs from the
+                                    moment this panel is open, because pressing
+                                    a key is the only thing it ever needed the
+                                    operator to do.
+                                -->
+                                <Grid Grid.Row="0" Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <ComboBox Grid.Column="0" x:Name="KeyboardLayout" Width="230"
+                                              ToolTip="Changes what is printed on the keys. The keys themselves are matched by physical position, so the results stay valid whichever layout you draw." />
+
+                                    <TextBlock Grid.Column="1" x:Name="KeyboardProgress"
+                                               Style="{StaticResource FieldValue}"
+                                               VerticalAlignment="Center" Margin="16,0,16,0"
+                                               Text="0 of 105 keys" />
+
+                                    <Button Grid.Column="2" x:Name="BtnKeyboardReset" Content="Reset"
+                                            Style="{StaticResource GlyphButton}" Tag="&#xE72C;" Margin="0" />
+                                </Grid>
 
                                 <Border Grid.Row="1" Margin="0,0,0,10" CornerRadius="6" Padding="11,8"
                                         Background="{DynamicResource SurfaceRaised}"
                                         BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
                                     <TextBlock x:Name="KeyboardHint" Style="{StaticResource Muted}"
-                                               Text="Keep this window in front and press every key; each lights up as it registers. Press Escape twice to stop. The Windows key, Alt+Tab and Ctrl+Alt+Delete are claimed by Windows before any application sees them, so they will not light up: this test reads keys only while its own window is focused, which is why nothing mistakes it for a keylogger." />
+                                               Text="Press every key; each lights up as it registers. The test runs while this panel is open and stops when you leave it, or on Escape pressed twice. The Windows key, Alt+Tab and Ctrl+Alt+Delete are claimed by Windows before any application sees them, so they will not light up: this test reads keys only while its own window is focused, which is why nothing mistakes it for a keylogger." />
                                 </Border>
 
                                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"

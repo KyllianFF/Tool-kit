@@ -286,44 +286,56 @@ substantially.
 
 ---
 
-## 10. The keyboard test, and why it does NOT use a hook
+## 10. The keyboard test
 
-The obvious way to build a keyboard test is a low level `WH_KEYBOARD_LL`
-hook: it sees every key before the shell does, and returning a non-zero value
-from the callback consumes it, so the Windows key would not open the Start
-menu and Alt+Tab would not switch away mid-test. The first version did exactly
-that.
+The obvious way to build one is a low level `WH_KEYBOARD_LL` hook: it sees
+every key before the shell does, and returning a non-zero value consumes it, so
+the Windows key would not open the Start menu. The first version did that.
 
 **It was removed, on purpose.** A global hook that records and swallows every
 keystroke is, at the level of the Windows API, indistinguishable from a
-keylogger, and antivirus software is right to treat it as one. ESET blocked
-the tool outright, and a diagnostic that trips the antivirus on the machines
-it is meant to help is not a diagnostic. No amount of obfuscation should be
-used to get such code past an antivirus — hiding a keylogging technique from
-detection is the technique's most dangerous property, not a bug to route
-around.
+keylogger, and antivirus software is right to treat it as one — ESET blocked
+the tool outright. Hiding a keylogging technique from detection is the
+technique's most dangerous property, not a bug to route around.
 
-So the test reads keys the way a local application should: a `PreviewKeyDown`
-handler on its own window (`Start-TkKeyboardTest` in `HardwarePage.ps1`),
-added with `handledEventsToo` so it still sees a key a focused control already
-marked handled. It sees keys only while its window has focus, captures
-nothing system wide, and installs no hook. Each key is marked handled so Tab
-does not move the focus and Space does not press a button, which keeps the
-test from being disrupted by the very keys it is checking.
+What replaced it has two parts, each doing one job.
 
-The cost is real and worth stating: the shell claims the Windows key, Alt+Tab
-and Ctrl+Alt+Delete before any application sees them, so those cannot be
-ticked off and the result note says so. That inability is not a shortcoming to
-engineer around — it is the same boundary that stops a keylogger, and being on
-the right side of it is what lets the tool run on any machine.
+**Identity comes from a window message hook.** `HwndSource.AddHook` in
+`Start-TkKeyboardTest` reads `WM_KEYDOWN` and `WM_KEYUP` for our own window.
+The scan code is in bits 16-23 of `lParam` and the extended flag in bit 24;
+that pair is the physical key.
 
-The one native call that remains is `MapVirtualKey`, in
-`src/Core/KeyboardLayout.ps1`. It is a stateless lookup that answers "what
-character is on this key" and is what on screen keyboards have always used; it
-sees and records nothing. It is what draws an AZERTY board as AZERTY: the map
-is labelled by asking Windows what each key produces under the current layout,
-so the French key that sends `VK_A` is drawn where it physically sits. Identity
-is the **WPF Key** value, which already tells the numeric keypad apart from the
-navigation cluster (NumPad7 is not Home); the test suite asserts every key on
-the map casts to a real `Key` and that no key is drawn twice.
+This is *not* a system-wide hook. `AddHook` filters the window procedure of one
+window: it sees only messages Windows has already delivered there, and nothing
+from any other application. It is standard WPF interop, used by every app that
+needs raw messages.
+
+Two things make the scan code necessary rather than merely nicer. The WPF `Key`
+enumeration reports the keypad Enter and the main Enter as the same value, so
+105 keys cannot be told apart without it. And a `Key` depends on the layout
+Windows is currently set to, so a layout selector built on it would break the
+moment you picked a layout other than the active one — choosing German on a
+French machine would match nothing.
+
+**Suppression comes from a WPF handler.** A `PreviewKeyDown` handler marks each
+key handled, which keeps Tab from moving the focus and Space from pressing
+whatever button has it. It is scoped to the window and to the panel: the test
+starts when its panel opens and stops when it closes, and stops itself if the
+panel stops being visible by any other route.
+
+The cost is stated rather than hidden: the shell claims the Windows key,
+Alt+Tab and Ctrl+Alt+Delete before any application sees them, so those cannot
+be ticked off. That inability is the same boundary that stops a keylogger.
+
+**The board is one geometry with four legends.** `Get-TkKeyboardMap` returns
+three blocks — main, navigation cluster, keypad — drawn side by side as on a
+real board. The geometry is a 105-key ISO layout for every language: the short
+left Shift with the extra key beside it, the tall Enter. Only
+`Get-TkKeyboardLegend` changes, keyed by scan code. The suite asserts that all
+four layouts have 105 keys, that no identity is drawn twice, and that the
+identity the map stores is the one the message reader rebuilds.
+
+An injected key, and some remote desktop and software keyboards, report no scan
+code at all. `Get-TkScanCodeForVirtualKey` recovers the position from the
+virtual key in that case; the extended flag is correct either way.
 
