@@ -1,4 +1,4 @@
-<#
+﻿<#
     Toolkit - UI / Main window
 
     Builds the window from XAML, registers every named control in the shared
@@ -15,6 +15,7 @@ $script:TkEmbeddedXaml = ''
 # page so that adding one to a new page is a single Register call.
 $script:TkFirstShowAction = @{}
 $script:TkPageOpened      = @{}
+$script:TkPageVisibility = @{}
 
 <#
 .SYNOPSIS
@@ -256,6 +257,43 @@ function Register-TkFirstShow {
 
 <#
 .SYNOPSIS
+    Registers a script block to run whenever a page is shown or hidden.
+
+.DESCRIPTION
+    Register-TkFirstShow answers "load this page's data once". This answers a
+    different question: "this page is on screen now" and "it no longer is".
+
+    Some pages hold something while they are visible. The keyboard test is the
+    case that forced this to exist: it has to start when its panel appears and
+    hand the keyboard back when it disappears, and it had no way to hear about
+    either. It was wired to the panel chooser's SelectionChanged, which never
+    fires for the panel that is already selected, so the test never started at
+    all.
+
+    Every registered page is called on every page change, with whether it is
+    the one now visible, so a page can stop work as reliably as it starts it.
+
+.PARAMETER PageName
+    Page key, as passed to Show-TkPage.
+
+.PARAMETER Action
+    Script block taking one boolean: true when the page has become visible.
+#>
+function Register-TkPageVisibility {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $PageName,
+
+        [Parameter(Mandatory)]
+        [scriptblock] $Action
+    )
+
+    $script:TkPageVisibility[$PageName] = $Action
+}
+
+<#
+.SYNOPSIS
     Shows one feature page and hides the others.
 
 .PARAMETER Name
@@ -326,6 +364,22 @@ function Show-TkPage {
                     'The {0} page could not finish its first load: {1}' -f $Name, $_.Exception.Message
                 )
             }
+        }
+    }
+
+    # Told last, so a page that loads on first open has its data before it is
+    # asked to start anything. Every registered page hears every change, which
+    # is what lets a page stop as reliably as it starts.
+    foreach ($registered in @($script:TkPageVisibility.Keys)) {
+
+        try {
+            & $script:TkPageVisibility[$registered] ($registered -eq $Name)
+        }
+        catch {
+            Write-TkLog -Level Warning -Category 'Interface' -Message (
+                'The {0} page could not react to becoming {1}: {2}' -f
+                    $registered, $(if ($registered -eq $Name) { 'visible' } else { 'hidden' }), $_.Exception.Message
+            )
         }
     }
 }

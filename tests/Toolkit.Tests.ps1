@@ -1604,6 +1604,51 @@ Describe 'Keyboard map' {
     }
 }
 
+Describe 'Page visibility' {
+
+    <#
+        The keyboard test was dead in the shipped build, and this is the hole
+        it fell through. It started from the panel chooser's SelectionChanged,
+        which never fires for the panel selected before the handler was
+        attached, and never fires again when the operator returns to the page.
+        Nothing told a page it was on screen.
+    #>
+
+    BeforeAll {
+
+        $script:VisibilityCalls = New-Object System.Collections.Generic.List[object]
+
+        # A page with no first-show action, so the test costs no WMI call.
+        Register-TkPageVisibility -PageName 'Fixes' -Action {
+            param([bool] $Visible)
+
+            $script:VisibilityCalls.Add($Visible)
+        }
+    }
+
+    It 'tells a page when it becomes visible' {
+
+        $script:VisibilityCalls.Clear()
+
+        Show-TkPage -Name 'Fixes'
+
+        $script:VisibilityCalls.Count | Should -Be 1
+        $script:VisibilityCalls[0]    | Should -BeTrue
+    }
+
+    It 'tells a page when another one takes its place' {
+
+        # Stopping matters as much as starting here: a keyboard test left
+        # attached would swallow every keystroke on a page that never says so.
+        $script:VisibilityCalls.Clear()
+
+        Show-TkPage -Name 'Tweaks'
+
+        $script:VisibilityCalls.Count | Should -Be 1
+        $script:VisibilityCalls[0]    | Should -BeFalse
+    }
+}
+
 Describe 'Test tone' {
 
     It 'writes a valid RIFF WAVE header' {

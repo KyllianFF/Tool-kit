@@ -323,6 +323,24 @@ whatever button has it. It is scoped to the window and to the panel: the test
 starts when its panel opens and stops when it closes, and stops itself if the
 panel stops being visible by any other route.
 
+**The start signal was missing, and that is why the shell has one now.** The
+test was first hung off the panel chooser's `SelectionChanged`. That event
+never fires for the panel selected before the handler is attached, and does
+not fire again when the operator returns to the page, so the test never
+started at all: the board was drawn and dead. `Register-TkPageVisibility` is
+the fix. It is the counterpart to `Register-TkFirstShow` — that one answers
+"load this page's data once", this one answers "this page is on screen now"
+and, just as importantly, "it no longer is". Every registered page is told on
+every page change, so a page can stop holding something as reliably as it
+starts.
+
+**Two colours, answering two questions.** A held key is orange and sinks two
+pixels, whether or not it has already been validated: that answers "is the
+board reading the key under my finger", which a key already green could not.
+Releasing it settles the key, fading to solid green over 200 ms if it counts
+as tested. The fade therefore lives in the release path — painting the green
+on key *down* would only be overpainted by the press.
+
 The cost is stated rather than hidden: the shell claims the Windows key,
 Alt+Tab and Ctrl+Alt+Delete before any application sees them, so those cannot
 be ticked off. That inability is the same boundary that stops a keylogger.

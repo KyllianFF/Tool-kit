@@ -121,6 +121,25 @@ function Initialize-TkHardwarePage {
         Update-TkBatteryPanel
         Update-TkAudioPanel
     }
+
+    # The keyboard test follows the page, not the chooser. Hanging it off the
+    # chooser's SelectionChanged meant it never started: the default panel is
+    # selected before the handler is attached, so the event does not fire for
+    # it, and coming back to the page does not change the selection either.
+    Register-TkPageVisibility -PageName 'Hardware' -Action {
+        param([bool] $Visible)
+
+        if ($Visible) {
+
+            $list  = Get-TkControl -Name 'HardwareChoices'
+            $index = if ($list -and $list.SelectedIndex -ge 0) { $list.SelectedIndex } else { 0 }
+
+            Show-TkHardwarePanel -Index $index
+        }
+        elseif ($script:TkKeyboardRunning) {
+            Stop-TkKeyboardTest
+        }
+    }
 }
 
 <#
@@ -280,8 +299,7 @@ function New-TkKeyboardRow {
         # press is cheaper than a drop shadow on a hundred and five elements.
         $block.BorderThickness = New-Object System.Windows.Thickness(1, 1, 1, 3)
 
-        $block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
-        $block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+        Set-TkKeyBlockRest -Block $block
 
         # Held so the press animation has something to move.
         $block.RenderTransform = New-Object System.Windows.Media.TranslateTransform
@@ -449,14 +467,18 @@ function Reset-TkKeyboardTest {
     [CmdletBinding()]
     param()
 
-    $script:TkKeyboardSeen = @{}
+    $script:TkKeyboardSeen    = @{}
+    $script:TkKeyboardPressed = @{}
 
     foreach ($identity in $script:TkKeyboardButtons.Keys) {
 
         $block = $script:TkKeyboardButtons[$identity]
 
-        $block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
-        $block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+        Set-TkKeyBlockRest -Block $block
+
+        # A key held across the reset would otherwise stay sunk for good.
+        $block.RenderTransform.Y = 0
+        $block.BorderThickness   = New-Object System.Windows.Thickness(1, 1, 1, 3)
     }
 
     Update-TkKeyboardProgress
@@ -567,9 +589,15 @@ function Update-TkKeyboardFromMessage {
     Shows a key as held down, or lets it back up.
 
 .DESCRIPTION
-    The block drops two pixels and its bottom edge collapses, which is what a
-    keycap does. Purely visual: whether the key counts as tested is decided by
-    Set-TkKeySeen.
+    A held key is filled orange and drops two pixels with its bottom edge
+    collapsing, which is what a keycap does. The orange applies whether or not
+    the key has already been validated: it answers "the board is reading the
+    key under my finger", which is a different question from "has this key been
+    covered", and a key that were already green would answer nothing.
+
+    Letting go settles the key: green if it has been validated, back to the
+    resting colour otherwise. That is why the fade to green happens here rather
+    than in Set-TkKeySeen, which would be overpainted by the press.
 #>
 function Set-TkKeyPressed {
     [CmdletBinding()]
@@ -595,6 +623,9 @@ function Set-TkKeyPressed {
 
         $script:TkKeyboardPressed[$Identity] = $true
 
+        $block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Warning')
+        $block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'Warning')
+
         $block.RenderTransform.Y = 2
         $block.BorderThickness   = New-Object System.Windows.Thickness(1, 1, 1, 1)
 
@@ -605,6 +636,32 @@ function Set-TkKeyPressed {
 
     $block.RenderTransform.Y = 0
     $block.BorderThickness   = New-Object System.Windows.Thickness(1, 1, 1, 3)
+
+    if ($script:TkKeyboardSeen.ContainsKey($Identity)) {
+        Set-TkKeyBlockSeen -Block $block -Animate $true
+    }
+    else {
+        Set-TkKeyBlockRest -Block $block
+    }
+}
+
+<#
+.SYNOPSIS
+    Paints one block as untested.
+
+.DESCRIPTION
+    Resource references rather than brushes, so a resting key follows a theme
+    change. Only a validated or a held key is painted explicitly.
+#>
+function Set-TkKeyBlockRest {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.Border] $Block
+    )
+
+    $Block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
+    $Block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
 }
 
 <#
@@ -631,7 +688,11 @@ function Set-TkKeySeen {
         return
     }
 
-    Set-TkKeyBlockSeen -Block $script:TkKeyboardButtons[$Identity] -Animate $true
+    # While the key is held it stays orange. Releasing it paints the green,
+    # which is also what makes the fade visible instead of instantaneous.
+    if (-not $script:TkKeyboardPressed.ContainsKey($Identity)) {
+        Set-TkKeyBlockSeen -Block $script:TkKeyboardButtons[$Identity] -Animate $true
+    }
 
     Update-TkKeyboardProgress
 }
@@ -678,8 +739,12 @@ function Set-TkKeyBlockSeen {
         return
     }
 
-    $from = if ($ctx.Window.Resources['SurfaceRaised']) {
-                $ctx.Window.Resources['SurfaceRaised'].Color
+    # Read from the block rather than assumed, because the fade now starts
+    # from the orange of a key being released, not only from the resting
+    # colour. A new brush every time: animating the palette's own brush would
+    # turn every surface in the window green.
+    $from = if ($Block.Background -is [System.Windows.Media.SolidColorBrush]) {
+                $Block.Background.Color
             }
             else {
                 $target.Color
