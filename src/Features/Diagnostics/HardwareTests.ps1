@@ -11,156 +11,470 @@
 
 <#
 .SYNOPSIS
-    Returns a French AZERTY (ISO) keyboard as rows of keys.
+    Returns the keyboard layouts the test can draw.
+
+.OUTPUTS
+    System.String[]
+#>
+function Get-TkKeyboardLayoutName {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+
+    return @(
+        'FR AZERTY (French)',
+        'US QWERTY (US/International)',
+        'GB QWERTY (United Kingdom)',
+        'DE QWERTZ (German)'
+    )
+}
+
+<#
+.SYNOPSIS
+    Returns the character printed on each key position for one layout.
 
 .DESCRIPTION
-    A fixed French AZERTY layout: the AZERTY letter rows, the accented number
-    row, the extra key between the left Shift and W that marks an ISO board,
-    and the tall Enter. Drawn as this one layout rather than read from the
-    machine, because the operators work on French keyboards and a board that
-    matches the keycaps in front of them is the point.
+    Keyed by scan code, which is the physical position of the key and does not
+    change between layouts. Only the positions that carry a character are
+    listed; Tab, Shift and the rest are named by the map itself.
 
-    Each key carries its WPF Key name, which is what the key events hand the
-    test to match against, and which is unique per physical key: the numeric
-    keypad has keys of its own, distinct from the navigation cluster.
+    This is what makes the layout selector honest. Asking Windows what a key
+    produces would only ever describe the layout Windows is currently set to,
+    so a French machine could never draw a German board. The scan code is the
+    key; the table below is the legend.
+
+    Accented characters are built from code points rather than written as
+    literals, so the file stays plain ASCII and reads the same under Windows
+    PowerShell and PowerShell 7 whatever the encoding.
+
+.OUTPUTS
+    System.Collections.Hashtable
+#>
+function Get-TkKeyboardLegend {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Layout
+    )
+
+    $super2 = [string][char]0x00B2   # superscript two
+    $eAcute = [string][char]0x00E9
+    $eGrave = [string][char]0x00E8
+    $cCedil = [string][char]0x00E7
+    $aGrave = [string][char]0x00E0
+    $uGrave = [string][char]0x00F9
+    $uUmlaut = [string][char]0x00DC
+    $oUmlaut = [string][char]0x00D6
+    $aUmlaut = [string][char]0x00C4
+    $sharpS  = [string][char]0x00DF
+    $acute   = [string][char]0x00B4
+
+    if ($Layout -like 'FR*') {
+
+        return @{
+            0x29 = $super2; 0x02 = '&'; 0x03 = $eAcute; 0x04 = '"'; 0x05 = "'"
+            0x06 = '('; 0x07 = '-'; 0x08 = $eGrave; 0x09 = '_'; 0x0A = $cCedil
+            0x0B = $aGrave; 0x0C = ')'; 0x0D = '='
+
+            0x10 = 'A'; 0x11 = 'Z'; 0x12 = 'E'; 0x13 = 'R'; 0x14 = 'T'; 0x15 = 'Y'
+            0x16 = 'U'; 0x17 = 'I'; 0x18 = 'O'; 0x19 = 'P'; 0x1A = '^'; 0x1B = '$'
+
+            0x1E = 'Q'; 0x1F = 'S'; 0x20 = 'D'; 0x21 = 'F'; 0x22 = 'G'; 0x23 = 'H'
+            0x24 = 'J'; 0x25 = 'K'; 0x26 = 'L'; 0x27 = 'M'; 0x28 = $uGrave; 0x2B = '*'
+
+            0x56 = '<'; 0x2C = 'W'; 0x2D = 'X'; 0x2E = 'C'; 0x2F = 'V'; 0x30 = 'B'
+            0x31 = 'N'; 0x32 = ','; 0x33 = ';'; 0x34 = ':'; 0x35 = '!'
+        }
+    }
+
+    if ($Layout -like 'DE*') {
+
+        return @{
+            0x29 = '^'; 0x02 = '1'; 0x03 = '2'; 0x04 = '3'; 0x05 = '4'
+            0x06 = '5'; 0x07 = '6'; 0x08 = '7'; 0x09 = '8'; 0x0A = '9'
+            0x0B = '0'; 0x0C = $sharpS; 0x0D = $acute
+
+            0x10 = 'Q'; 0x11 = 'W'; 0x12 = 'E'; 0x13 = 'R'; 0x14 = 'T'; 0x15 = 'Z'
+            0x16 = 'U'; 0x17 = 'I'; 0x18 = 'O'; 0x19 = 'P'; 0x1A = $uUmlaut; 0x1B = '+'
+
+            0x1E = 'A'; 0x1F = 'S'; 0x20 = 'D'; 0x21 = 'F'; 0x22 = 'G'; 0x23 = 'H'
+            0x24 = 'J'; 0x25 = 'K'; 0x26 = 'L'; 0x27 = $oUmlaut; 0x28 = $aUmlaut; 0x2B = '#'
+
+            0x56 = '<'; 0x2C = 'Y'; 0x2D = 'X'; 0x2E = 'C'; 0x2F = 'V'; 0x30 = 'B'
+            0x31 = 'N'; 0x32 = 'M'; 0x33 = ','; 0x34 = '.'; 0x35 = '-'
+        }
+    }
+
+    # US and GB share QWERTY; only four positions differ, patched below.
+    $legend = @{
+        0x29 = '`'; 0x02 = '1'; 0x03 = '2'; 0x04 = '3'; 0x05 = '4'
+        0x06 = '5'; 0x07 = '6'; 0x08 = '7'; 0x09 = '8'; 0x0A = '9'
+        0x0B = '0'; 0x0C = '-'; 0x0D = '='
+
+        0x10 = 'Q'; 0x11 = 'W'; 0x12 = 'E'; 0x13 = 'R'; 0x14 = 'T'; 0x15 = 'Y'
+        0x16 = 'U'; 0x17 = 'I'; 0x18 = 'O'; 0x19 = 'P'; 0x1A = '['; 0x1B = ']'
+
+        0x1E = 'A'; 0x1F = 'S'; 0x20 = 'D'; 0x21 = 'F'; 0x22 = 'G'; 0x23 = 'H'
+        0x24 = 'J'; 0x25 = 'K'; 0x26 = 'L'; 0x27 = ';'; 0x28 = "'"; 0x2B = '\'
+
+        0x56 = '\'; 0x2C = 'Z'; 0x2D = 'X'; 0x2E = 'C'; 0x2F = 'V'; 0x30 = 'B'
+        0x31 = 'N'; 0x32 = 'M'; 0x33 = ','; 0x34 = '.'; 0x35 = '/'
+    }
+
+    if ($Layout -like 'GB*') {
+
+        # A British board keeps QWERTY but moves the quote and hash keys and
+        # puts the backslash next to the left Shift.
+        $legend[0x28] = "'"
+        $legend[0x2B] = '#'
+        $legend[0x56] = '\'
+    }
+
+    return $legend
+}
+
+<#
+.SYNOPSIS
+    Builds one key of the map.
+
+.DESCRIPTION
+    Identity is the pair of scan code and extended flag, which is the physical
+    key and is the same whatever layout is drawn or active. Two positions share
+    scan code 0x45 and neither is extended, Pause and Num Lock, so those two
+    carry their virtual key as a third part of the identity.
+
+.OUTPUTS
+    System.Management.Automation.PSCustomObject
+#>
+function New-TkKeyEntry {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [int] $ScanCode,
+
+        [Parameter()]
+        [bool] $Extended = $false,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Label,
+
+        [Parameter()]
+        [double] $Width = 1.0,
+
+        [Parameter()]
+        [int] $VirtualKey = 0
+    )
+
+    $key = if ($VirtualKey -gt 0) {
+               '{0}:{1}:{2}' -f $ScanCode, [int] $Extended, $VirtualKey
+           }
+           else {
+               '{0}:{1}' -f $ScanCode, [int] $Extended
+           }
+
+    return [pscustomobject] @{
+        ScanCode   = $ScanCode
+        Extended   = $Extended
+        VirtualKey = $VirtualKey
+        Key        = $key
+        Label      = $Label
+        Width      = $Width
+    }
+}
+
+<#
+.SYNOPSIS
+    Returns a 105 key ISO keyboard as three blocks.
+
+.DESCRIPTION
+    Three blocks rather than one list of rows: the main block, the navigation
+    cluster and the numeric keypad sit side by side on a real board, and the
+    earlier version stacked them underneath each other, which read as a heap of
+    keys rather than a keyboard.
+
+    The geometry is the same for every layout, because it is the geometry of an
+    ISO board: the short left Shift with the extra key beside it, the tall
+    Enter, 105 keys. Only the legend changes.
 
     Widths are in key units, where a normal key is 1.
 
-.PARAMETER Compact
-    Leaves out the numeric keypad, for the keyboards that have none.
+.PARAMETER Layout
+    One of Get-TkKeyboardLayoutName. Defaults to French.
 
 .OUTPUTS
-    An array of row objects, each holding an array of key objects.
+    A PSCustomObject with Main, Navigation and Numpad, each an array of rows,
+    each row an array of key objects.
 #>
 function Get-TkKeyboardMap {
     [CmdletBinding()]
-    [OutputType([object[]])]
+    [OutputType([pscustomobject])]
     param(
         [Parameter()]
-        [switch] $Compact
+        [string] $Layout = 'FR AZERTY (French)'
     )
 
-    # A French AZERTY (ISO) keyboard, position for position: the AZERTY letter
-    # rows, the number row that carries the accented characters, the extra
-    # key between the left Shift and W that is the mark of an ISO board, and
-    # the tall Enter. It is drawn as this one fixed layout rather than read
-    # from the machine, because the tool's operators work on French keyboards
-    # and a board that matches the keycaps in front of them is the point.
-    #
-    # Each cell is @(WPF key name, label, width in key units). Identity is the
-    # WPF Key value, which is what the key events hand the test to match
-    # against and which already tells the numeric keypad apart from the
-    # navigation cluster: NumPad7 is not Home, Divide is not Oem2.
-    #
-    # The accented labels are built from character codes rather than written
-    # as literals, so the file stays plain ASCII and reads the same under
-    # Windows PowerShell and PowerShell 7 whatever the encoding.
-    $super2 = [string][char]0x00B2   # superscript two, the top left key
-    $eAcute = [string][char]0x00E9   # e acute
-    $eGrave = [string][char]0x00E8   # e grave
-    $cCedil = [string][char]0x00E7   # c cedilla
-    $aGrave = [string][char]0x00E0   # a grave
-    $uGrave = [string][char]0x00F9   # u grave
+    $legend = Get-TkKeyboardLegend -Layout $Layout
 
-    # Each row is appended with the comma operator. Written as bare @(...)
-    # literals one per line they are separate statements, so PowerShell
-    # enumerates them into the outer array and the rows collapse into one
-    # long list of key definitions.
-    $rows = @()
+    # The character positions of each row, in order. Their labels come from the
+    # legend; everything else is named here.
+    $numberRow = @(0x29, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D)
+    $topRow    = @(0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B)
+    $homeRow   = @(0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2B)
+    $shiftRow  = @(0x56, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35)
 
-    $rows += , @(
-        @('Escape', 'Esc', 1.0), @('F1', 'F1', 1.0), @('F2', 'F2', 1.0),
-        @('F3', 'F3', 1.0),  @('F4', 'F4', 1.0), @('F5', 'F5', 1.0),
-        @('F6', 'F6', 1.0),  @('F7', 'F7', 1.0), @('F8', 'F8', 1.0),
-        @('F9', 'F9', 1.0),  @('F10', 'F10', 1.0), @('F11', 'F11', 1.0),
-        @('F12', 'F12', 1.0)
-    )
+    $main = @()
 
-    # Number row: the AZERTY top row, digits reached with Shift.
-    $rows += , @(
-        @('Oem7', $super2, 1.0), @('D1', '&', 1.0), @('D2', $eAcute, 1.0),
-        @('D3', '"', 1.0), @('D4', "'", 1.0), @('D5', '(', 1.0),
-        @('D6', '-', 1.0), @('D7', $eGrave, 1.0), @('D8', '_', 1.0),
-        @('D9', $cCedil, 1.0), @('D0', $aGrave, 1.0), @('Oem4', ')', 1.0),
-        @('OemPlus', '=', 1.0), @('Back', 'Backspace', 2.0)
-    )
+    # Function row.
+    $row = @(New-TkKeyEntry -ScanCode 0x01 -Label 'Esc')
 
-    # A Z E R T Y, then the circumflex dead key and the currency key.
-    $rows += , @(
-        @('Tab', 'Tab', 1.5), @('A', 'A', 1.0), @('Z', 'Z', 1.0),
-        @('E', 'E', 1.0), @('R', 'R', 1.0), @('T', 'T', 1.0),
-        @('Y', 'Y', 1.0), @('U', 'U', 1.0), @('I', 'I', 1.0),
-        @('O', 'O', 1.0), @('P', 'P', 1.0), @('Oem6', '^', 1.0),
-        @('Oem1', '$', 1.0)
-    )
+    foreach ($pair in @(@(0x3B, 'F1'), @(0x3C, 'F2'), @(0x3D, 'F3'), @(0x3E, 'F4'),
+                        @(0x3F, 'F5'), @(0x40, 'F6'), @(0x41, 'F7'), @(0x42, 'F8'),
+                        @(0x43, 'F9'), @(0x44, 'F10'), @(0x57, 'F11'), @(0x58, 'F12'))) {
 
-    # Q S D F G H J K L M, then u grave and the star key, then Enter.
-    $rows += , @(
-        @('CapsLock', 'Caps', 1.75), @('Q', 'Q', 1.0), @('S', 'S', 1.0),
-        @('D', 'D', 1.0), @('F', 'F', 1.0), @('G', 'G', 1.0),
-        @('H', 'H', 1.0), @('J', 'J', 1.0), @('K', 'K', 1.0),
-        @('L', 'L', 1.0), @('M', 'M', 1.0), @('Oem3', $uGrave, 1.0),
-        @('Oem5', '*', 1.0), @('Return', 'Enter', 1.75)
-    )
-
-    # The ISO row: a shorter left Shift, the extra < > key, then W X C V B N.
-    $rows += , @(
-        @('LeftShift', 'Shift', 1.25), @('Oem102', '<', 1.0), @('W', 'W', 1.0),
-        @('X', 'X', 1.0), @('C', 'C', 1.0), @('V', 'V', 1.0),
-        @('B', 'B', 1.0), @('N', 'N', 1.0), @('OemComma', ',', 1.0),
-        @('OemPeriod', ';', 1.0), @('Oem2', ':', 1.0), @('Oem8', '!', 1.0),
-        @('RightShift', 'Shift', 2.75)
-    )
-
-    $rows += , @(
-        @('LeftCtrl', 'Ctrl', 1.25), @('LWin', 'Win', 1.25), @('LeftAlt', 'Alt', 1.25),
-        @('Space', 'Space', 6.25), @('RightAlt', 'AltGr', 1.25), @('RWin', 'Win', 1.25),
-        @('Apps', 'Menu', 1.25), @('RightCtrl', 'Ctrl', 1.25)
-    )
-
-    if (-not $Compact) {
-
-        # The navigation cluster and the arrows, on their own rows so they sit
-        # under the main block rather than beside it.
-        $rows += , @(
-            @('Insert', 'Ins', 1.0), @('Home', 'Home', 1.0), @('PageUp', 'PgUp', 1.0),
-            @('Delete', 'Del', 1.0), @('End', 'End', 1.0), @('Next', 'PgDn', 1.0),
-            @('Up', 'Up', 1.0), @('Left', 'Left', 1.0), @('Down', 'Down', 1.0),
-            @('Right', 'Right', 1.0)
-        )
-
-        # The keypad. WPF gives these keys of their own, so they no longer
-        # collide with the navigation cluster the way raw scan codes did.
-        $rows += , @(
-            @('NumLock', 'NumLk', 1.0), @('Divide', 'N /', 1.0), @('Multiply', 'N *', 1.0),
-            @('Subtract', 'N -', 1.0), @('NumPad7', 'N 7', 1.0), @('NumPad8', 'N 8', 1.0),
-            @('NumPad9', 'N 9', 1.0), @('Add', 'N +', 1.0), @('NumPad4', 'N 4', 1.0),
-            @('NumPad5', 'N 5', 1.0), @('NumPad6', 'N 6', 1.0), @('NumPad1', 'N 1', 1.0),
-            @('NumPad2', 'N 2', 1.0), @('NumPad3', 'N 3', 1.0), @('NumPad0', 'N 0', 1.0),
-            @('Decimal', 'N .', 1.0)
-        )
+        $row += New-TkKeyEntry -ScanCode $pair[0] -Label $pair[1]
     }
 
-    $result = @()
+    $main += , $row
 
-    foreach ($row in $rows) {
+    # Number row.
+    $row = @()
 
-        $keys = @()
+    foreach ($scan in $numberRow) {
+        $row += New-TkKeyEntry -ScanCode $scan -Label $legend[$scan]
+    }
 
-        foreach ($definition in $row) {
+    $row += New-TkKeyEntry -ScanCode 0x0E -Label 'Backspace' -Width 2.0
+    $main += , $row
 
-            $keys += [pscustomobject] @{
-                KeyName = [string] $definition[0]
-                Key     = [string] $definition[0]
-                Label   = [string] $definition[1]
-                Width   = [double] $definition[2]
+    # Tab row.
+    $row = @(New-TkKeyEntry -ScanCode 0x0F -Label 'Tab' -Width 1.5)
+
+    foreach ($scan in $topRow) {
+        $row += New-TkKeyEntry -ScanCode $scan -Label $legend[$scan]
+    }
+
+    $main += , $row
+
+    # Home row, ending in the Enter key.
+    $row = @(New-TkKeyEntry -ScanCode 0x3A -Label 'Caps' -Width 1.75)
+
+    foreach ($scan in $homeRow) {
+        $row += New-TkKeyEntry -ScanCode $scan -Label $legend[$scan]
+    }
+
+    $row += New-TkKeyEntry -ScanCode 0x1C -Label 'Enter' -Width 1.75
+    $main += , $row
+
+    # The ISO row: a short left Shift, then the extra key that ANSI boards do
+    # not have, then the bottom letter run.
+    $row = @(New-TkKeyEntry -ScanCode 0x2A -Label 'Shift' -Width 1.25)
+
+    foreach ($scan in $shiftRow) {
+        $row += New-TkKeyEntry -ScanCode $scan -Label $legend[$scan]
+    }
+
+    $row += New-TkKeyEntry -ScanCode 0x36 -Label 'Shift' -Width 2.75
+    $main += , $row
+
+    # Modifier row. Left and right Ctrl share a scan code and are told apart by
+    # the extended flag, as do Alt and AltGr.
+    $main += , @(
+        (New-TkKeyEntry -ScanCode 0x1D -Label 'Ctrl' -Width 1.25),
+        (New-TkKeyEntry -ScanCode 0x5B -Extended $true -Label 'Win' -Width 1.25),
+        (New-TkKeyEntry -ScanCode 0x38 -Label 'Alt' -Width 1.25),
+        (New-TkKeyEntry -ScanCode 0x39 -Label 'Space' -Width 6.25),
+        (New-TkKeyEntry -ScanCode 0x38 -Extended $true -Label 'AltGr' -Width 1.25),
+        (New-TkKeyEntry -ScanCode 0x5C -Extended $true -Label 'Win' -Width 1.25),
+        (New-TkKeyEntry -ScanCode 0x5D -Extended $true -Label 'Menu' -Width 1.25),
+        (New-TkKeyEntry -ScanCode 0x1D -Extended $true -Label 'Ctrl' -Width 1.25)
+    )
+
+    # --- Navigation cluster ------------------------------------------------
+    $up    = [string][char]0x2191
+    $down  = [string][char]0x2193
+    $left  = [string][char]0x2190
+    $right = [string][char]0x2192
+
+    $navigation = @()
+
+    # Pause carries its virtual key because Num Lock has the same scan code and
+    # neither is flagged extended.
+    $navigation += , @(
+        (New-TkKeyEntry -ScanCode 0x37 -Extended $true -Label 'PrtSc'),
+        (New-TkKeyEntry -ScanCode 0x46 -Label 'ScrLk'),
+        (New-TkKeyEntry -ScanCode 0x45 -Label 'Pause' -VirtualKey 0x13)
+    )
+
+    $navigation += , @(
+        (New-TkKeyEntry -ScanCode 0x52 -Extended $true -Label 'Ins'),
+        (New-TkKeyEntry -ScanCode 0x47 -Extended $true -Label 'Home'),
+        (New-TkKeyEntry -ScanCode 0x49 -Extended $true -Label 'PgUp')
+    )
+
+    $navigation += , @(
+        (New-TkKeyEntry -ScanCode 0x53 -Extended $true -Label 'Del'),
+        (New-TkKeyEntry -ScanCode 0x4F -Extended $true -Label 'End'),
+        (New-TkKeyEntry -ScanCode 0x51 -Extended $true -Label 'PgDn')
+    )
+
+    # An empty row, so the arrows sit below a gap the way they do on a board.
+    $navigation += , @()
+
+    $navigation += , @(
+        (New-TkKeyEntry -ScanCode 0x48 -Extended $true -Label $up)
+    )
+
+    $navigation += , @(
+        (New-TkKeyEntry -ScanCode 0x4B -Extended $true -Label $left),
+        (New-TkKeyEntry -ScanCode 0x50 -Extended $true -Label $down),
+        (New-TkKeyEntry -ScanCode 0x4D -Extended $true -Label $right)
+    )
+
+    # --- Numeric keypad ----------------------------------------------------
+    # Every one of these shares its scan code with the navigation cluster and
+    # is told apart by the extended flag being absent.
+    $numpad = @()
+
+    $numpad += , @(
+        (New-TkKeyEntry -ScanCode 0x45 -Label 'NumLk' -VirtualKey 0x90),
+        (New-TkKeyEntry -ScanCode 0x35 -Extended $true -Label '/'),
+        (New-TkKeyEntry -ScanCode 0x37 -Label '*'),
+        (New-TkKeyEntry -ScanCode 0x4A -Label '-')
+    )
+
+    $numpad += , @(
+        (New-TkKeyEntry -ScanCode 0x47 -Label '7'),
+        (New-TkKeyEntry -ScanCode 0x48 -Label '8'),
+        (New-TkKeyEntry -ScanCode 0x49 -Label '9'),
+        (New-TkKeyEntry -ScanCode 0x4E -Label '+')
+    )
+
+    $numpad += , @(
+        (New-TkKeyEntry -ScanCode 0x4B -Label '4'),
+        (New-TkKeyEntry -ScanCode 0x4C -Label '5'),
+        (New-TkKeyEntry -ScanCode 0x4D -Label '6')
+    )
+
+    $numpad += , @(
+        (New-TkKeyEntry -ScanCode 0x4F -Label '1'),
+        (New-TkKeyEntry -ScanCode 0x50 -Label '2'),
+        (New-TkKeyEntry -ScanCode 0x51 -Label '3'),
+        (New-TkKeyEntry -ScanCode 0x1C -Extended $true -Label 'Enter')
+    )
+
+    $numpad += , @(
+        (New-TkKeyEntry -ScanCode 0x52 -Label '0' -Width 2.0),
+        (New-TkKeyEntry -ScanCode 0x53 -Label '.')
+    )
+
+    return [pscustomobject] @{
+        Layout     = $Layout
+        Main       = $main
+        Navigation = $navigation
+        Numpad     = $numpad
+    }
+}
+
+<#
+.SYNOPSIS
+    Returns the scan code Windows assigns to a virtual key.
+
+.DESCRIPTION
+    A fallback for the rare input that arrives with no scan code at all. A key
+    message normally carries the physical position in lParam, but an injected
+    key, some remote desktop configurations and a few software keyboards send
+    zero there. Without this the keyboard test would simply ignore them.
+
+    MapVirtualKey is a stateless lookup, the same one every on screen keyboard
+    uses to paint its labels. It observes nothing and records nothing; it
+    answers "which key on the board produces this".
+
+.OUTPUTS
+    System.Int32, or 0 when the lookup fails.
+#>
+function Get-TkScanCodeForVirtualKey {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [Parameter(Mandatory)]
+        [int] $VirtualKey
+    )
+
+    if (-not ('TkKeyboardLookup' -as [type])) {
+
+        $source = @'
+using System;
+using System.Runtime.InteropServices;
+
+/// <summary>
+/// Virtual key to physical position. No hook, no capture: one stateless call.
+/// </summary>
+public static class TkKeyboardLookup
+{
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint code, uint mapType);
+
+    private const uint MAPVK_VK_TO_VSC = 0x00;
+
+    public static int ScanCode(int virtualKey)
+    {
+        if (virtualKey <= 0) return 0;
+
+        return (int)MapVirtualKey((uint)virtualKey, MAPVK_VK_TO_VSC);
+    }
+}
+'@
+
+        try {
+            Add-Type -TypeDefinition $source -Language CSharp -ErrorAction Stop
+        }
+        catch {
+            return 0
+        }
+    }
+
+    return [TkKeyboardLookup]::ScanCode($VirtualKey)
+}
+
+<#
+.SYNOPSIS
+    Returns every key of a map as one flat list.
+
+.DESCRIPTION
+    The map is shaped for drawing, in three blocks of rows. Counting keys,
+    checking that no identity repeats and reporting which ones never registered
+    all want a flat list instead.
+
+    Returned without the comma operator, on purpose. Wrapping the result would
+    keep it one array through an assignment but hand the pipeline a single
+    object, so "Get-TkKeyboardKey | Where-Object" would filter one array rather
+    than a hundred and five keys. This result exists to be filtered.
+
+.OUTPUTS
+    An array of key objects.
+#>
+function Get-TkKeyboardKey {
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory)]
+        $Map
+    )
+
+    $keys = @()
+
+    foreach ($block in @($Map.Main, $Map.Navigation, $Map.Numpad)) {
+        foreach ($row in $block) {
+            foreach ($key in $row) {
+                $keys += $key
             }
         }
-
-        $result += , $keys
     }
 
-    return , $result
+    return $keys
 }
 
 <#
