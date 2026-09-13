@@ -113,6 +113,33 @@ function Get-TkRemediationTable {
             Elevated    = $false
         }
 
+        'open-wifi-settings' = @{
+            Kind        = 'Open'
+            Name        = 'Open the Wi-Fi settings'
+            Button      = 'Open Wi-Fi settings'
+            Explanation = 'Shows the Wi-Fi switch, the known networks and the properties of the connection. Nothing is changed from here.'
+            Target      = 'ms-settings:network-wifi'
+            Elevated    = $false
+        }
+
+        'open-proxy-settings' = @{
+            Kind        = 'Open'
+            Name        = 'Open the proxy settings'
+            Button      = 'Open proxy settings'
+            Explanation = 'Shows automatic detection, the configuration script and the manual proxy applications use. Nothing is changed from here. The services proxy (WinHTTP) is not on this page: it is set with netsh winhttp from an elevated prompt.'
+            Target      = 'ms-settings:network-proxy'
+            Elevated    = $false
+        }
+
+        'open-location-privacy' = @{
+            Kind        = 'Open'
+            Name        = 'Open the location privacy settings'
+            Button      = 'Open location settings'
+            Explanation = 'Windows only gives the Wi-Fi network, the access point and the signal to desktop apps allowed to use location. Turn on "Let desktop apps access your location", run the report again, and turn it back off if you prefer. Nothing is changed from here.'
+            Target      = 'ms-settings:privacy-location'
+            Elevated    = $false
+        }
+
         'open-device-manager' = @{
             Kind        = 'Open'
             Name        = 'Open Device Manager'

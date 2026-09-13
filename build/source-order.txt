@@ -30,6 +30,8 @@ src/Features/Network/NetworkTools.ps1
 src/Features/Network/NetworkDiagnostics.ps1
 src/Features/Network/NetworkConfiguration.ps1
 src/Features/Network/SwitchDiscovery.ps1
+src/Features/Network/Wireless.ps1
+src/Features/Network/Proxy.ps1
 src/Features/Security/SshKeys.ps1
 src/Features/Security/FileIntegrity.ps1
 src/Features/Security/VirusTotal.ps1
