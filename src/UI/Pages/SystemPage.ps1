@@ -22,8 +22,8 @@ function Initialize-TkSystemPage {
 
     Register-TkClick -Name 'BtnCopySerial' -Action {
 
-        if (-not $script:TkSystemSnapshot) {
-            Set-TkStatus -Text 'Refresh the page first.'
+        if (-not $script:TkSystemSnapshot -or -not $script:TkSystemSnapshot.Identity) {
+            Set-TkStatus -Text 'The identity is still being read.'
             return
         }
 
@@ -110,48 +110,120 @@ function Initialize-TkSystemPage {
 
 <#
 .SYNOPSIS
-    Collects the inventory and refreshes every field on the page.
+    Reads the inventory in four parallel parts, each filling its own cards.
+
+.DESCRIPTION
+    One combined read left every card empty for as long as the slowest reader
+    took, with nothing on screen to say anything was happening. The identity
+    answers in a moment, the operating system soon after, the hardware and the
+    platform security last; each card now shows that it is reading and fills
+    as soon as its own part lands.
+
+    The snapshot is filled part by part as well, so the vendor buttons and the
+    volume selector have what they need as soon as their part is read.
 #>
 function Update-TkSystemPage {
     [CmdletBinding()]
     param()
 
-    Invoke-TkBackgroundAction -StatusText 'Reading the system inventory...' `
-        -ScriptBlock {
+    if ($null -eq $script:TkSystemSnapshot) {
+        $script:TkSystemSnapshot = [pscustomobject] @{
+            Identity = $null
+            Bios     = $null
+            OS       = $null
+            Hardware = $null
+            Volumes  = @()
+            Security = $null
+        }
+    }
 
-            # Runs in a background runspace: return plain data only.
-            [pscustomobject]@{
+    foreach ($card in @('SystemIdentity', 'SystemFirmware', 'SystemOs', 'SystemHardware', 'SystemSecurity')) {
+        Set-TkCardLoading -Name $card -Loading $true
+    }
+
+    # Runs in a background runspace: every script block returns plain data only.
+    Invoke-TkBackgroundAction -StatusText 'Reading the machine identity and firmware...' `
+        -ScriptBlock {
+            [pscustomobject] @{
                 Identity = Get-TkMachineIdentity
-                OS       = Get-TkOperatingSystemInfo
-                Hardware = Get-TkHardwareInfo
-                Security = Get-TkPlatformSecurityInfo
                 Bios     = Get-TkBiosStatus
+            }
+        } `
+        -OnComplete {
+            param($result)
+
+            $part = @($result.Output) | Select-Object -First 1
+
+            if ($part) {
+                $script:TkSystemSnapshot.Identity = $part.Identity
+                $script:TkSystemSnapshot.Bios     = $part.Bios
+            }
+
+            Write-TkSystemIdentity -Identity $script:TkSystemSnapshot.Identity -Bios $script:TkSystemSnapshot.Bios
+
+            Set-TkCardLoading -Name 'SystemIdentity' -Loading $false
+            Set-TkCardLoading -Name 'SystemFirmware' -Loading $false
+        }
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the operating system...' `
+        -ScriptBlock { Get-TkOperatingSystemInfo } `
+        -OnComplete {
+            param($result)
+
+            $part = @($result.Output) | Select-Object -First 1
+
+            if ($part) {
+                $script:TkSystemSnapshot.OS = $part
+            }
+
+            Write-TkSystemOs -OS $script:TkSystemSnapshot.OS
+            Set-TkCardLoading -Name 'SystemOs' -Loading $false
+        }
+
+    Invoke-TkBackgroundAction -StatusText 'Reading processors, memory, disks and volumes...' `
+        -ScriptBlock {
+            [pscustomobject] @{
+                Hardware = Get-TkHardwareInfo
                 Volumes  = @(Get-TkVolumeUsage)
             }
         } `
         -OnComplete {
             param($result)
 
-            $snapshot = @($result.Output) | Select-Object -First 1
+            $part = @($result.Output) | Select-Object -First 1
 
-            if (-not $snapshot) {
-                Set-TkStatus -Text 'The inventory could not be read.'
-                return
+            if ($part) {
+                $script:TkSystemSnapshot.Hardware = $part.Hardware
+                $script:TkSystemSnapshot.Volumes  = @($part.Volumes)
             }
 
-            $script:TkSystemSnapshot = $snapshot
-            Write-TkSystemPageFields -Snapshot $snapshot
+            Write-TkSystemHardware -Hardware $script:TkSystemSnapshot.Hardware -Volume @($script:TkSystemSnapshot.Volumes)
+            Set-TkCardLoading -Name 'SystemHardware' -Loading $false
+        }
 
-            Set-TkStatus -Text ('Inventory refreshed at {0}.' -f (Get-Date -Format 'HH:mm:ss'))
+    Invoke-TkBackgroundAction -StatusText 'Reading the platform security...' `
+        -ScriptBlock { Get-TkPlatformSecurityInfo } `
+        -OnComplete {
+            param($result)
+
+            $part = @($result.Output) | Select-Object -First 1
+
+            if ($part) {
+                $script:TkSystemSnapshot.Security = $part
+            }
+
+            Write-TkSystemSecurity -Security $script:TkSystemSnapshot.Security
+            Set-TkCardLoading -Name 'SystemSecurity' -Loading $false
         }
 }
 
 <#
 .SYNOPSIS
-    Writes an inventory snapshot into the page controls.
+    Writes a whole inventory snapshot at once, for a console session or a
+    render.
 
 .PARAMETER Snapshot
-    Object returned by the inventory background task.
+    Anything with Identity, Bios, OS, Hardware, Volumes and Security.
 #>
 function Write-TkSystemPageFields {
     [CmdletBinding()]
@@ -160,68 +232,100 @@ function Write-TkSystemPageFields {
         $Snapshot
     )
 
-    $identity = $Snapshot.Identity
-    $os       = $Snapshot.OS
-    $hardware = $Snapshot.Hardware
-    $security = $Snapshot.Security
-    $bios     = $Snapshot.Bios
+    Write-TkSystemIdentity -Identity $Snapshot.Identity -Bios $Snapshot.Bios
+    Write-TkSystemOs       -OS $Snapshot.OS
+    Write-TkSystemHardware -Hardware $Snapshot.Hardware -Volume @($Snapshot.Volumes)
+    Write-TkSystemSecurity -Security $Snapshot.Security
 
-    # Field name to value. Keeping the mapping as data makes adding a field a
-    # one line change here plus one in the XAML.
-    $fields = @{
-        'ValManufacturer' = $identity.Manufacturer
-        'ValModel'        = $identity.Model
-        'ValSerial'       = $identity.SerialNumber
-        'ValAssetTag'     = $identity.AssetTag
-        'ValChassis'      = if ($identity.IsVirtual) { '{0} (virtual machine)' -f $identity.ChassisType }
-                            else { $identity.ChassisType }
-        'ValBoard'        = $identity.BaseBoard
-        'ValDomain'       = if ($identity.PartOfDomain) { '{0} (joined)' -f $identity.Domain }
-                            else { '{0} (workgroup)' -f $identity.Domain }
-        'ValUser'         = $identity.LoggedOnUser
+    foreach ($card in @('SystemIdentity', 'SystemFirmware', 'SystemOs', 'SystemHardware', 'SystemSecurity')) {
+        Set-TkCardLoading -Name $card -Loading $false
+    }
+}
 
-        'ValBiosVendor'   = $bios.Vendor
-        'ValBiosVersion'  = $bios.Version
-        'ValBiosDate'     = $bios.ReleaseDate
-        'ValBiosAge'      = if ($null -ne $bios.AgeDays) { '{0} days' -f $bios.AgeDays } else { 'Unknown' }
-        'ValBiosAdvice'   = $bios.Recommendation
+<#
+.SYNOPSIS
+    Writes a placeholder into fields whose part could not be read.
 
-        'ValOsCaption'    = $os.Caption
-        'ValOsVersion'    = $os.DisplayVersion
-        'ValOsBuild'      = $os.Build
-        'ValActivation'   = $os.Activation
-        'ValInstalled'    = if ($os.InstallDate) { ([datetime] $os.InstallDate).ToString('yyyy-MM-dd') } else { 'Unknown' }
-        'ValUptime'       = $os.UptimeText
-        'ValTimeZone'     = $os.TimeZone
-        'ValPowerShell'   = $os.PowerShell
+.PARAMETER Name
+    Control names.
+#>
+function Set-TkSystemFieldsUnavailable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Name
+    )
 
-        'ValCpu'          = $hardware.CpuName
-        'ValCores'        = '{0} cores / {1} threads' -f $hardware.CpuCores, $hardware.CpuThreads
-        'ValMemory'       = '{0} in {1} module(s)' -f $hardware.TotalMemory, @($hardware.MemoryModules).Count
-        'ValGpu'          = (@($hardware.Graphics | ForEach-Object { $_.Name }) -join ', ')
+    $field = @{}
 
-        'ValSecureBoot'   = $security.SecureBoot
-        'ValTpm'          = $security.Tpm
-        'ValBitLocker'    = $security.BitLocker
-        'ValFirewall'     = $security.Firewall
-        'ValAntivirus'    = $security.Antivirus
-        'ValDefender'     = $security.Defender
+    foreach ($item in $Name) {
+        $field[$item] = 'Not available'
     }
 
-    foreach ($name in $fields.Keys) {
+    Set-TkFieldText -Field $field
+}
 
-        $control = Get-TkControl -Name $name
+<#
+.SYNOPSIS
+    Fills the Identity and Firmware cards, and the buttons that depend on them.
 
-        if ($control) {
-            $control.Text = [string] $fields[$name]
+.PARAMETER Identity
+    Output of Get-TkMachineIdentity, or null.
+
+.PARAMETER Bios
+    Output of Get-TkBiosStatus, or null.
+#>
+function Write-TkSystemIdentity {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        $Identity,
+
+        [Parameter()]
+        $Bios
+    )
+
+    if ($Identity) {
+
+        Set-TkFieldText -Field @{
+            'ValManufacturer' = $Identity.Manufacturer
+            'ValModel'        = $Identity.Model
+            'ValSerial'       = $Identity.SerialNumber
+            'ValAssetTag'     = $Identity.AssetTag
+            'ValChassis'      = if ($Identity.IsVirtual) { '{0} (virtual machine)' -f $Identity.ChassisType }
+                                else { $Identity.ChassisType }
+            'ValBoard'        = $Identity.BaseBoard
+            'ValDomain'       = if ($Identity.PartOfDomain) { '{0} (joined)' -f $Identity.Domain }
+                                else { '{0} (workgroup)' -f $Identity.Domain }
+            'ValUser'         = $Identity.LoggedOnUser
         }
+    }
+    else {
+        Set-TkSystemFieldsUnavailable -Name @('ValManufacturer', 'ValModel', 'ValSerial', 'ValAssetTag',
+                                              'ValChassis', 'ValBoard', 'ValDomain', 'ValUser')
+    }
+
+    if ($Bios) {
+
+        Set-TkFieldText -Field @{
+            'ValBiosVendor'  = $Bios.Vendor
+            'ValBiosVersion' = $Bios.Version
+            'ValBiosDate'    = $Bios.ReleaseDate
+            'ValBiosAge'     = if ($null -ne $Bios.AgeDays) { '{0} days' -f $Bios.AgeDays } else { 'Unknown' }
+            'ValBiosAdvice'  = $Bios.Recommendation
+        }
+    }
+    else {
+        Set-TkSystemFieldsUnavailable -Name @('ValBiosVendor', 'ValBiosVersion', 'ValBiosDate', 'ValBiosAge')
     }
 
     # A board that never recorded a serial number reports the placeholder.
     # Copying it would put the words "Not available" on the clipboard, and a
-    # warranty lookup would search for them, so both buttons stand down.
-    $hasSerial = -not [string]::IsNullOrWhiteSpace($identity.SerialNumber) -and
-                 $identity.SerialNumber -ne (Format-TkValue $null)
+    # warranty lookup would search for them, so both buttons stand down. They
+    # start disabled in the markup for the same reason, until this has run.
+    $hasSerial = ($null -ne $Identity) -and
+                 -not [string]::IsNullOrWhiteSpace($Identity.SerialNumber) -and
+                 $Identity.SerialNumber -ne (Format-TkValue $null)
 
     foreach ($name in @('BtnCopySerial', 'BtnVendorWarranty')) {
 
@@ -232,14 +336,112 @@ function Write-TkSystemPageFields {
         }
     }
 
-    Update-TkSystemVolumeChoice -Volume @($Snapshot.Volumes)
-    Update-TkVendorToolButton -Identity $identity
+    Update-TkVendorToolButton -Identity $Identity
+}
 
-    Set-TkObjectTable -ControlName 'DocDisks' -InputObject $hardware.Disks `
+<#
+.SYNOPSIS
+    Fills the Operating system card.
+
+.PARAMETER OS
+    Output of Get-TkOperatingSystemInfo, or null.
+#>
+function Write-TkSystemOs {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        $OS
+    )
+
+    if ($null -eq $OS) {
+        Set-TkSystemFieldsUnavailable -Name @('ValOsCaption', 'ValOsVersion', 'ValOsBuild', 'ValActivation',
+                                              'ValInstalled', 'ValUptime', 'ValTimeZone', 'ValPowerShell')
+        return
+    }
+
+    Set-TkFieldText -Field @{
+        'ValOsCaption'  = $OS.Caption
+        'ValOsVersion'  = $OS.DisplayVersion
+        'ValOsBuild'    = $OS.Build
+        'ValActivation' = $OS.Activation
+        'ValInstalled'  = if ($OS.InstallDate) { ([datetime] $OS.InstallDate).ToString('yyyy-MM-dd') } else { 'Unknown' }
+        'ValUptime'     = $OS.UptimeText
+        'ValTimeZone'   = $OS.TimeZone
+        'ValPowerShell' = $OS.PowerShell
+    }
+}
+
+<#
+.SYNOPSIS
+    Fills the Hardware card: processors, memory, graphics, volumes and disks.
+
+.PARAMETER Hardware
+    Output of Get-TkHardwareInfo, or null.
+
+.PARAMETER Volume
+    Output of Get-TkVolumeUsage.
+#>
+function Write-TkSystemHardware {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        $Hardware,
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [object[]] $Volume = @()
+    )
+
+    if ($Hardware) {
+
+        Set-TkFieldText -Field @{
+            'ValCpu'    = $Hardware.CpuName
+            'ValCores'  = '{0} cores / {1} threads' -f $Hardware.CpuCores, $Hardware.CpuThreads
+            'ValMemory' = '{0} in {1} module(s)' -f $Hardware.TotalMemory, @($Hardware.MemoryModules).Count
+            'ValGpu'    = (@($Hardware.Graphics | ForEach-Object { $_.Name }) -join ', ')
+        }
+    }
+    else {
+        Set-TkSystemFieldsUnavailable -Name @('ValCpu', 'ValCores', 'ValMemory', 'ValGpu')
+    }
+
+    Update-TkSystemVolumeChoice -Volume $Volume
+
+    Set-TkObjectTable -ControlName 'DocDisks' -InputObject $(if ($Hardware) { $Hardware.Disks } else { @() }) `
         -Property @('Name', 'Size', 'MediaType', 'BusType', 'Health') `
         -Column   @('Model', 'Size', 'Type', 'Bus', 'Health') `
         -Weight   @(3.0, 1.0, 0.9, 0.9, 0.9) `
         -EmptyText 'No physical disk was returned.'
+}
+
+<#
+.SYNOPSIS
+    Fills the Platform security card.
+
+.PARAMETER Security
+    Output of Get-TkPlatformSecurityInfo, or null.
+#>
+function Write-TkSystemSecurity {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        $Security
+    )
+
+    if ($null -eq $Security) {
+        Set-TkSystemFieldsUnavailable -Name @('ValSecureBoot', 'ValTpm', 'ValBitLocker', 'ValFirewall',
+                                              'ValAntivirus', 'ValDefender')
+        return
+    }
+
+    Set-TkFieldText -Field @{
+        'ValSecureBoot' = $Security.SecureBoot
+        'ValTpm'        = $Security.Tpm
+        'ValBitLocker'  = $Security.BitLocker
+        'ValFirewall'   = $Security.Firewall
+        'ValAntivirus'  = $Security.Antivirus
+        'ValDefender'   = $Security.Defender
+    }
 }
 
 <#

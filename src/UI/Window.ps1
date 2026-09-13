@@ -16,6 +16,9 @@ $script:TkEmbeddedXaml = ''
 $script:TkFirstShowAction = @{}
 $script:TkPageOpened      = @{}
 
+# How many background actions are still running. See Enter-TkBusy.
+$script:TkBusyCount = 0
+
 <#
 .SYNOPSIS
     Returns the main window XAML.
@@ -399,6 +402,244 @@ function Select-TkTab {
 
 <#
 .SYNOPSIS
+    Marks one more piece of background work as running.
+
+.DESCRIPTION
+    Pages read in several parts at once. With a single on and off switch the
+    first part to finish hid the busy bar and said "Ready." while the others
+    were still reading, which is the page with no sign of life this exists to
+    prevent. A count keeps the bar up until the last one ends.
+
+.PARAMETER Text
+    What is being done, for the status bar.
+#>
+function Enter-TkBusy {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Text
+    )
+
+    $script:TkBusyCount++
+
+    Set-TkStatus -Text $Text -Busy $true
+}
+
+<#
+.SYNOPSIS
+    Marks one piece of background work as finished.
+
+.DESCRIPTION
+    Says "Ready." only once nothing else is running. Never goes below zero, so
+    one stray call cannot leave the count permanently off by one.
+#>
+function Exit-TkBusy {
+    [CmdletBinding()]
+    param()
+
+    $script:TkBusyCount = [math]::Max(0, $script:TkBusyCount - 1)
+
+    if ($script:TkBusyCount -eq 0) {
+        Set-TkStatus -Text 'Ready.'
+    }
+}
+
+<#
+.SYNOPSIS
+    Returns how many background actions are still running.
+#>
+function Get-TkBusyCount {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+
+    return [int] $script:TkBusyCount
+}
+
+<#
+.SYNOPSIS
+    Shows a card as reading, or as read.
+
+.DESCRIPTION
+    A card that fills in the background carries two children in the markup,
+    by name: <Name>Loading, a moving bar with a line saying what is being read,
+    and <Name>Content, the fields. Swapping them means a page never shows empty
+    fields that look like missing data.
+
+    On a refresh the content already shown stays in place under the moving
+    bar, rather than disappearing and coming back: only a card that has never
+    been filled hides its fields while it reads.
+
+    A test checks that every Loading in the markup has its Content and its
+    LoadingText.
+
+.PARAMETER Name
+    The prefix shared by the two children.
+
+.PARAMETER Loading
+    True while reading.
+#>
+function Set-TkCardLoading {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [bool] $Loading
+    )
+
+    $indicator = Get-TkControl -Name ('{0}Loading' -f $Name)
+    $content   = Get-TkControl -Name ('{0}Content' -f $Name)
+
+    if ($indicator) {
+        $indicator.Visibility = if ($Loading) { [System.Windows.Visibility]::Visible }
+                                else { [System.Windows.Visibility]::Collapsed }
+    }
+
+    if ($null -eq $content) {
+        return
+    }
+
+    if (-not $Loading) {
+        $content.Tag        = 'Filled'
+        $content.Visibility = [System.Windows.Visibility]::Visible
+        return
+    }
+
+    if ([string] $content.Tag -ne 'Filled') {
+        $content.Visibility = [System.Windows.Visibility]::Collapsed
+    }
+}
+
+<#
+.SYNOPSIS
+    Writes text into named controls.
+
+.PARAMETER Field
+    Control name to value. A control missing from the markup is skipped.
+#>
+function Set-TkFieldText {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $Field
+    )
+
+    foreach ($name in $Field.Keys) {
+
+        $control = Get-TkControl -Name $name
+
+        if ($control) {
+            $control.Text = [string] $Field[$name]
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Returns the title of an entry in a chooser list.
+
+.DESCRIPTION
+    The first text found in the entry, which in every chooser of this window
+    is its title: a ListBoxItem holding a TextBlock, or a panel whose first
+    TextBlock is the title.
+
+.PARAMETER Item
+    A list entry, or any element inside one.
+#>
+function Get-TkItemTitle {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        $Item
+    )
+
+    if ($null -eq $Item) {
+        return ''
+    }
+
+    $content = if ($Item -is [System.Windows.Controls.ContentControl]) { $Item.Content } else { $Item }
+
+    if ($content -is [string]) {
+        return $content
+    }
+
+    if ($content -is [System.Windows.Controls.TextBlock]) {
+        return [string] $content.Text
+    }
+
+    if ($content -is [System.Windows.DependencyObject]) {
+
+        foreach ($child in [System.Windows.LogicalTreeHelper]::GetChildren($content)) {
+
+            $title = Get-TkItemTitle -Item $child
+
+            if ($title) {
+                return $title
+            }
+        }
+    }
+
+    return ''
+}
+
+<#
+.SYNOPSIS
+    Selects an entry in a chooser list by its title.
+
+.DESCRIPTION
+    Matched on the title rather than the position, so a reordered list cannot
+    send the battery tile to the sound test.
+
+    The selection is cleared first. Selecting the entry that is already
+    selected raises no event, and every chooser in this window acts on that
+    event: without the clear, a second click on the same tile would change
+    nothing.
+
+.PARAMETER ListName
+    Name of the ListBox in the markup.
+
+.PARAMETER Title
+    Title of the entry to select.
+
+.OUTPUTS
+    System.Boolean, true when the entry was found.
+#>
+function Select-TkListChoice {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ListName,
+
+        [Parameter(Mandatory)]
+        [string] $Title
+    )
+
+    $list = Get-TkControl -Name $ListName
+
+    if ($null -eq $list) {
+        return $false
+    }
+
+    for ($index = 0; $index -lt $list.Items.Count; $index++) {
+
+        if ((Get-TkItemTitle -Item $list.Items[$index]) -eq $Title) {
+
+            $list.SelectedIndex = -1
+            $list.SelectedIndex = $index
+
+            return $true
+        }
+    }
+
+    return $false
+}
+
+<#
+.SYNOPSIS
     Updates the status bar.
 
 .PARAMETER Text
@@ -426,8 +667,11 @@ function Set-TkStatus {
     }
 
     if ($bar) {
-        $bar.Visibility = if ($Busy) { [System.Windows.Visibility]::Visible }
-                          else       { [System.Windows.Visibility]::Hidden }
+        # Kept up while any background work is still running, whatever this
+        # particular call says. A page reading in several parts would otherwise
+        # lose its busy bar the moment the first part finished.
+        $bar.Visibility = if ($Busy -or $script:TkBusyCount -gt 0) { [System.Windows.Visibility]::Visible }
+                          else { [System.Windows.Visibility]::Hidden }
     }
 }
 
@@ -476,12 +720,12 @@ function Invoke-TkBackgroundAction {
         [string] $StatusText = 'Working...'
     )
 
-    Set-TkStatus -Text $StatusText -Busy $true
+    Enter-TkBusy -Text $StatusText
 
     $wrapper = {
         param($result)
 
-        Set-TkStatus -Text 'Ready.' -Busy $false
+        Exit-TkBusy
 
         if ($OnComplete) {
             & $OnComplete $result

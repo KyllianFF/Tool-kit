@@ -55,22 +55,16 @@ function Initialize-TkDiagnosticsPage {
 
 .DESCRIPTION
     The entry is selected rather than the report called directly, so the list
-    shows what is running. The selection is cleared first, because selecting
-    the entry that is already selected raises no event and would start nothing.
+    shows what is running. Select-TkListChoice clears the selection first, so
+    it starts even when the entry is already selected.
 #>
 function Start-TkFullDiagnostic {
     [CmdletBinding()]
     param()
 
-    $choices = Get-TkControl -Name 'DiagnosticChoices'
-
-    if ($null -eq $choices) {
+    if (-not (Select-TkListChoice -ListName 'DiagnosticChoices' -Title 'Full check')) {
         Invoke-TkDiagnosticOverview
-        return
     }
-
-    $choices.SelectedIndex = -1
-    $choices.SelectedIndex = 0
 }
 
 <#

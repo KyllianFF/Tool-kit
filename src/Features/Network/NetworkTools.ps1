@@ -14,8 +14,23 @@
 .SYNOPSIS
     Returns the configuration of every connected network adapter.
 
+.DESCRIPTION
+    Addresses, default routes, interfaces and DNS servers are each read once
+    for the whole machine and matched to adapters by interface index, rather
+    than asked for adapter by adapter.
+
+    That is faster, and it is sturdier. The earlier version called
+    Get-NetIPConfiguration for each adapter inside a single try block, so one
+    adapter that failed to answer, typically a VPN tunnel or a virtual switch
+    changing state, abandoned every adapter after it. The Dashboard then showed
+    no address at all on a machine with a working Ethernet link. Each adapter
+    is now built on its own, and one that fails is logged and skipped.
+
+.PARAMETER IncludeDisconnected
+    Also returns adapters that are not up.
+
 .OUTPUTS
-    PSCustomObject[]
+    PSCustomObject[], as built by ConvertTo-TkAdapterRecord.
 #>
 function Get-TkNetworkAdapterInfo {
     [CmdletBinding()]
@@ -28,90 +43,215 @@ function Get-TkNetworkAdapterInfo {
     $results = @()
 
     try {
-        $adapters = Get-NetAdapter -ErrorAction Stop
-
-        if (-not $IncludeDisconnected) {
-            $adapters = $adapters | Where-Object { $_.Status -eq 'Up' }
-        }
-
-        foreach ($adapter in $adapters) {
-
-            # InterfaceIndex is the real CIM property; ifIndex is an alias
-            # added by the module's type data, which is not always loaded in
-            # every host and comes back null when it is not. Reading the real
-            # property first, and skipping an adapter with no index at all,
-            # removes a whole class of "argument is null" failures.
-            $index = $adapter.InterfaceIndex
-
-            if ($null -eq $index) {
-                $index = $adapter.ifIndex
-            }
-
-            if ($null -eq $index) {
-                continue
-            }
-
-            # Ignore, not SilentlyContinue. Get-NetIPConfiguration writes a
-            # record for every adapter with no connection profile or no IPv4
-            # address, and SilentlyContinue only hides the display: the record
-            # still reaches $Error and, in a worker, the runspace error stream,
-            # where the task pump reports it. On a machine with VPN, VMware and
-            # Bluetooth adapters that was dozens of alarming lines in the
-            # output panel for a call that had actually succeeded. Ignore is
-            # the only preference that records nothing at all.
-            $configuration = Get-NetIPConfiguration -InterfaceIndex $index -ErrorAction Ignore
-
-            $ipv4 = $configuration.IPv4Address | Select-Object -First 1
-            $dns  = @()
-
-            if ($configuration.DNSServer) {
-                $dns = @($configuration.DNSServer |
-                    Where-Object { $_.AddressFamily -eq 2 } |
-                    ForEach-Object { $_.ServerAddresses }) | Where-Object { $_ }
-            }
-
-            # DHCP state lives on the interface binding, not on the adapter.
-            # Wrapped in try/catch because this CDXML cmdlet raises a
-            # terminating error, not a suppressible one, for an adapter with
-            # no IPv4 binding. Bluetooth and disconnected virtual adapters hit
-            # that every time, and the error surfaced in the task log as if
-            # the whole enumeration had failed.
-            $dhcp = 'Unknown'
-
-            $binding = Get-NetIPInterface -InterfaceIndex $index `
-                                          -AddressFamily IPv4 -ErrorAction Ignore |
-                       Select-Object -First 1
-
-            if ($binding) {
-                $dhcp = $binding.Dhcp
-            }
-            else {
-                $dhcp = 'No IPv4 binding'
-            }
-
-            $results += [pscustomobject]@{
-                Name           = $adapter.Name
-                Description    = $adapter.InterfaceDescription
-                Status         = $adapter.Status
-                MacAddress     = $adapter.MacAddress
-                LinkSpeed      = $adapter.LinkSpeed
-                IPv4Address    = if ($ipv4) { $ipv4.IPAddress } else { 'None' }
-                PrefixLength   = if ($ipv4) { $ipv4.PrefixLength } else { $null }
-                SubnetMask     = if ($ipv4) { ConvertTo-TkSubnetMask -PrefixLength $ipv4.PrefixLength } else { 'None' }
-                Gateway        = if ($configuration.IPv4DefaultGateway) { $configuration.IPv4DefaultGateway.NextHop } else { 'None' }
-                DnsServers     = ($dns -join ', ')
-                Dhcp           = $dhcp
-                InterfaceIndex = $index
-            }
-        }
+        $adapters = @(Get-NetAdapter -ErrorAction Stop)
     }
     catch {
         Write-TkLog -Level Error -Category 'Network' -Message (
             'Could not enumerate adapters: {0}' -f $_.Exception.Message
         )
+
+        return $results
+    }
+
+    if (-not $IncludeDisconnected) {
+        $adapters = @($adapters | Where-Object { [string] $_.Status -eq 'Up' })
+    }
+
+    # Loaded explicitly rather than on first use. Inside a background runspace
+    # the modules load when a cmdlet is first called, several workers start at
+    # once when the toolkit opens, and the reads below ignore their errors. A
+    # module that fails to load would then look exactly like a machine with no
+    # address. Loading here puts that failure in the log instead.
+    try {
+        Import-Module -Name 'NetTCPIP', 'DnsClient' -ErrorAction Stop
+    }
+    catch {
+        Write-TkLog -Level Warning -Category 'Network' -Message (
+            'The network modules could not be loaded: {0}' -f $_.Exception.Message
+        )
+    }
+
+    # Ignore rather than SilentlyContinue: SilentlyContinue still sends each
+    # record to the runspace error stream, where the task pump reports it as a
+    # failure of a call that succeeded. Each read is also caught on its own, so
+    # a missing DNS client module costs the DNS column, not the adapters.
+    $addresses  = @(try { Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Ignore } catch { $null })
+    $routes     = @(try { Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Ignore } catch { $null })
+    $interfaces = @(try { Get-NetIPInterface -AddressFamily IPv4 -ErrorAction Ignore } catch { $null })
+    $dnsServers = @(try { Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Ignore } catch { $null })
+
+    # Adapters up and not a single address read is not a real machine: it is a
+    # read that failed without saying so. Said here, so the next time the
+    # Dashboard shows no address the log explains it.
+    if ($adapters.Count -gt 0 -and @($addresses | Where-Object { $null -ne $_ }).Count -eq 0) {
+
+        Write-TkLog -Level Warning -Category 'Network' -Message (
+            '{0} adapter(s) are up but no IPv4 address could be read for any of them.' -f $adapters.Count
+        )
+    }
+
+    foreach ($adapter in $adapters) {
+
+        try {
+            $results += ConvertTo-TkAdapterRecord -Adapter $adapter `
+                                                  -Address @($addresses | Where-Object { $null -ne $_ }) `
+                                                  -Route @($routes | Where-Object { $null -ne $_ }) `
+                                                  -Interface @($interfaces | Where-Object { $null -ne $_ }) `
+                                                  -DnsServer @($dnsServers | Where-Object { $null -ne $_ })
+        }
+        catch {
+            Write-TkLog -Level Warning -Category 'Network' -Message (
+                'Adapter "{0}" could not be read and was skipped: {1}' -f $adapter.Name, $_.Exception.Message
+            )
+        }
     }
 
     return $results
+}
+
+<#
+.SYNOPSIS
+    Builds the record for one adapter from the machine wide readings.
+
+.DESCRIPTION
+    Kept apart from the reading, so the matching, and the choices it makes, can
+    be tested with made up adapters.
+
+    The gateway comes from this interface's IPv4 default route. Its effective
+    metric, route metric plus interface metric, is the number Windows itself
+    compares to decide which link carries traffic, so it is what
+    Select-TkPrimaryAdapter sorts on. An adapter with no default route has no
+    metric at all.
+
+.PARAMETER Adapter
+    One adapter from Get-NetAdapter.
+
+.PARAMETER Address
+    Output of Get-NetIPAddress for the whole machine.
+
+.PARAMETER Route
+    Output of Get-NetRoute for 0.0.0.0/0.
+
+.PARAMETER Interface
+    Output of Get-NetIPInterface for IPv4.
+
+.PARAMETER DnsServer
+    Output of Get-DnsClientServerAddress for IPv4.
+
+.OUTPUTS
+    PSCustomObject
+#>
+function ConvertTo-TkAdapterRecord {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        $Adapter,
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [object[]] $Address = @(),
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [object[]] $Route = @(),
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [object[]] $Interface = @(),
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [object[]] $DnsServer = @()
+    )
+
+    # InterfaceIndex is the real CIM property; ifIndex is an alias added by the
+    # module's type data, which is not loaded in every host.
+    $index = $Adapter.InterfaceIndex
+
+    if ($null -eq $index) {
+        $index = $Adapter.ifIndex
+    }
+
+    $ipv4 = Select-TkUsableIPv4 -Address @($Address | Where-Object { $_.InterfaceIndex -eq $index })
+
+    $binding = $Interface | Where-Object { $_.InterfaceIndex -eq $index } | Select-Object -First 1
+
+    $defaultRoute = $Route |
+                    Where-Object { $_.InterfaceIndex -eq $index } |
+                    Sort-Object -Property @{ Expression = { [int] $_.RouteMetric } } |
+                    Select-Object -First 1
+
+    $metric = $null
+
+    if ($defaultRoute) {
+
+        $metric = [int] $defaultRoute.RouteMetric
+
+        if ($binding -and $null -ne $binding.InterfaceMetric) {
+            $metric += [int] $binding.InterfaceMetric
+        }
+    }
+
+    $servers = @($DnsServer |
+                 Where-Object { $_.InterfaceIndex -eq $index } |
+                 ForEach-Object { $_.ServerAddresses } |
+                 Where-Object { $_ })
+
+    return [pscustomobject]@{
+        Name           = [string] $Adapter.Name
+        Description    = [string] $Adapter.InterfaceDescription
+        Status         = [string] $Adapter.Status
+        MacAddress     = $Adapter.MacAddress
+        LinkSpeed      = $Adapter.LinkSpeed
+        IPv4Address    = if ($ipv4) { [string] $ipv4.IPAddress } else { 'None' }
+        PrefixLength   = if ($ipv4) { [int] $ipv4.PrefixLength } else { $null }
+        SubnetMask     = if ($ipv4) { ConvertTo-TkSubnetMask -PrefixLength $ipv4.PrefixLength } else { 'None' }
+        Gateway        = if ($defaultRoute) { [string] $defaultRoute.NextHop } else { 'None' }
+        RouteMetric    = $metric
+        DnsServers     = ($servers -join ', ')
+        Dhcp           = if ($binding) { [string] $binding.Dhcp } else { 'No IPv4 binding' }
+        Physical       = [bool] $Adapter.HardwareInterface
+        InterfaceIndex = $index
+    }
+}
+
+<#
+.SYNOPSIS
+    Picks the address an adapter is actually using.
+
+.DESCRIPTION
+    An interface can carry several IPv4 addresses, and on a machine with VPN
+    clients and virtual switches most of them are not in use: link local
+    169.254 addresses handed out when DHCP never answered, and addresses still
+    Tentative because the tunnel is down. Only a Preferred, routable address
+    counts. Among those, one from DHCP or set by hand comes before one Windows
+    made up itself.
+
+.PARAMETER Address
+    Output of Get-NetIPAddress for one interface.
+
+.OUTPUTS
+    One address record, or nothing.
+#>
+function Select-TkUsableIPv4 {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]] $Address
+    )
+
+    return ($Address |
+            Where-Object {
+                $null -ne $_ -and
+                [string] $_.AddressState -eq 'Preferred' -and
+                [string] $_.IPAddress -notlike '169.254.*' -and
+                [string] $_.IPAddress -notlike '127.*'
+            } |
+            Sort-Object -Property @{ Expression = { if ([string] $_.PrefixOrigin -in @('Dhcp', 'Manual')) { 0 } else { 1 } } } |
+            Select-Object -First 1)
 }
 
 <#
@@ -623,12 +763,15 @@ function Get-TkPublicIpAddress {
     Picks the adapter that carries this machine's traffic.
 
 .DESCRIPTION
-    The one with a default gateway: that is the route everything leaves by,
-    and the address a user reads out on a support call. Failing that, the
-    first with an IPv4 address; failing that, the first adapter at all.
+    The one Windows itself would choose: among adapters with a usable address
+    and a default route, the lowest effective metric. When Ethernet and Wi-Fi
+    are both connected that is the wired link, and when a VPN is up it is the
+    tunnel, which really is where traffic goes.
 
-    A machine with a VPN client and a virtual switch has several addresses,
-    and the wrong one shown on the Dashboard is worse than none.
+    Virtual switches for VMware, Hyper-V and WSL carry addresses but no
+    default route, so they never win that way. Without any default route the
+    machine is offline or on an isolated network; then a physical adapter with
+    an address comes before a virtual one, and only then anything at all.
 
 .PARAMETER Adapter
     Output of Get-TkNetworkAdapterInfo.
@@ -645,16 +788,90 @@ function Select-TkPrimaryAdapter {
         [object[]] $Adapter
     )
 
-    $withAddress = @($Adapter | Where-Object { $_.IPv4Address -and $_.IPv4Address -ne 'None' })
+    $present     = @($Adapter | Where-Object { $null -ne $_ })
+    $withAddress = @($present | Where-Object { $_.IPv4Address -and $_.IPv4Address -ne 'None' })
+
+    $routed = @($withAddress |
+                Where-Object { $null -ne $_.RouteMetric } |
+                Sort-Object -Property @{ Expression = { [int] $_.RouteMetric } })
+
+    if ($routed.Count -gt 0) {
+        return $routed[0]
+    }
+
+    # A record built without a metric, by a caller or an older reader, still
+    # answers to its gateway.
     $withGateway = @($withAddress | Where-Object { $_.Gateway -and $_.Gateway -ne 'None' })
 
     if ($withGateway.Count -gt 0) {
         return $withGateway[0]
     }
 
+    $physical = @($withAddress | Where-Object { $_.Physical -eq $true })
+
+    if ($physical.Count -gt 0) {
+        return $physical[0]
+    }
+
     if ($withAddress.Count -gt 0) {
         return $withAddress[0]
     }
 
-    return ($Adapter | Select-Object -First 1)
+    return ($present | Select-Object -First 1)
+}
+
+<#
+.SYNOPSIS
+    Describes, in one line, the adapters that are up besides the primary one.
+
+.DESCRIPTION
+    Ethernet and Wi-Fi connected together, or a VPN beside the physical link,
+    change what a user sees, so the other connected links are named with their
+    address. Virtual switches for virtual machines and WSL are only counted:
+    naming four of them would bury the one line that matters.
+
+    A virtual adapter with a default route is a VPN tunnel carrying traffic,
+    and is named like a physical link.
+
+.PARAMETER Adapter
+    Output of Get-TkNetworkAdapterInfo.
+
+.PARAMETER Primary
+    The adapter already shown, left out of the line.
+
+.OUTPUTS
+    System.String, empty when there is nothing else to say.
+#>
+function Get-TkSecondaryAdapterSummary {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]] $Adapter,
+
+        [Parameter()]
+        $Primary
+    )
+
+    $others = @($Adapter | Where-Object {
+        $null -ne $_ -and
+        $_.IPv4Address -and $_.IPv4Address -ne 'None' -and
+        ($null -eq $Primary -or $_.InterfaceIndex -ne $Primary.InterfaceIndex)
+    })
+
+    $connected = @($others | Where-Object { $_.Physical -eq $true -or $null -ne $_.RouteMetric })
+    $virtual   = @($others | Where-Object { -not ($_.Physical -eq $true -or $null -ne $_.RouteMetric) })
+
+    $parts = @()
+
+    if ($connected.Count -gt 0) {
+        $parts += 'Also connected: {0}.' -f ((@($connected | ForEach-Object { '{0} {1}' -f $_.Name, $_.IPv4Address })) -join ', ')
+    }
+
+    if ($virtual.Count -gt 0) {
+        $parts += '{0} virtual adapter(s) up: {1}.' -f $virtual.Count, ((@($virtual | ForEach-Object { $_.Name })) -join ', ')
+    }
+
+    return ($parts -join ' ')
 }

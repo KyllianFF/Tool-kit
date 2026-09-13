@@ -2295,6 +2295,22 @@ Describe 'Dashboard and pages' {
             }
         }
 
+        It 'pairs every loading placeholder with its content and its text' {
+
+            # A card that reads in the background shows a moving bar until its
+            # answer lands. A placeholder without its content would spin for
+            # ever; content without a placeholder would sit empty again.
+            $names = @([regex]::Matches($script:Markup, 'x:Name="(?<name>\w+)Loading"') |
+                       ForEach-Object { $_.Groups['name'].Value })
+
+            $names.Count | Should -BeGreaterOrEqual 8
+
+            foreach ($name in $names) {
+                $script:Markup | Should -Match ('x:Name="{0}Content"' -f $name)
+                $script:Markup | Should -Match ('x:Name="{0}LoadingText"' -f $name)
+            }
+        }
+
         It 'opens on the Dashboard' {
 
             @(Get-TkPageName)[0] | Should -Be 'Dashboard'
@@ -2404,6 +2420,128 @@ Describe 'Dashboard and pages' {
         }
     }
 
+    Context 'Network adapters' {
+
+        BeforeAll {
+            $script:Ethernet = [pscustomobject] @{ Name = 'Ethernet'; InterfaceIndex = 12; IPv4Address = '192.168.1.101'; Gateway = '192.168.1.254'; RouteMetric = 20;    Physical = $true }
+            $script:WiFi     = [pscustomobject] @{ Name = 'Wi-Fi';    InterfaceIndex = 14; IPv4Address = '192.168.1.55';  Gateway = '192.168.1.254'; RouteMetric = 45;    Physical = $true }
+            $script:VmNet1   = [pscustomobject] @{ Name = 'VMware Network Adapter VMnet1'; InterfaceIndex = 16; IPv4Address = '192.168.202.1'; Gateway = 'None'; RouteMetric = $null; Physical = $false }
+            $script:VmNet8   = [pscustomobject] @{ Name = 'VMware Network Adapter VMnet8'; InterfaceIndex = 24; IPv4Address = '192.168.216.1'; Gateway = 'None'; RouteMetric = $null; Physical = $false }
+        }
+
+        It 'picks the link Windows routes through, by effective metric' {
+
+            # Listed in the order Get-NetAdapter returned them on a real machine:
+            # the virtual switches first, the wired link last.
+            (Select-TkPrimaryAdapter -Adapter @($script:VmNet8, $script:VmNet1, $script:WiFi, $script:Ethernet)).Name |
+                Should -Be 'Ethernet'
+        }
+
+        It 'follows a connected VPN, because that is where traffic goes' {
+
+            $vpn = [pscustomobject] @{ Name = 'NordLynx'; InterfaceIndex = 12; IPv4Address = '10.5.0.2'; Gateway = '10.5.0.1'; RouteMetric = 5; Physical = $false }
+
+            (Select-TkPrimaryAdapter -Adapter @($script:Ethernet, $vpn)).Name | Should -Be 'NordLynx'
+        }
+
+        It 'prefers a physical link to a virtual switch when nothing is routed' {
+
+            $offline = [pscustomobject] @{ Name = 'Ethernet'; InterfaceIndex = 12; IPv4Address = '192.168.1.101'; Gateway = 'None'; RouteMetric = $null; Physical = $true }
+
+            (Select-TkPrimaryAdapter -Adapter @($script:VmNet8, $offline)).Name | Should -Be 'Ethernet'
+        }
+
+        It 'uses only an address that is in use' {
+
+            $picked = Select-TkUsableIPv4 -Address @(
+                [pscustomobject] @{ IPAddress = '169.254.5.254'; AddressState = 'Preferred'; PrefixOrigin = 'WellKnown' }
+                [pscustomobject] @{ IPAddress = '10.5.0.2';      AddressState = 'Tentative'; PrefixOrigin = 'Manual' }
+                [pscustomobject] @{ IPAddress = '192.168.1.101'; AddressState = 'Preferred'; PrefixOrigin = 'Dhcp' }
+            )
+
+            $picked.IPAddress | Should -Be '192.168.1.101'
+
+            # A tunnel that is down leaves only link local and tentative ones.
+            Select-TkUsableIPv4 -Address @(
+                [pscustomobject] @{ IPAddress = '169.254.219.111'; AddressState = 'Tentative'; PrefixOrigin = 'WellKnown' }
+                [pscustomobject] @{ IPAddress = '10.100.0.2';      AddressState = 'Tentative'; PrefixOrigin = 'Manual' }
+            ) | Should -BeNullOrEmpty
+        }
+
+        It 'builds an adapter record from the machine wide readings' {
+
+            $record = ConvertTo-TkAdapterRecord `
+                -Adapter ([pscustomobject] @{ Name = 'Ethernet'; InterfaceDescription = 'Intel Ethernet'; Status = 'Up'; MacAddress = 'A0-36-BC-CF-E8-4B'; LinkSpeed = '2.5 Gbps'; InterfaceIndex = 12; HardwareInterface = $true }) `
+                -Address @(
+                    [pscustomobject] @{ InterfaceIndex = 24; IPAddress = '192.168.216.1'; PrefixLength = 24; AddressState = 'Preferred'; PrefixOrigin = 'Dhcp' }
+                    [pscustomobject] @{ InterfaceIndex = 12; IPAddress = '192.168.1.101'; PrefixLength = 24; AddressState = 'Preferred'; PrefixOrigin = 'Dhcp' }
+                ) `
+                -Route @([pscustomobject] @{ InterfaceIndex = 12; NextHop = '192.168.1.254'; RouteMetric = 0 }) `
+                -Interface @([pscustomobject] @{ InterfaceIndex = 12; InterfaceMetric = 20; Dhcp = 'Enabled' }) `
+                -DnsServer @([pscustomobject] @{ InterfaceIndex = 12; ServerAddresses = @('192.168.1.151', '192.168.1.254') })
+
+            $record.IPv4Address | Should -Be '192.168.1.101'
+            $record.SubnetMask  | Should -Be '255.255.255.0'
+            $record.Gateway     | Should -Be '192.168.1.254'
+            $record.RouteMetric | Should -Be 20
+            $record.DnsServers  | Should -Be '192.168.1.151, 192.168.1.254'
+            $record.Dhcp        | Should -Be 'Enabled'
+            $record.Physical    | Should -BeTrue
+        }
+
+        It 'gives an adapter without a default route no gateway and no metric' {
+
+            $record = ConvertTo-TkAdapterRecord `
+                -Adapter ([pscustomobject] @{ Name = 'VMware Network Adapter VMnet8'; Status = 'Up'; InterfaceIndex = 24; HardwareInterface = $false }) `
+                -Address @([pscustomobject] @{ InterfaceIndex = 24; IPAddress = '192.168.216.1'; PrefixLength = 24; AddressState = 'Preferred'; PrefixOrigin = 'Dhcp' }) `
+                -Route @([pscustomobject] @{ InterfaceIndex = 12; NextHop = '192.168.1.254'; RouteMetric = 0 })
+
+            $record.Gateway     | Should -Be 'None'
+            $record.RouteMetric | Should -BeNullOrEmpty
+            $record.Physical    | Should -BeFalse
+        }
+
+        It 'names the other connected links and only counts the virtual switches' {
+
+            $line = Get-TkSecondaryAdapterSummary -Adapter @($script:Ethernet, $script:WiFi, $script:VmNet1, $script:VmNet8) `
+                                                  -Primary $script:Ethernet
+
+            $line | Should -Match 'Also connected: Wi-Fi 192\.168\.1\.55\.'
+            $line | Should -Match '2 virtual adapter\(s\) up'
+            $line | Should -Not -Match 'Ethernet'
+        }
+
+        It 'says nothing when the primary link is the only one' {
+
+            Get-TkSecondaryAdapterSummary -Adapter @($script:Ethernet) -Primary $script:Ethernet | Should -Be ''
+        }
+    }
+
+    Context 'Busy state' {
+
+        It 'stays busy until the last piece of work ends, and never goes below zero' {
+
+            # Pages read in several parts at once; the first to finish must not
+            # declare the window ready while the others are still reading.
+            $before = Get-TkBusyCount
+
+            Enter-TkBusy -Text 'first part'
+            Enter-TkBusy -Text 'second part'
+            Exit-TkBusy
+
+            Get-TkBusyCount | Should -Be ($before + 1)
+
+            Exit-TkBusy
+
+            Get-TkBusyCount | Should -Be $before
+
+            if ($before -eq 0) {
+                Exit-TkBusy
+                Get-TkBusyCount | Should -Be 0
+            }
+        }
+    }
+
     Context 'Health tiles' {
 
         BeforeAll {
@@ -2461,6 +2599,35 @@ Describe 'Dashboard and pages' {
 
             $tile.Value    | Should -Be 'No battery'
             $tile.Severity | Should -Be 'Info'
+        }
+
+        It 'opens the entry a tile is about, in a list that has it' {
+
+            # The page alone was not enough: the battery tile landed on the
+            # Hardware page with the keyboard test selected.
+            foreach ($tile in @($script:Tiles | Where-Object { $_.List })) {
+
+                $start = $script:Markup.IndexOf(('x:Name="{0}"' -f $tile.List))
+                $start | Should -BeGreaterThan 0 -Because $tile.Title
+
+                $end   = $script:Markup.IndexOf('</ListBox>', $start)
+                $slice = $script:Markup.Substring($start, $end - $start)
+
+                $slice | Should -Match ('Text="{0}"' -f [regex]::Escape($tile.Choice)) -Because $tile.Title
+            }
+
+            $battery = $script:Tiles | Where-Object { $_.Title -eq 'Battery' }
+
+            $battery.List   | Should -Be 'HardwareChoices'
+            $battery.Choice | Should -Be 'Battery'
+        }
+
+        It 'starts the full diagnostic from an entry that exists' {
+
+            $start = $script:Markup.IndexOf('x:Name="DiagnosticChoices"')
+            $end   = $script:Markup.IndexOf('</ListBox>', $start)
+
+            $script:Markup.Substring($start, $end - $start) | Should -Match 'Text="Full check"'
         }
 
         It 'names a page that exists on every tile' {

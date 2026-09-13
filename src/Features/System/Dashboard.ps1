@@ -1,8 +1,13 @@
 ﻿<#
     Toolkit - Features / Dashboard
 
-    What the Dashboard shows, read in one pass, and the judgement behind each
-    health tile.
+    What the Dashboard shows, read in three parts, and the judgement behind
+    each health tile.
+
+    The parts are read at the same time and each fills its own card: the
+    identity of the machine in a moment, the network a little later, the
+    health of the disks and the update history last. One combined read left
+    the whole page empty for as long as the slowest reader took.
 
     No threshold lives here. Free space is judged by Get-TkFreeSpaceAssessment,
     patch age by Get-TkPatchAgeSeverity and disk health by Get-TkStorageHealth:
@@ -12,13 +17,75 @@
 
 <#
 .SYNOPSIS
-    Reads everything the Dashboard shows.
+    Reads which machine this is: identity and operating system.
+
+.OUTPUTS
+    PSCustomObject with Identity and OS.
+#>
+function Get-TkDashboardWorkstation {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    return [pscustomobject] @{
+        Identity = Read-TkDashboardPart -Part 'Identity'         -Reader { Get-TkMachineIdentity }
+        OS       = Read-TkDashboardPart -Part 'Operating system' -Reader { Get-TkOperatingSystemInfo }
+    }
+}
+
+<#
+.SYNOPSIS
+    Reads the network adapters and picks the one that carries traffic.
+
+.OUTPUTS
+    PSCustomObject with Adapter, the primary one, and Adapters, all of them.
+#>
+function Get-TkDashboardNetwork {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    $adapters = @(Read-TkDashboardPart -Part 'Network adapters' -Reader { Get-TkNetworkAdapterInfo })
+
+    return [pscustomobject] @{
+        Adapter  = Select-TkPrimaryAdapter -Adapter $adapters
+        Adapters = $adapters
+    }
+}
+
+<#
+.SYNOPSIS
+    Reads what the health tiles judge: restart, updates, volumes, disks and
+    battery.
+
+.OUTPUTS
+    PSCustomObject with Reboot, LastHotFix, Volumes, Disks and Battery.
+#>
+function Get-TkDashboardHealthData {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    $disks = @(Read-TkDashboardPart -Part 'Storage health' -Reader { Get-TkStorageHealth } |
+               Where-Object { $_.Kind -eq 'Disk' })
+
+    return [pscustomobject] @{
+        Reboot     = Read-TkDashboardPart -Part 'Pending restart' -Reader { Get-TkPendingRebootStatus }
+        LastHotFix = Read-TkDashboardPart -Part 'Update history'  -Reader { Select-TkLastHotFix -HotFix @(Get-HotFix -ErrorAction Stop) }
+        Volumes    = @(Read-TkDashboardPart -Part 'Volumes' -Reader { Get-TkVolumeUsage })
+        Disks      = $disks
+        Battery    = @(Read-TkDashboardPart -Part 'Battery' -Reader { Get-TkBatteryState })
+    }
+}
+
+<#
+.SYNOPSIS
+    Reads everything the Dashboard shows, in one call.
 
 .DESCRIPTION
-    Runs in a background runspace, so it returns plain data only. Each part is
-    read on its own and a failure is logged and left empty: a desktop with no
-    battery, or a machine whose update history cannot be read, still gets the
-    rest of its Dashboard.
+    The interface reads the three parts in parallel and never calls this. It
+    exists for a console session, the support bundle and the off screen
+    render, which want the whole picture in one object.
 
 .OUTPUTS
     PSCustomObject
@@ -28,27 +95,20 @@ function Get-TkDashboardSnapshot {
     [OutputType([pscustomobject])]
     param()
 
-    $identity = Read-TkDashboardPart -Part 'Identity'         -Reader { Get-TkMachineIdentity }
-    $os       = Read-TkDashboardPart -Part 'Operating system' -Reader { Get-TkOperatingSystemInfo }
-    $reboot   = Read-TkDashboardPart -Part 'Pending restart'  -Reader { Get-TkPendingRebootStatus }
-    $hotFix   = Read-TkDashboardPart -Part 'Update history'   -Reader { Select-TkLastHotFix -HotFix @(Get-HotFix -ErrorAction Stop) }
-
-    $adapters = @(Read-TkDashboardPart -Part 'Network adapters' -Reader { Get-TkNetworkAdapterInfo })
-    $volumes  = @(Read-TkDashboardPart -Part 'Volumes'          -Reader { Get-TkVolumeUsage })
-    $battery  = @(Read-TkDashboardPart -Part 'Battery'          -Reader { Get-TkBatteryState })
-
-    $disks = @(Read-TkDashboardPart -Part 'Storage health' -Reader { Get-TkStorageHealth } |
-               Where-Object { $_.Kind -eq 'Disk' })
+    $workstation = Get-TkDashboardWorkstation
+    $network     = Get-TkDashboardNetwork
+    $health      = Get-TkDashboardHealthData
 
     return [pscustomobject] @{
-        Identity   = $identity
-        OS         = $os
-        Adapter    = Select-TkPrimaryAdapter -Adapter $adapters
-        Reboot     = $reboot
-        LastHotFix = $hotFix
-        Volumes    = $volumes
-        Disks      = $disks
-        Battery    = $battery
+        Identity   = $workstation.Identity
+        OS         = $workstation.OS
+        Adapter    = $network.Adapter
+        Adapters   = $network.Adapters
+        Reboot     = $health.Reboot
+        LastHotFix = $health.LastHotFix
+        Volumes    = $health.Volumes
+        Disks      = $health.Disks
+        Battery    = $health.Battery
     }
 }
 
@@ -103,6 +163,13 @@ function Read-TkDashboardPart {
 .PARAMETER Page
     The page the tile opens when it is clicked.
 
+.PARAMETER List
+    Name of the chooser on that page holding the entry the tile is about.
+
+.PARAMETER Choice
+    Title of that entry. Matched on the title rather than the position, so a
+    reordered list cannot send the battery tile to the sound test.
+
 .OUTPUTS
     PSCustomObject
 #>
@@ -129,7 +196,15 @@ function New-TkHealthTileData {
         [Nullable[double]] $Percent = $null,
 
         [Parameter(Mandatory)]
-        [string] $Page
+        [string] $Page,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $List = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Choice = ''
     )
 
     return [pscustomobject] @{
@@ -139,23 +214,27 @@ function New-TkHealthTileData {
         Severity = $Severity
         Percent  = $Percent
         Page     = $Page
+        List     = $List
+        Choice   = $Choice
     }
 }
 
 <#
 .SYNOPSIS
-    Turns a Dashboard snapshot into the health tiles.
+    Turns the health readings into the health tiles.
 
 .DESCRIPTION
     One tile per question a support call starts with: does it need a restart,
     is it patched, is the system drive full, are the disks healthy, how is the
-    battery. Each tile names the page that deals with it.
+    battery. Each tile names the page, and the entry on that page, that deals
+    with it.
 
     Kept apart from the drawing, so the judgement can be tested without a
     window.
 
 .PARAMETER Snapshot
-    Output of Get-TkDashboardSnapshot.
+    Anything with Reboot, LastHotFix, Volumes, Disks and Battery: the health
+    part, or a whole snapshot.
 
 .PARAMETER Now
     The moment patch age is measured from. A parameter, so a test is not at
@@ -165,7 +244,7 @@ function New-TkHealthTileData {
     The drive the storage tile reports on.
 
 .OUTPUTS
-    PSCustomObject[] with Title, Value, Detail, Severity, Percent and Page.
+    PSCustomObject[], as built by New-TkHealthTileData.
 #>
 function ConvertTo-TkDashboardHealth {
     [CmdletBinding()]
@@ -184,26 +263,28 @@ function ConvertTo-TkDashboardHealth {
     $tiles = @()
 
     # --- Restart ----------------------------------------------------------
-    $reboot = $Snapshot.Reboot
+    $reboot      = $Snapshot.Reboot
+    $restartOpen = @{ Page = 'Diagnostics'; List = 'DiagnosticChoices'; Choice = 'Pending reboot' }
 
     if ($null -eq $reboot) {
-        $tiles += New-TkHealthTileData -Title 'Restart' -Value 'Unknown' -Severity 'NotAssessed' -Page 'Diagnostics' `
+        $tiles += New-TkHealthTileData @restartOpen -Title 'Restart' -Value 'Unknown' -Severity 'NotAssessed' `
                                        -Detail 'The pending restart state could not be read.'
     }
     elseif ($reboot.Pending) {
-        $tiles += New-TkHealthTileData -Title 'Restart' -Value 'Restart pending' -Severity 'Warning' -Page 'Diagnostics' `
+        $tiles += New-TkHealthTileData @restartOpen -Title 'Restart' -Value 'Restart pending' -Severity 'Warning' `
                                        -Detail ([string] @($reboot.Reasons)[0])
     }
     else {
-        $tiles += New-TkHealthTileData -Title 'Restart' -Value 'Not needed' -Severity 'Pass' -Page 'Diagnostics' `
+        $tiles += New-TkHealthTileData @restartOpen -Title 'Restart' -Value 'Not needed' -Severity 'Pass' `
                                        -Detail ('Up for {0}' -f $reboot.Uptime)
     }
 
     # --- Updates ----------------------------------------------------------
-    $hotFix = $Snapshot.LastHotFix
+    $hotFix      = $Snapshot.LastHotFix
+    $updatesOpen = @{ Page = 'Diagnostics'; List = 'DiagnosticChoices'; Choice = 'Update history' }
 
     if ($null -eq $hotFix -or $null -eq $hotFix.InstalledOn) {
-        $tiles += New-TkHealthTileData -Title 'Updates' -Value 'Unknown' -Severity 'NotAssessed' -Page 'Diagnostics' `
+        $tiles += New-TkHealthTileData @updatesOpen -Title 'Updates' -Value 'Unknown' -Severity 'NotAssessed' `
                                        -Detail 'No dated update was found.'
     }
     else {
@@ -213,7 +294,7 @@ function ConvertTo-TkDashboardHealth {
                elseif ($days -eq 1) { '1 day ago' }
                else { '{0} days ago' -f $days }
 
-        $tiles += New-TkHealthTileData -Title 'Updates' -Value $age -Page 'Diagnostics' `
+        $tiles += New-TkHealthTileData @updatesOpen -Title 'Updates' -Value $age `
                                        -Severity (Get-TkPatchAgeSeverity -Days $days) `
                                        -Detail ('Last installed: {0}' -f $hotFix.HotFixID)
     }
@@ -232,6 +313,8 @@ function ConvertTo-TkDashboardHealth {
                                        -Detail 'No fixed volume was read.'
     }
     else {
+        # A whole percentage: formatted in the local culture, a decimal reads
+        # 46,6 on a French Windows beside sizes printed as 1.99 TB.
         $tiles += New-TkHealthTileData -Title ('Storage {0}' -f $system.Drive) -Page 'System' `
                                        -Value ('{0}% used' -f [math]::Round($system.UsedPercent)) `
                                        -Detail ('{0} free of {1}' -f $system.Free, $system.Size) `
@@ -239,10 +322,11 @@ function ConvertTo-TkDashboardHealth {
     }
 
     # --- Physical disks ---------------------------------------------------
-    $disks = @($Snapshot.Disks | Where-Object { $null -ne $_ })
+    $disks     = @($Snapshot.Disks | Where-Object { $null -ne $_ })
+    $disksOpen = @{ Page = 'Diagnostics'; List = 'DiagnosticChoices'; Choice = 'Storage health' }
 
     if ($disks.Count -eq 0) {
-        $tiles += New-TkHealthTileData -Title 'Disks' -Value 'Unknown' -Severity 'NotAssessed' -Page 'Diagnostics' `
+        $tiles += New-TkHealthTileData @disksOpen -Title 'Disks' -Value 'Unknown' -Severity 'NotAssessed' `
                                        -Detail 'No physical disk was read.'
     }
     else {
@@ -250,30 +334,30 @@ function ConvertTo-TkDashboardHealth {
         $warning = @($disks | Where-Object { $_.Severity -eq 'Warning' })
 
         if ($failing.Count -gt 0) {
-            $tiles += New-TkHealthTileData -Title 'Disks' -Value ('{0} failing' -f $failing.Count) -Severity 'Fail' `
-                                           -Page 'Diagnostics' -Detail ((@($failing | ForEach-Object { $_.Name })) -join ', ')
+            $tiles += New-TkHealthTileData @disksOpen -Title 'Disks' -Value ('{0} failing' -f $failing.Count) -Severity 'Fail' `
+                                           -Detail ((@($failing | ForEach-Object { $_.Name })) -join ', ')
         }
         elseif ($warning.Count -gt 0) {
-            $tiles += New-TkHealthTileData -Title 'Disks' -Value ('{0} worth a look' -f $warning.Count) -Severity 'Warning' `
-                                           -Page 'Diagnostics' `
+            $tiles += New-TkHealthTileData @disksOpen -Title 'Disks' -Value ('{0} worth a look' -f $warning.Count) -Severity 'Warning' `
                                            -Detail ((@($warning | ForEach-Object { '{0}: {1}' -f $_.Name, $_.Notes })) -join '; ')
         }
         else {
-            $tiles += New-TkHealthTileData -Title 'Disks' -Value 'All healthy' -Severity 'Pass' -Page 'Diagnostics' `
+            $tiles += New-TkHealthTileData @disksOpen -Title 'Disks' -Value 'All healthy' -Severity 'Pass' `
                                            -Detail ('{0} physical disk(s)' -f $disks.Count)
         }
     }
 
     # --- Battery ----------------------------------------------------------
     # Reported, never judged: wear is expected, and a desktop has none at all.
-    $battery = @($Snapshot.Battery | Where-Object { $null -ne $_ }) | Select-Object -First 1
+    $battery     = @($Snapshot.Battery | Where-Object { $null -ne $_ }) | Select-Object -First 1
+    $batteryOpen = @{ Page = 'Hardware'; List = 'HardwareChoices'; Choice = 'Battery' }
 
     if ($null -eq $battery) {
-        $tiles += New-TkHealthTileData -Title 'Battery' -Value 'No battery' -Severity 'Info' -Page 'Hardware' `
+        $tiles += New-TkHealthTileData @batteryOpen -Title 'Battery' -Value 'No battery' -Severity 'Info' `
                                        -Detail 'Mains powered.'
     }
     else {
-        $tiles += New-TkHealthTileData -Title 'Battery' -Severity 'Info' -Page 'Hardware' `
+        $tiles += New-TkHealthTileData @batteryOpen -Title 'Battery' -Severity 'Info' `
                                        -Value $(if ($battery.Charge) { [string] $battery.Charge } else { 'Present' }) `
                                        -Detail ([string] $battery.Health)
     }

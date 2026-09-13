@@ -5,15 +5,15 @@
     call, which machine is this, how is it connected, is anything wrong, and
     hands every problem to the page that deals with it.
 
+    Each card reads on its own, at the same time as the others, and shows that
+    it is reading until its answer arrives. A page that opens empty and stays
+    empty for ten seconds reads as broken, however correct it is once it fills.
+
     The quick actions are declared as data by Get-TkQuickAction: a page, an
     optional tab, and the function that starts the work. That keeps them
     checkable by a test, and lets the System page show the same set without a
     second copy to drift.
 #>
-
-# Last snapshot, kept for the refresh time and for anything that wants the
-# figures without reading the machine again.
-$script:TkDashboardSnapshot = $null
 
 <#
 .SYNOPSIS
@@ -31,41 +31,47 @@ function Initialize-TkDashboardPage {
 
 <#
 .SYNOPSIS
-    Reads the machine in the background and redraws the Dashboard.
+    Reads the machine in three parallel parts and fills each card as it lands.
 #>
 function Update-TkDashboard {
     [CmdletBinding()]
     param()
 
-    $note = Get-TkControl -Name 'DashHealthNote'
-
-    if ($note) {
-        $note.Text = 'Reading the machine...'
+    foreach ($card in @('DashWorkstation', 'DashNetwork', 'DashHealthCard')) {
+        Set-TkCardLoading -Name $card -Loading $true
     }
 
-    Invoke-TkBackgroundAction -StatusText 'Reading the dashboard...' `
-        -ScriptBlock { Get-TkDashboardSnapshot } `
+    Invoke-TkBackgroundAction -StatusText 'Reading the workstation...' `
+        -ScriptBlock { Get-TkDashboardWorkstation } `
         -OnComplete {
             param($result)
 
-            $snapshot = @($result.Output) | Select-Object -First 1
+            Write-TkDashboardWorkstation -Part (@($result.Output) | Select-Object -First 1)
+            Set-TkCardLoading -Name 'DashWorkstation' -Loading $false
+        }
 
-            if (-not $snapshot) {
-                Set-TkStatus -Text 'The dashboard could not be read.'
-                return
-            }
+    Invoke-TkBackgroundAction -StatusText 'Reading the network adapters and routes...' `
+        -ScriptBlock { Get-TkDashboardNetwork } `
+        -OnComplete {
+            param($result)
 
-            $script:TkDashboardSnapshot = $snapshot
+            Write-TkDashboardNetwork -Part (@($result.Output) | Select-Object -First 1)
+            Set-TkCardLoading -Name 'DashNetwork' -Loading $false
+        }
 
-            Write-TkDashboardFields -Snapshot $snapshot
+    Invoke-TkBackgroundAction -StatusText 'Reading restart state, updates, disks and battery...' `
+        -ScriptBlock { Get-TkDashboardHealthData } `
+        -OnComplete {
+            param($result)
 
-            Set-TkStatus -Text ('Dashboard refreshed at {0}.' -f (Get-Date -Format 'HH:mm:ss'))
+            Write-TkDashboardHealth -Part (@($result.Output) | Select-Object -First 1)
+            Set-TkCardLoading -Name 'DashHealthCard' -Loading $false
         }
 }
 
 <#
 .SYNOPSIS
-    Writes a snapshot into the Dashboard controls.
+    Writes a whole snapshot at once, for a console session or a render.
 
 .PARAMETER Snapshot
     Output of Get-TkDashboardSnapshot.
@@ -77,9 +83,31 @@ function Write-TkDashboardFields {
         $Snapshot
     )
 
-    $identity = $Snapshot.Identity
-    $os       = $Snapshot.OS
-    $adapter  = $Snapshot.Adapter
+    Write-TkDashboardWorkstation -Part $Snapshot
+    Write-TkDashboardNetwork     -Part $Snapshot
+    Write-TkDashboardHealth      -Part $Snapshot
+
+    foreach ($card in @('DashWorkstation', 'DashNetwork', 'DashHealthCard')) {
+        Set-TkCardLoading -Name $card -Loading $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Fills the Workstation card.
+
+.PARAMETER Part
+    Anything with Identity and OS. Null when the part could not be read.
+#>
+function Write-TkDashboardWorkstation {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        $Part
+    )
+
+    $identity = if ($Part) { $Part.Identity } else { $null }
+    $os       = if ($Part) { $Part.OS } else { $null }
 
     $unknown = 'Not available'
 
@@ -87,14 +115,7 @@ function Write-TkDashboardFields {
               elseif ($identity.PartOfDomain) { '{0} (joined)' -f $identity.Domain }
               else { '{0} (workgroup)' -f $identity.Domain }
 
-    $addressing = if (-not $adapter) { $unknown }
-                  elseif ([string] $adapter.Dhcp -eq 'Enabled') { 'DHCP' }
-                  elseif ([string] $adapter.Dhcp -eq 'Disabled') { 'Static' }
-                  else { [string] $adapter.Dhcp }
-
-    # Field name to value, as on the System page: adding a field is one line
-    # here and one in the markup.
-    $fields = @{
+    Set-TkFieldText -Field @{
         'DashComputerName' = $env:COMPUTERNAME
         'DashModel'        = if ($identity) { '{0} {1}' -f $identity.Manufacturer, $identity.Model } else { $unknown }
         'DashOs'           = if ($os) { '{0} {1}, build {2}' -f $os.Caption, $os.DisplayVersion, $os.Build } else { $unknown }
@@ -103,43 +124,97 @@ function Write-TkDashboardFields {
         'DashDomain'       = $domain
         'DashSerial'       = if ($identity) { $identity.SerialNumber } else { $unknown }
         'DashActivation'   = if ($os) { $os.Activation } else { $unknown }
+    }
+}
 
-        'DashIpv4'         = if ($adapter -and $adapter.IPv4Address -ne 'None') {
-                                 '{0}/{1}' -f $adapter.IPv4Address, $adapter.PrefixLength
-                             }
-                             else { 'No IPv4 address' }
-        'DashAdapter'      = if ($adapter) { '{0}, {1}' -f $adapter.Name, $adapter.LinkSpeed } else { 'No connected adapter' }
-        'DashGateway'      = if ($adapter) { $adapter.Gateway } else { $unknown }
-        'DashDns'          = if ($adapter -and $adapter.DnsServers) { $adapter.DnsServers } else { 'None' }
-        'DashDhcp'         = $addressing
-        'DashMac'          = if ($adapter) { $adapter.MacAddress } else { $unknown }
+<#
+.SYNOPSIS
+    Fills the Network card.
+
+.PARAMETER Part
+    Anything with Adapter and Adapters. Null when the part could not be read.
+#>
+function Write-TkDashboardNetwork {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        $Part
+    )
+
+    $adapter  = if ($Part) { $Part.Adapter } else { $null }
+    $adapters = if ($Part) { @($Part.Adapters | Where-Object { $null -ne $_ }) } else { @() }
+
+    $unknown    = 'Not available'
+    $hasAddress = ($null -ne $adapter -and $adapter.IPv4Address -and $adapter.IPv4Address -ne 'None')
+
+    $addressing = if (-not $adapter) { $unknown }
+                  elseif ([string] $adapter.Dhcp -eq 'Enabled') { 'DHCP' }
+                  elseif ([string] $adapter.Dhcp -eq 'Disabled') { 'Static' }
+                  else { [string] $adapter.Dhcp }
+
+    $adapterLine = if (-not $adapter) { 'No adapter has a usable IPv4 address' }
+                   elseif ($adapter.Gateway -eq 'None') { '{0}, {1}, no default gateway' -f $adapter.Name, $adapter.LinkSpeed }
+                   else { '{0}, {1}' -f $adapter.Name, $adapter.LinkSpeed }
+
+    Set-TkFieldText -Field @{
+        'DashIpv4'    = if ($hasAddress) { '{0}/{1}' -f $adapter.IPv4Address, $adapter.PrefixLength } else { 'Not connected' }
+        'DashAdapter' = $adapterLine
+        'DashGateway' = if ($adapter) { $adapter.Gateway } else { $unknown }
+        'DashDns'     = if ($adapter -and $adapter.DnsServers) { $adapter.DnsServers } else { 'None' }
+        'DashDhcp'    = $addressing
+        'DashMac'     = if ($adapter) { $adapter.MacAddress } else { $unknown }
     }
 
-    foreach ($name in $fields.Keys) {
+    # The other adapters in one line, and no line at all when there are none.
+    $others = Get-TkSecondaryAdapterSummary -Adapter $adapters -Primary $adapter
+    $label  = Get-TkControl -Name 'DashOtherAdapters'
 
-        $control = Get-TkControl -Name $name
-
-        if ($control) {
-            $control.Text = [string] $fields[$name]
-        }
+    if ($label) {
+        $label.Text       = $others
+        $label.Visibility = if ($others) { [System.Windows.Visibility]::Visible }
+                            else { [System.Windows.Visibility]::Collapsed }
     }
+}
 
-    # --- Health tiles -----------------------------------------------------
+<#
+.SYNOPSIS
+    Draws the health tiles.
+
+.PARAMETER Part
+    Anything with Reboot, LastHotFix, Volumes, Disks and Battery. Null when the
+    part could not be read.
+#>
+function Write-TkDashboardHealth {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        $Part
+    )
+
     $panel = Get-TkControl -Name 'DashHealth'
+    $note  = Get-TkControl -Name 'DashHealthNote'
 
     if ($panel) {
-
         $panel.Children.Clear()
+    }
 
-        foreach ($tile in (ConvertTo-TkDashboardHealth -Snapshot $Snapshot)) {
+    if ($null -eq $Part) {
+
+        if ($note) {
+            $note.Text = 'The health of this machine could not be read. The log has the reason.'
+        }
+
+        return
+    }
+
+    if ($panel) {
+        foreach ($tile in (ConvertTo-TkDashboardHealth -Snapshot $Part)) {
             [void] $panel.Children.Add((New-TkHealthTile -Tile $tile))
         }
     }
 
-    $note = Get-TkControl -Name 'DashHealthNote'
-
     if ($note) {
-        $note.Text = 'Read at {0}. Click a tile to open the page that deals with it.' -f (Get-Date -Format 'HH:mm')
+        $note.Text = 'Read at {0}. Click a tile to open the entry that deals with it.' -f (Get-Date -Format 'HH:mm')
     }
 }
 
@@ -150,7 +225,7 @@ function Write-TkDashboardFields {
 .DESCRIPTION
     Tinted and edged by result with an icon, like an audit card, so the row
     reads at a glance and colour is never the only signal. The whole tile is
-    the link to the page behind it: a small "details" link would be one more
+    the link to the entry behind it: a small "details" link would be one more
     thing to find.
 
 .PARAMETER Tile
@@ -171,8 +246,10 @@ function New-TkHealthTile {
     $border.Margin          = New-Object System.Windows.Thickness(0, 0, 8, 0)
     $border.BorderThickness = New-Object System.Windows.Thickness(3, 1, 1, 1)
     $border.Cursor          = [System.Windows.Input.Cursors]::Hand
-    $border.Tag             = $Tile.Page
-    $border.ToolTip         = 'Open {0}' -f $Tile.Page
+    $border.Tag             = $Tile
+
+    $border.ToolTip = if ($Tile.Choice) { 'Open {0} on the {1} page' -f $Tile.Choice, $Tile.Page }
+                      else { 'Open the {0} page' -f $Tile.Page }
 
     $border.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, $severityKey)
 
@@ -247,14 +324,41 @@ function New-TkHealthTile {
         # Not named $sender or $eventArgs: both are automatic variables.
         param($clicked, $clickArgs)
 
-        $page = [string] $clicked.Tag
-
-        if ($page) {
-            Show-TkPage -Name $page
+        if ($clicked.Tag) {
+            Open-TkHealthTileDestination -Tile $clicked.Tag
         }
     })
 
     return $border
+}
+
+<#
+.SYNOPSIS
+    Opens the page a tile is about, and the entry on it.
+
+.DESCRIPTION
+    The page alone was not enough: the battery tile landed on the Hardware page
+    with the keyboard test selected, and the reader still had to find the
+    battery. Selecting the entry also runs it, the way clicking it would.
+
+.PARAMETER Tile
+    Output of New-TkHealthTileData.
+#>
+function Open-TkHealthTileDestination {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject] $Tile
+    )
+
+    Show-TkPage -Name $Tile.Page
+
+    if ($Tile.List -and -not (Select-TkListChoice -ListName $Tile.List -Title $Tile.Choice)) {
+
+        Write-TkLog -Level Warning -Category 'Interface' -Message (
+            'Health tile "{0}": no entry titled "{1}" in {2}.' -f $Tile.Title, $Tile.Choice, $Tile.List
+        )
+    }
 }
 
 <#
