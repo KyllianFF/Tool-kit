@@ -163,6 +163,12 @@ function Read-TkDashboardPart {
 .PARAMETER Page
     The page the tile opens when it is clicked.
 
+.PARAMETER TabControl
+    Name of the tab control on that page holding the entry, when it is in a tab.
+
+.PARAMETER Tab
+    Header of that tab.
+
 .PARAMETER List
     Name of the chooser on that page holding the entry the tile is about.
 
@@ -200,6 +206,14 @@ function New-TkHealthTileData {
 
         [Parameter()]
         [AllowEmptyString()]
+        [string] $TabControl = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Tab = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
         [string] $List = '',
 
         [Parameter()]
@@ -210,12 +224,14 @@ function New-TkHealthTileData {
     return [pscustomobject] @{
         Title    = $Title
         Value    = $Value
-        Detail   = $Detail
-        Severity = $Severity
-        Percent  = $Percent
-        Page     = $Page
-        List     = $List
-        Choice   = $Choice
+        Detail     = $Detail
+        Severity   = $Severity
+        Percent    = $Percent
+        Page       = $Page
+        TabControl = $TabControl
+        Tab        = $Tab
+        List       = $List
+        Choice     = $Choice
     }
 }
 
@@ -264,7 +280,7 @@ function ConvertTo-TkDashboardHealth {
 
     # --- Restart ----------------------------------------------------------
     $reboot      = $Snapshot.Reboot
-    $restartOpen = @{ Page = 'Diagnostics'; List = 'DiagnosticChoices'; Choice = 'Pending reboot' }
+    $restartOpen = @{ Page = 'Diagnostics'; TabControl = 'DiagnosticsTabs'; Tab = 'Reports'; List = 'DiagnosticChoices'; Choice = 'Pending reboot' }
 
     if ($null -eq $reboot) {
         $tiles += New-TkHealthTileData @restartOpen -Title 'Restart' -Value 'Unknown' -Severity 'NotAssessed' `
@@ -281,7 +297,7 @@ function ConvertTo-TkDashboardHealth {
 
     # --- Updates ----------------------------------------------------------
     $hotFix      = $Snapshot.LastHotFix
-    $updatesOpen = @{ Page = 'Diagnostics'; List = 'DiagnosticChoices'; Choice = 'Update history' }
+    $updatesOpen = @{ Page = 'Diagnostics'; TabControl = 'DiagnosticsTabs'; Tab = 'Reports'; List = 'DiagnosticChoices'; Choice = 'Update history' }
 
     if ($null -eq $hotFix -or $null -eq $hotFix.InstalledOn) {
         $tiles += New-TkHealthTileData @updatesOpen -Title 'Updates' -Value 'Unknown' -Severity 'NotAssessed' `
@@ -323,7 +339,7 @@ function ConvertTo-TkDashboardHealth {
 
     # --- Physical disks ---------------------------------------------------
     $disks     = @($Snapshot.Disks | Where-Object { $null -ne $_ })
-    $disksOpen = @{ Page = 'Diagnostics'; List = 'DiagnosticChoices'; Choice = 'Storage health' }
+    $disksOpen = @{ Page = 'Diagnostics'; TabControl = 'DiagnosticsTabs'; Tab = 'Reports'; List = 'DiagnosticChoices'; Choice = 'Storage health' }
 
     if ($disks.Count -eq 0) {
         $tiles += New-TkHealthTileData @disksOpen -Title 'Disks' -Value 'Unknown' -Severity 'NotAssessed' `
@@ -350,7 +366,7 @@ function ConvertTo-TkDashboardHealth {
     # --- Battery ----------------------------------------------------------
     # Reported, never judged: wear is expected, and a desktop has none at all.
     $battery     = @($Snapshot.Battery | Where-Object { $null -ne $_ }) | Select-Object -First 1
-    $batteryOpen = @{ Page = 'Hardware'; List = 'HardwareChoices'; Choice = 'Battery' }
+    $batteryOpen = @{ Page = 'Diagnostics'; TabControl = 'DiagnosticsTabs'; Tab = 'Hardware tests'; List = 'HardwareChoices'; Choice = 'Battery' }
 
     if ($null -eq $battery) {
         $tiles += New-TkHealthTileData @batteryOpen -Title 'Battery' -Value 'No battery' -Severity 'Info' `

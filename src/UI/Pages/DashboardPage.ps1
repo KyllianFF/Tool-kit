@@ -357,6 +357,15 @@ function Open-TkHealthTileDestination {
 
     Show-TkPage -Name $Tile.Page
 
+    # The tab first: an entry in a tab that is not selected is selected, and
+    # runs, out of sight.
+    if ($Tile.TabControl -and -not (Select-TkTab -TabControlName $Tile.TabControl -Header $Tile.Tab)) {
+
+        Write-TkLog -Level Warning -Category 'Interface' -Message (
+            'Health tile "{0}": no tab titled "{1}" in {2}.' -f $Tile.Title, $Tile.Tab, $Tile.TabControl
+        )
+    }
+
     if ($Tile.List -and -not (Select-TkListChoice -ListName $Tile.List -Title $Tile.Choice)) {
 
         Write-TkLog -Level Warning -Category 'Interface' -Message (
@@ -404,8 +413,8 @@ function Get-TkQuickAction {
             Hint       = 'Restart state, storage, stability, updates, printing and profiles, in one report.'
             Glyph      = [string] [char] 0xE95E
             Page       = 'Diagnostics'
-            TabControl = ''
-            Tab        = ''
+            TabControl = 'DiagnosticsTabs'
+            Tab        = 'Reports'
             Start      = 'Start-TkFullDiagnostic'
             Arguments  = @{}
         }
@@ -415,8 +424,8 @@ function Get-TkQuickAction {
             Hint       = 'Everything a ticket needs in one ZIP. Nothing leaves the machine until you send it.'
             Glyph      = [string] [char] 0xE74E
             Page       = 'Diagnostics'
-            TabControl = ''
-            Tab        = ''
+            TabControl = 'DiagnosticsTabs'
+            Tab        = 'Reports'
             Start      = 'Invoke-TkSupportBundleFromUi'
             Arguments  = @{}
         }

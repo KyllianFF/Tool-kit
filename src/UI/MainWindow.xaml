@@ -512,13 +512,25 @@
             <Setter Property="Margin"            Value="0,0,12,0" />
         </Style>
 
+        <!--
+            A heading between groups of navigation entries. Small and muted, so
+            the entries stay what the eye lands on and the heading only says
+            which kind of work they belong to.
+        -->
+        <Style x:Key="NavSection" TargetType="TextBlock">
+            <Setter Property="FontSize"   Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin"     Value="24,10,16,2" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+        </Style>
+
         <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background"          Value="Transparent" />
             <Setter Property="BorderThickness"     Value="0" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="Padding"             Value="16,11" />
-            <Setter Property="Margin"              Value="8,2,8,2" />
+            <Setter Property="Padding"             Value="16,8" />
+            <Setter Property="Margin"              Value="8,1,8,1" />
             <Setter Property="FontSize"            Value="13" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -936,25 +948,57 @@
             <!-- Navigation rail -->
             <Border Grid.Column="0" Background="{DynamicResource Surface}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,1,0">
-                <DockPanel LastChildFill="False">
-                    <StackPanel DockPanel.Dock="Top" Margin="0,12,0,0">
-                        <!-- Tag carries the icon code point; see the IconFont note above. -->
-                        <Button x:Name="NavDashboard"   Content="Dashboard"   Style="{StaticResource NavButton}" Tag="&#xE80F;" />
-                        <Button x:Name="NavSystem"      Content="System"      Style="{StaticResource NavButton}" Tag="&#xEC4E;" />
-                        <Button x:Name="NavSoftware"    Content="Software"    Style="{StaticResource NavButton}" Tag="&#xECA5;" />
-                        <Button x:Name="NavTweaks"      Content="Tweaks"      Style="{StaticResource NavButton}" Tag="&#xE9E9;" />
-                        <Button x:Name="NavFixes"       Content="Fixes"       Style="{StaticResource NavButton}" Tag="&#xE90F;" />
-                        <Button x:Name="NavNetwork"     Content="Network"     Style="{StaticResource NavButton}" Tag="&#xEC26;" />
-                        <Button x:Name="NavDiagnostics" Content="Diagnostics" Style="{StaticResource NavButton}" Tag="&#xE95E;" />
-                        <Button x:Name="NavHardware"    Content="Hardware"    Style="{StaticResource NavButton}" Tag="&#xE977;" />
-                        <Button x:Name="NavSecurity"    Content="Security"    Style="{StaticResource NavButton}" Tag="&#xEA18;" />
+                <!--
+                    Grouped by the kind of work rather than listed in the order the
+                    pages were written: what is this machine, what is wrong with it,
+                    is it secure, and where do I look something up. The groups scroll
+                    when the window is short, so no entry is ever cut off.
+
+                    Settings belongs to no group, so it sits below them and never
+                    scrolls away. Rows rather than a DockPanel keep the markup in the
+                    same order as the rail reads, which a test relies on.
+                -->
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="0,4,0,8">
+                            <!-- Tag carries the icon code point; see the IconFont note above. -->
+                            <TextBlock Text="WORKSTATION" Style="{StaticResource NavSection}" />
+                            <Button x:Name="NavDashboard"      Content="Dashboard"       Style="{StaticResource NavButton}" Tag="&#xE80F;" />
+                            <Button x:Name="NavSystem"         Content="System"          Style="{StaticResource NavButton}" Tag="&#xEC4E;" />
+                            <Button x:Name="NavSoftware"       Content="Software"        Style="{StaticResource NavButton}" Tag="&#xECA5;" />
+                            <Button x:Name="NavTweaks"         Content="Tweaks"          Style="{StaticResource NavButton}" Tag="&#xE9E9;" />
+                            <Button x:Name="NavFixes"          Content="Fixes"           Style="{StaticResource NavButton}" Tag="&#xE90F;" />
+
+                            <TextBlock Text="TROUBLESHOOTING" Style="{StaticResource NavSection}" />
+                            <Button x:Name="NavDiagnostics"    Content="Diagnostics"     Style="{StaticResource NavButton}" Tag="&#xE95E;" />
+                            <Button x:Name="NavNetwork"        Content="Network"         Style="{StaticResource NavButton}" Tag="&#xEC26;" />
+
+                            <TextBlock Text="SECURITY" Style="{StaticResource NavSection}" />
+                            <Button x:Name="NavSecurity"       Content="Audit"           Style="{StaticResource NavButton}" Tag="&#xEA18;" />
+                            <Button x:Name="NavSecurityTools"  Content="Tools"           Style="{StaticResource NavButton}" Tag="&#xE8D7;" />
+
+                            <TextBlock Text="REFERENCE" Style="{StaticResource NavSection}" />
+                            <Button x:Name="NavKnowledge"      Content="Knowledge base"  Style="{StaticResource NavButton}" Tag="&#xE82D;" />
+                            <Button x:Name="NavVendorCommands" Content="Vendor commands" Style="{StaticResource NavButton}" Tag="&#xE756;" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <StackPanel Grid.Row="1">
+                        <Border Height="1" Margin="16,0,16,6" Background="{DynamicResource BorderSubtle}" />
+                        <Button x:Name="NavSettings" Content="Settings" Style="{StaticResource NavButton}" Tag="&#xE713;" />
                     </StackPanel>
 
-                    <StackPanel DockPanel.Dock="Bottom" Margin="16,0,16,16">
+                    <StackPanel Grid.Row="2" Margin="16,8,16,16">
                         <Button x:Name="BtnOpenLogs" Content="Open log folder" HorizontalAlignment="Stretch" Margin="0,0,0,6" />
                         <Button x:Name="BtnAbout"    Content="About"           HorizontalAlignment="Stretch" Margin="0" />
                     </StackPanel>
-                </DockPanel>
+                </Grid>
             </Border>
 
             <!-- Feature panels. Exactly one is visible at a time. -->
@@ -2044,23 +2088,83 @@
                             </Grid>
                         </TabItem>
 
-                        <TabItem Header="Knowledge base">
+                    </TabControl>
+                </Grid>
+
+
+                <!-- ======================= DIAGNOSTICS ======================= -->
+                <!--
+                    Reports and hardware tests on one page. Both answer "what is wrong
+                    with this machine": one by reading it, the other by asking the
+                    operator to look, listen and press. Two pages for one question sent
+                    people to the wrong one first.
+                -->
+                <Grid x:Name="PageDiagnostics" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Text="Diagnostics" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}"
+                                   Text="What a support call needs answered, and the parts a report cannot judge. Everything here is read only: a tool that changes things while you are still looking destroys the evidence." />
+                    </StackPanel>
+
+                    <TabControl Grid.Row="1" x:Name="DiagnosticsTabs" Background="Transparent" BorderThickness="0">
+
+                        <TabItem Header="Reports">
                             <Grid Margin="0,16,0,0">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="280" />
+                                    <ColumnDefinition Width="270" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
 
-                                <TextBox Grid.Row="0" Grid.Column="0" x:Name="KnowledgeSearch" Tag="Search every topic" Margin="0,0,10,10" />
-                                <ListBox Grid.Row="1" Grid.Column="0" x:Name="KnowledgeList" Margin="0,0,10,0"
-                                         />
+                                <DockPanel Grid.Column="0" Margin="0,0,16,0" LastChildFill="True">
+                                    <Button x:Name="BtnDiagExport" DockPanel.Dock="Bottom"
+                                            Content="Export the last report" Margin="0,6,0,0"
+                                            HorizontalAlignment="Stretch" />
+                                    <Button x:Name="BtnSupportBundle" DockPanel.Dock="Bottom"
+                                            Content="Create support bundle (ZIP)" Margin="0,10,0,0"
+                                            Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE74E;"
+                                            HorizontalAlignment="Stretch"
+                                            ToolTip="Collects the system, network, diagnostics, security posture and log into one timestamped ZIP to attach to a ticket. Nothing is changed, and nothing leaves the machine until you send it." />
+                                    <ListBox x:Name="DiagnosticChoices" Background="Transparent" BorderThickness="0"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Every check below, in order.">
+                                            <TextBlock Text="Full check" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="All six places Windows records one, including the invisible ones.">
+                                            <TextBlock Text="Pending reboot" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Reliability counters joined to free space, with SSD wear.">
+                                            <TextBlock Text="Storage health" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Bug checks, unexpected shutdowns and repeated application faults.">
+                                            <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Through the update session, so driver and feature updates appear.">
+                                            <TextBlock Text="Update history" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Spooler, printers, ports, drivers and queue depth.">
+                                            <TextBlock Text="Printing" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Profile sizes, mapped drives, domain channel, logon timing.">
+                                            <TextBlock Text="Profiles and policy" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                    </ListBox>
+                                </DockPanel>
 
-                                <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
-                                    <RichTextBox x:Name="KnowledgeContent" IsReadOnly="True"
+                                <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="DiagnosticsOutput" IsReadOnly="True"
                                                  BorderThickness="0" Background="Transparent"
                                                  Foreground="{DynamicResource TextPrimary}"
                                                  VerticalScrollBarVisibility="Auto"
@@ -2070,416 +2174,202 @@
                             </Grid>
                         </TabItem>
 
-                        <TabItem Header="Vendor commands">
+                        <TabItem Header="Hardware tests">
                             <Grid Margin="0,16,0,0">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="280" />
+                                    <ColumnDefinition Width="230" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
 
-                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,10,10">
-                                    <ComboBox x:Name="VendorSelect" Margin="0,0,0,8" />
-                                    <TextBox  x:Name="VendorSearch" Tag="Search commands across all vendors" />
-                                </StackPanel>
+                                <ListBox Grid.Column="0" x:Name="HardwareChoices" Margin="0,0,14,0"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
+                                    <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                 ToolTip="Every key on the board, ticked off as you press it, while this window has focus.">
+                                        <TextBlock Text="Keyboard" Style="{StaticResource ChoiceTitle}" />
+                                    </ListBoxItem>
+                                    <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                 ToolTip="Full screen colours for dead and stuck pixels, a gradient for banding, and a grid for geometry.">
+                                        <TextBlock Text="Display" Style="{StaticResource ChoiceTitle}" />
+                                    </ListBoxItem>
+                                    <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                 ToolTip="A tone in one channel at a time, which is the only way to catch a dead speaker.">
+                                        <TextBlock Text="Sound" Style="{StaticResource ChoiceTitle}" />
+                                    </ListBoxItem>
+                                    <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                 ToolTip="What the pack holds now against what it was built to hold, and the Windows battery report.">
+                                        <TextBlock Text="Battery" Style="{StaticResource ChoiceTitle}" />
+                                    </ListBoxItem>
+                                    <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                 ToolTip="Memory slot by slot, and the panels attached to this machine.">
+                                        <TextBlock Text="Memory and displays" Style="{StaticResource ChoiceTitle}" />
+                                    </ListBoxItem>
+                                </ListBox>
 
-                                <ListBox Grid.Row="1" Grid.Column="0" x:Name="VendorSectionList" Margin="0,0,10,0"
-                                         />
+                                <!-- ============================ Keyboard ============================ -->
+                                <Border Grid.Column="1" x:Name="PanelKeyboard" Style="{StaticResource Card}" Margin="0">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
 
-                                <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
-                                    <RichTextBox x:Name="VendorContent" IsReadOnly="True"
-                                                 BorderThickness="0" Background="Transparent"
-                                                 Foreground="{DynamicResource TextPrimary}"
-                                                 VerticalScrollBarVisibility="Auto"
-                                                 HorizontalScrollBarVisibility="Auto"
-                                                 IsDocumentEnabled="True" />
+                                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                                            <Button x:Name="BtnKeyboardStart" Content="Start the test"
+                                                    Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE768;" />
+                                            <Button x:Name="BtnKeyboardStop" Content="Stop"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE711;" IsEnabled="False" />
+                                            <Button x:Name="BtnKeyboardReset" Content="Clear"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE72C;" />
+                                            <TextBlock x:Name="KeyboardProgress" Style="{StaticResource FieldValue}"
+                                                       VerticalAlignment="Center" Margin="16,0,0,0"
+                                                       Text="Not started." />
+                                        </StackPanel>
+
+                                        <Border Grid.Row="1" Margin="0,0,0,10" CornerRadius="6" Padding="11,8"
+                                                Background="{DynamicResource SurfaceRaised}"
+                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                            <TextBlock x:Name="KeyboardHint" Style="{StaticResource Muted}"
+                                                       Text="Keep this window in front and press every key; each lights up as it registers. Press Escape twice to stop. The Windows key, Alt+Tab and Ctrl+Alt+Delete are claimed by Windows before any application sees them, so they will not light up: this test reads keys only while its own window is focused, which is why nothing mistakes it for a keylogger." />
+                                        </Border>
+
+                                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Auto">
+                                            <StackPanel x:Name="KeyboardSurface" />
+                                        </ScrollViewer>
+
+                                        <TextBlock Grid.Row="3" x:Name="KeyboardResult" Style="{StaticResource Muted}"
+                                                   Margin="0,10,0,0" TextWrapping="Wrap" />
+                                    </Grid>
+                                </Border>
+
+                                <!-- ============================ Display ============================= -->
+                                <Border Grid.Column="1" x:Name="PanelDisplay" Style="{StaticResource Card}" Margin="0"
+                                        Visibility="Collapsed">
+                                    <StackPanel>
+                                        <TextBlock Text="Display" Style="{StaticResource SubHeading}" Margin="0,0,0,4" />
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14"
+                                                   Text="Each test fills the screen. Click or press any key to move to the next one, Escape to leave. Look at the panel from straight on and from an angle: a stuck pixel stays one colour on every screen, a reflection does not." />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                            <Button x:Name="BtnDisplayColours" Content="Solid colours"
+                                                    Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE790;"
+                                                    ToolTip="White, black, red, green and blue in turn. A dead pixel shows black on white; a stuck one shows colour on black." />
+                                            <Button x:Name="BtnDisplayGradient" Content="Gradient"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE7A1;"
+                                                    ToolTip="Reveals banding and a panel that cannot render smooth tone." />
+                                            <Button x:Name="BtnDisplayGrid" Content="Geometry grid"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE80A;"
+                                                    ToolTip="A one pixel grid. Blurred or uneven lines mean the panel is not running at its native resolution." />
+                                        </StackPanel>
+
+                                        <TextBlock Text="Panels attached" Style="{StaticResource FieldLabel}" Margin="0,0,0,4" />
+                                        <RichTextBox x:Name="DocDisplays" IsReadOnly="True" MaxHeight="260"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     HorizontalScrollBarVisibility="Disabled" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- ============================= Sound ============================== -->
+                                <Border Grid.Column="1" x:Name="PanelSound" Style="{StaticResource Card}" Margin="0"
+                                        Visibility="Collapsed">
+                                    <StackPanel>
+                                        <TextBlock Text="Sound" Style="{StaticResource SubHeading}" Margin="0,0,0,4" />
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14"
+                                                   Text="A tone in one channel at a time. Playing the same thing on both channels is how a dead speaker passes a test: if you hear the left tone and the right tone equally, both sides work." />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                            <Button x:Name="BtnToneLeft"  Content="Left channel"
+                                                    Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE7F6;" />
+                                            <Button x:Name="BtnToneRight" Content="Right channel"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE7F6;" />
+                                            <Button x:Name="BtnToneBoth"  Content="Both"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE995;" />
+                                            <Button x:Name="BtnToneSweep" Content="Frequency sweep"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE9D2;"
+                                                    ToolTip="Low to high. A rattle at one pitch is a loose driver or a case panel resonating." />
+                                        </StackPanel>
+
+                                        <TextBlock x:Name="SoundStatus" Style="{StaticResource Muted}" Margin="0,0,0,14"
+                                                   Text="Turn the volume to a comfortable level first." />
+
+                                        <TextBlock Text="Audio devices" Style="{StaticResource FieldLabel}" Margin="0,0,0,4" />
+                                        <RichTextBox x:Name="DocAudio" IsReadOnly="True" MaxHeight="240"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     HorizontalScrollBarVisibility="Disabled" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- ============================ Battery ============================= -->
+                                <Border Grid.Column="1" x:Name="PanelBattery" Style="{StaticResource Card}" Margin="0"
+                                        Visibility="Collapsed">
+                                    <StackPanel>
+                                        <TextBlock Text="Battery" Style="{StaticResource SubHeading}" Margin="0,0,0,4" />
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14"
+                                                   Text="Health is what the pack holds now against what it was built to hold. Below about eighty per cent a laptop starts feeling unreliable away from the mains, whatever the charge percentage says." />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                            <Button x:Name="BtnBatteryRefresh" Content="Read the battery"
+                                                    Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
+                                            <Button x:Name="BtnBatteryReport" Content="Full Windows report"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE9F9;"
+                                                    ToolTip="Builds the powercfg battery report, which carries the charge cycles and the recent drain history, and opens it." />
+                                        </StackPanel>
+
+                                        <RichTextBox x:Name="DocBattery" IsReadOnly="True"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     HorizontalScrollBarVisibility="Disabled" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- ======================== Memory and displays ===================== -->
+                                <Border Grid.Column="1" x:Name="PanelMemory" Style="{StaticResource Card}" Margin="0"
+                                        Visibility="Collapsed">
+                                    <StackPanel>
+                                        <TextBlock Text="Memory" Style="{StaticResource SubHeading}" Margin="0,0,0,4" />
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14"
+                                                   Text="Slot by slot. A machine reporting less memory than it has usually has one module seated badly, and one running slower than expected often has two modules of different speeds. A real memory test needs a restart: the Windows tool below runs before Windows loads, which is the only way to test memory that is not in use." />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                            <Button x:Name="BtnMemoryRefresh" Content="Read the modules"
+                                                    Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
+                                            <Button x:Name="BtnMemoryDiagnostic" Content="Schedule the Windows memory test"
+                                                    Style="{StaticResource GlyphButton}" Tag="&#xE950;"
+                                                    ToolTip="Opens the Windows Memory Diagnostic, which asks whether to restart now or at the next start up." />
+                                        </StackPanel>
+
+                                        <RichTextBox x:Name="DocMemory" IsReadOnly="True"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     HorizontalScrollBarVisibility="Disabled" />
+                                    </StackPanel>
                                 </Border>
                             </Grid>
                         </TabItem>
                     </TabControl>
                 </Grid>
 
-
-                <!-- ======================= DIAGNOSTICS ======================= -->
-                <Grid x:Name="PageDiagnostics" Margin="24,20" Visibility="Collapsed">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="270" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,14">
-                        <TextBlock Text="Diagnostics" Style="{StaticResource Heading}" />
-                        <TextBlock Style="{StaticResource Muted}"
-                                   Text="What a support call actually needs answered, in the order it usually comes up. Everything here is read only: a tool that changes things while you are still looking destroys the evidence." />
-                    </StackPanel>
-
-                    <DockPanel Grid.Row="1" Grid.Column="0" Margin="0,0,16,0" LastChildFill="True">
-                        <Button x:Name="BtnDiagExport" DockPanel.Dock="Bottom"
-                                Content="Export the last report" Margin="0,6,0,0"
-                                HorizontalAlignment="Stretch" />
-                        <Button x:Name="BtnSupportBundle" DockPanel.Dock="Bottom"
-                                Content="Create support bundle (ZIP)" Margin="0,10,0,0"
-                                Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE74E;"
-                                HorizontalAlignment="Stretch"
-                                ToolTip="Collects the system, network, diagnostics, security posture and log into one timestamped ZIP to attach to a ticket. Nothing is changed, and nothing leaves the machine until you send it." />
-                        <ListBox x:Name="DiagnosticChoices" Background="Transparent" BorderThickness="0"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Every check below, in order.">
-                                <TextBlock Text="Full check" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="All six places Windows records one, including the invisible ones.">
-                                <TextBlock Text="Pending reboot" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Reliability counters joined to free space, with SSD wear.">
-                                <TextBlock Text="Storage health" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Bug checks, unexpected shutdowns and repeated application faults.">
-                                <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Through the update session, so driver and feature updates appear.">
-                                <TextBlock Text="Update history" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Spooler, printers, ports, drivers and queue depth.">
-                                <TextBlock Text="Printing" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Profile sizes, mapped drives, domain channel, logon timing.">
-                                <TextBlock Text="Profiles and policy" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                        </ListBox>
-                    </DockPanel>
-
-                    <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
-                        <RichTextBox x:Name="DiagnosticsOutput" IsReadOnly="True"
-                                     BorderThickness="0" Background="Transparent"
-                                     Foreground="{DynamicResource TextPrimary}"
-                                     VerticalScrollBarVisibility="Auto"
-                                     HorizontalScrollBarVisibility="Disabled"
-                                     IsDocumentEnabled="True" />
-                    </Border>
-                </Grid>
-
-                <!-- ======================== HARDWARE ======================== -->
-                <!--
-                    The checks a technician does with their hands. Everything
-                    on the Diagnostics page reads the machine and reports;
-                    these ask the operator to look, listen and press, which is
-                    the only way to answer "is this key dead".
-                -->
-                <Grid x:Name="PageHardware" Margin="24,20" Visibility="Collapsed">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
-                        <TextBlock Text="Hardware" Style="{StaticResource Heading}" />
-                        <TextBlock Style="{StaticResource Muted}"
-                                   Text="Interactive checks on the parts a report cannot judge. Nothing here changes the machine." />
-                    </StackPanel>
-
-                    <Grid Grid.Row="1">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="230" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-
-                        <ListBox Grid.Column="0" x:Name="HardwareChoices" Margin="0,0,14,0"
-                                 Background="Transparent" BorderThickness="0"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Every key on the board, ticked off as you press it, while this window has focus.">
-                                <TextBlock Text="Keyboard" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Full screen colours for dead and stuck pixels, a gradient for banding, and a grid for geometry.">
-                                <TextBlock Text="Display" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="A tone in one channel at a time, which is the only way to catch a dead speaker.">
-                                <TextBlock Text="Sound" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="What the pack holds now against what it was built to hold, and the Windows battery report.">
-                                <TextBlock Text="Battery" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Memory slot by slot, and the panels attached to this machine.">
-                                <TextBlock Text="Memory and displays" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                        </ListBox>
-
-                        <!-- ============================ Keyboard ============================ -->
-                        <Border Grid.Column="1" x:Name="PanelKeyboard" Style="{StaticResource Card}" Margin="0">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-
-                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                                    <Button x:Name="BtnKeyboardStart" Content="Start the test"
-                                            Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE768;" />
-                                    <Button x:Name="BtnKeyboardStop" Content="Stop"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE711;" IsEnabled="False" />
-                                    <Button x:Name="BtnKeyboardReset" Content="Clear"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE72C;" />
-                                    <TextBlock x:Name="KeyboardProgress" Style="{StaticResource FieldValue}"
-                                               VerticalAlignment="Center" Margin="16,0,0,0"
-                                               Text="Not started." />
-                                </StackPanel>
-
-                                <Border Grid.Row="1" Margin="0,0,0,10" CornerRadius="6" Padding="11,8"
-                                        Background="{DynamicResource SurfaceRaised}"
-                                        BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
-                                    <TextBlock x:Name="KeyboardHint" Style="{StaticResource Muted}"
-                                               Text="Keep this window in front and press every key; each lights up as it registers. Press Escape twice to stop. The Windows key, Alt+Tab and Ctrl+Alt+Delete are claimed by Windows before any application sees them, so they will not light up: this test reads keys only while its own window is focused, which is why nothing mistakes it for a keylogger." />
-                                </Border>
-
-                                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
-                                              HorizontalScrollBarVisibility="Auto">
-                                    <StackPanel x:Name="KeyboardSurface" />
-                                </ScrollViewer>
-
-                                <TextBlock Grid.Row="3" x:Name="KeyboardResult" Style="{StaticResource Muted}"
-                                           Margin="0,10,0,0" TextWrapping="Wrap" />
-                            </Grid>
-                        </Border>
-
-                        <!-- ============================ Display ============================= -->
-                        <Border Grid.Column="1" x:Name="PanelDisplay" Style="{StaticResource Card}" Margin="0"
-                                Visibility="Collapsed">
-                            <StackPanel>
-                                <TextBlock Text="Display" Style="{StaticResource SubHeading}" Margin="0,0,0,4" />
-                                <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14"
-                                           Text="Each test fills the screen. Click or press any key to move to the next one, Escape to leave. Look at the panel from straight on and from an angle: a stuck pixel stays one colour on every screen, a reflection does not." />
-
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                                    <Button x:Name="BtnDisplayColours" Content="Solid colours"
-                                            Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE790;"
-                                            ToolTip="White, black, red, green and blue in turn. A dead pixel shows black on white; a stuck one shows colour on black." />
-                                    <Button x:Name="BtnDisplayGradient" Content="Gradient"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE7A1;"
-                                            ToolTip="Reveals banding and a panel that cannot render smooth tone." />
-                                    <Button x:Name="BtnDisplayGrid" Content="Geometry grid"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE80A;"
-                                            ToolTip="A one pixel grid. Blurred or uneven lines mean the panel is not running at its native resolution." />
-                                </StackPanel>
-
-                                <TextBlock Text="Panels attached" Style="{StaticResource FieldLabel}" Margin="0,0,0,4" />
-                                <RichTextBox x:Name="DocDisplays" IsReadOnly="True" MaxHeight="260"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Disabled" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- ============================= Sound ============================== -->
-                        <Border Grid.Column="1" x:Name="PanelSound" Style="{StaticResource Card}" Margin="0"
-                                Visibility="Collapsed">
-                            <StackPanel>
-                                <TextBlock Text="Sound" Style="{StaticResource SubHeading}" Margin="0,0,0,4" />
-                                <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14"
-                                           Text="A tone in one channel at a time. Playing the same thing on both channels is how a dead speaker passes a test: if you hear the left tone and the right tone equally, both sides work." />
-
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                    <Button x:Name="BtnToneLeft"  Content="Left channel"
-                                            Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE7F6;" />
-                                    <Button x:Name="BtnToneRight" Content="Right channel"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE7F6;" />
-                                    <Button x:Name="BtnToneBoth"  Content="Both"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE995;" />
-                                    <Button x:Name="BtnToneSweep" Content="Frequency sweep"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE9D2;"
-                                            ToolTip="Low to high. A rattle at one pitch is a loose driver or a case panel resonating." />
-                                </StackPanel>
-
-                                <TextBlock x:Name="SoundStatus" Style="{StaticResource Muted}" Margin="0,0,0,14"
-                                           Text="Turn the volume to a comfortable level first." />
-
-                                <TextBlock Text="Audio devices" Style="{StaticResource FieldLabel}" Margin="0,0,0,4" />
-                                <RichTextBox x:Name="DocAudio" IsReadOnly="True" MaxHeight="240"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Disabled" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- ============================ Battery ============================= -->
-                        <Border Grid.Column="1" x:Name="PanelBattery" Style="{StaticResource Card}" Margin="0"
-                                Visibility="Collapsed">
-                            <StackPanel>
-                                <TextBlock Text="Battery" Style="{StaticResource SubHeading}" Margin="0,0,0,4" />
-                                <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14"
-                                           Text="Health is what the pack holds now against what it was built to hold. Below about eighty per cent a laptop starts feeling unreliable away from the mains, whatever the charge percentage says." />
-
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                                    <Button x:Name="BtnBatteryRefresh" Content="Read the battery"
-                                            Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
-                                    <Button x:Name="BtnBatteryReport" Content="Full Windows report"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE9F9;"
-                                            ToolTip="Builds the powercfg battery report, which carries the charge cycles and the recent drain history, and opens it." />
-                                </StackPanel>
-
-                                <RichTextBox x:Name="DocBattery" IsReadOnly="True"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Disabled" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- ======================== Memory and displays ===================== -->
-                        <Border Grid.Column="1" x:Name="PanelMemory" Style="{StaticResource Card}" Margin="0"
-                                Visibility="Collapsed">
-                            <StackPanel>
-                                <TextBlock Text="Memory" Style="{StaticResource SubHeading}" Margin="0,0,0,4" />
-                                <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14"
-                                           Text="Slot by slot. A machine reporting less memory than it has usually has one module seated badly, and one running slower than expected often has two modules of different speeds. A real memory test needs a restart: the Windows tool below runs before Windows loads, which is the only way to test memory that is not in use." />
-
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                                    <Button x:Name="BtnMemoryRefresh" Content="Read the modules"
-                                            Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
-                                    <Button x:Name="BtnMemoryDiagnostic" Content="Schedule the Windows memory test"
-                                            Style="{StaticResource GlyphButton}" Tag="&#xE950;"
-                                            ToolTip="Opens the Windows Memory Diagnostic, which asks whether to restart now or at the next start up." />
-                                </StackPanel>
-
-                                <RichTextBox x:Name="DocMemory" IsReadOnly="True"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Disabled" />
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-                </Grid>
-
                 <!-- ======================== SECURITY ======================== -->
+                <!--
+                    The examinations of the machine: the posture audit and the threat
+                    hunting investigations. The tools that make or check something,
+                    keys, hashes and passwords, are on the Tools page beside it.
+                -->
                 <Grid x:Name="PageSecurity" Margin="24,20" Visibility="Collapsed">
-                    <TabControl x:Name="SecurityTabs" Background="Transparent" BorderThickness="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-                        <TabItem Header="SSH keys">
-                            <Grid Margin="0,16,0,0">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Text="Audit" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}"
+                                   Text="How well this machine is protected, and whether something is already running on it that should not be." />
+                    </StackPanel>
 
-                                <Border Grid.Row="0" Style="{StaticResource Card}">
-                                    <StackPanel>
-                                        <TextBlock Text="Generate a key pair" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="SshKeyName" Tag="Key file name" Width="160" Text="id_ed25519" />
-                                            <TextBlock Text="Type" VerticalAlignment="Center" Margin="16,0,8,0" />
-                                            <ComboBox x:Name="SshKeyType" Width="110" />
-                                            <TextBlock Text="Comment" VerticalAlignment="Center" Margin="16,0,8,0" />
-                                            <TextBox x:Name="SshKeyComment" Tag="Comment identifying the key" Width="200" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Passphrase" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <PasswordBox x:Name="SshPassphrase" Width="220" />
-                                            <CheckBox x:Name="SshNoPassphrase" Content="No passphrase (not recommended)" Margin="16,0,0,0" />
-                                            <Button x:Name="BtnGenerateSshKey" Content="Generate" Style="{StaticResource PrimaryButton}" Margin="16,0,0,0" />
-                                            <Button x:Name="BtnListSshKeys"    Content="List keys" />
-                                            <Button x:Name="BtnCopyPublicKey"  Content="Copy public key" />
-                                        </StackPanel>
-                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
-                                                   Text="ed25519 is the default. An existing key is never overwritten, and the private key permissions are restricted to the owner after generation." />
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
-                                    <TextBox x:Name="SshOutput" Style="{StaticResource Mono}"
-                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             AcceptsReturn="True" />
-                                </Border>
-                            </Grid>
-                        </TabItem>
-
-                        <TabItem Header="File integrity">
-                            <Grid Margin="0,16,0,0">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <Border Grid.Row="0" Style="{StaticResource Card}">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="File" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="HashFilePath" Tag="Path to the file to hash" Width="440" />
-                                            <Button x:Name="BtnBrowseHashFile" Content="Browse" Margin="10,0,0,0" />
-                                            <Button x:Name="BtnComputeHash"    Content="Compute hashes" Style="{StaticResource PrimaryButton}" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Expected hash" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="ExpectedHash" Tag="Paste the hash published by the vendor" Width="520" />
-                                            <Button x:Name="BtnVerifyHash" Content="Verify" Margin="10,0,0,0" />
-                                            <Button x:Name="BtnVirusTotal" Content="Check on VirusTotal" />
-                                        </StackPanel>
-                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
-                                                   Text="The VirusTotal check sends the SHA256 only. The file itself is never uploaded, so internal documents and installers stay private." />
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
-                                    <TextBox x:Name="IntegrityOutput" Style="{StaticResource Mono}"
-                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             AcceptsReturn="True" />
-                                </Border>
-                            </Grid>
-                        </TabItem>
-
-                        <TabItem Header="Credentials">
-                            <Grid Margin="0,16,0,0">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <Border Grid.Row="0" Style="{StaticResource Card}">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="Length" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="PasswordLength" Tag="Length" Width="60" Text="20" />
-                                            <CheckBox x:Name="PwdUpper"   Content="A-Z" IsChecked="True" Margin="14,0,0,0" />
-                                            <CheckBox x:Name="PwdLower"   Content="a-z" IsChecked="True" Margin="10,0,0,0" />
-                                            <CheckBox x:Name="PwdDigits"  Content="0-9" IsChecked="True" Margin="10,0,0,0" />
-                                            <CheckBox x:Name="PwdSymbols" Content="Symbols" IsChecked="True" Margin="10,0,0,0" />
-                                            <Button x:Name="BtnGeneratePassword"   Content="Generate password" Style="{StaticResource PrimaryButton}" Margin="16,0,0,0" />
-                                            <Button x:Name="BtnGeneratePassphrase" Content="Generate passphrase" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Check a password" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <PasswordBox x:Name="BreachPassword" Width="260" />
-                                            <Button x:Name="BtnCheckBreach" Content="Check against breaches" Margin="10,0,0,0" />
-                                            <Button x:Name="BtnCopyPassword" Content="Copy last generated" />
-                                        </StackPanel>
-                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
-                                                   Text="The breach check uses k-anonymity: only the first five characters of the SHA1 hash are sent, so the password never leaves this machine." />
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
-                                    <TextBox x:Name="CredentialOutput" Style="{StaticResource Mono}"
-                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             AcceptsReturn="True" />
-                                </Border>
-                            </Grid>
-                        </TabItem>
+                    <TabControl Grid.Row="1" x:Name="SecurityTabs" Background="Transparent" BorderThickness="0">
 
                         <TabItem Header="Security audit">
                             <Grid Margin="0,16,0,0">
@@ -2554,6 +2444,7 @@
                             </Grid>
                         </TabItem>
 
+
                         <TabItem Header="Threat hunting">
                             <Grid Margin="0,16,0,0">
                                 <Grid.RowDefinitions>
@@ -2612,37 +2503,270 @@
                             </Grid>
                         </TabItem>
 
-                        <TabItem Header="Settings">
-                            <ScrollViewer Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
-                                <StackPanel>
-                                    <Border Style="{StaticResource Card}">
-                                        <StackPanel>
-                                            <TextBlock Text="VirusTotal API key" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
-                                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
-                                                       Text="Stored encrypted with DPAPI under this Windows account. It cannot be decrypted by another user or on another machine, and it never appears in a log or a command line. A free account gives 4 requests per minute." />
-                                            <StackPanel Orientation="Horizontal">
-                                                <PasswordBox x:Name="VtApiKey" Width="360" />
-                                                <Button x:Name="BtnSaveVtKey"   Content="Save key" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0" />
-                                                <Button x:Name="BtnRemoveVtKey" Content="Remove stored key" />
-                                            </StackPanel>
-                                            <TextBlock x:Name="VtKeyStatus" Style="{StaticResource Muted}" Margin="0,8,0,0" />
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Style="{StaticResource Card}">
-                                        <StackPanel>
-                                            <TextBlock Text="Data and logs" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
-                                            <TextBlock x:Name="DataPathText" Style="{StaticResource Muted}" />
-                                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                                <Button x:Name="BtnOpenDataFolder" Content="Open data folder" />
-                                                <Button x:Name="BtnClearLogs"      Content="Delete old logs" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </TabItem>
                     </TabControl>
+                </Grid>
+
+                <!-- ===================== SECURITY TOOLS ===================== -->
+                <!--
+                    The tools that make or check something: keys, file hashes and
+                    passwords. They examine nothing on the machine, which is why they
+                    are not on the Audit page.
+                -->
+                <Grid x:Name="PageSecurityTools" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Text="Security tools" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}"
+                                   Text="Generate SSH keys, check a download against the hash its vendor publishes, and create or test passwords. Nothing here inspects or changes the machine." />
+                    </StackPanel>
+
+                    <TabControl Grid.Row="1" x:Name="SecurityToolsTabs" Background="Transparent" BorderThickness="0">
+
+                        <TabItem Header="SSH keys">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Generate a key pair" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="SshKeyName" Tag="Key file name" Width="160" Text="id_ed25519" />
+                                            <TextBlock Text="Type" VerticalAlignment="Center" Margin="16,0,8,0" />
+                                            <ComboBox x:Name="SshKeyType" Width="110" />
+                                            <TextBlock Text="Comment" VerticalAlignment="Center" Margin="16,0,8,0" />
+                                            <TextBox x:Name="SshKeyComment" Tag="Comment identifying the key" Width="200" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Passphrase" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <PasswordBox x:Name="SshPassphrase" Width="220" />
+                                            <CheckBox x:Name="SshNoPassphrase" Content="No passphrase (not recommended)" Margin="16,0,0,0" />
+                                            <Button x:Name="BtnGenerateSshKey" Content="Generate" Style="{StaticResource PrimaryButton}" Margin="16,0,0,0" />
+                                            <Button x:Name="BtnListSshKeys"    Content="List keys" />
+                                            <Button x:Name="BtnCopyPublicKey"  Content="Copy public key" />
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                                   Text="ed25519 is the default. An existing key is never overwritten, and the private key permissions are restricted to the owner after generation." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="SshOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+
+                        <TabItem Header="File integrity">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="File" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="HashFilePath" Tag="Path to the file to hash" Width="440" />
+                                            <Button x:Name="BtnBrowseHashFile" Content="Browse" Margin="10,0,0,0" />
+                                            <Button x:Name="BtnComputeHash"    Content="Compute hashes" Style="{StaticResource PrimaryButton}" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Expected hash" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="ExpectedHash" Tag="Paste the hash published by the vendor" Width="520" />
+                                            <Button x:Name="BtnVerifyHash" Content="Verify" Margin="10,0,0,0" />
+                                            <Button x:Name="BtnVirusTotal" Content="Check on VirusTotal" />
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                                   Text="The VirusTotal check sends the SHA256 only. The file itself is never uploaded, so internal documents and installers stay private." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="IntegrityOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+
+                        <TabItem Header="Credentials">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <TextBlock Text="Length" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="PasswordLength" Tag="Length" Width="60" Text="20" />
+                                            <CheckBox x:Name="PwdUpper"   Content="A-Z" IsChecked="True" Margin="14,0,0,0" />
+                                            <CheckBox x:Name="PwdLower"   Content="a-z" IsChecked="True" Margin="10,0,0,0" />
+                                            <CheckBox x:Name="PwdDigits"  Content="0-9" IsChecked="True" Margin="10,0,0,0" />
+                                            <CheckBox x:Name="PwdSymbols" Content="Symbols" IsChecked="True" Margin="10,0,0,0" />
+                                            <Button x:Name="BtnGeneratePassword"   Content="Generate password" Style="{StaticResource PrimaryButton}" Margin="16,0,0,0" />
+                                            <Button x:Name="BtnGeneratePassphrase" Content="Generate passphrase" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Check a password" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <PasswordBox x:Name="BreachPassword" Width="260" />
+                                            <Button x:Name="BtnCheckBreach" Content="Check against breaches" Margin="10,0,0,0" />
+                                            <Button x:Name="BtnCopyPassword" Content="Copy last generated" />
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                                   Text="The breach check uses k-anonymity: only the first five characters of the SHA1 hash are sent, so the password never leaves this machine." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="CredentialOutput" Style="{StaticResource Mono}"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                    </TabControl>
+                </Grid>
+
+                <!-- ======================= KNOWLEDGE ======================== -->
+                <Grid x:Name="PageKnowledge" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <TextBlock Text="Knowledge base" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}"
+                                   Text="Network and Windows topics looked up during a support call: what a port, a protocol or a setting is for, and how to check it. Search across every topic." />
+                    </StackPanel>
+
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <TextBox Grid.Row="0" Grid.Column="0" x:Name="KnowledgeSearch" Tag="Search every topic" Margin="0,0,10,10" />
+                        <ListBox Grid.Row="1" Grid.Column="0" x:Name="KnowledgeList" Margin="0,0,10,0"
+                                 />
+
+                        <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                            <RichTextBox x:Name="KnowledgeContent" IsReadOnly="True"
+                                         BorderThickness="0" Background="Transparent"
+                                         Foreground="{DynamicResource TextPrimary}"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Disabled"
+                                         IsDocumentEnabled="True" />
+                        </Border>
+                    </Grid>
+                </Grid>
+
+                <!-- ==================== VENDOR COMMANDS ===================== -->
+                <Grid x:Name="PageVendorCommands" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <TextBlock Text="Vendor commands" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}"
+                                   Text="Commands for network equipment, grouped by task for each manufacturer. Pick a vendor, or search across all of them at once." />
+                    </StackPanel>
+
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,10,10">
+                            <ComboBox x:Name="VendorSelect" Margin="0,0,0,8" />
+                            <TextBox  x:Name="VendorSearch" Tag="Search commands across all vendors" />
+                        </StackPanel>
+
+                        <ListBox Grid.Row="1" Grid.Column="0" x:Name="VendorSectionList" Margin="0,0,10,0"
+                                 />
+
+                        <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                            <RichTextBox x:Name="VendorContent" IsReadOnly="True"
+                                         BorderThickness="0" Background="Transparent"
+                                         Foreground="{DynamicResource TextPrimary}"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         IsDocumentEnabled="True" />
+                        </Border>
+                    </Grid>
+                </Grid>
+
+                <!-- ======================== SETTINGS ======================== -->
+                <!--
+                    What the toolkit keeps for this Windows account. It lived in a tab
+                    of the Security page, where nobody looked for a data folder.
+                -->
+                <Grid x:Name="PageSettings" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Text="Settings" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}"
+                                   Text="Kept for this Windows account only: the VirusTotal key, and the folder where the toolkit writes its data and logs." />
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1" Margin="0,10,0,0" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="VirusTotal API key" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                    <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                               Text="Stored encrypted with DPAPI under this Windows account. It cannot be decrypted by another user or on another machine, and it never appears in a log or a command line. A free account gives 4 requests per minute." />
+                                    <StackPanel Orientation="Horizontal">
+                                        <PasswordBox x:Name="VtApiKey" Width="360" />
+                                        <Button x:Name="BtnSaveVtKey"   Content="Save key" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0" />
+                                        <Button x:Name="BtnRemoveVtKey" Content="Remove stored key" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="VtKeyStatus" Style="{StaticResource Muted}" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Data and logs" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                    <TextBlock x:Name="DataPathText" Style="{StaticResource Muted}" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <Button x:Name="BtnOpenDataFolder" Content="Open data folder" />
+                                        <Button x:Name="BtnClearLogs"      Content="Delete old logs" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </Grid>
         </Grid>

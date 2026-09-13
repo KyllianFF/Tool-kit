@@ -84,7 +84,10 @@ function Initialize-TkHardwarePage {
 
     # Reading modules and panels costs a WMI call each, so it waits until
     # somebody opens the page.
-    Register-TkFirstShow -PageName 'Hardware' -Action {
+    #
+    # The hardware tests are a tab of the Diagnostics page now, so they load
+    # with it.
+    Register-TkFirstShow -PageName 'Diagnostics' -Action {
         Update-TkMemoryPanel
         Update-TkBatteryPanel
         Update-TkAudioPanel
