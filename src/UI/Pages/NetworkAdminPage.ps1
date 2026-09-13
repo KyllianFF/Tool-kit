@@ -25,6 +25,7 @@ function Initialize-TkNetworkAdminPage {
     Register-TkClick -Name 'BtnTlsCertificate' -Action { Invoke-TkTlsInspectionFromUi }
     Register-TkClick -Name 'BtnWakeOnLan'      -Action { Invoke-TkWakeOnLanFromUi }
     Register-TkClick -Name 'BtnNeighbours'     -Action { Invoke-TkNeighbourTableFromUi }
+    Register-TkClick -Name 'BtnSwitchPort'     -Action { Invoke-TkSwitchPortFromUi }
 
     # --- Configuration ----------------------------------------------------
     Register-TkClick -Name 'BtnApplyProfile'     -Action { Invoke-TkApplyProfileFromUi }
@@ -374,6 +375,46 @@ function Invoke-TkNeighbourTableFromUi {
                 [Environment]::NewLine + [Environment]::NewLine +
                 (Format-TkTableText -InputObject $rows)
             )
+        }
+}
+
+<#
+.SYNOPSIS
+    Asks, then listens for the switch announcement and shows what it says.
+
+.DESCRIPTION
+    Asked first because it takes about a minute and resets Packet Monitor,
+    which an administrator may be using for something else.
+#>
+function Invoke-TkSwitchPortFromUi {
+    [CmdletBinding()]
+    param()
+
+    $message = @(
+        'Listen for the switch announcement on the network adapters for about a minute?'
+        ''
+        'Packet Monitor records only the LLDP and CDP announcements a switch sends to the port, and the capture file is deleted as soon as it is read.'
+        ''
+        'Any Packet Monitor capture or filter already set up on this machine is stopped and cleared.'
+    ) -join [Environment]::NewLine
+
+    $answer = [System.Windows.MessageBox]::Show((Get-TkContext).Window, $message, 'Switch port discovery',
+                                                [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+
+    if ($answer -ne [System.Windows.MessageBoxResult]::Yes) {
+        return
+    }
+
+    Set-TkOutput -ControlName 'AdminOutput' -Text 'Listening for LLDP and CDP announcements for 65 seconds. CDP is sent every 60 seconds, LLDP every 30.'
+
+    Invoke-TkBackgroundAction -StatusText 'Listening for the switch announcement, about a minute...' `
+        -ScriptBlock { Invoke-TkSwitchPortDiscovery -Seconds 65 } `
+        -OnComplete {
+            param($result)
+
+            $discovery = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Status'] } | Select-Object -Last 1
+
+            Set-TkOutput -ControlName 'AdminOutput' -Text (Format-TkSwitchDiscoveryText -Discovery $discovery)
         }
 }
 

@@ -90,6 +90,9 @@ function Initialize-TkRunspacePool {
         # session of the window that started them.
         'TkSessionId', 'TkJournalKind',
 
+        # The switch port capture runs in a worker and filters on these.
+        'TkLldpMultiCast', 'TkCdpMultiCast',
+
         # The audit runs in a worker, so the table it reads its controls from
         # has to exist there. The two Defender variables are the per run cache
         # the controls share; seeded so the worker starts from a known empty
@@ -114,6 +117,11 @@ function Initialize-TkRunspacePool {
 
         $sessionState.Variables.Add($entry)
     }
+
+    # Set in the workers only, never on the interface thread: Write-TkLog reads
+    # it to keep background lines out of the console window, where a selection
+    # made with the mouse would hold the worker until the selection ends.
+    $sessionState.Variables.Add((New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry('TkWorker', $true, '')))
 
     $pool = [runspacefactory]::CreateRunspacePool(1, $MaxRunspaces, $sessionState, $Host)
     $pool.ApartmentState = [System.Threading.ApartmentState]::MTA

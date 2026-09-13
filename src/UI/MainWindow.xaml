@@ -2070,12 +2070,16 @@
                                                     <Button x:Name="BtnNeighbours" Content="Neighbour table"
                                                             Style="{StaticResource GroupedButton}"
                                                             ToolTip="The local ARP and neighbour cache: which MAC answers for which address." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnSwitchPort" Content="Switch port"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Listens about a minute for the LLDP or CDP announcement of the switch this machine is plugged into: switch name, port, VLAN and management address. Needs administrator rights." />
                                                 </StackPanel>
                                             </Border>
                                         </Grid>
 
-                                        <TextBlock Grid.Row="3" Style="{StaticResource Muted}" Margin="0,10,0,0"
-                                                   Text="Hover any action for what it reports. Everything on this tab is read only except the magic packet, which only asks a machine to power on." />
+                                        <TextBlock Grid.Row="3" Style="{StaticResource Muted}" Margin="0,10,0,0" TextWrapping="Wrap"
+                                                   Text="Hover any action for what it reports. Everything on this tab is read only except the magic packet, which only asks a machine to power on. Switch port listens with Packet Monitor for about a minute and needs administrator rights." />
                                     </Grid>
                                 </Border>
 
