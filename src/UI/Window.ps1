@@ -281,7 +281,13 @@ function Get-TkPageName {
     [OutputType([string[]])]
     param()
 
-    return @('Dashboard', 'System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')
+    return @(
+        'Dashboard', 'System', 'Software', 'Tweaks', 'Fixes',   # Workstation
+        'Diagnostics', 'Network',                              # Troubleshooting
+        'Security', 'SecurityTools',                           # Security
+        'Knowledge', 'VendorCommands',                         # Reference
+        'Settings'
+    )
 }
 
 <#

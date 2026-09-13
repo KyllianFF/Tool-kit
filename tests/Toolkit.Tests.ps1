@@ -1121,8 +1121,7 @@ Describe 'Interface rendering' {
 
             # A code point the font does not carry renders as an empty box.
             # Nothing else in the suite can see that.
-            foreach ($name in @('NavDashboard', 'NavSystem', 'NavSoftware', 'NavTweaks', 'NavFixes',
-                                'NavNetwork', 'NavDiagnostics', 'NavSecurity')) {
+            foreach ($name in @(Get-TkPageName | ForEach-Object { 'Nav{0}' -f $_ })) {
 
                 $button = $script:Window.FindName($name)
 
@@ -2347,6 +2346,24 @@ Describe 'Dashboard and pages' {
             $script:FirstLoadCount | Should -Be 1
         }
 
+        It 'lists the navigation in the order of the page list' {
+
+            # The page list is the one declaration of what the navigation holds
+            # and in which order; the markup has to agree with it.
+            $order = @([regex]::Matches($script:Markup, 'x:Name="Nav(?<name>[A-Za-z]+)"') |
+                       ForEach-Object { $_.Groups['name'].Value })
+
+            ($order -join ',') | Should -Be (@(Get-TkPageName) -join ',')
+        }
+
+        It 'groups the navigation under the four kinds of work' {
+
+            $headings = @([regex]::Matches($script:Markup, '<TextBlock Text="(?<text>[A-Z]+)" Style="\{StaticResource NavSection\}"') |
+                          ForEach-Object { $_.Groups['text'].Value })
+
+            ($headings -join ',') | Should -Be 'WORKSTATION,TROUBLESHOOTING,SECURITY,REFERENCE'
+        }
+
         It 'opens on the Dashboard' {
 
             @(Get-TkPageName)[0] | Should -Be 'Dashboard'
@@ -2369,7 +2386,8 @@ Describe 'Dashboard and pages' {
                 }
 
                 if ($action.TabControl) {
-                    $script:Markup | Should -Match ('<TabControl x:Name="{0}"' -f $action.TabControl) -Because $action.Id
+                    # Other attributes such as Grid.Row may come before the name.
+                    $script:Markup | Should -Match ('<TabControl[^>]*\sx:Name="{0}"' -f $action.TabControl) -Because $action.Id
                     $script:Markup | Should -Match ('<TabItem Header="{0}"' -f [regex]::Escape($action.Tab)) -Because $action.Id
                 }
 
@@ -2719,6 +2737,19 @@ Describe 'Dashboard and pages' {
 
             $tile.Value    | Should -Be 'No battery'
             $tile.Severity | Should -Be 'Info'
+        }
+
+        It 'opens the tab a tile is about, in a tab control that has it' {
+
+            foreach ($tile in @($script:Tiles | Where-Object { $_.TabControl })) {
+                $script:Markup | Should -Match ('<TabControl Grid.Row="1" x:Name="{0}"|<TabControl x:Name="{0}"' -f $tile.TabControl) -Because $tile.Title
+                $script:Markup | Should -Match ('<TabItem Header="{0}"' -f [regex]::Escape($tile.Tab)) -Because $tile.Title
+            }
+
+            $battery = $script:Tiles | Where-Object { $_.Title -eq 'Battery' }
+
+            $battery.Page | Should -Be 'Diagnostics'
+            $battery.Tab  | Should -Be 'Hardware tests'
         }
 
         It 'opens the entry a tile is about, in a list that has it' {
