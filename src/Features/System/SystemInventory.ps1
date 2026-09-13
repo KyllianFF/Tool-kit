@@ -284,6 +284,42 @@ function ConvertTo-TkVolumeUsage {
 
 <#
 .SYNOPSIS
+    Orders volumes for display: the system drive first, then by letter.
+
+.DESCRIPTION
+    The system drive is the one that stops Windows when it fills, so it leads;
+    the others follow in the order drive letters are read.
+
+.PARAMETER Volume
+    Output of Get-TkVolumeUsage.
+
+.PARAMETER SystemDrive
+    The drive to put first.
+
+.OUTPUTS
+    PSCustomObject[]
+#>
+function Get-TkVolumeDisplayOrder {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [object[]] $Volume,
+
+        [Parameter()]
+        [string] $SystemDrive = $env:SystemDrive
+    )
+
+    return @($Volume |
+             Where-Object { $null -ne $_ } |
+             Sort-Object -Property @{ Expression = { if ([string] $_.Drive -eq $SystemDrive) { 0 } else { 1 } } },
+                                   @{ Expression = { [string] $_.Drive } })
+}
+
+<#
+.SYNOPSIS
     Reads the fixed volumes of this machine with their usage.
 
 .OUTPUTS
@@ -339,7 +375,13 @@ function Get-TkPlatformSecurityInfo {
     # would claim the chip is missing when it has simply not been asked.
     $tpmText = if (Test-TkIsElevated) { 'Not available' } else { 'Unknown (needs elevation)' }
 
-    $tpm = Get-TkCimInstanceSafe -ClassName 'Win32_Tpm' -Namespace 'Root\CIMV2\Security\MicrosoftTpm'
+    # Not asked at all unelevated. Refused, the query still waits about five
+    # seconds before it gives up, and that wait, twice with BitLocker below,
+    # made this the slowest card on the System page for an answer known in
+    # advance.
+    $tpm = if (Test-TkIsElevated) {
+               Get-TkCimInstanceSafe -ClassName 'Win32_Tpm' -Namespace 'Root\CIMV2\Security\MicrosoftTpm'
+           }
 
     if ($tpm) {
         $state   = if ($tpm.IsEnabled_InitialValue) { 'enabled' } else { 'disabled' }
@@ -349,18 +391,25 @@ function Get-TkPlatformSecurityInfo {
     # --- BitLocker --------------------------------------------------------
     # Every fixed drive, judged the way the audit judges it, so this page and
     # the audit cannot give two answers about the same machine.
-    $bitLocker = 'Not available (needs elevation or unsupported edition)'
+    # Not asked unelevated either: Get-BitLockerVolume is refused after the same
+    # five second wait as the TPM.
+    $bitLocker = 'Unknown (needs elevation)'
 
-    try {
-        $bitLockerVolumes = @(Get-BitLockerVolume -ErrorAction Stop)
+    if (Test-TkIsElevated) {
 
-        $removable = @(Get-TkCimInstanceSafe -ClassName 'Win32_LogicalDisk' -Filter 'DriveType = 2' -All |
-                       ForEach-Object { [string] $_.DeviceID })
+        $bitLocker = 'Not available (unsupported edition)'
 
-        $bitLocker = (ConvertTo-TkBitLockerFinding -Volume $bitLockerVolumes -RemovableMountPoint $removable).Measured
-    }
-    catch {
-        $null = $_
+        try {
+            $bitLockerVolumes = @(Get-BitLockerVolume -ErrorAction Stop)
+
+            $removable = @(Get-TkCimInstanceSafe -ClassName 'Win32_LogicalDisk' -Filter 'DriveType = 2' -All |
+                           ForEach-Object { [string] $_.DeviceID })
+
+            $bitLocker = (ConvertTo-TkBitLockerFinding -Volume $bitLockerVolumes -RemovableMountPoint $removable).Measured
+        }
+        catch {
+            $null = $_
+        }
     }
 
     # --- Defender and the antivirus in charge ------------------------------
@@ -490,9 +539,16 @@ function Get-TkActivationStatus {
     param()
 
     try {
-        $product = Get-CimInstance -ClassName SoftwareLicensingProduct -ErrorAction Stop |
-            Where-Object { $_.PartialProductKey -and $_.ApplicationID -eq '55c92734-d682-4d71-983e-d6ec3f16059f' } |
-            Select-Object -First 1
+        # Filtered by WMI, not in PowerShell. Unfiltered, every licensing
+        # product on the machine, several hundred of them, is computed and sent
+        # across: ten seconds on its own. When the Dashboard and the System
+        # page asked at the same time, the second query failed outright, which
+        # is how one page read "Activated" while the other read "Not
+        # available". Filtered, it answers in about a tenth of a second.
+        $product = Get-CimInstance -ClassName SoftwareLicensingProduct `
+                                   -Filter "ApplicationID = '55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL" `
+                                   -Property 'LicenseStatus' -ErrorAction Stop |
+                   Select-Object -First 1
 
         if (-not $product) {
             return 'Unknown'
@@ -510,6 +566,10 @@ function Get-TkActivationStatus {
         }
     }
     catch {
+        Write-TkLog -Level Warning -Category 'Inventory' -Message (
+            'The activation state could not be read: {0}' -f $_.Exception.Message
+        )
+
         return 'Not available'
     }
 }

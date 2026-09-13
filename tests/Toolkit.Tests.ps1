@@ -2311,6 +2311,20 @@ Describe 'Dashboard and pages' {
             }
         }
 
+        It 'shows the quick actions on the Dashboard only' {
+
+            $script:Markup | Should -Match 'x:Name="DashQuickActions"'
+            $script:Markup | Should -Not -Match 'SystemQuickActions'
+        }
+
+        It 'draws a bar for every volume rather than a selector' {
+
+            # A selector showed one drive at a time, and the drive filling up
+            # was rarely the one selected.
+            $script:Markup | Should -Match 'x:Name="SystemVolumeList"'
+            $script:Markup | Should -Not -Match 'SystemVolumeChoice'
+        }
+
         It 'opens on the Dashboard' {
 
             @(Get-TkPageName)[0] | Should -Be 'Dashboard'
@@ -2398,6 +2412,18 @@ Describe 'Dashboard and pages' {
             # that empty array was counted as a battery.
             @(Read-TkDashboardPart -Part 'Empty' -Reader { return , @() }).Count        | Should -Be 0
             @(Read-TkDashboardPart -Part 'Two'   -Reader { return , @('a', 'b') }).Count | Should -Be 2
+        }
+
+        It 'lists volumes with the system drive first, then by letter' {
+
+            $ordered = @(Get-TkVolumeDisplayOrder -SystemDrive 'C:' -Volume @(
+                [pscustomobject] @{ Drive = 'D:' }
+                [pscustomobject] @{ Drive = 'H:' }
+                [pscustomobject] @{ Drive = 'C:' }
+                [pscustomobject] @{ Drive = 'A:' }
+            ))
+
+            (@($ordered | ForEach-Object { $_.Drive }) -join ',') | Should -Be 'C:,A:,D:,H:'
         }
 
         It 'judges patch age with the same thresholds as the audit' {
@@ -2511,9 +2537,51 @@ Describe 'Dashboard and pages' {
             $line | Should -Not -Match 'Ethernet'
         }
 
+        It 'reads enumeration values whether they arrive as names or numbers' {
+
+            $state = @{ 1 = 'Tentative'; 4 = 'Preferred' }
+
+            ConvertFrom-TkCimEnum -Value 4           -Name $state | Should -Be 'Preferred'
+            ConvertFrom-TkCimEnum -Value '4'         -Name $state | Should -Be 'Preferred'
+            ConvertFrom-TkCimEnum -Value 'Preferred' -Name $state | Should -Be 'Preferred'
+            ConvertFrom-TkCimEnum -Value 9           -Name $state | Should -Be '9'
+            ConvertFrom-TkCimEnum -Value $null       -Name $state | Should -Be ''
+        }
+
+        It 'finds the address and the addressing when the cmdlets return raw numbers' {
+
+            # What a background worker handed the Dashboard: states, origins and
+            # DHCP as numbers. Compared with names they matched nothing, and the
+            # card read "Not connected" with "1" under Addressing.
+            $record = ConvertTo-TkAdapterRecord `
+                -Adapter ([pscustomobject] @{ Name = 'Ethernet'; Status = 'Up'; InterfaceIndex = 12; HardwareInterface = $true }) `
+                -Address @(
+                    [pscustomobject] @{ InterfaceIndex = 12; IPAddress = '169.254.5.254'; PrefixLength = 16; AddressState = 4; PrefixOrigin = 2 }
+                    [pscustomobject] @{ InterfaceIndex = 12; IPAddress = '10.5.0.2';      PrefixLength = 32; AddressState = 1; PrefixOrigin = 1 }
+                    [pscustomobject] @{ InterfaceIndex = 12; IPAddress = '192.168.1.101'; PrefixLength = 24; AddressState = 4; PrefixOrigin = 3 }
+                ) `
+                -Route @([pscustomobject] @{ InterfaceIndex = 12; NextHop = '192.168.1.254'; RouteMetric = 0 }) `
+                -Interface @([pscustomobject] @{ InterfaceIndex = 12; InterfaceMetric = 20; Dhcp = 1 })
+
+            $record.IPv4Address | Should -Be '192.168.1.101'
+            $record.Dhcp        | Should -Be 'Enabled'
+            $record.RouteMetric | Should -Be 20
+        }
+
         It 'says nothing when the primary link is the only one' {
 
             Get-TkSecondaryAdapterSummary -Adapter @($script:Ethernet) -Primary $script:Ethernet | Should -Be ''
+        }
+    }
+
+    Context 'Dashboard writers' {
+
+        It 'fills the network card with no adapter at all, instead of failing' {
+
+            # An empty adapter list once became null on its way in and failed
+            # the completion handler, leaving the card half written.
+            { Write-TkDashboardNetwork -Part ([pscustomobject] @{ Adapter = $null; Adapters = @() }) } | Should -Not -Throw
+            { Write-TkDashboardNetwork -Part $null } | Should -Not -Throw
         }
     }
 

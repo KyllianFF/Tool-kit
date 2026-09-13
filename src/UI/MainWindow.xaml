@@ -1117,16 +1117,8 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- Quick actions: the same set as the Dashboard, from the same list -->
+                        <!-- Identity. The quick actions live on the Dashboard only. -->
                         <Border Style="{StaticResource Card}" Margin="0,16,0,12">
-                            <StackPanel>
-                                <TextBlock Text="Quick actions" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
-                                <UniformGrid x:Name="SystemQuickActions" Columns="4" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Identity -->
-                        <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <TextBlock Text="Identity" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
                                 <!-- Shown until this card's part has been read; see Set-TkCardLoading. -->
@@ -1239,28 +1231,14 @@
                                     </UniformGrid>
 
                                     <!--
-                                        One volume at a time, the system drive selected first. A bar
-                                        reads faster than a percentage in a table, and the drive that
-                                        stops Windows when it fills is the one people ask about. The
-                                        bar is two star columns, so it stays proportional through a
-                                        resize with nothing measured in code.
+                                        Every fixed volume, one bar each, the system drive first. A
+                                        bar reads faster than a percentage in a table, and seeing all
+                                        of them at once is the point: the drive filling up is rarely
+                                        the one a selector happens to show. Rows are drawn in code by
+                                        Write-TkSystemVolumeList, one per volume the machine reports.
                                     -->
-                                    <DockPanel Margin="0,4,0,0" LastChildFill="False">
-                                        <TextBlock DockPanel.Dock="Left" Text="Disk space" Style="{StaticResource FieldLabel}"
-                                                   VerticalAlignment="Center" Margin="0,0,12,0" />
-                                        <ComboBox DockPanel.Dock="Left" x:Name="SystemVolumeChoice" Width="260" />
-                                    </DockPanel>
-                                    <Border Height="10" CornerRadius="5" Margin="0,10,0,0" Background="{DynamicResource SurfaceRaised}">
-                                        <Grid x:Name="SystemVolumeBar">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="0*" />
-                                                <ColumnDefinition Width="100*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border x:Name="SystemVolumeFill" Grid.Column="0" CornerRadius="5"
-                                                    Background="{DynamicResource Success}" />
-                                        </Grid>
-                                    </Border>
-                                    <TextBlock x:Name="SystemVolumeDetail" Style="{StaticResource Muted}" Margin="0,6,0,0" />
+                                    <TextBlock Text="Disk space" Style="{StaticResource FieldLabel}" Margin="0,4,0,6" />
+                                    <StackPanel x:Name="SystemVolumeList" />
 
                                     <!--
                                         Rendered by the shared table builder rather than a GridView.

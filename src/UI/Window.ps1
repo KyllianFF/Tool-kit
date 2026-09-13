@@ -19,6 +19,11 @@ $script:TkPageOpened      = @{}
 # How many background actions are still running. See Enter-TkBusy.
 $script:TkBusyCount = 0
 
+# Cards still reading, with the moment each started, and the one timer that
+# counts their seconds. See Start-TkLoadingClock.
+$script:TkLoadingStarted = @{}
+$script:TkLoadingTimer   = $null
+
 <#
 .SYNOPSIS
     Returns the main window XAML.
@@ -493,8 +498,24 @@ function Set-TkCardLoading {
     $content   = Get-TkControl -Name ('{0}Content' -f $Name)
 
     if ($indicator) {
+
         $indicator.Visibility = if ($Loading) { [System.Windows.Visibility]::Visible }
                                 else { [System.Windows.Visibility]::Collapsed }
+
+        if ($Loading) {
+            $script:TkLoadingStarted[$Name] = Get-Date
+            Start-TkLoadingClock
+        }
+        else {
+            [void] $script:TkLoadingStarted.Remove($Name)
+
+            # Back to the plain text, so the next read starts its count at zero.
+            $label = Get-TkControl -Name ('{0}LoadingText' -f $Name)
+
+            if ($label -and $null -ne $label.Tag) {
+                $label.Text = [string] $label.Tag
+            }
+        }
     }
 
     if ($null -eq $content) {
@@ -509,6 +530,76 @@ function Set-TkCardLoading {
 
     if ([string] $content.Tag -ne 'Filled') {
         $content.Visibility = [System.Windows.Visibility]::Collapsed
+    }
+}
+
+<#
+.SYNOPSIS
+    Counts the seconds on every card that is still reading.
+
+.DESCRIPTION
+    A moving bar alone cannot tell slow from stuck. Some readings really are
+    slow on some machines, platform security above all, and past a few seconds
+    the operator should see that time is being counted rather than wonder
+    whether anything is still happening. One timer serves every card, and it
+    stops itself when no card is reading.
+#>
+function Start-TkLoadingClock {
+    [CmdletBinding()]
+    param()
+
+    if ($null -eq $script:TkLoadingTimer) {
+
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromSeconds(1)
+        $timer.Add_Tick({ Update-TkLoadingClock })
+
+        $script:TkLoadingTimer = $timer
+    }
+
+    if (-not $script:TkLoadingTimer.IsEnabled) {
+        $script:TkLoadingTimer.Start()
+    }
+}
+
+<#
+.SYNOPSIS
+    Adds the elapsed seconds to the text of each card still reading.
+
+.DESCRIPTION
+    Shown from three seconds on: before that the count is noise. The original
+    text is kept in the label's Tag the first time, so the count is appended
+    to it rather than to the previous count.
+#>
+function Update-TkLoadingClock {
+    [CmdletBinding()]
+    param()
+
+    if ($script:TkLoadingStarted.Count -eq 0) {
+
+        if ($script:TkLoadingTimer) {
+            $script:TkLoadingTimer.Stop()
+        }
+
+        return
+    }
+
+    foreach ($name in @($script:TkLoadingStarted.Keys)) {
+
+        $label = Get-TkControl -Name ('{0}LoadingText' -f $name)
+
+        if ($null -eq $label) {
+            continue
+        }
+
+        if ($null -eq $label.Tag) {
+            $label.Tag = $label.Text
+        }
+
+        $seconds = [int] ((Get-Date) - $script:TkLoadingStarted[$name]).TotalSeconds
+
+        $label.Text = if ($seconds -lt 3) { [string] $label.Tag }
+                      else { '{0} {1} s' -f $label.Tag, $seconds }
     }
 }
 

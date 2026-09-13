@@ -87,22 +87,6 @@ function Initialize-TkSystemPage {
 
     Register-TkClick -Name 'BtnExportReport' -Action { Export-TkSystemReportFromUi }
 
-    $volumeBox = Get-TkControl -Name 'SystemVolumeChoice'
-
-    if ($volumeBox) {
-
-        $volumeBox.Add_SelectionChanged({
-
-            $box = Get-TkControl -Name 'SystemVolumeChoice'
-
-            if ($box -and $box.SelectedItem) {
-                Show-TkSystemVolume -Drive ([string] $box.SelectedItem.Tag)
-            }
-        })
-    }
-
-    Add-TkQuickActionPanel -PanelName 'SystemQuickActions'
-
     # The inventory costs a few seconds of CIM queries, and the toolkit opens
     # on the Dashboard now, so it waits for the page to be opened.
     Register-TkFirstShow -PageName 'System' -Action { Update-TkSystemPage }
@@ -405,9 +389,9 @@ function Write-TkSystemHardware {
         Set-TkSystemFieldsUnavailable -Name @('ValCpu', 'ValCores', 'ValMemory', 'ValGpu')
     }
 
-    Update-TkSystemVolumeChoice -Volume $Volume
+    Write-TkSystemVolumeList -Volume $Volume
 
-    Set-TkObjectTable -ControlName 'DocDisks' -InputObject $(if ($Hardware) { $Hardware.Disks } else { @() }) `
+    Set-TkObjectTable -ControlName 'DocDisks' -InputObject @(if ($Hardware) { $Hardware.Disks }) `
         -Property @('Name', 'Size', 'MediaType', 'BusType', 'Health') `
         -Column   @('Model', 'Size', 'Type', 'Bus', 'Health') `
         -Weight   @(3.0, 1.0, 0.9, 0.9, 0.9) `
@@ -446,113 +430,114 @@ function Write-TkSystemSecurity {
 
 <#
 .SYNOPSIS
-    Lists the volumes in the disk selector, with the system drive selected.
+    Draws one row per fixed volume: its name, its figures and a fill bar.
+
+.DESCRIPTION
+    Every volume at once, the system drive first. The earlier selector showed
+    one drive at a time, and the one filling up was rarely the one selected.
 
 .PARAMETER Volume
     Output of Get-TkVolumeUsage.
 #>
-function Update-TkSystemVolumeChoice {
+function Write-TkSystemVolumeList {
     [CmdletBinding()]
     param(
         [Parameter()]
         [AllowEmptyCollection()]
+        [AllowNull()]
         [object[]] $Volume = @()
     )
 
-    $box = Get-TkControl -Name 'SystemVolumeChoice'
+    $list = Get-TkControl -Name 'SystemVolumeList'
 
-    if ($null -eq $box) {
+    if ($null -eq $list) {
         return
     }
 
-    $box.Items.Clear()
+    $list.Children.Clear()
 
-    $volumes = @($Volume | Where-Object { $null -ne $_ })
+    $volumes = @(Get-TkVolumeDisplayOrder -Volume @($Volume))
 
     if ($volumes.Count -eq 0) {
 
-        Set-TkUsageBar -BarName 'SystemVolumeBar' -FillName 'SystemVolumeFill' -Percent 0
+        $empty = New-Object System.Windows.Controls.TextBlock
+        $empty.Text = 'No fixed volume was returned.'
+        $empty.SetResourceReference([System.Windows.Controls.TextBlock]::StyleProperty, 'Muted')
 
-        $detail = Get-TkControl -Name 'SystemVolumeDetail'
-
-        if ($detail) {
-            $detail.Text = 'No fixed volume was returned.'
-        }
-
+        [void] $list.Children.Add($empty)
         return
     }
 
-    $selected = $null
-
     foreach ($item in $volumes) {
-
-        $entry = New-Object System.Windows.Controls.ComboBoxItem
-        $entry.Content = '{0}  {1}' -f $item.Drive, $item.Label
-        $entry.Tag     = [string] $item.Drive
-
-        [void] $box.Items.Add($entry)
-
-        # The system drive, because it is the one that stops Windows when it
-        # fills.
-        if ([string] $item.Drive -eq $env:SystemDrive) {
-            $selected = $entry
-        }
+        [void] $list.Children.Add((New-TkVolumeRow -Volume $item))
     }
-
-    if ($null -eq $selected) {
-        $selected = $box.Items[0]
-    }
-
-    # Selecting raises SelectionChanged, which draws the bar.
-    $box.SelectedItem = $selected
 }
 
 <#
 .SYNOPSIS
-    Draws the fill bar and the figures for one volume.
+    Builds the row for one volume.
 
-.PARAMETER Drive
-    Drive letter with its colon, such as C:.
+.PARAMETER Volume
+    One record from Get-TkVolumeUsage.
 #>
-function Show-TkSystemVolume {
+function New-TkVolumeRow {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string] $Drive
+        [pscustomobject] $Volume
     )
 
-    $volume = @($script:TkSystemSnapshot.Volumes) |
-              Where-Object { $null -ne $_ -and [string] $_.Drive -eq $Drive } |
-              Select-Object -First 1
+    $row = New-Object System.Windows.Controls.StackPanel
+    $row.Margin = New-Object System.Windows.Thickness(0, 0, 0, 12)
 
-    $detail = Get-TkControl -Name 'SystemVolumeDetail'
+    # --- Name on the left, figures on the right ----------------------------
+    $header = New-Object System.Windows.Controls.DockPanel
+    $header.LastChildFill = $true
 
-    if ($null -eq $volume) {
+    # A whole percentage: formatted in the local culture, a decimal reads
+    # 46,6 on a French Windows beside sizes printed as 1.99 TB.
+    $figures = New-Object System.Windows.Controls.TextBlock
+    $figures.Text              = '{0}% used, {1} free of {2}' -f [math]::Round($Volume.UsedPercent), $Volume.Free, $Volume.Size
+    $figures.FontSize          = 12
+    $figures.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+    $figures.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMuted')
 
-        Set-TkUsageBar -BarName 'SystemVolumeBar' -FillName 'SystemVolumeFill' -Percent 0
+    [System.Windows.Controls.DockPanel]::SetDock($figures, [System.Windows.Controls.Dock]::Right)
 
-        if ($detail) {
-            $detail.Text = 'This volume is no longer in the inventory. Refresh the page.'
-        }
+    $role = if ([string] $Volume.Drive -eq $env:SystemDrive) { ', system drive' } else { '' }
 
-        return
+    $name = New-Object System.Windows.Controls.TextBlock
+    $name.Text              = '{0}  {1}, {2}{3}' -f $Volume.Drive, $Volume.Label, $Volume.FileSystem, $role
+    $name.FontSize          = 13
+    $name.FontWeight        = [System.Windows.FontWeights]::SemiBold
+    $name.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+    $name.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextPrimary')
+
+    [void] $header.Children.Add($figures)
+    [void] $header.Children.Add($name)
+    [void] $row.Children.Add($header)
+
+    # --- The bar -----------------------------------------------------------
+    $bar = New-TkUsageBar -Percent ([double] $Volume.UsedPercent) -Severity $Volume.Severity -Height 8
+    $bar.Margin = New-Object System.Windows.Thickness(0, 6, 0, 0)
+
+    [void] $row.Children.Add($bar)
+
+    # --- What a warning means, in the colour of the warning ------------------
+    if ($Volume.Note) {
+
+        $note = New-Object System.Windows.Controls.TextBlock
+        $note.Text         = $Volume.Note
+        $note.FontSize     = 11
+        $note.TextWrapping = [System.Windows.TextWrapping]::Wrap
+        $note.Margin       = New-Object System.Windows.Thickness(0, 4, 0, 0)
+        $note.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty,
+            (Get-TkSeverityBrushKey -Severity $Volume.Severity))
+
+        [void] $row.Children.Add($note)
     }
 
-    Set-TkUsageBar -BarName 'SystemVolumeBar' -FillName 'SystemVolumeFill' `
-                   -Percent $volume.UsedPercent -Severity $volume.Severity
-
-    if ($detail) {
-
-        # A whole percentage: formatted in the local culture, a decimal would
-        # read 46,6 on a French Windows next to sizes printed as 1.99 TB.
-        $text = '{0}% used: {1} free of {2}, {3}.' -f [math]::Round($volume.UsedPercent), $volume.Free, $volume.Size, $volume.FileSystem
-
-        if ($volume.Note) {
-            $text += ' ' + $volume.Note
-        }
-
-        $detail.Text = $text
-    }
+    return $row
 }
 
 <#

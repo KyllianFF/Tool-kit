@@ -54,7 +54,12 @@ function Get-TkNetworkAdapterInfo {
     }
 
     if (-not $IncludeDisconnected) {
-        $adapters = @($adapters | Where-Object { [string] $_.Status -eq 'Up' })
+        # Status is a property the module's type data adds. When it is missing
+        # the operational status underneath it answers: 1 is up.
+        $adapters = @($adapters | Where-Object {
+            [string] $_.Status -eq 'Up' -or
+            ([string]::IsNullOrEmpty([string] $_.Status) -and [string] $_.InterfaceOperationalStatus -in @('1', 'Up'))
+        })
     }
 
     # Loaded explicitly rather than on first use. Inside a background runspace
@@ -210,10 +215,61 @@ function ConvertTo-TkAdapterRecord {
         Gateway        = if ($defaultRoute) { [string] $defaultRoute.NextHop } else { 'None' }
         RouteMetric    = $metric
         DnsServers     = ($servers -join ', ')
-        Dhcp           = if ($binding) { [string] $binding.Dhcp } else { 'No IPv4 binding' }
+        Dhcp           = if ($binding) { ConvertFrom-TkCimEnum -Value $binding.Dhcp -Name @{ 0 = 'Disabled'; 1 = 'Enabled' } }
+                         else { 'No IPv4 binding' }
         Physical       = [bool] $Adapter.HardwareInterface
         InterfaceIndex = $index
     }
+}
+
+<#
+.SYNOPSIS
+    Reads a CIM enumeration value whether it arrives as a name or a number.
+
+.DESCRIPTION
+    The network cmdlets normally return names, Preferred or Enabled, through
+    enumeration types PowerShell generates when their module loads. In a
+    background worker they have arrived as raw numbers instead: the Dashboard
+    showed "1" under Addressing, and because an address state of 4 is not the
+    text "Preferred", no address counted as usable and a machine with a
+    working Ethernet link read "Not connected".
+
+    Both forms are accepted here, so the answer no longer depends on how the
+    module happened to load in the worker that asked.
+
+.PARAMETER Value
+    The property value.
+
+.PARAMETER Name
+    Number to name, for the values the caller compares against.
+
+.OUTPUTS
+    System.String, empty for a null value.
+#>
+function ConvertFrom-TkCimEnum {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Value,
+
+        [Parameter(Mandatory)]
+        [hashtable] $Name
+    )
+
+    if ($null -eq $Value) {
+        return ''
+    }
+
+    $text   = [string] $Value
+    $number = 0
+
+    if ([int]::TryParse($text, [ref] $number) -and $Name.ContainsKey($number)) {
+        return [string] $Name[$number]
+    }
+
+    return $text
 }
 
 <#
@@ -246,11 +302,19 @@ function Select-TkUsableIPv4 {
     return ($Address |
             Where-Object {
                 $null -ne $_ -and
-                [string] $_.AddressState -eq 'Preferred' -and
+                (ConvertFrom-TkCimEnum -Value $_.AddressState -Name @{
+                    0 = 'Invalid'; 1 = 'Tentative'; 2 = 'Duplicate'; 3 = 'Deprecated'; 4 = 'Preferred'
+                }) -eq 'Preferred' -and
                 [string] $_.IPAddress -notlike '169.254.*' -and
                 [string] $_.IPAddress -notlike '127.*'
             } |
-            Sort-Object -Property @{ Expression = { if ([string] $_.PrefixOrigin -in @('Dhcp', 'Manual')) { 0 } else { 1 } } } |
+            Sort-Object -Property @{ Expression = {
+                $origin = ConvertFrom-TkCimEnum -Value $_.PrefixOrigin -Name @{
+                    0 = 'Other'; 1 = 'Manual'; 2 = 'WellKnown'; 3 = 'Dhcp'; 4 = 'RouterAdvertisement'
+                }
+
+                if ($origin -in @('Dhcp', 'Manual')) { 0 } else { 1 }
+            } } |
             Select-Object -First 1)
 }
 
@@ -785,6 +849,7 @@ function Select-TkPrimaryAdapter {
     param(
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
+        [AllowNull()]
         [object[]] $Adapter
     )
 
@@ -848,6 +913,7 @@ function Get-TkSecondaryAdapterSummary {
     param(
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
+        [AllowNull()]
         [object[]] $Adapter,
 
         [Parameter()]

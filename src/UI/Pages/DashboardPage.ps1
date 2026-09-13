@@ -142,7 +142,11 @@ function Write-TkDashboardNetwork {
     )
 
     $adapter  = if ($Part) { $Part.Adapter } else { $null }
-    $adapters = if ($Part) { @($Part.Adapters | Where-Object { $null -ne $_ }) } else { @() }
+    # @() around the if, not inside it. An if statement whose branch yields an
+    # empty array yields nothing at all, so the variable became null, and
+    # passed on as the adapter list that null failed the completion handler:
+    # the log recorded it, and the card was left half written.
+    $adapters = @(if ($Part) { $Part.Adapters | Where-Object { $null -ne $_ } })
 
     $unknown    = 'Not available'
     $hasAddress = ($null -ne $adapter -and $adapter.IPv4Address -and $adapter.IPv4Address -ne 'None')
