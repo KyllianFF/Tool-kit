@@ -42,6 +42,11 @@ function Get-TkNetworkAdapterInfo {
 
     $results = @()
 
+    # Loaded before the first call, one worker at a time. Loaded together by
+    # several workers at launch, NetAdapter failed to load and this reader
+    # returned no adapter at all. See Import-TkCommandModule.
+    [void] (Import-TkCommandModule -Command @('Get-NetAdapter', 'Get-NetIPAddress', 'Get-DnsClientServerAddress'))
+
     try {
         $adapters = @(Get-NetAdapter -ErrorAction Stop)
     }
@@ -60,20 +65,6 @@ function Get-TkNetworkAdapterInfo {
             [string] $_.Status -eq 'Up' -or
             ([string]::IsNullOrEmpty([string] $_.Status) -and [string] $_.InterfaceOperationalStatus -in @('1', 'Up'))
         })
-    }
-
-    # Loaded explicitly rather than on first use. Inside a background runspace
-    # the modules load when a cmdlet is first called, several workers start at
-    # once when the toolkit opens, and the reads below ignore their errors. A
-    # module that fails to load would then look exactly like a machine with no
-    # address. Loading here puts that failure in the log instead.
-    try {
-        Import-Module -Name 'NetTCPIP', 'DnsClient' -ErrorAction Stop
-    }
-    catch {
-        Write-TkLog -Level Warning -Category 'Network' -Message (
-            'The network modules could not be loaded: {0}' -f $_.Exception.Message
-        )
     }
 
     # Ignore rather than SilentlyContinue: SilentlyContinue still sends each
@@ -220,56 +211,6 @@ function ConvertTo-TkAdapterRecord {
         Physical       = [bool] $Adapter.HardwareInterface
         InterfaceIndex = $index
     }
-}
-
-<#
-.SYNOPSIS
-    Reads a CIM enumeration value whether it arrives as a name or a number.
-
-.DESCRIPTION
-    The network cmdlets normally return names, Preferred or Enabled, through
-    enumeration types PowerShell generates when their module loads. In a
-    background worker they have arrived as raw numbers instead: the Dashboard
-    showed "1" under Addressing, and because an address state of 4 is not the
-    text "Preferred", no address counted as usable and a machine with a
-    working Ethernet link read "Not connected".
-
-    Both forms are accepted here, so the answer no longer depends on how the
-    module happened to load in the worker that asked.
-
-.PARAMETER Value
-    The property value.
-
-.PARAMETER Name
-    Number to name, for the values the caller compares against.
-
-.OUTPUTS
-    System.String, empty for a null value.
-#>
-function ConvertFrom-TkCimEnum {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter()]
-        [AllowNull()]
-        $Value,
-
-        [Parameter(Mandatory)]
-        [hashtable] $Name
-    )
-
-    if ($null -eq $Value) {
-        return ''
-    }
-
-    $text   = [string] $Value
-    $number = 0
-
-    if ([int]::TryParse($text, [ref] $number) -and $Name.ContainsKey($number)) {
-        return [string] $Name[$number]
-    }
-
-    return $text
 }
 
 <#

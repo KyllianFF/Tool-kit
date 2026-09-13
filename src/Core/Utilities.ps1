@@ -578,3 +578,141 @@ function Format-TkValue {
 
     return $text
 }
+
+<#
+.SYNOPSIS
+    Loads the modules behind some commands, one runspace at a time across the
+    whole process.
+
+.DESCRIPTION
+    Several background workers start together when the window opens, and each
+    loads the Windows modules its readers need on first use. Loaded at the same
+    moment by two workers, a CIM based module can fail outright: "Get-NetAdapter
+    was found in the module NetAdapter, but the module could not be loaded".
+    The network reader then returned no adapter at all, and the Dashboard read
+    "Not connected" beside a working Ethernet link. It only happened when the
+    timing lined up, which is why it came and went.
+
+    A named mutex serialises these imports for every runspace of the process.
+    Modules are found from the commands rather than named here, because the
+    module behind a command is not called the same on every Windows build
+    (Defender's cmdlets live in ConfigDefender on current builds). A command
+    that does not exist on this machine is skipped, and a module already loaded
+    in the calling runspace is not loaded again, so the lock is only taken on a
+    worker's first read.
+
+.PARAMETER Command
+    Commands the caller is about to use.
+
+.OUTPUTS
+    System.Boolean, false when a module failed to load.
+#>
+function Import-TkCommandModule {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Command
+    )
+
+    $modules = @($Command |
+                 ForEach-Object { Get-Command -Name $_ -ErrorAction SilentlyContinue } |
+                 Where-Object { $_ -and $_.ModuleName } |
+                 ForEach-Object { $_.ModuleName } |
+                 Select-Object -Unique |
+                 Where-Object { -not (Get-Module -Name $_) })
+
+    if ($modules.Count -eq 0) {
+        return $true
+    }
+
+    # Local: shared by the runspaces of this session, and by nothing else.
+    $mutex  = New-Object System.Threading.Mutex($false, 'Local\Toolkit-ModuleImport')
+    $owned  = $false
+    $loaded = $true
+
+    try {
+        try {
+            $owned = $mutex.WaitOne([TimeSpan]::FromSeconds(60))
+        }
+        catch [System.Threading.AbandonedMutexException] {
+            # A worker that ended while holding the lock still handed it over.
+            $owned = $true
+        }
+
+        foreach ($module in $modules) {
+
+            try {
+                Import-Module -Name $module -ErrorAction Stop
+            }
+            catch {
+                $loaded = $false
+
+                Write-TkLog -Level Warning -Category 'Modules' -Message (
+                    'The {0} module could not be loaded: {1}' -f $module, $_.Exception.Message
+                )
+            }
+        }
+    }
+    finally {
+        if ($owned) {
+            $mutex.ReleaseMutex()
+        }
+
+        $mutex.Dispose()
+    }
+
+    return $loaded
+}
+
+<#
+.SYNOPSIS
+    Reads a CIM enumeration value whether it arrives as a name or a number.
+
+.DESCRIPTION
+    The CIM based cmdlets, network and storage alike, hand back enumeration
+    values as names or as raw numbers depending on how their module happened
+    to load in the runspace that read them. Both have been seen here. The
+    Dashboard received an address state of 4 where "Preferred" was expected,
+    so no address counted and a working link read "Not connected". Once the
+    Storage module was loaded properly, a disk health of "Healthy" arrived
+    where a number was expected, an integer cast of it threw, and the whole
+    storage reading failed.
+
+    Both forms are accepted here, so an answer no longer depends on how a
+    module loaded in the worker that asked.
+
+.PARAMETER Value
+    The property value.
+
+.PARAMETER Name
+    Number to name, for the values the caller compares against.
+
+.OUTPUTS
+    System.String, empty for a null value.
+#>
+function ConvertFrom-TkCimEnum {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Value,
+
+        [Parameter(Mandatory)]
+        [hashtable] $Name
+    )
+
+    if ($null -eq $Value) {
+        return ''
+    }
+
+    $text   = [string] $Value
+    $number = 0
+
+    if ([int]::TryParse($text, [ref] $number) -and $Name.ContainsKey($number)) {
+        return [string] $Name[$number]
+    }
+
+    return $text
+}

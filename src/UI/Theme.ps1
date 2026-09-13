@@ -90,10 +90,10 @@ function Get-TkThemePalette {
     Applies a theme to the open window.
 
 .DESCRIPTION
-    Replaces the brush behind every palette key. Also fixes up the two places
-    a brush cannot be reached by DynamicResource: the primary button style,
-    whose foreground has to stay legible on the accent fill in both themes,
-    and the navigation highlight, which Show-TkPage sets in code.
+    Replaces the brush behind every palette key. Also fixes up the primary
+    button style, whose foreground has to stay legible on the accent fill in
+    both themes. The navigation highlight needs nothing: Show-TkPage gives it
+    the Selection brush by resource reference.
 
 .PARAMETER Name
     Dark or Light.
@@ -142,11 +142,10 @@ function Set-TkTheme {
 
     $ctx.Settings['Theme'] = $Name
 
-    # Repaint the navigation, whose active entry is coloured from code rather
-    # than from a style trigger.
-    if ($ctx.Settings.ContainsKey('LastPage') -and $ctx.Settings['LastPage']) {
-        Show-TkPage -Name $ctx.Settings['LastPage']
-    }
+    # Nothing to repaint in the navigation: its active entry takes the
+    # Selection brush by resource reference and follows the new palette by
+    # itself. It used to be repainted by showing the last page again, which at
+    # start up opened that page before its own code had registered what to load.
 
     Update-TkElevationBadge
 

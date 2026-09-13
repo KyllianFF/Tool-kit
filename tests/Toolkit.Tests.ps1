@@ -2325,6 +2325,28 @@ Describe 'Dashboard and pages' {
             $script:Markup | Should -Not -Match 'SystemVolumeChoice'
         }
 
+        It 'still runs a first load registered after its page was already shown' {
+
+            # At start up the theme showed the last page of the previous
+            # session before that page had registered what to load. The page was
+            # marked opened with nothing run, and the System page later opened
+            # with every card reading for ever.
+            $script:FirstLoadCount = 0
+
+            Show-TkPage -Name 'Fixes'
+            Register-TkFirstShow -PageName 'Fixes' -Action { $script:FirstLoadCount++ }
+
+            Show-TkPage -Name 'Tweaks'
+            Show-TkPage -Name 'Fixes'
+
+            $script:FirstLoadCount | Should -Be 1
+
+            Show-TkPage -Name 'Tweaks'
+            Show-TkPage -Name 'Fixes'
+
+            $script:FirstLoadCount | Should -Be 1
+        }
+
         It 'opens on the Dashboard' {
 
             @(Get-TkPageName)[0] | Should -Be 'Dashboard'
@@ -2424,6 +2446,36 @@ Describe 'Dashboard and pages' {
             ))
 
             (@($ordered | ForEach-Object { $_.Drive }) -join ',') | Should -Be 'C:,A:,D:,H:'
+        }
+
+        It 'loads the modules behind commands, and skips a command this machine lacks' {
+
+            # Loaded together by several workers at launch, NetAdapter failed to
+            # load and the network reader returned no adapter. Imports now go
+            # one runspace at a time; a command that does not exist is not an
+            # error, so a Server without Defender still reads its firewall.
+            Import-TkCommandModule -Command @('Get-Date', 'Get-TkCommandThatDoesNotExist') | Should -BeTrue
+            Get-Module -Name 'Microsoft.PowerShell.Utility' | Should -Not -BeNullOrEmpty
+        }
+
+        It 'reads disk health, media and bus whether they arrive as names or numbers' {
+
+            # With the Storage module loaded properly the values arrive as names;
+            # an integer cast of "Healthy" threw and failed the storage reading.
+            ConvertFrom-TkDiskHealth -Value 0           | Should -Be 'Healthy'
+            ConvertFrom-TkDiskHealth -Value 'Healthy'   | Should -Be 'Healthy'
+            ConvertFrom-TkDiskHealth -Value 2           | Should -Be 'Unhealthy'
+            ConvertFrom-TkDiskHealth -Value 'Unhealthy' | Should -Be 'Unhealthy'
+            ConvertFrom-TkDiskHealth -Value $null       | Should -Be 'Unknown'
+
+            ConvertFrom-TkMediaType -Code 4     | Should -Be 'SSD'
+            ConvertFrom-TkMediaType -Code 'SSD' | Should -Be 'SSD'
+            ConvertFrom-TkMediaType -Code $null | Should -Be 'Unspecified'
+
+            ConvertFrom-TkBusType -Code 17     | Should -Be 'NVMe'
+            ConvertFrom-TkBusType -Code 'NVMe' | Should -Be 'NVMe'
+            ConvertFrom-TkBusType -Code 99     | Should -Be 'Unknown'
+            ConvertFrom-TkBusType -Code $null  | Should -Be 'Unknown'
         }
 
         It 'judges patch age with the same thresholds as the audit' {

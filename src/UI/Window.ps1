@@ -327,9 +327,11 @@ function Show-TkPage {
         }
 
         if ($page -eq $Name) {
-            # Looked up on every call: a frozen brush captured once would keep
-            # the palette that was active when the page was first shown.
-            $button.Background = $ctx.Window.Resources['Selection']
+            # By resource reference, so the active entry follows a theme change
+            # by itself. A brush assigned directly keeps the palette it was
+            # assigned from, which is why the theme used to show the last page
+            # again to repaint it, with the consequence described below.
+            $button.SetResourceReference([System.Windows.Controls.Control]::BackgroundProperty, 'Selection')
             $button.FontWeight = [System.Windows.FontWeights]::SemiBold
         }
         else {
@@ -340,22 +342,26 @@ function Show-TkPage {
 
     $ctx.Settings['LastPage'] = $Name
 
-    # First open only. The flag is set before the action runs, so an action
-    # that throws does not queue itself again on the next visit.
-    if (-not $script:TkPageOpened.ContainsKey($Name)) {
+    # First open only, and only once there is something to run.
+    #
+    # The flag used to be set on any first visit. At start up the theme showed
+    # the last page of the previous session before that page had registered
+    # what to load, so the page was marked opened with nothing run, and the
+    # action registered a moment later never ran: the System page then opened
+    # with every card reading for ever, until Refresh. The flag is still set
+    # before the action runs, so an action that throws does not queue itself
+    # again on the next visit.
+    if ($script:TkFirstShowAction.ContainsKey($Name) -and -not $script:TkPageOpened.ContainsKey($Name)) {
 
         $script:TkPageOpened[$Name] = $true
 
-        if ($script:TkFirstShowAction.ContainsKey($Name)) {
-
-            try {
-                & $script:TkFirstShowAction[$Name]
-            }
-            catch {
-                Write-TkLog -Level Warning -Category 'Interface' -Message (
-                    'The {0} page could not finish its first load: {1}' -f $Name, $_.Exception.Message
-                )
-            }
+        try {
+            & $script:TkFirstShowAction[$Name]
+        }
+        catch {
+            Write-TkLog -Level Warning -Category 'Interface' -Message (
+                'The {0} page could not finish its first load: {1}' -f $Name, $_.Exception.Message
+            )
         }
     }
 }

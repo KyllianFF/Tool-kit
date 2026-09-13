@@ -143,12 +143,7 @@ function Get-TkHardwareInfo {
             Size       = Format-TkBytes -Bytes $disk.Size
             MediaType  = ConvertFrom-TkMediaType -Code $disk.MediaType
             BusType    = ConvertFrom-TkBusType   -Code $disk.BusType
-            Health     = switch ([int] $disk.HealthStatus) {
-                             0 { 'Healthy' ; break }
-                             1 { 'Warning' ; break }
-                             2 { 'Unhealthy' ; break }
-                             default { 'Unknown' }
-                         }
+            Health     = ConvertFrom-TkDiskHealth -Value $disk.HealthStatus
         }
     }
 
@@ -351,6 +346,10 @@ function Get-TkPlatformSecurityInfo {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param()
+
+    # Firewall, Defender and BitLocker modules, loaded one worker at a time.
+    # See Import-TkCommandModule.
+    [void] (Import-TkCommandModule -Command @('Get-NetFirewallProfile', 'Get-MpComputerStatus', 'Get-BitLockerVolume'))
 
     # --- Secure Boot ------------------------------------------------------
     # Throws on legacy BIOS machines instead of returning false, so the
@@ -641,6 +640,40 @@ function ConvertFrom-TkChassisType {
 
 <#
 .SYNOPSIS
+    Turns a physical disk health status into its name.
+
+.DESCRIPTION
+    The status arrives as a number or as a name, depending on how the Storage
+    module loaded in the runspace that read it; see ConvertFrom-TkCimEnum.
+    Cast to an integer, the name "Healthy" threw, and the storage reading
+    failed as a whole.
+
+.PARAMETER Value
+    HealthStatus of an MSFT_PhysicalDisk.
+
+.OUTPUTS
+    System.String: Healthy, Warning, Unhealthy or Unknown.
+#>
+function ConvertFrom-TkDiskHealth {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Value
+    )
+
+    $name = ConvertFrom-TkCimEnum -Value $Value -Name @{ 0 = 'Healthy'; 1 = 'Warning'; 2 = 'Unhealthy'; 5 = 'Unknown' }
+
+    if ($name -in @('Healthy', 'Warning', 'Unhealthy')) {
+        return $name
+    }
+
+    return 'Unknown'
+}
+
+<#
+.SYNOPSIS
     Translates an MSFT_PhysicalDisk media type code.
 
 .OUTPUTS
@@ -655,12 +688,14 @@ function ConvertFrom-TkMediaType {
         $Code
     )
 
-    switch ([int] $Code) {
-        3 { return 'HDD' }
-        4 { return 'SSD' }
-        5 { return 'SCM' }
-        default { return 'Unspecified' }
+    # By number or by name; see ConvertFrom-TkCimEnum.
+    $name = ConvertFrom-TkCimEnum -Value $Code -Name @{ 0 = 'Unspecified'; 3 = 'HDD'; 4 = 'SSD'; 5 = 'SCM' }
+
+    if ($name -in @('HDD', 'SSD', 'SCM')) {
+        return $name
     }
+
+    return 'Unspecified'
 }
 
 <#
@@ -686,13 +721,15 @@ function ConvertFrom-TkBusType {
         13 = 'MMC'  ; 17 = 'NVMe'
     }
 
-    $key = [int] $Code
+    # By number or by name; see ConvertFrom-TkCimEnum. A number this table has
+    # no name for is a bus it does not know.
+    $name = ConvertFrom-TkCimEnum -Value $Code -Name $map
 
-    if ($map.ContainsKey($key)) {
-        return $map[$key]
+    if ([string]::IsNullOrWhiteSpace($name) -or $name -match '^\d+$') {
+        return 'Unknown'
     }
 
-    return 'Unknown'
+    return $name
 }
 
 <#
