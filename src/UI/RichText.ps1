@@ -820,6 +820,145 @@ function Get-TkSeverityTintBrush {
 
 <#
 .SYNOPSIS
+    Sets a proportional bar to a percentage and a result colour.
+
+.DESCRIPTION
+    A bar is a Grid with two star columns, the first holding the fill. The two
+    columns share the width as value and remainder, so the fill stays
+    proportional through any resize with nothing measured in code. A measured
+    width reads zero whenever the bar has just been made visible and has not
+    been laid out yet, which is how the first audit score bar drew nothing.
+
+    The fill takes the severity colour by resource reference, so it follows a
+    theme change.
+
+.PARAMETER Bar
+    The Grid with two column definitions.
+
+.PARAMETER Fill
+    The element in its first column.
+
+.PARAMETER Percent
+    Clamped to 0 to 100.
+
+.PARAMETER Severity
+    Pass, Warning, Fail, or anything else for the muted colour.
+#>
+function Set-TkUsageBarElement {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.Grid] $Bar,
+
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.Border] $Fill,
+
+        [Parameter(Mandatory)]
+        [double] $Percent,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Severity = 'Pass'
+    )
+
+    if ($Bar.ColumnDefinitions.Count -eq 2) {
+
+        $filled = [math]::Max(0, [math]::Min(100, $Percent))
+
+        $Bar.ColumnDefinitions[0].Width = New-Object System.Windows.GridLength(
+            $filled, [System.Windows.GridUnitType]::Star)
+
+        $Bar.ColumnDefinitions[1].Width = New-Object System.Windows.GridLength(
+            (100 - $filled), [System.Windows.GridUnitType]::Star)
+    }
+
+    $Fill.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty,
+        (Get-TkSeverityBrushKey -Severity $Severity))
+}
+
+<#
+.SYNOPSIS
+    Sets a bar declared in the markup, found by the names of its parts.
+
+.PARAMETER BarName
+    Name of the Grid.
+
+.PARAMETER FillName
+    Name of the Border in its first column.
+#>
+function Set-TkUsageBar {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $BarName,
+
+        [Parameter(Mandatory)]
+        [string] $FillName,
+
+        [Parameter(Mandatory)]
+        [double] $Percent,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Severity = 'Pass'
+    )
+
+    $bar  = Get-TkControl -Name $BarName
+    $fill = Get-TkControl -Name $FillName
+
+    if ($bar -and $fill) {
+        Set-TkUsageBarElement -Bar $bar -Fill $fill -Percent $Percent -Severity $Severity
+    }
+}
+
+<#
+.SYNOPSIS
+    Builds a bar in code, for a tile drawn at run time.
+
+.OUTPUTS
+    System.Windows.Controls.Border, the track holding the bar.
+#>
+function New-TkUsageBar {
+    [CmdletBinding()]
+    [OutputType([System.Windows.Controls.Border])]
+    param(
+        [Parameter(Mandatory)]
+        [double] $Percent,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Severity = 'Pass',
+
+        [Parameter()]
+        [double] $Height = 6
+    )
+
+    $radius = New-Object System.Windows.CornerRadius($Height / 2)
+
+    $track = New-Object System.Windows.Controls.Border
+    $track.Height       = $Height
+    $track.CornerRadius = $radius
+    $track.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
+
+    $grid = New-Object System.Windows.Controls.Grid
+    $grid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+    $grid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+
+    $fill = New-Object System.Windows.Controls.Border
+    $fill.CornerRadius = $radius
+
+    [System.Windows.Controls.Grid]::SetColumn($fill, 0)
+    [void] $grid.Children.Add($fill)
+
+    $track.Child = $grid
+
+    Set-TkUsageBarElement -Bar $grid -Fill $fill -Percent $Percent -Severity $Severity
+
+    return $track
+}
+
+<#
+.SYNOPSIS
     Appends a finding as a self contained card.
 
 .DESCRIPTION

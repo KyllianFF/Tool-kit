@@ -103,6 +103,7 @@ function Start-Toolkit {
         Initialize-TkRunspacePool
         Start-TkTaskPump
 
+        Initialize-TkDashboardPage
         Initialize-TkSystemPage
         Initialize-TkSoftwarePage
         Initialize-TkTweaksPage
@@ -117,8 +118,10 @@ function Start-Toolkit {
         # After every page is wired, so each control exists to be disabled.
         Update-TkPrivilegedControls
 
-        Show-TkPage -Name 'System'
-        Update-TkSystemPage
+        # The Dashboard first: it answers the questions a support call starts
+        # with. The System inventory loads when its own page is first opened.
+        Show-TkPage -Name 'Dashboard'
+        Update-TkDashboard
 
         if (-not $ctx.IsElevated) {
 

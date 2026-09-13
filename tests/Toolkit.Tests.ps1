@@ -1121,7 +1121,7 @@ Describe 'Interface rendering' {
 
             # A code point the font does not carry renders as an empty box.
             # Nothing else in the suite can see that.
-            foreach ($name in @('NavSystem', 'NavSoftware', 'NavTweaks', 'NavFixes',
+            foreach ($name in @('NavDashboard', 'NavSystem', 'NavSoftware', 'NavTweaks', 'NavFixes',
                                 'NavNetwork', 'NavDiagnostics', 'NavSecurity')) {
 
                 $button = $script:Window.FindName($name)
@@ -2257,6 +2257,504 @@ PC,System,Verrouillage du compte,{0cce9217-69ae-11d9-bed3-505054503030},Succes,,
         It 'does not assess a group it could not read' {
 
             (Test-TkAuditLocalAdministrators -Member @() -ExcludedAccount @()).Status | Should -Be 'NotAssessed'
+        }
+    }
+}
+
+Describe 'Dashboard and pages' {
+
+    BeforeAll {
+        $script:Markup = Get-TkMainWindowXaml
+    }
+
+    Context 'Pages' {
+
+        It 'gives every page a navigation button and a panel' {
+
+            foreach ($page in (Get-TkPageName)) {
+                $script:Markup | Should -Match ('x:Name="Nav{0}"' -f $page)
+                $script:Markup | Should -Match ('x:Name="Page{0}"' -f $page)
+            }
+        }
+
+        It 'has no page in the markup that the page list does not know' {
+
+            # A panel added to the markup but not to the list can never be
+            # shown; a button would do nothing.
+            $known = @(Get-TkPageName)
+
+            foreach ($match in [regex]::Matches($script:Markup, 'x:Name="(?:Nav|Page)(?<name>[A-Za-z]+)"')) {
+
+                $name = $match.Groups['name'].Value
+
+                if ($name -eq 'Host') {
+                    continue
+                }
+
+                $known | Should -Contain $name
+            }
+        }
+
+        It 'pairs every loading placeholder with its content and its text' {
+
+            # A card that reads in the background shows a moving bar until its
+            # answer lands. A placeholder without its content would spin for
+            # ever; content without a placeholder would sit empty again.
+            $names = @([regex]::Matches($script:Markup, 'x:Name="(?<name>\w+)Loading"') |
+                       ForEach-Object { $_.Groups['name'].Value })
+
+            $names.Count | Should -BeGreaterOrEqual 8
+
+            foreach ($name in $names) {
+                $script:Markup | Should -Match ('x:Name="{0}Content"' -f $name)
+                $script:Markup | Should -Match ('x:Name="{0}LoadingText"' -f $name)
+            }
+        }
+
+        It 'shows the quick actions on the Dashboard only' {
+
+            $script:Markup | Should -Match 'x:Name="DashQuickActions"'
+            $script:Markup | Should -Not -Match 'SystemQuickActions'
+        }
+
+        It 'draws a bar for every volume rather than a selector' {
+
+            # A selector showed one drive at a time, and the drive filling up
+            # was rarely the one selected.
+            $script:Markup | Should -Match 'x:Name="SystemVolumeList"'
+            $script:Markup | Should -Not -Match 'SystemVolumeChoice'
+        }
+
+        It 'still runs a first load registered after its page was already shown' {
+
+            # At start up the theme showed the last page of the previous
+            # session before that page had registered what to load. The page was
+            # marked opened with nothing run, and the System page later opened
+            # with every card reading for ever.
+            $script:FirstLoadCount = 0
+
+            Show-TkPage -Name 'Fixes'
+            Register-TkFirstShow -PageName 'Fixes' -Action { $script:FirstLoadCount++ }
+
+            Show-TkPage -Name 'Tweaks'
+            Show-TkPage -Name 'Fixes'
+
+            $script:FirstLoadCount | Should -Be 1
+
+            Show-TkPage -Name 'Tweaks'
+            Show-TkPage -Name 'Fixes'
+
+            $script:FirstLoadCount | Should -Be 1
+        }
+
+        It 'opens on the Dashboard' {
+
+            @(Get-TkPageName)[0] | Should -Be 'Dashboard'
+        }
+    }
+
+    Context 'Quick actions' {
+
+        It 'point at pages, tabs and functions that exist' {
+
+            $actions = @(Get-TkQuickAction)
+            $pages   = @(Get-TkPageName)
+
+            $actions.Count | Should -BeGreaterThan 2
+
+            foreach ($action in $actions) {
+
+                if ($action.Page) {
+                    $pages | Should -Contain $action.Page -Because $action.Id
+                }
+
+                if ($action.TabControl) {
+                    $script:Markup | Should -Match ('<TabControl x:Name="{0}"' -f $action.TabControl) -Because $action.Id
+                    $script:Markup | Should -Match ('<TabItem Header="{0}"' -f [regex]::Escape($action.Tab)) -Because $action.Id
+                }
+
+                Get-Command -Name $action.Start -ErrorAction SilentlyContinue |
+                    Should -Not -BeNullOrEmpty -Because ('{0} starts {1}' -f $action.Id, $action.Start)
+            }
+        }
+
+        It 'have unique identifiers' {
+
+            $ids = @(Get-TkQuickAction | ForEach-Object { $_.Id })
+
+            @($ids | Sort-Object -Unique).Count | Should -Be $ids.Count
+        }
+    }
+
+    Context 'Readings' {
+
+        It 'judges free space with one set of thresholds' {
+
+            (Get-TkFreeSpaceAssessment -FreePercent 4.9).Severity  | Should -Be 'Fail'
+            (Get-TkFreeSpaceAssessment -FreePercent 5).Severity    | Should -Be 'Warning'
+            (Get-TkFreeSpaceAssessment -FreePercent 11.9).Severity | Should -Be 'Warning'
+            (Get-TkFreeSpaceAssessment -FreePercent 12).Severity   | Should -Be 'Pass'
+        }
+
+        It 'works out volume usage, and does not judge a volume with no size' {
+
+            $usage = @(ConvertTo-TkVolumeUsage -LogicalDisk @(
+                [pscustomobject] @{ DeviceID = 'C:'; VolumeName = 'System'; FileSystem = 'NTFS'; Size = 100GB; FreeSpace = 10GB }
+                [pscustomobject] @{ DeviceID = 'F:'; VolumeName = '';       FileSystem = '';     Size = 0;     FreeSpace = 0 }
+            ))
+
+            $usage.Count          | Should -Be 2
+            $usage[0].UsedPercent | Should -Be 90
+            $usage[0].FreePercent | Should -Be 10
+            $usage[0].Severity    | Should -Be 'Warning'
+            $usage[1].UsedPercent | Should -Be 0
+            $usage[1].Severity    | Should -Be 'Info'
+        }
+
+        It 'picks the adapter with a gateway over a VPN without one' {
+
+            $vpn      = [pscustomobject] @{ Name = 'VPN';      IPv4Address = '10.8.0.2';     Gateway = 'None' }
+            $ethernet = [pscustomobject] @{ Name = 'Ethernet'; IPv4Address = '192.168.1.20'; Gateway = '192.168.1.1' }
+
+            (Select-TkPrimaryAdapter -Adapter @($vpn, $ethernet)).Name | Should -Be 'Ethernet'
+        }
+
+        It 'falls back to an adapter with an address, then to none' {
+
+            $noAddress = [pscustomobject] @{ Name = 'Bluetooth'; IPv4Address = 'None';       Gateway = 'None' }
+            $address   = [pscustomobject] @{ Name = 'Wi-Fi';     IPv4Address = '172.16.0.4'; Gateway = 'None' }
+
+            (Select-TkPrimaryAdapter -Adapter @($noAddress, $address)).Name | Should -Be 'Wi-Fi'
+            Select-TkPrimaryAdapter -Adapter @() | Should -BeNullOrEmpty
+        }
+
+        It 'unrolls a reader that returns its array with the comma operator' {
+
+            # Get-TkBatteryState returns , @() on a desktop. Taken as one item,
+            # that empty array was counted as a battery.
+            @(Read-TkDashboardPart -Part 'Empty' -Reader { return , @() }).Count        | Should -Be 0
+            @(Read-TkDashboardPart -Part 'Two'   -Reader { return , @('a', 'b') }).Count | Should -Be 2
+        }
+
+        It 'lists volumes with the system drive first, then by letter' {
+
+            $ordered = @(Get-TkVolumeDisplayOrder -SystemDrive 'C:' -Volume @(
+                [pscustomobject] @{ Drive = 'D:' }
+                [pscustomobject] @{ Drive = 'H:' }
+                [pscustomobject] @{ Drive = 'C:' }
+                [pscustomobject] @{ Drive = 'A:' }
+            ))
+
+            (@($ordered | ForEach-Object { $_.Drive }) -join ',') | Should -Be 'C:,A:,D:,H:'
+        }
+
+        It 'loads the modules behind commands, and skips a command this machine lacks' {
+
+            # Loaded together by several workers at launch, NetAdapter failed to
+            # load and the network reader returned no adapter. Imports now go
+            # one runspace at a time; a command that does not exist is not an
+            # error, so a Server without Defender still reads its firewall.
+            Import-TkCommandModule -Command @('Get-Date', 'Get-TkCommandThatDoesNotExist') | Should -BeTrue
+            Get-Module -Name 'Microsoft.PowerShell.Utility' | Should -Not -BeNullOrEmpty
+        }
+
+        It 'reads disk health, media and bus whether they arrive as names or numbers' {
+
+            # With the Storage module loaded properly the values arrive as names;
+            # an integer cast of "Healthy" threw and failed the storage reading.
+            ConvertFrom-TkDiskHealth -Value 0           | Should -Be 'Healthy'
+            ConvertFrom-TkDiskHealth -Value 'Healthy'   | Should -Be 'Healthy'
+            ConvertFrom-TkDiskHealth -Value 2           | Should -Be 'Unhealthy'
+            ConvertFrom-TkDiskHealth -Value 'Unhealthy' | Should -Be 'Unhealthy'
+            ConvertFrom-TkDiskHealth -Value $null       | Should -Be 'Unknown'
+
+            ConvertFrom-TkMediaType -Code 4     | Should -Be 'SSD'
+            ConvertFrom-TkMediaType -Code 'SSD' | Should -Be 'SSD'
+            ConvertFrom-TkMediaType -Code $null | Should -Be 'Unspecified'
+
+            ConvertFrom-TkBusType -Code 17     | Should -Be 'NVMe'
+            ConvertFrom-TkBusType -Code 'NVMe' | Should -Be 'NVMe'
+            ConvertFrom-TkBusType -Code 99     | Should -Be 'Unknown'
+            ConvertFrom-TkBusType -Code $null  | Should -Be 'Unknown'
+        }
+
+        It 'judges patch age with the same thresholds as the audit' {
+
+            Get-TkPatchAgeSeverity -Days 35 | Should -Be 'Pass'
+            Get-TkPatchAgeSeverity -Days 36 | Should -Be 'Warning'
+            Get-TkPatchAgeSeverity -Days 60 | Should -Be 'Warning'
+            Get-TkPatchAgeSeverity -Days 61 | Should -Be 'Fail'
+        }
+
+        It 'takes the most recent dated hotfix and skips undated ones' {
+
+            $last = Select-TkLastHotFix -HotFix @(
+                [pscustomobject] @{ HotFixID = 'KB1'; InstalledOn = [datetime] '2026-08-01' }
+                [pscustomobject] @{ HotFixID = 'KB2'; InstalledOn = $null }
+                [pscustomobject] @{ HotFixID = 'KB3'; InstalledOn = [datetime] '2026-09-01' }
+            )
+
+            $last.HotFixID | Should -Be 'KB3'
+        }
+    }
+
+    Context 'Network adapters' {
+
+        BeforeAll {
+            $script:Ethernet = [pscustomobject] @{ Name = 'Ethernet'; InterfaceIndex = 12; IPv4Address = '192.168.1.101'; Gateway = '192.168.1.254'; RouteMetric = 20;    Physical = $true }
+            $script:WiFi     = [pscustomobject] @{ Name = 'Wi-Fi';    InterfaceIndex = 14; IPv4Address = '192.168.1.55';  Gateway = '192.168.1.254'; RouteMetric = 45;    Physical = $true }
+            $script:VmNet1   = [pscustomobject] @{ Name = 'VMware Network Adapter VMnet1'; InterfaceIndex = 16; IPv4Address = '192.168.202.1'; Gateway = 'None'; RouteMetric = $null; Physical = $false }
+            $script:VmNet8   = [pscustomobject] @{ Name = 'VMware Network Adapter VMnet8'; InterfaceIndex = 24; IPv4Address = '192.168.216.1'; Gateway = 'None'; RouteMetric = $null; Physical = $false }
+        }
+
+        It 'picks the link Windows routes through, by effective metric' {
+
+            # Listed in the order Get-NetAdapter returned them on a real machine:
+            # the virtual switches first, the wired link last.
+            (Select-TkPrimaryAdapter -Adapter @($script:VmNet8, $script:VmNet1, $script:WiFi, $script:Ethernet)).Name |
+                Should -Be 'Ethernet'
+        }
+
+        It 'follows a connected VPN, because that is where traffic goes' {
+
+            $vpn = [pscustomobject] @{ Name = 'NordLynx'; InterfaceIndex = 12; IPv4Address = '10.5.0.2'; Gateway = '10.5.0.1'; RouteMetric = 5; Physical = $false }
+
+            (Select-TkPrimaryAdapter -Adapter @($script:Ethernet, $vpn)).Name | Should -Be 'NordLynx'
+        }
+
+        It 'prefers a physical link to a virtual switch when nothing is routed' {
+
+            $offline = [pscustomobject] @{ Name = 'Ethernet'; InterfaceIndex = 12; IPv4Address = '192.168.1.101'; Gateway = 'None'; RouteMetric = $null; Physical = $true }
+
+            (Select-TkPrimaryAdapter -Adapter @($script:VmNet8, $offline)).Name | Should -Be 'Ethernet'
+        }
+
+        It 'uses only an address that is in use' {
+
+            $picked = Select-TkUsableIPv4 -Address @(
+                [pscustomobject] @{ IPAddress = '169.254.5.254'; AddressState = 'Preferred'; PrefixOrigin = 'WellKnown' }
+                [pscustomobject] @{ IPAddress = '10.5.0.2';      AddressState = 'Tentative'; PrefixOrigin = 'Manual' }
+                [pscustomobject] @{ IPAddress = '192.168.1.101'; AddressState = 'Preferred'; PrefixOrigin = 'Dhcp' }
+            )
+
+            $picked.IPAddress | Should -Be '192.168.1.101'
+
+            # A tunnel that is down leaves only link local and tentative ones.
+            Select-TkUsableIPv4 -Address @(
+                [pscustomobject] @{ IPAddress = '169.254.219.111'; AddressState = 'Tentative'; PrefixOrigin = 'WellKnown' }
+                [pscustomobject] @{ IPAddress = '10.100.0.2';      AddressState = 'Tentative'; PrefixOrigin = 'Manual' }
+            ) | Should -BeNullOrEmpty
+        }
+
+        It 'builds an adapter record from the machine wide readings' {
+
+            $record = ConvertTo-TkAdapterRecord `
+                -Adapter ([pscustomobject] @{ Name = 'Ethernet'; InterfaceDescription = 'Intel Ethernet'; Status = 'Up'; MacAddress = 'A0-36-BC-CF-E8-4B'; LinkSpeed = '2.5 Gbps'; InterfaceIndex = 12; HardwareInterface = $true }) `
+                -Address @(
+                    [pscustomobject] @{ InterfaceIndex = 24; IPAddress = '192.168.216.1'; PrefixLength = 24; AddressState = 'Preferred'; PrefixOrigin = 'Dhcp' }
+                    [pscustomobject] @{ InterfaceIndex = 12; IPAddress = '192.168.1.101'; PrefixLength = 24; AddressState = 'Preferred'; PrefixOrigin = 'Dhcp' }
+                ) `
+                -Route @([pscustomobject] @{ InterfaceIndex = 12; NextHop = '192.168.1.254'; RouteMetric = 0 }) `
+                -Interface @([pscustomobject] @{ InterfaceIndex = 12; InterfaceMetric = 20; Dhcp = 'Enabled' }) `
+                -DnsServer @([pscustomobject] @{ InterfaceIndex = 12; ServerAddresses = @('192.168.1.151', '192.168.1.254') })
+
+            $record.IPv4Address | Should -Be '192.168.1.101'
+            $record.SubnetMask  | Should -Be '255.255.255.0'
+            $record.Gateway     | Should -Be '192.168.1.254'
+            $record.RouteMetric | Should -Be 20
+            $record.DnsServers  | Should -Be '192.168.1.151, 192.168.1.254'
+            $record.Dhcp        | Should -Be 'Enabled'
+            $record.Physical    | Should -BeTrue
+        }
+
+        It 'gives an adapter without a default route no gateway and no metric' {
+
+            $record = ConvertTo-TkAdapterRecord `
+                -Adapter ([pscustomobject] @{ Name = 'VMware Network Adapter VMnet8'; Status = 'Up'; InterfaceIndex = 24; HardwareInterface = $false }) `
+                -Address @([pscustomobject] @{ InterfaceIndex = 24; IPAddress = '192.168.216.1'; PrefixLength = 24; AddressState = 'Preferred'; PrefixOrigin = 'Dhcp' }) `
+                -Route @([pscustomobject] @{ InterfaceIndex = 12; NextHop = '192.168.1.254'; RouteMetric = 0 })
+
+            $record.Gateway     | Should -Be 'None'
+            $record.RouteMetric | Should -BeNullOrEmpty
+            $record.Physical    | Should -BeFalse
+        }
+
+        It 'names the other connected links and only counts the virtual switches' {
+
+            $line = Get-TkSecondaryAdapterSummary -Adapter @($script:Ethernet, $script:WiFi, $script:VmNet1, $script:VmNet8) `
+                                                  -Primary $script:Ethernet
+
+            $line | Should -Match 'Also connected: Wi-Fi 192\.168\.1\.55\.'
+            $line | Should -Match '2 virtual adapter\(s\) up'
+            $line | Should -Not -Match 'Ethernet'
+        }
+
+        It 'reads enumeration values whether they arrive as names or numbers' {
+
+            $state = @{ 1 = 'Tentative'; 4 = 'Preferred' }
+
+            ConvertFrom-TkCimEnum -Value 4           -Name $state | Should -Be 'Preferred'
+            ConvertFrom-TkCimEnum -Value '4'         -Name $state | Should -Be 'Preferred'
+            ConvertFrom-TkCimEnum -Value 'Preferred' -Name $state | Should -Be 'Preferred'
+            ConvertFrom-TkCimEnum -Value 9           -Name $state | Should -Be '9'
+            ConvertFrom-TkCimEnum -Value $null       -Name $state | Should -Be ''
+        }
+
+        It 'finds the address and the addressing when the cmdlets return raw numbers' {
+
+            # What a background worker handed the Dashboard: states, origins and
+            # DHCP as numbers. Compared with names they matched nothing, and the
+            # card read "Not connected" with "1" under Addressing.
+            $record = ConvertTo-TkAdapterRecord `
+                -Adapter ([pscustomobject] @{ Name = 'Ethernet'; Status = 'Up'; InterfaceIndex = 12; HardwareInterface = $true }) `
+                -Address @(
+                    [pscustomobject] @{ InterfaceIndex = 12; IPAddress = '169.254.5.254'; PrefixLength = 16; AddressState = 4; PrefixOrigin = 2 }
+                    [pscustomobject] @{ InterfaceIndex = 12; IPAddress = '10.5.0.2';      PrefixLength = 32; AddressState = 1; PrefixOrigin = 1 }
+                    [pscustomobject] @{ InterfaceIndex = 12; IPAddress = '192.168.1.101'; PrefixLength = 24; AddressState = 4; PrefixOrigin = 3 }
+                ) `
+                -Route @([pscustomobject] @{ InterfaceIndex = 12; NextHop = '192.168.1.254'; RouteMetric = 0 }) `
+                -Interface @([pscustomobject] @{ InterfaceIndex = 12; InterfaceMetric = 20; Dhcp = 1 })
+
+            $record.IPv4Address | Should -Be '192.168.1.101'
+            $record.Dhcp        | Should -Be 'Enabled'
+            $record.RouteMetric | Should -Be 20
+        }
+
+        It 'says nothing when the primary link is the only one' {
+
+            Get-TkSecondaryAdapterSummary -Adapter @($script:Ethernet) -Primary $script:Ethernet | Should -Be ''
+        }
+    }
+
+    Context 'Dashboard writers' {
+
+        It 'fills the network card with no adapter at all, instead of failing' {
+
+            # An empty adapter list once became null on its way in and failed
+            # the completion handler, leaving the card half written.
+            { Write-TkDashboardNetwork -Part ([pscustomobject] @{ Adapter = $null; Adapters = @() }) } | Should -Not -Throw
+            { Write-TkDashboardNetwork -Part $null } | Should -Not -Throw
+        }
+    }
+
+    Context 'Busy state' {
+
+        It 'stays busy until the last piece of work ends, and never goes below zero' {
+
+            # Pages read in several parts at once; the first to finish must not
+            # declare the window ready while the others are still reading.
+            $before = Get-TkBusyCount
+
+            Enter-TkBusy -Text 'first part'
+            Enter-TkBusy -Text 'second part'
+            Exit-TkBusy
+
+            Get-TkBusyCount | Should -Be ($before + 1)
+
+            Exit-TkBusy
+
+            Get-TkBusyCount | Should -Be $before
+
+            if ($before -eq 0) {
+                Exit-TkBusy
+                Get-TkBusyCount | Should -Be 0
+            }
+        }
+    }
+
+    Context 'Health tiles' {
+
+        BeforeAll {
+            $script:Snapshot = [pscustomobject] @{
+                Reboot     = [pscustomobject] @{ Pending = $true; Reasons = @('Windows Update is waiting for a restart.'); Uptime = '3 days' }
+                LastHotFix = [pscustomobject] @{ HotFixID = 'KB5099999'; InstalledOn = [datetime] '2026-08-01' }
+                Volumes    = @(
+                    [pscustomobject] @{ Drive = 'D:'; UsedPercent = 20;   Free = '800 GB'; Size = '1 TB';   Severity = 'Pass' }
+                    [pscustomobject] @{ Drive = 'C:'; UsedPercent = 96.5; Free = '17 GB';  Size = '476 GB'; Severity = 'Fail' }
+                )
+                Disks      = @(
+                    [pscustomobject] @{ Name = 'NVMe 1TB'; Severity = 'Pass'; Notes = '' }
+                )
+                Battery    = @()
+            }
+
+            $script:Tiles = @(ConvertTo-TkDashboardHealth -Snapshot $script:Snapshot `
+                                                          -Now ([datetime] '2026-09-13') -SystemDrive 'C:')
+        }
+
+        It 'draws one tile per question' {
+
+            $script:Tiles.Count | Should -Be 5
+        }
+
+        It 'flags a pending restart and says why' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -eq 'Restart' }
+
+            $tile.Severity | Should -Be 'Warning'
+            $tile.Detail   | Should -Match 'Windows Update'
+        }
+
+        It 'reports storage for the system drive, not the first drive listed' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -like 'Storage*' }
+
+            $tile.Title    | Should -Be 'Storage C:'
+            $tile.Severity | Should -Be 'Fail'
+            $tile.Percent  | Should -Be 96.5
+            $tile.Page     | Should -Be 'System'
+        }
+
+        It 'measures patch age from the date it is given' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -eq 'Updates' }
+
+            $tile.Value    | Should -Be '43 days ago'
+            $tile.Severity | Should -Be 'Warning'
+        }
+
+        It 'reports a machine with no battery without marking it down' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -eq 'Battery' }
+
+            $tile.Value    | Should -Be 'No battery'
+            $tile.Severity | Should -Be 'Info'
+        }
+
+        It 'opens the entry a tile is about, in a list that has it' {
+
+            # The page alone was not enough: the battery tile landed on the
+            # Hardware page with the keyboard test selected.
+            foreach ($tile in @($script:Tiles | Where-Object { $_.List })) {
+
+                $start = $script:Markup.IndexOf(('x:Name="{0}"' -f $tile.List))
+                $start | Should -BeGreaterThan 0 -Because $tile.Title
+
+                $end   = $script:Markup.IndexOf('</ListBox>', $start)
+                $slice = $script:Markup.Substring($start, $end - $start)
+
+                $slice | Should -Match ('Text="{0}"' -f [regex]::Escape($tile.Choice)) -Because $tile.Title
+            }
+
+            $battery = $script:Tiles | Where-Object { $_.Title -eq 'Battery' }
+
+            $battery.List   | Should -Be 'HardwareChoices'
+            $battery.Choice | Should -Be 'Battery'
+        }
+
+        It 'starts the full diagnostic from an entry that exists' {
+
+            $start = $script:Markup.IndexOf('x:Name="DiagnosticChoices"')
+            $end   = $script:Markup.IndexOf('</ListBox>', $start)
+
+            $script:Markup.Substring($start, $end - $start) | Should -Match 'Text="Full check"'
+        }
+
+        It 'names a page that exists on every tile' {
+
+            foreach ($tile in $script:Tiles) {
+                @(Get-TkPageName) | Should -Contain $tile.Page
+            }
         }
     }
 }

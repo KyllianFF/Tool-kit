@@ -16,6 +16,14 @@ $script:TkEmbeddedXaml = ''
 $script:TkFirstShowAction = @{}
 $script:TkPageOpened      = @{}
 
+# How many background actions are still running. See Enter-TkBusy.
+$script:TkBusyCount = 0
+
+# Cards still reading, with the moment each started, and the one timer that
+# counts their seconds. See Start-TkLoadingClock.
+$script:TkLoadingStarted = @{}
+$script:TkLoadingTimer   = $null
+
 <#
 .SYNOPSIS
     Returns the main window XAML.
@@ -256,22 +264,44 @@ function Register-TkFirstShow {
 
 <#
 .SYNOPSIS
+    Returns the page names, in navigation order.
+
+.DESCRIPTION
+    The one list of pages. Adding a page used to mean a parameter validation
+    and three copies of the same array in this file, and missing one left a
+    page that could be shown but never highlighted, or a button that did
+    nothing. A test checks that every name here has its navigation button and
+    its panel in the markup, and that the markup has no page this list lacks.
+
+.OUTPUTS
+    System.String[]
+#>
+function Get-TkPageName {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+
+    return @('Dashboard', 'System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')
+}
+
+<#
+.SYNOPSIS
     Shows one feature page and hides the others.
 
 .PARAMETER Name
-    Page key: System, Software, Tweaks, Fixes, Network or Security.
+    Page key, one of the names Get-TkPageName returns.
 #>
 function Show-TkPage {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')]
+        [ValidateScript({ @(Get-TkPageName) -contains $_ })]
         [string] $Name
     )
 
     $ctx = Get-TkContext
 
-    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')) {
+    foreach ($page in @(Get-TkPageName)) {
 
         $control = Get-TkControl -Name ('Page{0}' -f $page)
 
@@ -288,7 +318,7 @@ function Show-TkPage {
     }
 
     # Highlight the active navigation entry.
-    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')) {
+    foreach ($page in @(Get-TkPageName)) {
 
         $button = Get-TkControl -Name ('Nav{0}' -f $page)
 
@@ -297,9 +327,11 @@ function Show-TkPage {
         }
 
         if ($page -eq $Name) {
-            # Looked up on every call: a frozen brush captured once would keep
-            # the palette that was active when the page was first shown.
-            $button.Background = $ctx.Window.Resources['Selection']
+            # By resource reference, so the active entry follows a theme change
+            # by itself. A brush assigned directly keeps the palette it was
+            # assigned from, which is why the theme used to show the last page
+            # again to repaint it, with the consequence described below.
+            $button.SetResourceReference([System.Windows.Controls.Control]::BackgroundProperty, 'Selection')
             $button.FontWeight = [System.Windows.FontWeights]::SemiBold
         }
         else {
@@ -310,24 +342,397 @@ function Show-TkPage {
 
     $ctx.Settings['LastPage'] = $Name
 
-    # First open only. The flag is set before the action runs, so an action
-    # that throws does not queue itself again on the next visit.
-    if (-not $script:TkPageOpened.ContainsKey($Name)) {
+    # First open only, and only once there is something to run.
+    #
+    # The flag used to be set on any first visit. At start up the theme showed
+    # the last page of the previous session before that page had registered
+    # what to load, so the page was marked opened with nothing run, and the
+    # action registered a moment later never ran: the System page then opened
+    # with every card reading for ever, until Refresh. The flag is still set
+    # before the action runs, so an action that throws does not queue itself
+    # again on the next visit.
+    if ($script:TkFirstShowAction.ContainsKey($Name) -and -not $script:TkPageOpened.ContainsKey($Name)) {
 
         $script:TkPageOpened[$Name] = $true
 
-        if ($script:TkFirstShowAction.ContainsKey($Name)) {
+        try {
+            & $script:TkFirstShowAction[$Name]
+        }
+        catch {
+            Write-TkLog -Level Warning -Category 'Interface' -Message (
+                'The {0} page could not finish its first load: {1}' -f $Name, $_.Exception.Message
+            )
+        }
+    }
+}
 
-            try {
-                & $script:TkFirstShowAction[$Name]
-            }
-            catch {
-                Write-TkLog -Level Warning -Category 'Interface' -Message (
-                    'The {0} page could not finish its first load: {1}' -f $Name, $_.Exception.Message
-                )
+<#
+.SYNOPSIS
+    Selects a tab by its header.
+
+.DESCRIPTION
+    Matched on the header rather than the position, so a tab moved or added
+    later cannot silently send a quick action to the wrong place.
+
+.PARAMETER TabControlName
+    Name of the TabControl in the markup.
+
+.PARAMETER Header
+    Header text of the tab to select.
+
+.OUTPUTS
+    System.Boolean, true when the tab was found.
+#>
+function Select-TkTab {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $TabControlName,
+
+        [Parameter(Mandatory)]
+        [string] $Header
+    )
+
+    $tabs = Get-TkControl -Name $TabControlName
+
+    if ($null -eq $tabs) {
+        return $false
+    }
+
+    foreach ($item in $tabs.Items) {
+
+        if ($item -is [System.Windows.Controls.TabItem] -and [string] $item.Header -eq $Header) {
+            $item.IsSelected = $true
+            return $true
+        }
+    }
+
+    return $false
+}
+
+<#
+.SYNOPSIS
+    Marks one more piece of background work as running.
+
+.DESCRIPTION
+    Pages read in several parts at once. With a single on and off switch the
+    first part to finish hid the busy bar and said "Ready." while the others
+    were still reading, which is the page with no sign of life this exists to
+    prevent. A count keeps the bar up until the last one ends.
+
+.PARAMETER Text
+    What is being done, for the status bar.
+#>
+function Enter-TkBusy {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Text
+    )
+
+    $script:TkBusyCount++
+
+    Set-TkStatus -Text $Text -Busy $true
+}
+
+<#
+.SYNOPSIS
+    Marks one piece of background work as finished.
+
+.DESCRIPTION
+    Says "Ready." only once nothing else is running. Never goes below zero, so
+    one stray call cannot leave the count permanently off by one.
+#>
+function Exit-TkBusy {
+    [CmdletBinding()]
+    param()
+
+    $script:TkBusyCount = [math]::Max(0, $script:TkBusyCount - 1)
+
+    if ($script:TkBusyCount -eq 0) {
+        Set-TkStatus -Text 'Ready.'
+    }
+}
+
+<#
+.SYNOPSIS
+    Returns how many background actions are still running.
+#>
+function Get-TkBusyCount {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+
+    return [int] $script:TkBusyCount
+}
+
+<#
+.SYNOPSIS
+    Shows a card as reading, or as read.
+
+.DESCRIPTION
+    A card that fills in the background carries two children in the markup,
+    by name: <Name>Loading, a moving bar with a line saying what is being read,
+    and <Name>Content, the fields. Swapping them means a page never shows empty
+    fields that look like missing data.
+
+    On a refresh the content already shown stays in place under the moving
+    bar, rather than disappearing and coming back: only a card that has never
+    been filled hides its fields while it reads.
+
+    A test checks that every Loading in the markup has its Content and its
+    LoadingText.
+
+.PARAMETER Name
+    The prefix shared by the two children.
+
+.PARAMETER Loading
+    True while reading.
+#>
+function Set-TkCardLoading {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [bool] $Loading
+    )
+
+    $indicator = Get-TkControl -Name ('{0}Loading' -f $Name)
+    $content   = Get-TkControl -Name ('{0}Content' -f $Name)
+
+    if ($indicator) {
+
+        $indicator.Visibility = if ($Loading) { [System.Windows.Visibility]::Visible }
+                                else { [System.Windows.Visibility]::Collapsed }
+
+        if ($Loading) {
+            $script:TkLoadingStarted[$Name] = Get-Date
+            Start-TkLoadingClock
+        }
+        else {
+            [void] $script:TkLoadingStarted.Remove($Name)
+
+            # Back to the plain text, so the next read starts its count at zero.
+            $label = Get-TkControl -Name ('{0}LoadingText' -f $Name)
+
+            if ($label -and $null -ne $label.Tag) {
+                $label.Text = [string] $label.Tag
             }
         }
     }
+
+    if ($null -eq $content) {
+        return
+    }
+
+    if (-not $Loading) {
+        $content.Tag        = 'Filled'
+        $content.Visibility = [System.Windows.Visibility]::Visible
+        return
+    }
+
+    if ([string] $content.Tag -ne 'Filled') {
+        $content.Visibility = [System.Windows.Visibility]::Collapsed
+    }
+}
+
+<#
+.SYNOPSIS
+    Counts the seconds on every card that is still reading.
+
+.DESCRIPTION
+    A moving bar alone cannot tell slow from stuck. Some readings really are
+    slow on some machines, platform security above all, and past a few seconds
+    the operator should see that time is being counted rather than wonder
+    whether anything is still happening. One timer serves every card, and it
+    stops itself when no card is reading.
+#>
+function Start-TkLoadingClock {
+    [CmdletBinding()]
+    param()
+
+    if ($null -eq $script:TkLoadingTimer) {
+
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromSeconds(1)
+        $timer.Add_Tick({ Update-TkLoadingClock })
+
+        $script:TkLoadingTimer = $timer
+    }
+
+    if (-not $script:TkLoadingTimer.IsEnabled) {
+        $script:TkLoadingTimer.Start()
+    }
+}
+
+<#
+.SYNOPSIS
+    Adds the elapsed seconds to the text of each card still reading.
+
+.DESCRIPTION
+    Shown from three seconds on: before that the count is noise. The original
+    text is kept in the label's Tag the first time, so the count is appended
+    to it rather than to the previous count.
+#>
+function Update-TkLoadingClock {
+    [CmdletBinding()]
+    param()
+
+    if ($script:TkLoadingStarted.Count -eq 0) {
+
+        if ($script:TkLoadingTimer) {
+            $script:TkLoadingTimer.Stop()
+        }
+
+        return
+    }
+
+    foreach ($name in @($script:TkLoadingStarted.Keys)) {
+
+        $label = Get-TkControl -Name ('{0}LoadingText' -f $name)
+
+        if ($null -eq $label) {
+            continue
+        }
+
+        if ($null -eq $label.Tag) {
+            $label.Tag = $label.Text
+        }
+
+        $seconds = [int] ((Get-Date) - $script:TkLoadingStarted[$name]).TotalSeconds
+
+        $label.Text = if ($seconds -lt 3) { [string] $label.Tag }
+                      else { '{0} {1} s' -f $label.Tag, $seconds }
+    }
+}
+
+<#
+.SYNOPSIS
+    Writes text into named controls.
+
+.PARAMETER Field
+    Control name to value. A control missing from the markup is skipped.
+#>
+function Set-TkFieldText {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $Field
+    )
+
+    foreach ($name in $Field.Keys) {
+
+        $control = Get-TkControl -Name $name
+
+        if ($control) {
+            $control.Text = [string] $Field[$name]
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Returns the title of an entry in a chooser list.
+
+.DESCRIPTION
+    The first text found in the entry, which in every chooser of this window
+    is its title: a ListBoxItem holding a TextBlock, or a panel whose first
+    TextBlock is the title.
+
+.PARAMETER Item
+    A list entry, or any element inside one.
+#>
+function Get-TkItemTitle {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        $Item
+    )
+
+    if ($null -eq $Item) {
+        return ''
+    }
+
+    $content = if ($Item -is [System.Windows.Controls.ContentControl]) { $Item.Content } else { $Item }
+
+    if ($content -is [string]) {
+        return $content
+    }
+
+    if ($content -is [System.Windows.Controls.TextBlock]) {
+        return [string] $content.Text
+    }
+
+    if ($content -is [System.Windows.DependencyObject]) {
+
+        foreach ($child in [System.Windows.LogicalTreeHelper]::GetChildren($content)) {
+
+            $title = Get-TkItemTitle -Item $child
+
+            if ($title) {
+                return $title
+            }
+        }
+    }
+
+    return ''
+}
+
+<#
+.SYNOPSIS
+    Selects an entry in a chooser list by its title.
+
+.DESCRIPTION
+    Matched on the title rather than the position, so a reordered list cannot
+    send the battery tile to the sound test.
+
+    The selection is cleared first. Selecting the entry that is already
+    selected raises no event, and every chooser in this window acts on that
+    event: without the clear, a second click on the same tile would change
+    nothing.
+
+.PARAMETER ListName
+    Name of the ListBox in the markup.
+
+.PARAMETER Title
+    Title of the entry to select.
+
+.OUTPUTS
+    System.Boolean, true when the entry was found.
+#>
+function Select-TkListChoice {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ListName,
+
+        [Parameter(Mandatory)]
+        [string] $Title
+    )
+
+    $list = Get-TkControl -Name $ListName
+
+    if ($null -eq $list) {
+        return $false
+    }
+
+    for ($index = 0; $index -lt $list.Items.Count; $index++) {
+
+        if ((Get-TkItemTitle -Item $list.Items[$index]) -eq $Title) {
+
+            $list.SelectedIndex = -1
+            $list.SelectedIndex = $index
+
+            return $true
+        }
+    }
+
+    return $false
 }
 
 <#
@@ -359,8 +764,11 @@ function Set-TkStatus {
     }
 
     if ($bar) {
-        $bar.Visibility = if ($Busy) { [System.Windows.Visibility]::Visible }
-                          else       { [System.Windows.Visibility]::Hidden }
+        # Kept up while any background work is still running, whatever this
+        # particular call says. A page reading in several parts would otherwise
+        # lose its busy bar the moment the first part finished.
+        $bar.Visibility = if ($Busy -or $script:TkBusyCount -gt 0) { [System.Windows.Visibility]::Visible }
+                          else { [System.Windows.Visibility]::Hidden }
     }
 }
 
@@ -409,12 +817,12 @@ function Invoke-TkBackgroundAction {
         [string] $StatusText = 'Working...'
     )
 
-    Set-TkStatus -Text $StatusText -Busy $true
+    Enter-TkBusy -Text $StatusText
 
     $wrapper = {
         param($result)
 
-        Set-TkStatus -Text 'Ready.' -Busy $false
+        Exit-TkBusy
 
         if ($OnComplete) {
             & $OnComplete $result
@@ -979,7 +1387,7 @@ function Initialize-TkShell {
     Update-TkElevationBadge
 
     # --- Navigation -------------------------------------------------------
-    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')) {
+    foreach ($page in @(Get-TkPageName)) {
 
         $name = 'Nav{0}' -f $page
 

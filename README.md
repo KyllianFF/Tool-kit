@@ -22,6 +22,7 @@ irm https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1 |
 
 | Area | What is in it |
 | --- | --- |
+| **Dashboard** | The page the toolkit opens on: computer name, model, Windows build, uptime, the adapter that carries traffic with its address, gateway and DNS, and the public IP on request only. Health tiles for a pending restart, patch age, system drive space with a fill bar, disk health and battery, each opening the page that deals with it, and quick actions that take you there and start the work: the security audit, the full diagnostic, a support bundle, Windows Update. |
 | **System** | Manufacturer, model, serial number, asset tag, chassis, motherboard, BIOS version and age, OS build and activation, CPU, memory, disks, volumes, graphics, Secure Boot, TPM, BitLocker and firewall. One click to the vendor driver and warranty pages **with the serial number already in the URL**, one click to install the vendor firmware utility, and an export to JSON or text for a ticket. |
 | **Software** | 146 applications across 12 categories, installed through winget with a search box and a category filter. Multi-select, batch install, uninstall, upgrade everything, and an installed-state indicator. |
 | **Tweaks** | 35 declarative tweaks over privacy, interface, performance, gaming, hardening and advanced settings. Every one of them is reversible, the current state is read from the registry rather than remembered, and a restore point is taken before a batch is applied. |

@@ -367,6 +367,40 @@
             Only for buttons whose Tag is free. The ones that carry an
             identifier in Tag, such as the fix runners, keep the plain style.
         -->
+        <!--
+            An icon sitting beside the value it acts on: copy next to a serial
+            number, a link next to a manufacturer. Small and borderless, so the
+            value stays the thing that is read, and the action is found where the
+            eye already is rather than in a row of buttons at the top of the page.
+        -->
+        <Style x:Key="InlineGlyphButton" TargetType="Button">
+            <Setter Property="Width"      Value="26" />
+            <Setter Property="Height"     Value="26" />
+            <Setter Property="Cursor"     Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="Transparent" CornerRadius="4">
+                            <TextBlock Text="{TemplateBinding Tag}"
+                                       FontFamily="{DynamicResource IconFont}" FontSize="13"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selection}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="GlyphButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Template">
                 <Setter.Value>
@@ -905,6 +939,7 @@
                 <DockPanel LastChildFill="False">
                     <StackPanel DockPanel.Dock="Top" Margin="0,12,0,0">
                         <!-- Tag carries the icon code point; see the IconFont note above. -->
+                        <Button x:Name="NavDashboard"   Content="Dashboard"   Style="{StaticResource NavButton}" Tag="&#xE80F;" />
                         <Button x:Name="NavSystem"      Content="System"      Style="{StaticResource NavButton}" Tag="&#xEC4E;" />
                         <Button x:Name="NavSoftware"    Content="Software"    Style="{StaticResource NavButton}" Tag="&#xECA5;" />
                         <Button x:Name="NavTweaks"      Content="Tweaks"      Style="{StaticResource NavButton}" Tag="&#xE9E9;" />
@@ -925,35 +960,198 @@
             <!-- Feature panels. Exactly one is visible at a time. -->
             <Grid Grid.Column="1" x:Name="PageHost">
 
-                <!-- ========================= SYSTEM ========================= -->
-                <ScrollViewer x:Name="PageSystem" VerticalScrollBarVisibility="Auto" Padding="24,20" Visibility="Visible">
+                <!-- ======================== DASHBOARD ======================= -->
+                <!--
+                    The page the toolkit opens on. System answers "what exactly is
+                    this machine"; this one answers "is anything wrong with it, and
+                    where do I start", which is how a support call begins.
+
+                    Each card reads on its own and says so until its answer lands.
+                -->
+                <ScrollViewer x:Name="PageDashboard" VerticalScrollBarVisibility="Auto" Padding="24,20" Visibility="Visible">
                     <StackPanel>
-                        <TextBlock Text="System" Style="{StaticResource Heading}" />
-                        <TextBlock Style="{StaticResource Muted}"
-                                   Text="Machine identity read from SMBIOS, operating system state and platform security posture. Everything on this page is read only and works without elevation." />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,16,0,4">
-                            <Button x:Name="BtnRefreshSystem" Content="Refresh" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
-                            <Button x:Name="BtnCopySerial"    Content="Copy serial number" Style="{StaticResource GlyphButton}" Tag="&#xE8C8;" />
-                            <Button x:Name="BtnVendorDrivers" Content="Vendor drivers" />
-                            <Button x:Name="BtnVendorWarranty" Content="Warranty" />
-                            <Button x:Name="BtnVendorTool"    Content="Install firmware utility" />
-                            <Button x:Name="BtnExportReport"  Content="Export report" Style="{StaticResource GlyphButton}" Tag="&#xE74E;" />
-                        </StackPanel>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Dashboard" Style="{StaticResource Heading}" />
+                                <TextBlock Style="{StaticResource Muted}"
+                                           Text="This workstation at a glance: which machine it is, how it is connected, and whether anything needs attention. Nothing here changes the machine; the actions at the bottom open the page that does the work." />
+                            </StackPanel>
 
-                        <!-- Identity -->
-                        <Border Style="{StaticResource Card}" Margin="0,12,0,12">
+                            <Button Grid.Column="1" x:Name="BtnRefreshDashboard" Content="Refresh"
+                                    Style="{StaticResource GlyphButton}" Tag="&#xE72C;"
+                                    VerticalAlignment="Top" Margin="16,0,0,0" />
+                        </Grid>
+
+                        <Grid Margin="0,16,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Workstation -->
+                            <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0">
+                                <StackPanel>
+                                    <TextBlock Text="Workstation" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                    <!-- Shown until this card's part has been read; see Set-TkCardLoading. -->
+                                    <StackPanel x:Name="DashWorkstationLoading" Margin="0,2,0,6">
+                                        <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,8" BorderThickness="0"
+                                                     Foreground="{DynamicResource Accent}" Background="{DynamicResource SurfaceRaised}" />
+                                        <TextBlock x:Name="DashWorkstationLoadingText" Style="{StaticResource Muted}" Text="Reading which machine this is..." />
+                                    </StackPanel>
+                                    <StackPanel x:Name="DashWorkstationContent" Visibility="Collapsed">
+                                        <TextBlock x:Name="DashComputerName" Text="-" FontSize="22" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextPrimary}" />
+                                        <TextBlock x:Name="DashModel" Style="{StaticResource Muted}" Margin="0,2,0,12" />
+                                        <UniformGrid Columns="2">
+                                            <StackPanel><TextBlock Text="Windows"        Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashOs"         Style="{StaticResource FieldValue}" /></StackPanel>
+                                            <StackPanel><TextBlock Text="Uptime"         Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashUptime"     Style="{StaticResource FieldValue}" /></StackPanel>
+                                            <StackPanel><TextBlock Text="Signed in user" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashUser"       Style="{StaticResource FieldValue}" /></StackPanel>
+                                            <StackPanel><TextBlock Text="Domain"         Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashDomain"     Style="{StaticResource FieldValue}" /></StackPanel>
+                                            <StackPanel><TextBlock Text="Serial number"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashSerial"     Style="{StaticResource FieldValue}" /></StackPanel>
+                                            <StackPanel><TextBlock Text="Activation"     Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashActivation" Style="{StaticResource FieldValue}" /></StackPanel>
+                                        </UniformGrid>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Network -->
+                            <Border Grid.Column="2" Style="{StaticResource Card}" Margin="0">
+                                <StackPanel>
+                                    <TextBlock Text="Network" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                    <!-- Shown until this card's part has been read; see Set-TkCardLoading. -->
+                                    <StackPanel x:Name="DashNetworkLoading" Margin="0,2,0,6">
+                                        <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,8" BorderThickness="0"
+                                                     Foreground="{DynamicResource Accent}" Background="{DynamicResource SurfaceRaised}" />
+                                        <TextBlock x:Name="DashNetworkLoadingText" Style="{StaticResource Muted}" Text="Reading the network adapters and routes..." />
+                                    </StackPanel>
+                                    <StackPanel x:Name="DashNetworkContent" Visibility="Collapsed">
+                                        <TextBlock x:Name="DashIpv4" Text="-" FontSize="22" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextPrimary}" />
+                                        <TextBlock x:Name="DashAdapter" Style="{StaticResource Muted}" Margin="0,2,0,12" />
+                                        <UniformGrid Columns="2">
+                                            <StackPanel><TextBlock Text="Gateway"     Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashGateway" Style="{StaticResource FieldValue}" /></StackPanel>
+                                            <StackPanel><TextBlock Text="DNS servers" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashDns"     Style="{StaticResource FieldValue}" /></StackPanel>
+                                            <StackPanel><TextBlock Text="Addressing"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashDhcp"    Style="{StaticResource FieldValue}" /></StackPanel>
+                                            <StackPanel><TextBlock Text="MAC address" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="DashMac"     Style="{StaticResource FieldValue}" /></StackPanel>
+                                        </UniformGrid>
+                                        <!--
+                                            Ethernet and Wi-Fi up together, a VPN beside the physical
+                                            link, virtual switches for VMs and WSL: named or counted here,
+                                            so the address above is never mistaken for the only one.
+                                        -->
+                                        <TextBlock x:Name="DashOtherAdapters" Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                                   Visibility="Collapsed" />
+                                    </StackPanel>
+                                    <!--
+                                        Behind a button: it is the one reading that leaves the
+                                        machine, so it happens only when the operator asks.
+                                    -->
+                                    <DockPanel LastChildFill="True">
+                                        <Button x:Name="BtnDashPublicIp" DockPanel.Dock="Left" Content="Show public IP"
+                                                Style="{StaticResource GlyphButton}" Tag="&#xE774;" Margin="0"
+                                                ToolTip="Asks an outside service which address this network is seen from. Only when you press it, because the request leaves the machine." />
+                                        <TextBlock x:Name="DashPublicIp" Style="{StaticResource FieldValue}"
+                                                   VerticalAlignment="Center" Margin="12,0,0,0" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <!-- Health -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Health" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
+                                <!-- Shown until this card's part has been read; see Set-TkCardLoading. -->
+                                <StackPanel x:Name="DashHealthCardLoading" Margin="0,2,0,6">
+                                    <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,8" BorderThickness="0"
+                                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource SurfaceRaised}" />
+                                    <TextBlock x:Name="DashHealthCardLoadingText" Style="{StaticResource Muted}" Text="Reading restart state, updates, disks and battery..." />
+                                </StackPanel>
+                                <StackPanel x:Name="DashHealthCardContent" Visibility="Collapsed">
+                                    <UniformGrid x:Name="DashHealth" Columns="5" />
+                                    <TextBlock x:Name="DashHealthNote" Style="{StaticResource Muted}" Margin="0,10,0,0" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Quick actions -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Quick actions" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                <UniformGrid x:Name="DashQuickActions" Columns="4" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ========================= SYSTEM ========================= -->
+                <ScrollViewer x:Name="PageSystem" VerticalScrollBarVisibility="Auto" Padding="24,20" Visibility="Collapsed">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="System" Style="{StaticResource Heading}" />
+                                <TextBlock Style="{StaticResource Muted}"
+                                           Text="Machine identity read from SMBIOS, operating system state and platform security posture. Everything on this page is read only and works without elevation." />
+                            </StackPanel>
+
+                            <!--
+                                Only the actions that concern the whole page stay up here.
+                                An action on one value sits beside that value: copy next to
+                                the serial number, the support site next to the manufacturer,
+                                the firmware utility inside the Firmware card.
+                            -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="16,0,0,0">
+                                <Button x:Name="BtnRefreshSystem" Content="Refresh"       Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
+                                <Button x:Name="BtnExportReport"  Content="Export report" Style="{StaticResource GlyphButton}"        Tag="&#xE74E;" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Identity. The quick actions live on the Dashboard only. -->
+                        <Border Style="{StaticResource Card}" Margin="0,16,0,12">
                             <StackPanel>
                                 <TextBlock Text="Identity" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
-                                <UniformGrid Columns="4" x:Name="IdentityGrid">
-                                    <StackPanel><TextBlock Text="Manufacturer" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValManufacturer" Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Model"        Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValModel"        Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Serial number" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValSerial"      Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Asset tag"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValAssetTag"     Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Chassis"      Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValChassis"      Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Motherboard"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBoard"        Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Domain"       Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValDomain"       Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Signed in user" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValUser"       Style="{StaticResource FieldValue}" /></StackPanel>
+                                <!-- Shown until this card's part has been read; see Set-TkCardLoading. -->
+                                <StackPanel x:Name="SystemIdentityLoading" Margin="0,2,0,6">
+                                    <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,8" BorderThickness="0"
+                                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource SurfaceRaised}" />
+                                    <TextBlock x:Name="SystemIdentityLoadingText" Style="{StaticResource Muted}" Text="Reading the machine identity from SMBIOS..." />
+                                </StackPanel>
+                                <UniformGrid Columns="4" x:Name="SystemIdentityContent" Visibility="Collapsed">
+                                    <StackPanel>
+                                        <TextBlock Text="Manufacturer" Style="{StaticResource FieldLabel}" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                            <TextBlock x:Name="ValManufacturer" Style="{StaticResource FieldValue}" Margin="0" VerticalAlignment="Center" />
+                                            <Button x:Name="BtnVendorDrivers" Style="{StaticResource InlineGlyphButton}" Tag="&#xE71B;" Margin="6,0,0,0"
+                                                    ToolTip="Open the manufacturer's driver and support page for this model" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <StackPanel><TextBlock Text="Model" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValModel" Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Text="Serial number" Style="{StaticResource FieldLabel}" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                            <TextBlock x:Name="ValSerial" Style="{StaticResource FieldValue}" Margin="0" VerticalAlignment="Center" />
+                                            <Button x:Name="BtnCopySerial" Style="{StaticResource InlineGlyphButton}" Tag="&#xE8C8;" Margin="6,0,0,0"
+                                                    IsEnabled="False" ToolTip="Copy the serial number" />
+                                            <Button x:Name="BtnVendorWarranty" Style="{StaticResource InlineGlyphButton}" Tag="&#xE8A7;" Margin="2,0,0,0"
+                                                    IsEnabled="False" ToolTip="Check the warranty for this serial number on the manufacturer's site" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <StackPanel><TextBlock Text="Asset tag"      Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValAssetTag" Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Chassis"        Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValChassis"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Motherboard"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBoard"    Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Domain"         Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValDomain"   Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Signed in user" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValUser"     Style="{StaticResource FieldValue}" /></StackPanel>
                                 </UniformGrid>
                             </StackPanel>
                         </Border>
@@ -962,15 +1160,32 @@
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <TextBlock Text="Firmware" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
-                                <UniformGrid Columns="4">
-                                    <StackPanel><TextBlock Text="BIOS vendor"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosVendor"  Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="BIOS version" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosVersion" Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Release date" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosDate"    Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Age"          Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosAge"     Style="{StaticResource FieldValue}" /></StackPanel>
-                                </UniformGrid>
-                                <TextBlock x:Name="ValBiosAdvice" Style="{StaticResource Muted}" Margin="0,4,0,0" />
-                                <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
-                                           Text="The toolkit never downloads or flashes firmware itself. It installs the vendor utility and opens the support page pre-filled with this serial number." />
+                                <!-- Shown until this card's part has been read; see Set-TkCardLoading. -->
+                                <StackPanel x:Name="SystemFirmwareLoading" Margin="0,2,0,6">
+                                    <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,8" BorderThickness="0"
+                                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource SurfaceRaised}" />
+                                    <TextBlock x:Name="SystemFirmwareLoadingText" Style="{StaticResource Muted}" Text="Reading the firmware..." />
+                                </StackPanel>
+                                <StackPanel x:Name="SystemFirmwareContent" Visibility="Collapsed">
+                                    <UniformGrid Columns="4">
+                                        <StackPanel><TextBlock Text="BIOS vendor"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosVendor"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                        <StackPanel><TextBlock Text="BIOS version" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosVersion" Style="{StaticResource FieldValue}" /></StackPanel>
+                                        <StackPanel><TextBlock Text="Release date" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosDate"    Style="{StaticResource FieldValue}" /></StackPanel>
+                                        <StackPanel><TextBlock Text="Age"          Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBiosAge"     Style="{StaticResource FieldValue}" /></StackPanel>
+                                    </UniformGrid>
+                                    <TextBlock x:Name="ValBiosAdvice" Style="{StaticResource Muted}" Margin="0,4,0,0" />
+                                    <!--
+                                        The utility button only appears when the catalog knows one
+                                        for this manufacturer; the hint beside it says what happens
+                                        either way.
+                                    -->
+                                    <DockPanel Margin="0,10,0,0" LastChildFill="True">
+                                        <Button x:Name="BtnVendorTool" DockPanel.Dock="Left" Content="Install the firmware utility"
+                                                Style="{StaticResource GlyphButton}" Tag="&#xE896;" Margin="0,0,12,0" Visibility="Collapsed" />
+                                        <TextBlock x:Name="ValVendorToolHint" Style="{StaticResource Muted}" VerticalAlignment="Center"
+                                                   Text="The toolkit never downloads or flashes firmware itself: it installs the manufacturer's utility, which takes over from there." />
+                                    </DockPanel>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -978,7 +1193,13 @@
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <TextBlock Text="Operating system" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
-                                <UniformGrid Columns="4">
+                                <!-- Shown until this card's part has been read; see Set-TkCardLoading. -->
+                                <StackPanel x:Name="SystemOsLoading" Margin="0,2,0,6">
+                                    <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,8" BorderThickness="0"
+                                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource SurfaceRaised}" />
+                                    <TextBlock x:Name="SystemOsLoadingText" Style="{StaticResource Muted}" Text="Reading the operating system..." />
+                                </StackPanel>
+                                <UniformGrid Columns="4" x:Name="SystemOsContent" Visibility="Collapsed">
                                     <StackPanel><TextBlock Text="Edition"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValOsCaption"  Style="{StaticResource FieldValue}" /></StackPanel>
                                     <StackPanel><TextBlock Text="Version"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValOsVersion"  Style="{StaticResource FieldValue}" /></StackPanel>
                                     <StackPanel><TextBlock Text="Build"      Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValOsBuild"    Style="{StaticResource FieldValue}" /></StackPanel>
@@ -995,31 +1216,41 @@
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <TextBlock Text="Hardware" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
-                                <UniformGrid Columns="4">
-                                    <StackPanel><TextBlock Text="Processor" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValCpu"      Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Cores"     Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValCores"    Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Memory"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValMemory"   Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Graphics"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValGpu"      Style="{StaticResource FieldValue}" /></StackPanel>
-                                </UniformGrid>
+                                <!-- Shown until this card's part has been read; see Set-TkCardLoading. -->
+                                <StackPanel x:Name="SystemHardwareLoading" Margin="0,2,0,6">
+                                    <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,8" BorderThickness="0"
+                                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource SurfaceRaised}" />
+                                    <TextBlock x:Name="SystemHardwareLoadingText" Style="{StaticResource Muted}" Text="Reading processors, memory, disks and volumes..." />
+                                </StackPanel>
+                                <StackPanel x:Name="SystemHardwareContent" Visibility="Collapsed">
+                                    <UniformGrid Columns="4">
+                                        <StackPanel><TextBlock Text="Processor" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValCpu"    Style="{StaticResource FieldValue}" /></StackPanel>
+                                        <StackPanel><TextBlock Text="Cores"     Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValCores"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                        <StackPanel><TextBlock Text="Memory"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValMemory" Style="{StaticResource FieldValue}" /></StackPanel>
+                                        <StackPanel><TextBlock Text="Graphics"  Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValGpu"    Style="{StaticResource FieldValue}" /></StackPanel>
+                                    </UniformGrid>
 
-                                <!--
-                                    Rendered by the shared table builder
-                                    rather than a GridView. One renderer
-                                    means one set of behaviours everywhere:
-                                    selectable cells, banded rows, draggable
-                                    column edges and a palette that follows a
-                                    theme change. A GridView gives none of
-                                    those without a template per column.
-                                -->
-                                <TextBlock Text="Volumes" Style="{StaticResource FieldLabel}" Margin="0,6,0,4" />
-                                <RichTextBox x:Name="DocVolumes" IsReadOnly="True" MaxHeight="200"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Disabled" />
+                                    <!--
+                                        Every fixed volume, one bar each, the system drive first. A
+                                        bar reads faster than a percentage in a table, and seeing all
+                                        of them at once is the point: the drive filling up is rarely
+                                        the one a selector happens to show. Rows are drawn in code by
+                                        Write-TkSystemVolumeList, one per volume the machine reports.
+                                    -->
+                                    <TextBlock Text="Disk space" Style="{StaticResource FieldLabel}" Margin="0,4,0,6" />
+                                    <StackPanel x:Name="SystemVolumeList" />
 
-                                <TextBlock Text="Physical disks" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
-                                <RichTextBox x:Name="DocDisks" IsReadOnly="True" MaxHeight="200"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Disabled" />
+                                    <!--
+                                        Rendered by the shared table builder rather than a GridView.
+                                        One renderer means one set of behaviours everywhere:
+                                        selectable cells, banded rows, draggable column edges and a
+                                        palette that follows a theme change.
+                                    -->
+                                    <TextBlock Text="Physical disks" Style="{StaticResource FieldLabel}" Margin="0,14,0,4" />
+                                    <RichTextBox x:Name="DocDisks" IsReadOnly="True" MaxHeight="200"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -1027,11 +1258,19 @@
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <TextBlock Text="Platform security" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
-                                <UniformGrid Columns="2">
-                                    <StackPanel><TextBlock Text="Secure Boot" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValSecureBoot" Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="TPM"         Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValTpm"        Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="BitLocker"   Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBitLocker"  Style="{StaticResource FieldValue}" /></StackPanel>
-                                    <StackPanel><TextBlock Text="Firewall"    Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValFirewall"   Style="{StaticResource FieldValue}" /></StackPanel>
+                                <!-- Shown until this card's part has been read; see Set-TkCardLoading. -->
+                                <StackPanel x:Name="SystemSecurityLoading" Margin="0,2,0,6">
+                                    <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,8" BorderThickness="0"
+                                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource SurfaceRaised}" />
+                                    <TextBlock x:Name="SystemSecurityLoadingText" Style="{StaticResource Muted}" Text="Reading Secure Boot, TPM, BitLocker, firewall and antivirus..." />
+                                </StackPanel>
+                                <UniformGrid Columns="3" x:Name="SystemSecurityContent" Visibility="Collapsed">
+                                    <StackPanel><TextBlock Text="Secure Boot"        Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValSecureBoot" Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="TPM"                Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValTpm"        Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="BitLocker"          Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValBitLocker"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Firewall"           Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValFirewall"   Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Antivirus or EDR"   Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValAntivirus"  Style="{StaticResource FieldValue}" /></StackPanel>
+                                    <StackPanel><TextBlock Text="Microsoft Defender" Style="{StaticResource FieldLabel}" /><TextBlock x:Name="ValDefender"   Style="{StaticResource FieldValue}" /></StackPanel>
                                 </UniformGrid>
                             </StackPanel>
                         </Border>

@@ -38,8 +38,12 @@
 function Initialize-TkRunspacePool {
     [CmdletBinding()]
     param(
+        # Eight, not four. The Dashboard reads in three parts at launch and the
+        # System page in four more when it is first opened; with four slots the
+        # System parts queued behind the Dashboard and their cards sat reading
+        # for as long as the whole queue took. An idle slot costs nothing.
         [Parameter()]
-        [int] $MaxRunspaces = 4
+        [int] $MaxRunspaces = 8
     )
 
     $ctx = Get-TkContext

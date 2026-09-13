@@ -112,6 +112,9 @@ function Get-TkStorageHealth {
     [OutputType([pscustomobject[]])]
     param()
 
+    # The Storage module, loaded one worker at a time. See Import-TkCommandModule.
+    [void] (Import-TkCommandModule -Command @('Get-PhysicalDisk'))
+
     $results = @()
 
     foreach ($disk in (Get-TkCimInstanceSafe -ClassName 'MSFT_PhysicalDisk' -Namespace 'Root\Microsoft\Windows\Storage' -All)) {
@@ -142,7 +145,12 @@ function Get-TkStorageHealth {
         $severity = 'Pass'
         $notes    = @()
 
-        if ([int] $disk.HealthStatus -ne 0) {
+        # By name or number. With the Storage module loaded properly the status
+        # arrives as "Healthy", and the integer cast this used to be threw and
+        # took the whole storage reading down with it.
+        $health = ConvertFrom-TkDiskHealth -Value $disk.HealthStatus
+
+        if ($health -ne 'Healthy') {
             $severity = 'Fail'
             $notes += 'the drive reports itself as unhealthy'
         }
@@ -165,7 +173,7 @@ function Get-TkStorageHealth {
             Size         = Format-TkBytes -Bytes $disk.Size
             MediaType    = ConvertFrom-TkMediaType -Code $disk.MediaType
             BusType      = ConvertFrom-TkBusType -Code $disk.BusType
-            Health       = switch ([int] $disk.HealthStatus) { 0 { 'Healthy' } 1 { 'Warning' } 2 { 'Unhealthy' } default { 'Unknown' } }
+            Health       = $health
             WearPercent  = $wearPercent
             TemperatureC = $temperature
             PowerOnHours = $powerOnHours
@@ -182,19 +190,11 @@ function Get-TkStorageHealth {
             $freePercent = [math]::Round(($volume.FreeSpace / $volume.Size) * 100, 1)
         }
 
-        $severity = 'Pass'
-        $notes    = ''
-
-        # Below ten percent Windows starts to struggle: no room for updates,
-        # no room for the page file to grow, no room for a restore point.
-        if ($freePercent -lt 5) {
-            $severity = 'Fail'
-            $notes    = 'Critically full. Updates and restore points will fail.'
-        }
-        elseif ($freePercent -lt 12) {
-            $severity = 'Warning'
-            $notes    = 'Low. Windows needs headroom for servicing.'
-        }
+        # The thresholds live in Get-TkFreeSpaceAssessment, shared with the
+        # System page and the Dashboard.
+        $assessment = Get-TkFreeSpaceAssessment -FreePercent $freePercent
+        $severity   = $assessment.Severity
+        $notes      = $assessment.Note
 
         $results += [pscustomobject]@{
             Severity     = $severity
