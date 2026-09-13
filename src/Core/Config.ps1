@@ -17,6 +17,13 @@ $script:TkAppVersion = '1.0.0'
 $script:TkAppCommit  = 'dev'
 $script:TkRepository = 'https://github.com/KyllianFF/Tool-kit'
 
+# Where the published build is downloaded from, for the one liner in the
+# README. An elevation restart replays it when the toolkit was piped into the
+# shell: that launch leaves no script file to re-run and passes no argument,
+# so without this default "Restart as administrator" could do nothing. It is
+# part of the code, never read from downloaded content.
+$script:TkDefaultSourceUri = 'https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1'
+
 # Absolute path of the script the operator launched. Assigned by toolkit.ps1
 # during development and by the compiled build at run time. Empty when the
 # toolkit was piped straight into the shell, where there is no file to re-run.

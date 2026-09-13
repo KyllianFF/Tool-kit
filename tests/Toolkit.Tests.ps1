@@ -21,6 +21,60 @@ BeforeAll {
     . (Join-Path -Path $script:RepositoryRoot -ChildPath 'toolkit.ps1') -NoGui | Out-Null
 }
 
+Describe 'Launch from the one liner' {
+
+    <#
+        irm | iex is how the toolkit is run: the downloaded text executes with
+        no script file behind it and no argument. That launch left the
+        elevation restart with nothing to replay, so "Restart as administrator"
+        logged an error and did nothing, and the security audit, which needs
+        elevation, could not be reached from it.
+    #>
+
+    BeforeAll {
+        $script:LauncherEntryScript = $script:TkEntryScript
+    }
+
+    AfterAll {
+        # Put the development launch back as it was for the tests that follow.
+        $script:TkEntryScript = $script:LauncherEntryScript
+        Start-Toolkit -NoGui | Out-Null
+    }
+
+    It 'replays the published build when there is no script file and no source' {
+
+        $script:TkEntryScript = ''
+
+        $ctx = Start-Toolkit -NoGui
+
+        $ctx.SourceUri | Should -Be $script:TkDefaultSourceUri
+    }
+
+    It 'publishes over HTTPS, which is the only source an elevation restart accepts' {
+
+        $script:TkDefaultSourceUri | Should -Match '^https://'
+        $script:TkDefaultSourceUri | Should -Match '/dist/toolkit\.ps1$'
+    }
+
+    It 'keeps a source given explicitly' {
+
+        $script:TkEntryScript = ''
+
+        $ctx = Start-Toolkit -NoGui -SourceUri 'https://example.org/toolkit.ps1'
+
+        $ctx.SourceUri | Should -Be 'https://example.org/toolkit.ps1'
+    }
+
+    It 'sets no source when a script file was run, because that file is re-run instead' {
+
+        $script:TkEntryScript = $script:LauncherEntryScript
+
+        $ctx = Start-Toolkit -NoGui
+
+        $ctx.SourceUri | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'IPv4 conversion' {
 
     It 'converts <Address> to <Expected> and back' -TestCases @(

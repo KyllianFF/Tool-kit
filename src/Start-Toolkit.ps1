@@ -51,8 +51,15 @@ function Start-Toolkit {
 
     # Recorded so the elevation restart can replay the same source when the
     # toolkit was piped in and there is no script file on disk to re-run.
+    #
+    # irm | iex passes no argument at all, so a launch with neither a source
+    # nor a script file falls back to the published build. Without it that
+    # launch, the usual one, could never restart elevated.
     if ($SourceUri) {
         $ctx.SourceUri = $SourceUri
+    }
+    elseif (-not $ctx.EntryScript) {
+        $ctx.SourceUri = $script:TkDefaultSourceUri
     }
 
     Write-TkLog -Level Information -Category 'Startup' -Message (
@@ -85,7 +92,7 @@ function Start-Toolkit {
     if (-not (Test-TkIsStaThread)) {
 
         Write-TkLog -Level Error -Category 'Startup' -Message (
-            'This session is not single threaded (MTA). Restart with: powershell -STA -File <script>'
+            'This session is multi threaded (MTA) and WPF needs a single threaded one. Open a new PowerShell window, which is single threaded by default, and run the toolkit again; a console started with -MTA cannot show it.'
         )
 
         return
