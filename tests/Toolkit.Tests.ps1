@@ -1675,3 +1675,307 @@ Describe 'Support bundle' {
         @($events).Count | Should -BeLessOrEqual 25
     }
 }
+
+Describe 'Security audit engine' {
+
+    BeforeAll {
+        # A finding reduced to what the score reads.
+        $script:NewScoredFinding = {
+            param([string] $Status, [int] $Weight)
+
+            [pscustomobject] @{ Status = $Status; Weight = $Weight }
+        }
+    }
+
+    Context 'Control table' {
+
+        It 'names only controls that exist' {
+
+            $controls = @(Get-TkAuditControl)
+
+            $controls.Count | Should -BeGreaterThan 20
+
+            foreach ($control in $controls) {
+                Get-Command -Name $control.Function -ErrorAction SilentlyContinue |
+                    Should -Not -BeNullOrEmpty -Because ('{0} is in the control table' -f $control.Function)
+            }
+        }
+
+        It 'weights every control between 1 and 10 and gives it a known level' {
+
+            foreach ($control in (Get-TkAuditControl)) {
+                $control.Weight | Should -BeGreaterOrEqual 1
+                $control.Weight | Should -BeLessOrEqual 10
+                $control.Level  | Should -BeIn @('Essential', 'Full')
+            }
+        }
+
+        It 'runs a strict subset at the Essential level' {
+
+            $essential = @(Get-TkAuditControl -Level Essential)
+            $full      = @(Get-TkAuditControl -Level Full)
+
+            $essential.Count | Should -BeGreaterThan 0
+            $essential.Count | Should -BeLessThan $full.Count
+
+            foreach ($control in $essential) {
+                $full.Function | Should -Contain $control.Function
+            }
+        }
+
+        It 'files every control under one of the known categories' {
+
+            # The report groups by category. A control that invents its own
+            # splits one subject across two headings: the BitLocker key once sat
+            # under "Recovery" while BitLocker itself sat under "Data protection".
+            $known = @(
+                'Data protection', 'Endpoint', 'Platform', 'Credentials',
+                'Network', 'Remote access', 'Accounts', 'Servicing', 'Logging'
+            )
+
+            $used = @()
+
+            foreach ($file in @('SecurityAudit.ps1', 'HardeningCheck.ps1')) {
+
+                $path = Join-Path $script:RepositoryRoot ('src\Features\Security\{0}' -f $file)
+                $text = Get-Content -LiteralPath $path -Raw
+
+                # Anchored on the identifier, so only findings are read: the log
+                # calls in the same files carry a -Category of their own.
+                foreach ($match in [regex]::Matches($text, "-Id '[A-Z]+-\d+'[^\r\n]*?-Category '(?<name>[^']+)'")) {
+                    $used += $match.Groups['name'].Value
+                }
+            }
+
+            $used.Count | Should -BeGreaterThan 20
+
+            foreach ($name in ($used | Sort-Object -Unique)) {
+                $known | Should -Contain $name
+            }
+        }
+
+        It 'refers only to remediations that are registered' {
+
+            # A finding that names a correction the allow list does not have
+            # would draw a button that does nothing.
+            $table = Get-TkRemediationTable
+            $named = @()
+
+            foreach ($file in @('SecurityAudit.ps1', 'HardeningCheck.ps1')) {
+
+                $path = Join-Path $script:RepositoryRoot ('src\Features\Security\{0}' -f $file)
+
+                foreach ($line in (Get-Content -LiteralPath $path | Where-Object { $_ -match 'RemediationId' })) {
+
+                    foreach ($match in [regex]::Matches($line, "'(?<id>[a-z0-9]+(?:-[a-z0-9]+)+)'")) {
+                        $named += $match.Groups['id'].Value
+                    }
+                }
+            }
+
+            $named.Count | Should -BeGreaterThan 5
+
+            foreach ($id in ($named | Sort-Object -Unique)) {
+                $table.Keys | Should -Contain $id
+            }
+        }
+
+        It 'backs every remediation with a function that exists' {
+
+            $table = Get-TkRemediationTable
+
+            foreach ($id in $table.Keys) {
+                Get-Command -Name $table[$id].Action -ErrorAction SilentlyContinue |
+                    Should -Not -BeNullOrEmpty -Because ('{0} names {1}' -f $id, $table[$id].Action)
+            }
+        }
+    }
+
+    Context 'Score' {
+
+        It 'gives 100 when everything measured passes' {
+
+            $score = Get-TkAuditScore -Finding @(
+                (& $script:NewScoredFinding 'Pass' 10)
+                (& $script:NewScoredFinding 'Pass' 3)
+            )
+
+            $score.Score  | Should -Be 100
+            $score.Passed | Should -Be 2
+        }
+
+        It 'lets one heavy failure outweigh a light pass' {
+
+            # A plain count would say 50. The unencrypted disk is the finding.
+            $score = Get-TkAuditScore -Finding @(
+                (& $script:NewScoredFinding 'Fail' 10)
+                (& $script:NewScoredFinding 'Pass' 2)
+            )
+
+            $score.Score  | Should -Be 17
+            $score.Failed | Should -Be 1
+        }
+
+        It 'counts a warning as half' {
+
+            $score = Get-TkAuditScore -Finding @(
+                (& $script:NewScoredFinding 'Pass'    10)
+                (& $script:NewScoredFinding 'Warning' 10)
+            )
+
+            $score.Score    | Should -Be 75
+            $score.Warnings | Should -Be 1
+        }
+
+        It 'leaves a control that could not be read out of the score' {
+
+            $score = Get-TkAuditScore -Finding @(
+                (& $script:NewScoredFinding 'Pass'        5)
+                (& $script:NewScoredFinding 'NotAssessed' 10)
+            )
+
+            $score.Score       | Should -Be 100
+            $score.NotAssessed | Should -Be 1
+            $score.Assessed    | Should -Be 1
+        }
+
+        It 'lets an informational result cost nothing' {
+
+            $score = Get-TkAuditScore -Finding @(
+                (& $script:NewScoredFinding 'Pass' 5)
+                (& $script:NewScoredFinding 'Info' 10)
+            )
+
+            $score.Score    | Should -Be 100
+            $score.Assessed | Should -Be 1
+        }
+
+        It 'scores nothing measured as zero rather than failing' {
+
+            (Get-TkAuditScore -Finding @()).Score | Should -Be 0
+        }
+    }
+
+    Context 'Antivirus product state' {
+
+        It 'reads a third party product that is running with current signatures' {
+
+            # The value ESET Security reports on a protected machine.
+            $state = ConvertFrom-TkProductState -State 266240
+
+            $state.RealTimeEnabled   | Should -BeTrue
+            $state.SignaturesCurrent | Should -BeTrue
+        }
+
+        It 'reads Defender standing aside as not running, which is not a fault' {
+
+            $state = ConvertFrom-TkProductState -State 393472
+
+            $state.RealTimeEnabled | Should -BeFalse
+        }
+
+        It 'reads out of date signatures' {
+
+            (ConvertFrom-TkProductState -State 0x041010).SignaturesCurrent | Should -BeFalse
+        }
+
+        It 'answers unknown rather than guessing at a pattern it does not know' {
+
+            (ConvertFrom-TkProductState -State 0x04FF00).RealTimeEnabled | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Local account policy' {
+
+        It 'reads a French Windows by position, not by label' {
+
+            # Accents dropped from the fixture: the parser never reads a label,
+            # which is the point.
+            $text = @'
+Fermeture forcee de la session apres expiration ?:        Jamais
+Duree de vie minimale du mot de passe (jours) :          0
+Duree de vie maximale du mot de passe (jours) :          42
+Longueur minimale du mot de passe :                      0
+Nombre de mots de passe anterieurs a conserver :         Aucune
+Seuil de verrouillage :                                  10
+Duree du verrouillage (min) :                            10
+Fenetre d'observation du verrouillage (min) :            10
+Role de l'ordinateur :                                   STATION
+La commande s'est terminee correctement.
+'@
+
+            $policy = ConvertFrom-TkNetAccountsOutput -Text $text
+
+            $policy.MinimumPasswordLength | Should -Be 0
+            $policy.LockoutThreshold      | Should -Be 10
+        }
+
+        It 'reads an English Windows, and a word on the threshold row as no threshold' {
+
+            $text = @'
+Force user logoff how long after time expires?:       Never
+Minimum password age (days):                          0
+Maximum password age (days):                          42
+Minimum password length:                              12
+Length of password history maintained:                None
+Lockout threshold:                                    Never
+Lockout duration (minutes):                           30
+Lockout observation window (minutes):                 30
+Computer role:                                        WORKSTATION
+The command completed successfully.
+'@
+
+            $policy = ConvertFrom-TkNetAccountsOutput -Text $text
+
+            $policy.MinimumPasswordLength | Should -Be 12
+            $policy.LockoutThreshold      | Should -Be 0
+        }
+
+        It 'returns nothing it could not read' {
+
+            $policy = ConvertFrom-TkNetAccountsOutput -Text ''
+
+            $policy.MinimumPasswordLength | Should -BeNullOrEmpty
+            $policy.LockoutThreshold      | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Administrator exclusions' {
+
+        BeforeAll {
+            $script:Admins = @(
+                [pscustomobject] @{ Name = 'PC\Administrator';   ObjectClass = 'User';  Source = 'Local';           Sid = 'S-1-5-21-1-500' }
+                [pscustomobject] @{ Name = 'CORP\Domain Admins'; ObjectClass = 'Group'; Source = 'ActiveDirectory'; Sid = 'S-1-5-21-2-512' }
+                [pscustomobject] @{ Name = 'PC\tech';            ObjectClass = 'User';  Source = 'Local';           Sid = 'S-1-5-21-1-1001' }
+            )
+        }
+
+        It 'leaves an excluded account out of the count' {
+
+            $finding = Test-TkAuditLocalAdministrators -Member $script:Admins -ExcludedAccount @('CORP\Domain Admins')
+
+            $finding.Measured | Should -Be '2 counted'
+        }
+
+        It 'names what was excluded, so the report cannot hide it' {
+
+            $finding = Test-TkAuditLocalAdministrators -Member $script:Admins -ExcludedAccount @('CORP\Domain Admins')
+
+            $finding.Detail | Should -Match 'Excluded by the operator'
+            $finding.Detail | Should -Match 'Domain Admins'
+        }
+
+        It 'says nothing about exclusions when there are none' {
+
+            $finding = Test-TkAuditLocalAdministrators -Member $script:Admins -ExcludedAccount @()
+
+            $finding.Measured | Should -Be '3 counted'
+            $finding.Detail   | Should -Not -Match 'Excluded'
+        }
+
+        It 'does not assess a group it could not read' {
+
+            (Test-TkAuditLocalAdministrators -Member @() -ExcludedAccount @()).Status | Should -Be 'NotAssessed'
+        }
+    }
+}

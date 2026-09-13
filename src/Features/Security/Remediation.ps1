@@ -38,6 +38,24 @@ function Get-TkRemediationTable {
 
     return @{
 
+        'enable-rdp-nla' = @{
+            Name        = 'Require Network Level Authentication for Remote Desktop'
+            Explanation = 'Sets UserAuthentication to 1, so a client proves who it is before the server creates a session. Without it, anything that reaches the port gets a logon screen to attack.'
+            Command     = 'Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" UserAuthentication 1'
+            Action      = 'Repair-TkRdpNla'
+            Elevated    = $true
+            Reversible  = 'Set the value back to 0. Only needed for clients too old to support NLA, which should not be reaching this machine anyway.'
+        }
+
+        'restore-uac-prompt' = @{
+            Name        = 'Make UAC prompt again for administrators'
+            Explanation = 'Sets ConsentPromptBehaviorAdmin to 2, the prompt on the secure desktop. Left at 0, an administrator elevates silently and so does anything running as that administrator.'
+            Command     = 'Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" ConsentPromptBehaviorAdmin 2'
+            Action      = 'Repair-TkUacPrompt'
+            Elevated    = $true
+            Reversible  = 'Set the value back to what it was. The Windows default is 5.'
+        }
+
         'disable-autorun' = @{
             Name        = 'Disable AutoRun on every drive type'
             Explanation = 'Sets NoDriveTypeAutoRun to 255, which stops anything starting on its own when removable media is inserted.'
@@ -224,6 +242,42 @@ function Invoke-TkRemediation {
 # ---------------------------------------------------------------------------
 # The corrections themselves
 # ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Requires Network Level Authentication for Remote Desktop.
+#>
+function Repair-TkRdpNla {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess('Remote Desktop', 'Require Network Level Authentication')) {
+        return $false
+    }
+
+    return (Set-TkRegistryValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                                -Name 'UserAuthentication' -Value 1 -Type DWord -Confirm:$false)
+}
+
+<#
+.SYNOPSIS
+    Makes UAC prompt on the secure desktop again.
+#>
+function Repair-TkUacPrompt {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess('User Account Control', 'Prompt administrators on the secure desktop')) {
+        return $false
+    }
+
+    # 2 is "prompt for consent on the secure desktop": it asks, and nothing
+    # running in the user's session can answer for them.
+    return (Set-TkRegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' `
+                                -Name 'ConsentPromptBehaviorAdmin' -Value 2 -Type DWord -Confirm:$false)
+}
 
 <#
 .SYNOPSIS

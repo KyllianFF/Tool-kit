@@ -12,99 +12,23 @@
 #>
 
 <#
-.SYNOPSIS
-    Runs every hardening check.
+    Toolkit - Features / Hardening controls
 
-.OUTPUTS
-    PSCustomObject[] with Severity, Area, Name, State, Why and Fix.
+    The controls that decide whether an intrusion stays on one machine or
+    reaches the whole estate: credential protection, logging, SMB and NTLM,
+    and where the BitLocker recovery key actually lives.
+
+    These used to be a second engine with a second finding shape and no
+    identifiers, which meant BitLocker was tested twice and no control here
+    could be quoted in a ticket. They are now controls of the one audit, run
+    from the table in SecurityAudit.ps1 and built by New-TkAuditFinding, and
+    they are the ones it classes as Full rather than Essential: each needs a
+    decision, a licence or a domain behind it.
 #>
-function Invoke-TkHardeningCheck {
-    [CmdletBinding()]
-    [OutputType([pscustomobject[]])]
-    param()
-
-    $stopwatch = Start-TkOperation -Name 'Hardening check' -Category 'Hardening'
-
-    $checks = @(
-        'Test-TkCredentialGuard',
-        'Test-TkLsaProtection',
-        'Test-TkAsrRules',
-        'Test-TkAuditPolicy',
-        'Test-TkSmbSigning',
-        'Test-TkNtlmRestriction',
-        'Test-TkPowerShellLogging',
-        'Test-TkLaps',
-        'Test-TkBitLockerEscrow',
-        'Test-TkWdigest',
-        'Test-TkTamperProtection'
-    )
-
-    $findings = @()
-
-    foreach ($check in $checks) {
-
-        try {
-            $findings += & $check
-        }
-        catch {
-            Write-TkLog -Level Warning -Category 'Hardening' -Message (
-                '{0} could not run: {1}' -f $check, $_.Exception.Message
-            )
-        }
-    }
-
-    Stop-TkOperation -Name 'Hardening check' -Stopwatch $stopwatch -Category 'Hardening'
-
-    $failing = @($findings | Where-Object { $_.Severity -eq 'Fail' }).Count
-
-    Write-TkLog -Level Information -Category 'Hardening' -Message (
-        '{0} controls checked, {1} failing.' -f $findings.Count, $failing
-    )
-
-    return $findings
-}
-
-<#
-.SYNOPSIS
-    Builds a hardening finding.
-
-.OUTPUTS
-    PSCustomObject
-#>
-function New-TkHardeningFinding {
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param(
-        [Parameter(Mandatory)] [string] $Area,
-        [Parameter(Mandatory)] [string] $Name,
-
-        [Parameter(Mandatory)]
-        [ValidateSet('Pass', 'Info', 'Warning', 'Fail')]
-        [string] $Severity,
-
-        [Parameter(Mandatory)] [AllowEmptyString()] [string] $State,
-        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Why,
-        [Parameter()]          [AllowEmptyString()] [string] $Fix = '',
-
-        # Key into the remediation allow list. Empty where the correction
-        # needs a decision the toolkit cannot make: enabling BitLocker and
-        # deploying LAPS both belong in that category.
-        [Parameter()]          [AllowEmptyString()] [string] $RemediationId = ''
-    )
-
-    return [pscustomobject]@{
-        Severity      = $Severity
-        Area          = $Area
-        Name          = $Name
-        State         = $State
-        Why           = $Why
-        Fix           = $Fix
-        RemediationId = $RemediationId
-    }
-}
 
 # ---------------------------------------------------------------------------
 # Credential protection
+
 # ---------------------------------------------------------------------------
 
 <#
@@ -133,10 +57,10 @@ function Test-TkCredentialGuard {
         $null = $_
     }
 
-    return New-TkHardeningFinding -Area 'Credentials' -Name 'Credential Guard' `
-        -Severity $(if ($running) { 'Pass' } else { 'Warning' }) -State $state `
-        -Why 'Credential Guard isolates derived credentials in virtualised memory, so a process running as SYSTEM cannot read them out of LSASS. Without it, one administrator on one machine yields hashes usable everywhere.' `
-        -Fix $(if ($running) { '' } else { 'Enable it by policy: Computer Configuration, System, Device Guard, Turn On Virtualization Based Security, with Credential Guard set to enabled with UEFI lock.' })
+    return New-TkAuditFinding -Id 'CRED-001' -Name 'Credential Guard' -Category 'Credentials' `
+        -Status $(if ($running) { 'Pass' } else { 'Warning' }) -Measured $state `
+        -Detail 'Credential Guard isolates derived credentials in virtualised memory, so a process running as SYSTEM cannot read them out of LSASS. Without it, one administrator on one machine yields hashes usable everywhere.' `
+        -Recommendation $(if ($running) { '' } else { 'Enable it by policy: Computer Configuration, System, Device Guard, Turn On Virtualization Based Security, with Credential Guard set to enabled with UEFI lock.' })
 }
 
 <#
@@ -151,11 +75,11 @@ function Test-TkLsaProtection {
 
     $enabled = ($value -in @(1, 2))
 
-    return New-TkHardeningFinding -Area 'Credentials' -Name 'LSA protection (RunAsPPL)' `
-        -Severity $(if ($enabled) { 'Pass' } else { 'Warning' }) `
-        -State $(if ($enabled) { 'Enabled ({0})' -f $value } else { 'Disabled' }) `
-        -Why 'A protected LSASS cannot be opened by an ordinary administrator process, which blocks the most direct route to credential dumping.' `
-        -Fix $(if ($enabled) { '' } else { 'Set RunAsPPL to 1, then restart. Verify no security product depends on injecting into LSASS first.' }) `
+    return New-TkAuditFinding -Id 'CRED-002' -Name 'LSA protection (RunAsPPL)' -Category 'Credentials' `
+        -Status $(if ($enabled) { 'Pass' } else { 'Warning' }) `
+        -Measured $(if ($enabled) { 'Enabled ({0})' -f $value } else { 'Disabled' }) `
+        -Detail 'A protected LSASS cannot be opened by an ordinary administrator process, which blocks the most direct route to credential dumping.' `
+        -Recommendation $(if ($enabled) { '' } else { 'Set RunAsPPL to 1, then restart. Verify no security product depends on injecting into LSASS first.' }) `
         -RemediationId $(if ($enabled) { '' } else { 'enable-lsa-protection' })
 }
 
@@ -173,11 +97,11 @@ function Test-TkWdigest {
     # Absent or 0 is safe on anything current; 1 restores the old behaviour.
     $unsafe = ($value -eq 1)
 
-    return New-TkHardeningFinding -Area 'Credentials' -Name 'WDigest credential caching' `
-        -Severity $(if ($unsafe) { 'Fail' } else { 'Pass' }) `
-        -State $(if ($unsafe) { 'Enabled: plain text passwords are held in memory' } else { 'Disabled' }) `
-        -Why 'With UseLogonCredential set to 1, Windows keeps the plain text password in LSASS. It is the first thing an attacker sets, because it turns a hash dump into a password dump.' `
-        -Fix $(if ($unsafe) { 'Set UseLogonCredential to 0 and investigate why it was ever enabled: nothing modern requires it.' } else { '' }) `
+    return New-TkAuditFinding -Id 'CRED-003' -Name 'WDigest credential caching' -Category 'Credentials' `
+        -Status $(if ($unsafe) { 'Fail' } else { 'Pass' }) `
+        -Measured $(if ($unsafe) { 'Enabled: plain text passwords are held in memory' } else { 'Disabled' }) `
+        -Detail 'With UseLogonCredential set to 1, Windows keeps the plain text password in LSASS. It is the first thing an attacker sets, because it turns a hash dump into a password dump.' `
+        -Recommendation $(if ($unsafe) { 'Set UseLogonCredential to 0 and investigate why it was ever enabled: nothing modern requires it.' } else { '' }) `
         -RemediationId $(if ($unsafe) { 'disable-wdigest' } else { '' })
 }
 
@@ -211,15 +135,15 @@ function Test-TkAsrRules {
 
         $severity = if ($blocking -ge 8) { 'Pass' } elseif ($blocking -gt 0) { 'Warning' } else { 'Fail' }
 
-        return New-TkHardeningFinding -Area 'Endpoint' -Name 'Attack Surface Reduction rules' `
-            -Severity $severity -State ('{0} configured, {1} in block mode' -f $ids.Count, $blocking) `
-            -Why 'ASR rules block the specific behaviours malware needs: Office spawning child processes, script interpreters launching downloaded content, credential theft from LSASS. They stop whole classes of attack without signatures.' `
-            -Fix $(if ($blocking -ge 8) { '' } else { 'Deploy the standard rule set in audit mode first, review what it would have blocked, then move to block.' })
+        return New-TkAuditFinding -Id 'EDR-001' -Name 'Attack Surface Reduction rules' -Category 'Endpoint' `
+            -Status $severity -Measured ('{0} configured, {1} in block mode' -f $ids.Count, $blocking) `
+            -Detail 'ASR rules block the specific behaviours malware needs: Office spawning child processes, script interpreters launching downloaded content, credential theft from LSASS. They stop whole classes of attack without signatures.' `
+            -Recommendation $(if ($blocking -ge 8) { '' } else { 'Deploy the standard rule set in audit mode first, review what it would have blocked, then move to block.' })
     }
     catch {
-        return New-TkHardeningFinding -Area 'Endpoint' -Name 'Attack Surface Reduction rules' `
-            -Severity 'Info' -State 'Defender not available' `
-            -Why 'ASR is a Defender feature; a third party product may cover the same ground.'
+        return New-TkAuditFinding -Id 'EDR-001' -Name 'Attack Surface Reduction rules' -Category 'Endpoint' `
+            -Status 'NotAssessed' -Measured 'Defender not available' `
+            -Detail 'ASR is a Defender feature; a third party product may cover the same ground.'
     }
 }
 
@@ -232,18 +156,23 @@ function Test-TkTamperProtection {
     param()
 
     try {
-        $status  = Get-MpComputerStatus -ErrorAction Stop
+        $status = Get-TkDefenderStatus
+
+        if ($null -eq $status) {
+            throw 'Defender status is unavailable.'
+        }
+
         $enabled = [bool] $status.IsTamperProtected
 
-        return New-TkHardeningFinding -Area 'Endpoint' -Name 'Tamper protection' `
-            -Severity $(if ($enabled) { 'Pass' } else { 'Warning' }) `
-            -State $(if ($enabled) { 'On' } else { 'Off' }) `
-            -Why 'Tamper protection stops Defender being disabled from the registry or the command line, which is the first move of most commodity malware.' `
-            -Fix $(if ($enabled) { '' } else { 'Turn it on from Windows Security, or through Intune on a managed estate.' })
+        return New-TkAuditFinding -Id 'EDR-002' -Name 'Tamper protection' -Category 'Endpoint' `
+            -Status $(if ($enabled) { 'Pass' } else { 'Warning' }) `
+            -Measured $(if ($enabled) { 'On' } else { 'Off' }) `
+            -Detail 'Tamper protection stops Defender being disabled from the registry or the command line, which is the first move of most commodity malware.' `
+            -Recommendation $(if ($enabled) { '' } else { 'Turn it on from Windows Security, or through Intune on a managed estate.' })
     }
     catch {
-        return New-TkHardeningFinding -Area 'Endpoint' -Name 'Tamper protection' `
-            -Severity 'Info' -State 'Not readable' -Why 'Defender status is unavailable.'
+        return New-TkAuditFinding -Id 'EDR-002' -Name 'Tamper protection' -Category 'Endpoint' `
+            -Status 'NotAssessed' -Measured 'Not readable' -Detail 'Defender status is unavailable.'
     }
 }
 
@@ -267,10 +196,10 @@ function Test-TkPowerShellLogging {
              elseif ($enabled) { 'Script block logging only' }
              else { 'Off' }
 
-    return New-TkHardeningFinding -Area 'Logging' -Name 'PowerShell logging' `
-        -Severity $(if ($enabled) { 'Pass' } else { 'Warning' }) -State $state `
-        -Why 'Script block logging records PowerShell after it has been de-obfuscated, which is the single most useful piece of telemetry on Windows during an investigation.' `
-        -Fix $(if ($enabled) { '' } else { 'Enable it by policy. The Tweaks page has it under security hardening.' }) `
+    return New-TkAuditFinding -Id 'LOG-001' -Name 'PowerShell logging' -Category 'Logging' `
+        -Status $(if ($enabled) { 'Pass' } else { 'Warning' }) -Measured $state `
+        -Detail 'Script block logging records PowerShell after it has been de-obfuscated, which is the single most useful piece of telemetry on Windows during an investigation.' `
+        -Recommendation $(if ($enabled) { '' } else { 'Enable it by policy. The Tweaks page has it under security hardening.' }) `
         -RemediationId $(if ($enabled) { '' } else { 'enable-script-block-logging' })
 }
 
@@ -284,17 +213,17 @@ function Test-TkAuditPolicy {
 
     if (-not (Test-TkIsElevated)) {
 
-        return New-TkHardeningFinding -Area 'Logging' -Name 'Audit policy' `
-            -Severity 'Info' -State 'Needs elevation' `
-            -Why 'The effective audit policy is only readable as an administrator.'
+        return New-TkAuditFinding -Id 'LOG-002' -Name 'Audit policy' -Category 'Logging' `
+            -Status 'NotAssessed' -Measured 'Needs elevation' `
+            -Detail 'The effective audit policy is only readable as an administrator.'
     }
 
     $result = Invoke-TkProcess -FilePath 'auditpol' -ArgumentList @('/get', '/category:*') -TimeoutSeconds 30
 
     if ($result.ExitCode -ne 0) {
 
-        return New-TkHardeningFinding -Area 'Logging' -Name 'Audit policy' `
-            -Severity 'Info' -State 'Not readable' -Why 'auditpol did not answer.'
+        return New-TkAuditFinding -Id 'LOG-002' -Name 'Audit policy' -Category 'Logging' `
+            -Status 'NotAssessed' -Measured 'Not readable' -Detail 'auditpol did not answer.'
     }
 
     # Counting subcategories that record something at all is a crude measure,
@@ -305,10 +234,10 @@ function Test-TkAuditPolicy {
 
     $severity = if ($auditing -ge 20) { 'Pass' } elseif ($auditing -ge 8) { 'Warning' } else { 'Fail' }
 
-    return New-TkHardeningFinding -Area 'Logging' -Name 'Audit policy' `
-        -Severity $severity -State ('{0} subcategories recording' -f $auditing) `
-        -Why 'A default Windows installation audits very little. Logon events, process creation and object access have to be turned on deliberately, and none of them can be recovered after the fact.' `
-        -Fix $(if ($severity -eq 'Pass') { '' } else { 'Apply an audit policy baseline. At minimum: logon and logoff, account logon, process creation, and account management, success and failure.' })
+    return New-TkAuditFinding -Id 'LOG-002' -Name 'Audit policy' -Category 'Logging' `
+        -Status $severity -Measured ('{0} subcategories recording' -f $auditing) `
+        -Detail 'A default Windows installation audits very little. Logon events, process creation and object access have to be turned on deliberately, and none of them can be recovered after the fact.' `
+        -Recommendation $(if ($severity -eq 'Pass') { '' } else { 'Apply an audit policy baseline. At minimum: logon and logoff, account logon, process creation, and account management, success and failure.' })
 }
 
 # ---------------------------------------------------------------------------
@@ -336,17 +265,17 @@ function Test-TkSmbSigning {
 
     if ($null -eq $serverRequired) {
 
-        return New-TkHardeningFinding -Area 'Network' -Name 'SMB signing' `
-            -Severity 'Info' -State 'Not readable' -Why 'The SMB configuration could not be read.'
+        return New-TkAuditFinding -Id 'SMB-002' -Name 'SMB signing' -Category 'Network' `
+            -Status 'NotAssessed' -Measured 'Not readable' -Detail 'The SMB configuration could not be read.'
     }
 
     $both = ($serverRequired -and $clientRequired)
 
-    return New-TkHardeningFinding -Area 'Network' -Name 'SMB signing' `
-        -Severity $(if ($both) { 'Pass' } else { 'Warning' }) `
-        -State ('server: {0}, client: {1}' -f $serverRequired, $clientRequired) `
-        -Why 'Without required signing, an attacker who can relay authentication can act as the user against any SMB service. This is what NTLM relay attacks depend on.' `
-        -Fix $(if ($both) { '' } else { 'Require signing on both the client and the server by policy. Measure the performance impact first on file servers carrying heavy load.' })
+    return New-TkAuditFinding -Id 'SMB-002' -Name 'SMB signing' -Category 'Network' `
+        -Status $(if ($both) { 'Pass' } else { 'Warning' }) `
+        -Measured ('server: {0}, client: {1}' -f $serverRequired, $clientRequired) `
+        -Detail 'Without required signing, an attacker who can relay authentication can act as the user against any SMB service. This is what NTLM relay attacks depend on.' `
+        -Recommendation $(if ($both) { '' } else { 'Require signing on both the client and the server by policy. Measure the performance impact first on file servers carrying heavy load.' })
 }
 
 <#
@@ -362,11 +291,11 @@ function Test-TkNtlmRestriction {
     # 5 means send NTLMv2 only and refuse LM and NTLM.
     $safe = ($level -eq 5)
 
-    return New-TkHardeningFinding -Area 'Network' -Name 'LAN Manager authentication level' `
-        -Severity $(if ($safe) { 'Pass' } elseif ($null -eq $level) { 'Warning' } else { 'Warning' }) `
-        -State $(if ($null -eq $level) { 'Not configured, using the default' } else { 'Level {0}' -f $level }) `
-        -Why 'Anything below level 5 permits LM or NTLMv1 responses, which are trivially crackable when captured. Level 5 sends NTLMv2 only and refuses the rest.' `
-        -Fix $(if ($safe) { '' } else { 'Set LmCompatibilityLevel to 5 by policy, after confirming no legacy appliance still needs NTLMv1.' }) `
+    return New-TkAuditFinding -Id 'NET-002' -Name 'LAN Manager authentication level' -Category 'Network' `
+        -Status $(if ($safe) { 'Pass' } elseif ($null -eq $level) { 'Warning' } else { 'Warning' }) `
+        -Measured $(if ($null -eq $level) { 'Not configured, using the default' } else { 'Level {0}' -f $level }) `
+        -Detail 'Anything below level 5 permits LM or NTLMv1 responses, which are trivially crackable when captured. Level 5 sends NTLMv2 only and refuses the rest.' `
+        -Recommendation $(if ($safe) { '' } else { 'Set LmCompatibilityLevel to 5 by policy, after confirming no legacy appliance still needs NTLMv1.' }) `
         -RemediationId $(if ($safe) { '' } else { 'set-lm-level' })
 }
 
@@ -387,13 +316,13 @@ function Test-TkLaps {
 
     $present = ($windowsLaps -or $legacyLaps)
 
-    return New-TkHardeningFinding -Area 'Administration' -Name 'Local administrator password' `
-        -Severity $(if ($present) { 'Pass' } else { 'Warning' }) `
-        -State $(if ($windowsLaps) { 'Windows LAPS policy present' }
+    return New-TkAuditFinding -Id 'ACC-003' -Name 'Local administrator password' -Category 'Accounts' `
+        -Status $(if ($present) { 'Pass' } else { 'Warning' }) `
+        -Measured $(if ($windowsLaps) { 'Windows LAPS policy present' }
                  elseif ($legacyLaps) { 'Legacy LAPS policy present' }
                  else { 'No LAPS policy' }) `
-        -Why 'A shared local administrator password is what turns one compromised workstation into all of them: the hash is the same everywhere, so it can be replayed against every machine. LAPS gives each machine its own, rotated, and escrowed in the directory.' `
-        -Fix $(if ($present) { '' } else { 'Deploy Windows LAPS. It is built into current Windows and needs a schema extension plus a policy.' })
+        -Detail 'A shared local administrator password is what turns one compromised workstation into all of them: the hash is the same everywhere, so it can be replayed against every machine. LAPS gives each machine its own, rotated, and escrowed in the directory.' `
+        -Recommendation $(if ($present) { '' } else { 'Deploy Windows LAPS. It is built into current Windows and needs a schema extension plus a policy.' })
 }
 
 <#
@@ -409,30 +338,30 @@ function Test-TkBitLockerEscrow {
 
         if ($volume.ProtectionStatus -ne 'On') {
 
-            return New-TkHardeningFinding -Area 'Recovery' -Name 'BitLocker recovery key' `
-                -Severity 'Fail' -State 'The system drive is not encrypted' `
-                -Why 'Without encryption, a stolen laptop is a data breach rather than a hardware loss.' `
-                -Fix 'Enable BitLocker and confirm the recovery key is escrowed before the machine leaves the building.'
+            return New-TkAuditFinding -Id 'ENC-002' -Name 'BitLocker recovery key' -Category 'Data protection' `
+                -Status 'Fail' -Measured 'The system drive is not encrypted' `
+                -Detail 'Without encryption, a stolen laptop is a data breach rather than a hardware loss.' `
+                -Recommendation 'Enable BitLocker and confirm the recovery key is escrowed before the machine leaves the building.'
         }
 
         $recoveryProtector = @($volume.KeyProtector | Where-Object { $_.KeyProtectorType -eq 'RecoveryPassword' })
 
         if ($recoveryProtector.Count -eq 0) {
 
-            return New-TkHardeningFinding -Area 'Recovery' -Name 'BitLocker recovery key' `
-                -Severity 'Fail' -State 'Encrypted, but no recovery password protector' `
-                -Why 'With no recovery password, a firmware change or a TPM reset makes the data unrecoverable. There is no support path from there.' `
-                -Fix 'Add a recovery password protector and back it up to the directory or to Entra ID.'
+            return New-TkAuditFinding -Id 'ENC-002' -Name 'BitLocker recovery key' -Category 'Data protection' `
+                -Status 'Fail' -Measured 'Encrypted, but no recovery password protector' `
+                -Detail 'With no recovery password, a firmware change or a TPM reset makes the data unrecoverable. There is no support path from there.' `
+                -Recommendation 'Add a recovery password protector and back it up to the directory or to Entra ID.'
         }
 
-        return New-TkHardeningFinding -Area 'Recovery' -Name 'BitLocker recovery key' `
-            -Severity 'Pass' -State ('{0} recovery protector(s) present' -f $recoveryProtector.Count) `
-            -Why 'A recovery password exists, so the volume can be unlocked after a firmware or TPM change.' `
-            -Fix 'Confirm separately that it is escrowed centrally, which cannot be verified from the machine itself.'
+        return New-TkAuditFinding -Id 'ENC-002' -Name 'BitLocker recovery key' -Category 'Data protection' `
+            -Status 'Pass' -Measured ('{0} recovery protector(s) present' -f $recoveryProtector.Count) `
+            -Detail 'A recovery password exists, so the volume can be unlocked after a firmware or TPM change.' `
+            -Recommendation 'Confirm separately that it is escrowed centrally, which cannot be verified from the machine itself.'
     }
     catch {
-        return New-TkHardeningFinding -Area 'Recovery' -Name 'BitLocker recovery key' `
-            -Severity 'Info' -State 'Not readable' `
-            -Why 'BitLocker state needs elevation, or this edition does not support it.'
+        return New-TkAuditFinding -Id 'ENC-002' -Name 'BitLocker recovery key' -Category 'Data protection' `
+            -Status 'NotAssessed' -Measured 'Not readable' `
+            -Detail 'BitLocker state needs elevation, or this edition does not support it.'
     }
 }

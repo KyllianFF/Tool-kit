@@ -2242,17 +2242,66 @@
                             </Grid>
                         </TabItem>
 
-                        <TabItem Header="Local audit">
+                        <TabItem Header="Security audit">
                             <Grid Margin="0,16,0,0">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
-                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                                    <Button x:Name="BtnRunAudit"    Content="Run the audit" Style="{StaticResource PrimaryButton}" />
-                                    <Button x:Name="BtnExportAudit" Content="Export report" />
-                                    <TextBlock x:Name="AuditSummary" VerticalAlignment="Center" Margin="16,0,0,0" Style="{StaticResource Muted}" />
+                                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="BtnRunAudit"    Content="Run the audit" Style="{StaticResource PrimaryButton}" />
+                                        <Button x:Name="BtnExportAudit" Content="Export report" />
+                                        <TextBlock Text="Depth" VerticalAlignment="Center" Margin="16,0,8,0" Style="{StaticResource Muted}" />
+                                        <ComboBox x:Name="AuditLevel" Width="230" VerticalAlignment="Center"
+                                                  ToolTip="Essential covers what goes wrong often and is cheap to fix. Full adds the controls that need a decision, a licence or a domain behind them." />
+                                        <Button x:Name="BtnAuditExclusions" Content="Excluded accounts" Margin="10,0,0,0"
+                                                ToolTip="Administrator accounts that belong on this machine. They are left out of the account controls and named in the report." />
+                                    </StackPanel>
+
+                                    <!--
+                                        The score is the first thing read, so it is the first thing
+                                        drawn, and it is large enough to be read across a desk.
+                                    -->
+                                    <Border x:Name="AuditScoreCard" Style="{StaticResource Card}" Margin="0,12,0,0"
+                                            Visibility="Collapsed">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                                                <TextBlock x:Name="AuditScoreValue" Text="--" FontSize="40" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimary}" />
+                                                <TextBlock Text="out of 100" Style="{StaticResource Muted}" />
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock x:Name="AuditScoreHeadline" Style="{StaticResource FieldValue}" TextWrapping="Wrap" />
+                                                <TextBlock x:Name="AuditSummary" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <Border x:Name="AuditScoreTrack" Height="8" CornerRadius="4" Margin="0,10,0,0"
+                                                        Background="{DynamicResource SurfaceRaised}" HorizontalAlignment="Stretch">
+                                                    <!--
+                                                        Two star columns share the width as score and remainder, so the
+                                                        bar stays proportional through any resize with nothing measured
+                                                        in code. A measured width read zero whenever the card had just
+                                                        been made visible and had not been laid out yet.
+                                                    -->
+                                                    <Grid x:Name="AuditScoreBar">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="0*" />
+                                                            <ColumnDefinition Width="100*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border x:Name="AuditScoreFill" Grid.Column="0" CornerRadius="4"
+                                                                Background="{DynamicResource Success}" />
+                                                    </Grid>
+                                                </Border>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
@@ -2261,35 +2310,6 @@
                                                  Foreground="{DynamicResource TextPrimary}"
                                                  VerticalScrollBarVisibility="Auto"
                                                  HorizontalScrollBarVisibility="Disabled"
-                                                 IsDocumentEnabled="True" />
-                                </Border>
-                            </Grid>
-                        </TabItem>
-
-                        <TabItem Header="Hardening">
-                            <Grid Margin="0,16,0,0">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <Border Grid.Row="0" Style="{StaticResource Card}">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Button x:Name="BtnHardening"       Content="Run the hardening check" Style="{StaticResource PrimaryButton}" />
-                                            <Button x:Name="BtnExportHardening" Content="Export report" />
-                                        </StackPanel>
-                                        <TextBlock Style="{StaticResource Muted}" Margin="0,10,0,0"
-                                                   Text="The controls that decide whether an intrusion stays on one machine or reaches the whole estate: credential protection, endpoint rules, logging, SMB and NTLM, and recovery. Separate from the audit because it is a different question: not whether the basics are on, but whether credential theft and lateral movement are actually made difficult." />
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
-                                    <RichTextBox x:Name="HardeningOutput" IsReadOnly="True"
-                                                 BorderThickness="0" Background="Transparent"
-                                                 Foreground="{DynamicResource TextPrimary}"
-                                                 VerticalScrollBarVisibility="Auto"
-                                                 HorizontalScrollBarVisibility="Auto"
                                                  IsDocumentEnabled="True" />
                                 </Border>
                             </Grid>

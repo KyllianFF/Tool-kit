@@ -213,11 +213,22 @@ function New-TkSupportBundle {
         ) -join ''
     } | Set-Content -LiteralPath (Join-Path $workFolder '30-diagnostics.txt') -Encoding UTF8
 
-    # Hardening reads some values that need administrator rights; without them
-    # it would report a misleading picture, so it is only included elevated.
+    # The audit reads values that need administrator rights; without them it
+    # would report a misleading picture, so it is only included elevated.
     if ($elevated) {
         Get-TkBundleSection -Title 'Security posture' -Errors $errors -Collector {
-            ConvertTo-TkBundleText -Title 'Hardening check' -As Table -InputObject (Invoke-TkHardeningCheck)
+
+            $findings = @(Invoke-TkSecurityAudit -Level Full)
+            $score    = Get-TkAuditScore -Finding $findings
+
+            @(
+                ('Score: {0} of 100 - {1} passed, {2} failed, {3} warnings, {4} not assessed.' -f
+                    $score.Score, $score.Passed, $score.Failed, $score.Warnings, $score.NotAssessed)
+                ''
+                (ConvertTo-TkBundleText -Title 'Controls' -As Table -InputObject (
+                    $findings | Select-Object Id, Name, Category, Status, Measured, Detail))
+            ) -join [Environment]::NewLine
+
         } | Set-Content -LiteralPath (Join-Path $workFolder '40-security.txt') -Encoding UTF8
     }
     else {

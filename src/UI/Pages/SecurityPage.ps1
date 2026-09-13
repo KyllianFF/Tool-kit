@@ -1,4 +1,4 @@
-<#
+﻿<#
     Toolkit - UI / Security page
 
     Five tabs: SSH keys, file integrity, credential tools, the local audit
@@ -97,8 +97,22 @@ function Initialize-TkSecurityPage {
     }
 
     # --- Audit ------------------------------------------------------------
-    Register-TkClick -Name 'BtnRunAudit'    -Action { Invoke-TkAuditFromUi }
-    Register-TkClick -Name 'BtnExportAudit' -Action { Export-TkAuditFromUi }
+    Register-TkClick -Name 'BtnRunAudit'        -Action { Invoke-TkAuditFromUi }
+    Register-TkClick -Name 'BtnExportAudit'     -Action { Export-TkAuditFromUi }
+    Register-TkClick -Name 'BtnAuditExclusions' -Action { Show-TkAuditExclusionDialog }
+
+    $levelBox = Get-TkControl -Name 'AuditLevel'
+
+    if ($levelBox) {
+
+        # Filled and selected before anything is attached to the selection, the
+        # house pattern: an Add_SelectionChanged in place first would fire while
+        # the list is still being built.
+        [void] $levelBox.Items.Add('Essential - the usual suspects')
+        [void] $levelBox.Items.Add('Full - everything, including the hard ones')
+
+        $levelBox.SelectedIndex = 0
+    }
 
     # --- Settings ---------------------------------------------------------
     Register-TkClick -Name 'BtnSaveVtKey' -Action {
@@ -534,79 +548,422 @@ function Invoke-TkBreachCheck {
 
 <#
 .SYNOPSIS
-    Runs the local security audit and renders it as findings.
+    Runs the security audit and renders it.
 
 .DESCRIPTION
     Rendered as cards rather than as a grid, because a finding is not a row of
     data: it needs its explanation next to it, and where a safe correction
-    exists it needs the button that applies it. Genuinely tabular output, such
-    as the adapter list, stays in a grid.
+    exists it needs the button that applies it.
+
+    The audit refuses to run without elevation. Half of these controls read
+    values a standard user cannot see, so what came back was a report two
+    thirds of which said "not readable" while looking exactly like a real one.
+    A refusal with a way to fix it is more use than a misleading pass.
 #>
 function Invoke-TkAuditFromUi {
     [CmdletBinding()]
     param()
 
-    Invoke-TkBackgroundAction -StatusText 'Running the security audit...' `
-        -ScriptBlock { Invoke-TkSecurityAudit } `
+    if (-not (Test-TkIsElevated)) {
+        Show-TkAuditElevationNotice
+        return
+    }
+
+    # Held in script scope rather than captured in a closure: the completion
+    # runs long after this function has returned, and a closure here would also
+    # give the block its own module scope, which is how $script: reads have
+    # gone wrong in this project before.
+    $script:TkAuditLevel     = Get-TkSelectedAuditLevel
+    $script:TkAuditExclusion = @(Get-TkAuditExclusion)
+
+    Invoke-TkBackgroundAction -StatusText ('Running the {0} security audit...' -f $script:TkAuditLevel.ToLowerInvariant()) `
+        -ScriptBlock {
+            param($Level, $ExcludedAccount)
+
+            Invoke-TkSecurityAudit -Level $Level -ExcludedAccount $ExcludedAccount
+        } `
+        -ParameterList @{ Level = $script:TkAuditLevel; ExcludedAccount = $script:TkAuditExclusion } `
         -OnComplete {
             param($result)
 
-            $findings = @($result.Output)
-            $script:TkLastAudit = $findings
-
-            $document = New-TkFlowDocument
-
-            Add-TkHeading -Document $document -Text ('Local audit of {0}' -f $env:COMPUTERNAME) -Level 1
-
-            $counts = @{
-                Fail    = @($findings | Where-Object { $_.Status -eq 'Fail' }).Count
-                Warning = @($findings | Where-Object { $_.Status -eq 'Warning' }).Count
-                Pass    = @($findings | Where-Object { $_.Status -eq 'Pass' }).Count
-                Info    = @($findings | Where-Object { $_.Status -eq 'Info' }).Count
-            }
-
-            Add-TkParagraph -Document $document -Muted -Text (
-                '{0} checks: {1} failing, {2} worth attention, {3} passing, {4} not readable. A hygiene check, not a compliance audit: it does not replace a CIS or ANSSI benchmark run.' -f
-                    $findings.Count, $counts.Fail, $counts.Warning, $counts.Pass, $counts.Info
-            )
-
-            if (-not (Test-TkIsElevated)) {
-                Add-TkParagraph -Document $document -Muted -Text (
-                    'Running as a standard user, so several checks could not read what they needed and reported "Info" rather than a real result.'
-                )
-            }
-
-            # Failing first, then warnings, then the rest: the order someone
-            # reads a report in.
-            $order = @{ 'Fail' = 0; 'Warning' = 1; 'Info' = 2; 'Pass' = 3 }
-
-            foreach ($category in (@($findings | ForEach-Object { $_.Category }) | Select-Object -Unique)) {
-
-                Add-TkHeading -Document $document -Text $category -Level 2
-
-                $inCategory = $findings |
-                              Where-Object { $_.Category -eq $category } |
-                              Sort-Object -Property @{ Expression = { $order[$_.Status] } }, 'Name'
-
-                foreach ($finding in $inCategory) {
-
-                    Add-TkFindingCard -Document $document -Severity $finding.Status `
-                        -Title $finding.Name -State $finding.Id -Detail $finding.Detail `
-                        -Action $finding.Recommendation -RemediationId $finding.RemediationId
-                }
-            }
-
-            Set-TkDocument -ControlName 'AuditOutput' -Document $document
-
-            $summary = Get-TkControl -Name 'AuditSummary'
-
-            if ($summary) {
-                $summary.Text = '{0} checks: {1} pass, {2} fail, {3} warning, {4} informational.' -f
-                    $findings.Count, $counts.Pass, $counts.Fail, $counts.Warning, $counts.Info
-            }
-
-            Set-TkStatus -Text ('Audit: {0} failing, {1} warnings.' -f $counts.Fail, $counts.Warning)
+            Show-TkAuditReport -Finding @($result.Output) `
+                -Level $script:TkAuditLevel -ExcludedAccount $script:TkAuditExclusion
         }
+}
+
+<#
+.SYNOPSIS
+    Draws a finished audit: the score card, then the findings by category.
+
+.DESCRIPTION
+    Kept apart from the background action, so a report can be drawn from any
+    set of findings: the one just run, one read back from an export, or one
+    rendered off screen to check the layout without an elevated audit first.
+
+.PARAMETER Finding
+    Findings as returned by Invoke-TkSecurityAudit.
+
+.PARAMETER Level
+    The depth the findings were produced at, for the heading.
+
+.PARAMETER ExcludedAccount
+    The accounts the run left out, named in the report.
+#>
+function Show-TkAuditReport {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [pscustomobject[]] $Finding,
+
+        [Parameter()]
+        [ValidateSet('Essential', 'Full')]
+        [string] $Level = 'Essential',
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [string[]] $ExcludedAccount = @()
+    )
+
+    $findings = @($Finding)
+    $script:TkLastAudit = $findings
+
+    Show-TkAuditScore -Finding $findings
+
+    $document = New-TkFlowDocument
+
+    Add-TkHeading -Document $document -Text (
+        '{0} audit of {1}' -f $Level, $env:COMPUTERNAME) -Level 1
+
+    Add-TkParagraph -Document $document -Muted -Text (
+        'A hygiene check, not a compliance audit: it does not replace a CIS or ANSSI benchmark run. Controls that could not be read are marked "not assessed" and left out of the score rather than counted either way.'
+    )
+
+    if ($ExcludedAccount.Count -gt 0) {
+        Add-TkParagraph -Document $document -Muted -Text (
+            'Excluded from the account controls at your request: {0}.' -f
+                ($ExcludedAccount -join ', ')
+        )
+    }
+
+    # Failing first, then warnings, then the rest: the order someone
+    # reads a report in.
+    $order = @{ 'Fail' = 0; 'Warning' = 1; 'NotAssessed' = 2; 'Info' = 3; 'Pass' = 4 }
+
+    foreach ($category in (@($findings | ForEach-Object { $_.Category }) | Select-Object -Unique)) {
+
+        Add-TkHeading -Document $document -Text $category -Level 2
+
+        $inCategory = $findings |
+                      Where-Object { $_.Category -eq $category } |
+                      Sort-Object -Property @{ Expression = { $order[$_.Status] } }, 'Name'
+
+        foreach ($finding in $inCategory) {
+
+            # Measured, not the identifier. The card used to print
+            # "ENC-001" where the value read off the machine belongs,
+            # which told the reader nothing they could act on.
+            Add-TkFindingCard -Document $document -Severity $finding.Status -Tinted `
+                -Title ('{0}  -  {1}' -f $finding.Id, $finding.Name) `
+                -State $finding.Measured -Detail $finding.Detail `
+                -Action $finding.Recommendation -RemediationId $finding.RemediationId
+        }
+    }
+
+    Set-TkDocument -ControlName 'AuditOutput' -Document $document
+
+    $score = Get-TkAuditScore -Finding $findings
+
+    Set-TkStatus -Text ('Audit: {0} of 100, {1} failing, {2} warnings.' -f
+        $score.Score, $score.Failed, $score.Warnings)
+}
+
+<#
+.SYNOPSIS
+    Reads the depth selector.
+#>
+function Get-TkSelectedAuditLevel {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $box = Get-TkControl -Name 'AuditLevel'
+
+    if ($box -and $box.SelectedItem -and ([string] $box.SelectedItem) -like 'Full*') {
+        return 'Full'
+    }
+
+    return 'Essential'
+}
+
+<#
+.SYNOPSIS
+    Fills the score card above the report.
+
+.DESCRIPTION
+    The number is the first thing read, so it is drawn before the findings and
+    large enough to read across a desk. The bar is the same number again for
+    anyone who takes in a proportion faster than a figure, and it is coloured
+    by the same thresholds a technician would use out loud: good, needs work,
+    bad.
+#>
+function Show-TkAuditScore {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [pscustomobject[]] $Finding
+    )
+
+    $score = Get-TkAuditScore -Finding $Finding
+
+    $card = Get-TkControl -Name 'AuditScoreCard'
+
+    if ($card) {
+        $card.Visibility = [System.Windows.Visibility]::Visible
+    }
+
+    $severity = if ($score.Score -ge 85) { 'Pass' }
+                elseif ($score.Score -ge 60) { 'Warning' }
+                else { 'Fail' }
+
+    $value = Get-TkControl -Name 'AuditScoreValue'
+
+    if ($value) {
+        $value.Text = [string] $score.Score
+        $value.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty,
+            (Get-TkSeverityBrushKey -Severity $severity))
+    }
+
+    $headline = Get-TkControl -Name 'AuditScoreHeadline'
+
+    if ($headline) {
+        $headline.Text = '{0} of {1} controls passed.' -f $score.Passed, $score.Assessed
+    }
+
+    $summary = Get-TkControl -Name 'AuditSummary'
+
+    if ($summary) {
+
+        $text = '{0} failing, {1} worth attention.' -f $score.Failed, $score.Warnings
+
+        if ($score.NotAssessed -gt 0) {
+            $text += ' {0} could not be read and are outside the score.' -f $score.NotAssessed
+        }
+
+        $summary.Text = $text
+    }
+
+    # Two star columns rather than a ProgressBar or a measured width. The fill
+    # carries the result colour without restyling a control for one use, and it
+    # stays proportional through a resize without any code measuring anything.
+    $bar  = Get-TkControl -Name 'AuditScoreBar'
+    $fill = Get-TkControl -Name 'AuditScoreFill'
+
+    if ($bar -and $bar.ColumnDefinitions.Count -eq 2) {
+
+        $filled = [math]::Max(0, [math]::Min(100, [int] $score.Score))
+
+        $bar.ColumnDefinitions[0].Width = New-Object System.Windows.GridLength(
+            $filled, [System.Windows.GridUnitType]::Star)
+
+        $bar.ColumnDefinitions[1].Width = New-Object System.Windows.GridLength(
+            (100 - $filled), [System.Windows.GridUnitType]::Star)
+    }
+
+    if ($fill) {
+        $fill.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty,
+            (Get-TkSeverityBrushKey -Severity $severity))
+    }
+}
+
+<#
+.SYNOPSIS
+    Explains why the audit will not run, and offers the way out.
+#>
+function Show-TkAuditElevationNotice {
+    [CmdletBinding()]
+    param()
+
+    $document = New-TkFlowDocument
+
+    Add-TkHeading -Document $document -Text 'The audit needs administrator rights' -Level 1
+
+    Add-TkParagraph -Document $document -Text (
+        'Disk encryption, the firewall, SMBv1, the password policy and the credential protections are all read from places a standard user cannot see.'
+    )
+
+    Add-TkParagraph -Document $document -Text (
+        'Run unelevated, most of this report would say "not readable" while still looking like a security report, and a machine with real problems would come back looking fine. That is worse than no report, so the audit does not produce one.'
+    )
+
+    Add-TkParagraph -Document $document -Muted -Text (
+        'Use "Restart as administrator" in the header, then run the audit again.'
+    )
+
+    Set-TkDocument -ControlName 'AuditOutput' -Document $document
+
+    $card = Get-TkControl -Name 'AuditScoreCard'
+
+    if ($card) {
+        $card.Visibility = [System.Windows.Visibility]::Collapsed
+    }
+
+    Set-TkStatus -Text 'The security audit needs administrator rights.'
+}
+
+<#
+.SYNOPSIS
+    Returns the administrator accounts the operator has excluded.
+
+.DESCRIPTION
+    Kept in the settings rather than asked for each run, because the answer is
+    a property of the machine ("this management agent belongs here"), not of
+    the moment.
+
+.OUTPUTS
+    String[], possibly empty.
+#>
+function Get-TkAuditExclusion {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+
+    $ctx = Get-TkContext
+
+    if ($null -eq $ctx.Settings -or -not $ctx.Settings.ContainsKey('AuditExcludedAccounts')) {
+        return @()
+    }
+
+    return @($ctx.Settings['AuditExcludedAccounts'] | Where-Object { $_ })
+}
+
+<#
+.SYNOPSIS
+    Stores the excluded accounts.
+#>
+function Set-TkAuditExclusion {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [string[]] $Name
+    )
+
+    $ctx = Get-TkContext
+
+    $ctx.Settings['AuditExcludedAccounts'] = @($Name)
+
+    [void] (Save-TkSettings)
+}
+
+<#
+.SYNOPSIS
+    Lets the operator say which administrator accounts belong on this machine.
+
+.DESCRIPTION
+    Every account is shown with its class and where it comes from, because the
+    name alone cannot separate a domain group that belongs there from a local
+    account that does not. Nothing is excluded by default: the tool has no way
+    to know which of them is expected, and guessing would quietly answer the
+    question the operator came to ask.
+
+    Exclusions are reported in the audit, never applied silently.
+#>
+function Show-TkAuditExclusionDialog {
+    [CmdletBinding()]
+    param()
+
+    $members = @(Get-TkLocalAdministrator)
+
+    if ($members.Count -eq 0) {
+        Set-TkStatus -Text 'The Administrators group could not be enumerated.'
+        return
+    }
+
+    $excluded = @(Get-TkAuditExclusion)
+
+    $ctx = Get-TkContext
+
+    $window = New-Object System.Windows.Window
+    $window.Title                 = 'Excluded administrator accounts'
+    $window.Width                 = 560
+    $window.SizeToContent         = [System.Windows.SizeToContent]::Height
+    $window.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterOwner
+    $window.ResizeMode            = [System.Windows.ResizeMode]::NoResize
+
+    if ($ctx.Window) {
+        $window.Owner = $ctx.Window
+        $window.Resources = $ctx.Window.Resources
+    }
+
+    $window.SetResourceReference([System.Windows.Window]::BackgroundProperty, 'Surface')
+
+    $stack = New-Object System.Windows.Controls.StackPanel
+    $stack.Margin = New-Object System.Windows.Thickness(18)
+
+    $intro = New-Object System.Windows.Controls.TextBlock
+    $intro.Text         = 'Tick the accounts that are expected on this machine. They are left out of the account controls and named in the report.'
+    $intro.TextWrapping = [System.Windows.TextWrapping]::Wrap
+    $intro.Margin       = New-Object System.Windows.Thickness(0, 0, 0, 12)
+    $intro.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMuted')
+
+    [void] $stack.Children.Add($intro)
+
+    $boxes = @()
+
+    foreach ($member in $members) {
+
+        $box = New-Object System.Windows.Controls.CheckBox
+        $box.Content     = '{0}    ({1}, {2})' -f $member.Name, $member.ObjectClass, $member.Source
+        $box.Tag         = $member.Name
+        $box.IsChecked   = ($excluded -contains $member.Name)
+        $box.Margin      = New-Object System.Windows.Thickness(0, 0, 0, 7)
+        $box.SetResourceReference([System.Windows.Controls.CheckBox]::ForegroundProperty, 'TextPrimary')
+
+        [void] $stack.Children.Add($box)
+
+        $boxes += $box
+    }
+
+    $buttons = New-Object System.Windows.Controls.StackPanel
+    $buttons.Orientation         = [System.Windows.Controls.Orientation]::Horizontal
+    $buttons.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Right
+    $buttons.Margin              = New-Object System.Windows.Thickness(0, 14, 0, 0)
+
+    $save = New-Object System.Windows.Controls.Button
+    $save.Content = 'Save'
+    $save.Margin  = New-Object System.Windows.Thickness(0, 0, 8, 0)
+    $save.Padding = New-Object System.Windows.Thickness(16, 6, 16, 6)
+
+    $cancel = New-Object System.Windows.Controls.Button
+    $cancel.Content = 'Cancel'
+    $cancel.Padding = New-Object System.Windows.Thickness(16, 6, 16, 6)
+
+    $save.Add_Click({
+        $chosen = @($boxes | Where-Object { $_.IsChecked } | ForEach-Object { [string] $_.Tag })
+
+        Set-TkAuditExclusion -Name $chosen
+
+        Set-TkStatus -Text $(if ($chosen.Count -eq 0) {
+                                 'No administrator account is excluded.'
+                             }
+                             else {
+                                 '{0} administrator account(s) excluded. Run the audit again to apply it.' -f $chosen.Count
+                             })
+
+        $window.Close()
+    }.GetNewClosure())
+
+    $cancel.Add_Click({ $window.Close() }.GetNewClosure())
+
+    [void] $buttons.Children.Add($save)
+    [void] $buttons.Children.Add($cancel)
+    [void] $stack.Children.Add($buttons)
+
+    $window.Content = $stack
+
+    [void] $window.ShowDialog()
 }
 
 <#

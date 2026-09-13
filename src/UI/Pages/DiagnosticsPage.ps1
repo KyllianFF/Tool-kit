@@ -15,7 +15,7 @@ $script:TkLastDiagnosticName = ''
 
 <#
 .SYNOPSIS
-    Wires the Diagnostics page and the Hardening tab.
+    Wires the Diagnostics page.
 #>
 function Initialize-TkDiagnosticsPage {
     [CmdletBinding()]
@@ -47,10 +47,6 @@ function Initialize-TkDiagnosticsPage {
 
     Register-TkClick -Name 'BtnSupportBundle' -Action { Invoke-TkSupportBundleFromUi }
 
-    Register-TkClick -Name 'BtnHardening'       -Action { Show-TkHardeningCheck }
-    Register-TkClick -Name 'BtnExportHardening' -Action {
-        Export-TkDiagnosticReport -ControlName 'HardeningOutput'
-    }
 }
 
 <#
@@ -454,54 +450,6 @@ function Invoke-TkDiagnosticOverview {
         }
 }
 
-# ---------------------------------------------------------------------------
-# Hardening
-# ---------------------------------------------------------------------------
-
-<#
-.SYNOPSIS
-    Runs the hardening check and renders it grouped by area.
-#>
-function Show-TkHardeningCheck {
-    [CmdletBinding()]
-    param()
-
-    Invoke-TkBackgroundAction -StatusText 'Checking the hardening controls...' `
-        -ScriptBlock { Invoke-TkHardeningCheck } `
-        -OnComplete {
-            param($result)
-
-            $findings = @($result.Output)
-            Set-TkLastDiagnostic -Name 'hardening' -Data $findings
-
-            $document = New-TkFlowDocument
-
-            Add-TkHeading -Document $document -Text 'Hardening' -Level 1
-
-            $failing = @($findings | Where-Object { $_.Severity -eq 'Fail' }).Count
-            $warning = @($findings | Where-Object { $_.Severity -eq 'Warning' }).Count
-
-            Add-TkParagraph -Document $document -Muted -Text (
-                '{0} controls checked: {1} failing, {2} worth attention. These decide whether an intrusion stays on one machine or reaches the whole estate.' -f
-                    $findings.Count, $failing, $warning
-            )
-
-            foreach ($area in (@($findings | ForEach-Object { $_.Area }) | Select-Object -Unique)) {
-
-                Add-TkHeading -Document $document -Text $area -Level 2
-
-                foreach ($finding in ($findings | Where-Object { $_.Area -eq $area })) {
-
-                    Add-TkFindingCard -Document $document -Severity $finding.Severity `
-                        -Title $finding.Name -State $finding.State -Detail $finding.Why `
-                        -Action $finding.Fix -RemediationId $finding.RemediationId
-                }
-            }
-
-            Set-TkDocument -ControlName 'HardeningOutput' -Document $document
-            Set-TkStatus -Text ('Hardening: {0} failing, {1} warnings.' -f $failing, $warning)
-        }
-}
 
 <#
 .SYNOPSIS
