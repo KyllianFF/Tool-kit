@@ -1,28 +1,35 @@
 <#
-    Toolkit - UI / Hardware page
+    Toolkit - UI / Hardware tests
 
-    The interactive checks. Everything on the Diagnostics page reads the
-    machine and reports; these ask the operator to look, listen and press,
-    because that is the only way to answer "is this key dead".
+    The interactive checks, in the Hardware tests tab of the Diagnostics page.
+    The reports beside them read the machine; these ask the operator to look,
+    listen and press, because that is the only way to answer "is this key dead".
 
-    The keyboard test is the reason this page exists in the shape it does. It
-    needs to see keys that Windows treats as commands, and it needs Windows
-    not to act on them while it runs, which means a low level hook and a
-    polling loop rather than the ordinary key events. See KeyboardHook.ps1.
+    The keyboard test reads keys only while its own window has focus and its
+    panel is on screen. Start-TkKeyboardTest explains why it reads WPF key
+    events rather than window messages.
 #>
 
-# Which keys have been seen, keyed by their WPF Key name, and the buttons
-# drawn for them. Held here rather than on the controls so the test can be
-# reset without rebuilding the keyboard.
+# Which keys have been seen, keyed by physical identity, and the blocks drawn
+# for them. Held here rather than on the controls so the test survives a
+# redraw: changing the layout rebuilds the board but keeps the results.
 $script:TkKeyboardSeen    = @{}
 $script:TkKeyboardButtons = @{}
+$script:TkKeyboardPressed = @{}
 $script:TkKeyboardRunning = $false
-$script:TkKeyboardHandler = $null
+$script:TkKeyboardDownHandler = $null
+$script:TkKeyboardUpHandler   = $null
+$script:TkKeyboardLayout  = 'FR AZERTY (French)'
 $script:TkLastEscape      = [datetime]::MinValue
+
+# Where WPF keeps the physical key on a key event. Looked up once, on the first
+# key, because reflection on every keystroke would be wasted work.
+$script:TkKeyScanCodeProperty = $null
+$script:TkKeyExtendedProperty = $null
 
 <#
 .SYNOPSIS
-    Wires the Hardware page.
+    Wires the Hardware tests tab of the Diagnostics page.
 #>
 function Initialize-TkHardwarePage {
     [CmdletBinding()]
@@ -45,9 +52,37 @@ function Initialize-TkHardwarePage {
     }
 
     # --- Keyboard ---------------------------------------------------------
-    Register-TkClick -Name 'BtnKeyboardStart' -Action { Start-TkKeyboardTest }
-    Register-TkClick -Name 'BtnKeyboardStop'  -Action { Stop-TkKeyboardTest }
+    # No start button: the test runs as soon as its panel is open. Pressing a
+    # key is the only thing it ever needed the operator to do.
     Register-TkClick -Name 'BtnKeyboardReset' -Action { Reset-TkKeyboardTest }
+
+    $layoutBox = Get-TkControl -Name 'KeyboardLayout'
+
+    if ($layoutBox) {
+
+        foreach ($name in (Get-TkKeyboardLayoutName)) {
+            [void] $layoutBox.Items.Add($name)
+        }
+
+        # Selected before the handler is attached, so filling the list does not
+        # fire a redraw of a board that does not exist yet.
+        $layoutBox.SelectedItem = $script:TkKeyboardLayout
+
+        $layoutBox.Add_SelectionChanged({
+
+            $box = Get-TkControl -Name 'KeyboardLayout'
+
+            if ($box -and $box.SelectedItem) {
+
+                $script:TkKeyboardLayout = [string] $box.SelectedItem
+
+                # The board is redrawn, the results are not thrown away: the
+                # identity of a key is its physical position, which does not
+                # move when the legend changes.
+                Build-TkKeyboardSurface
+            }
+        })
+    }
 
     # --- Display ----------------------------------------------------------
     Register-TkClick -Name 'BtnDisplayColours'  -Action { Show-TkDisplayTest -Mode 'Colours' }
@@ -92,6 +127,28 @@ function Initialize-TkHardwarePage {
         Update-TkBatteryPanel
         Update-TkAudioPanel
     }
+
+    # The keyboard test runs exactly while its panel is on screen. IsVisible
+    # turns false as soon as anything above the panel hides it: another test
+    # chosen in the list, the Reports tab, or another page. One signal covers
+    # every route. Following the chooser missed the panel selected at start up,
+    # and following the page missed the tabs, so the test either never started
+    # or kept swallowing keys on a screen that no longer showed it.
+    $keyboardPanel = Get-TkControl -Name 'PanelKeyboard'
+
+    if ($keyboardPanel) {
+
+        $keyboardPanel.Add_IsVisibleChanged({
+            param($panelSource, $visibleArgs)
+
+            if ($visibleArgs.NewValue) {
+                Start-TkKeyboardTest
+            }
+            else {
+                Stop-TkKeyboardTest
+            }
+        })
+    }
 }
 
 <#
@@ -122,11 +179,8 @@ function Show-TkHardwarePanel {
                             else { [System.Windows.Visibility]::Collapsed }
     }
 
-    # Leaving the keyboard panel while the hook is installed would leave the
-    # keyboard swallowed with nothing on screen explaining why.
-    if ($Index -ne 0 -and $script:TkKeyboardRunning) {
-        Stop-TkKeyboardTest
-    }
+    # Nothing to start or stop here: the keyboard test follows the visibility
+    # of its panel, which the loop above has just changed.
 }
 
 <#
@@ -134,9 +188,17 @@ function Show-TkHardwarePanel {
     Draws the virtual keyboard.
 
 .DESCRIPTION
-    Built from the physical map, so the rows match the board. Each key is a
-    bordered block indexed by its WPF Key name, which is what the key events
-    hand the test to match against.
+    Three blocks side by side, as on a real board: the main block, the
+    navigation cluster and the numeric keypad. The earlier version stacked all
+    three as plain rows, which read as a heap of keys rather than a keyboard.
+
+    Each key is a bordered block with a thicker bottom edge, which is what
+    gives it the look of a keycap seen slightly from above; pressing it
+    collapses that edge and drops the block two pixels.
+
+    Blocks are indexed by physical identity, not by label, so redrawing for
+    another layout keeps every result: the same piece of plastic stays the same
+    key whatever is printed on it.
 #>
 function Build-TkKeyboardSurface {
     [CmdletBinding()]
@@ -150,44 +212,50 @@ function Build-TkKeyboardSurface {
 
     $surface.Children.Clear()
     $script:TkKeyboardButtons = @{}
+    $script:TkKeyboardPressed = @{}
 
-    $unit = 38
+    $map = Get-TkKeyboardMap -Layout $script:TkKeyboardLayout
 
-    foreach ($row in (Get-TkKeyboardMap)) {
+    $board = New-Object System.Windows.Controls.Grid
 
-        $panel = New-Object System.Windows.Controls.StackPanel
-        $panel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
-        $panel.Margin      = New-Object System.Windows.Thickness(0, 0, 0, 4)
+    foreach ($width in @(0, 1, 2)) {
 
-        foreach ($key in $row) {
+        $column = New-Object System.Windows.Controls.ColumnDefinition
+        $column.Width = [System.Windows.GridLength]::Auto
 
-            $block = New-Object System.Windows.Controls.Border
-            $block.Width           = ($unit * $key.Width) - 4
-            $block.Height          = $unit - 4
-            $block.CornerRadius    = New-Object System.Windows.CornerRadius(4)
-            $block.BorderThickness = New-Object System.Windows.Thickness(1)
-            $block.Margin          = New-Object System.Windows.Thickness(0, 0, 4, 0)
+        $board.ColumnDefinitions.Add($column)
+    }
 
-            $block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
-            $block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+    $blocks = @(
+        @{ Rows = $map.Main;       Column = 0; Margin = 0 },
+        @{ Rows = $map.Navigation; Column = 1; Margin = 18 },
+        @{ Rows = $map.Numpad;     Column = 2; Margin = 12 }
+    )
 
-            $text = New-Object System.Windows.Controls.TextBlock
-            $text.Text                = $key.Label
-            $text.FontSize            = if ($key.Label.Length -gt 3) { 9.5 } else { 12 }
-            $text.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
-            $text.VerticalAlignment   = [System.Windows.VerticalAlignment]::Center
-            $text.TextTrimming        = [System.Windows.TextTrimming]::CharacterEllipsis
+    foreach ($block in $blocks) {
 
-            $text.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextPrimary')
+        $stack = New-Object System.Windows.Controls.StackPanel
+        $stack.Margin            = New-Object System.Windows.Thickness($block.Margin, 0, 0, 0)
+        $stack.VerticalAlignment = [System.Windows.VerticalAlignment]::Top
 
-            $block.Child = $text
-
-            [void] $panel.Children.Add($block)
-
-            $script:TkKeyboardButtons[$key.Key] = $block
+        foreach ($row in $block.Rows) {
+            [void] $stack.Children.Add((New-TkKeyboardRow -Row $row))
         }
 
-        [void] $surface.Children.Add($panel)
+        [System.Windows.Controls.Grid]::SetColumn($stack, $block.Column)
+        [void] $board.Children.Add($stack)
+    }
+
+    [void] $surface.Children.Add($board)
+
+    # Re-light whatever was already pressed. Rebuilding made fresh grey blocks,
+    # and Set-TkKeySeen refuses a key it has already recorded, so without this
+    # a layout change would grey out results that can never come back.
+    foreach ($identity in $script:TkKeyboardSeen.Keys) {
+
+        if ($script:TkKeyboardButtons.ContainsKey($identity)) {
+            Set-TkKeyBlockSeen -Block $script:TkKeyboardButtons[$identity] -Animate $false
+        }
     }
 
     Update-TkKeyboardProgress
@@ -195,18 +263,92 @@ function Build-TkKeyboardSurface {
 
 <#
 .SYNOPSIS
+    Builds one row of keys.
+
+.DESCRIPTION
+    An empty row still produces a spacer of the usual height, which is what
+    puts the gap above the arrow keys where a real board has one.
+
+.OUTPUTS
+    System.Windows.Controls.StackPanel
+#>
+function New-TkKeyboardRow {
+    [CmdletBinding()]
+    [OutputType([System.Windows.Controls.StackPanel])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]] $Row
+    )
+
+    $unit = 38
+
+    $panel = New-Object System.Windows.Controls.StackPanel
+    $panel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+    $panel.Margin      = New-Object System.Windows.Thickness(0, 0, 0, 4)
+    $panel.Height      = $unit - 4
+
+    foreach ($key in $Row) {
+
+        $block = New-Object System.Windows.Controls.Border
+        $block.Width        = ($unit * $key.Width) - 4
+        $block.Height       = $unit - 4
+        $block.CornerRadius = New-Object System.Windows.CornerRadius(4)
+        $block.Margin       = New-Object System.Windows.Thickness(0, 0, 4, 0)
+
+        # A thicker bottom edge reads as the side of a keycap. Collapsing it on
+        # press is cheaper than a drop shadow on a hundred and five elements.
+        $block.BorderThickness = New-Object System.Windows.Thickness(1, 1, 1, 3)
+
+        Set-TkKeyBlockRest -Block $block
+
+        # Held so the press animation has something to move.
+        $block.RenderTransform = New-Object System.Windows.Media.TranslateTransform
+
+        $text = New-Object System.Windows.Controls.TextBlock
+        $text.Text                = $key.Label
+        $text.FontSize            = if ($key.Label.Length -gt 3) { 9.5 } else { 12 }
+        $text.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
+        $text.VerticalAlignment   = [System.Windows.VerticalAlignment]::Center
+        $text.TextTrimming        = [System.Windows.TextTrimming]::CharacterEllipsis
+
+        $text.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextPrimary')
+
+        $block.Child = $text
+
+        [void] $panel.Children.Add($block)
+
+        $script:TkKeyboardButtons[$key.Key] = $block
+    }
+
+    return $panel
+}
+
+<#
+.SYNOPSIS
     Starts the keyboard test.
 
 .DESCRIPTION
-    Attaches a PreviewKeyDown handler to the window and marks keys as they
-    arrive. Deliberately not a system wide hook: a handler on the window sees
-    keys only while the window has focus, which is what a local key tester
-    should do and what nothing mistakes for a keylogger.
+    Two WPF handlers on the window, one for key down and one for key up,
+    registered to receive events that are already handled, so no control can
+    hide a key from the test. Each marks its key handled in turn, which keeps
+    Tab from moving the focus, Space from pressing whatever button has it and
+    Alt from entering access key mode while the test runs.
 
-    handledEventsToo is true so the handler still sees a key a focused control
-    has already marked handled. The keys it cannot see are the shell reserved
-    ones, the Windows key and Alt+Tab among them, which never reach any
-    application; the result note says so.
+    The physical key comes from the event itself: WPF keeps the scan code and
+    the extended flag of the key message on the event arguments. See
+    Get-TkKeyEventPosition.
+
+    An earlier version read them from a window message hook, HwndSource.AddHook,
+    and never saw a single key. WPF handles keyboard messages in its message
+    pump, before they are dispatched to the window procedure, and a message
+    handled there is never dispatched. The handler that stops Tab and Space
+    marked every key handled, so the hook listened on a window procedure that
+    keyboard messages no longer reached. Microsoft documents this in "Sharing
+    Message Loops Between Win32 and WPF".
+
+    Neither handler is a system wide hook. Both belong to this window and see
+    only the keys Windows delivers to it while it has the focus.
 #>
 function Start-TkKeyboardTest {
     [CmdletBinding()]
@@ -219,34 +361,45 @@ function Start-TkKeyboardTest {
     $ctx = Get-TkContext
 
     if ($null -eq $ctx.Window) {
-        Set-TkStatus -Text 'The keyboard test needs the main window.'
         return
     }
 
     $script:TkKeyboardRunning = $true
     $script:TkLastEscape      = [datetime]::MinValue
 
-    $handler = [System.Windows.Input.KeyEventHandler] {
+    $down = [System.Windows.Input.KeyEventHandler] {
         param($sourceControl, $keyArgs)
-        Update-TkKeyboardFromEvent -KeyArgs $keyArgs
+
+        $keyArgs.Handled = $true
+
+        Update-TkKeyboardFromKeyEvent -KeyArgs $keyArgs -Down $true
     }
 
-    $ctx.Window.AddHandler(
-        [System.Windows.UIElement]::PreviewKeyDownEvent,
-        $handler,
-        $true)
+    $up = [System.Windows.Input.KeyEventHandler] {
+        param($sourceControl, $keyArgs)
 
-    $script:TkKeyboardHandler = $handler
+        $keyArgs.Handled = $true
 
-    Set-TkControlEnabled -Name 'BtnKeyboardStart' -Enabled $false
-    Set-TkControlEnabled -Name 'BtnKeyboardStop'  -Enabled $true
+        Update-TkKeyboardFromKeyEvent -KeyArgs $keyArgs -Down $false
+    }
+
+    $ctx.Window.AddHandler([System.Windows.UIElement]::PreviewKeyDownEvent, $down, $true)
+    $ctx.Window.AddHandler([System.Windows.UIElement]::PreviewKeyUpEvent, $up, $true)
+
+    $script:TkKeyboardDownHandler = $down
+    $script:TkKeyboardUpHandler   = $up
+
+    # The verdict belongs to the run that produced it.
+    Set-TkOutput -ControlName 'KeyboardResult' -Text ''
+
+    Update-TkKeyboardProgress
 
     Set-TkStatus -Text 'Keyboard test running. Press every key. Escape twice to stop.'
 }
 
 <#
 .SYNOPSIS
-    Stops the keyboard test.
+    Stops the keyboard test and hands the keyboard back.
 #>
 function Stop-TkKeyboardTest {
     [CmdletBinding()]
@@ -258,18 +411,25 @@ function Stop-TkKeyboardTest {
 
     $ctx = Get-TkContext
 
-    if ($ctx.Window -and $script:TkKeyboardHandler) {
+    if ($ctx.Window) {
 
-        $ctx.Window.RemoveHandler(
-            [System.Windows.UIElement]::PreviewKeyDownEvent,
-            $script:TkKeyboardHandler)
+        if ($script:TkKeyboardDownHandler) {
+            $ctx.Window.RemoveHandler([System.Windows.UIElement]::PreviewKeyDownEvent, $script:TkKeyboardDownHandler)
+        }
+
+        if ($script:TkKeyboardUpHandler) {
+            $ctx.Window.RemoveHandler([System.Windows.UIElement]::PreviewKeyUpEvent, $script:TkKeyboardUpHandler)
+        }
     }
 
-    $script:TkKeyboardHandler = $null
-    $script:TkKeyboardRunning = $false
+    # Any key still held when the test stops would stay visually depressed.
+    foreach ($identity in @($script:TkKeyboardPressed.Keys)) {
+        Set-TkKeyPressed -Identity $identity -Down $false
+    }
 
-    Set-TkControlEnabled -Name 'BtnKeyboardStart' -Enabled $true
-    Set-TkControlEnabled -Name 'BtnKeyboardStop'  -Enabled $false
+    $script:TkKeyboardDownHandler = $null
+    $script:TkKeyboardUpHandler   = $null
+    $script:TkKeyboardRunning     = $false
 
     Update-TkKeyboardProgress
 
@@ -284,14 +444,18 @@ function Reset-TkKeyboardTest {
     [CmdletBinding()]
     param()
 
-    $script:TkKeyboardSeen = @{}
+    $script:TkKeyboardSeen    = @{}
+    $script:TkKeyboardPressed = @{}
 
-    foreach ($key in $script:TkKeyboardButtons.Keys) {
+    foreach ($identity in $script:TkKeyboardButtons.Keys) {
 
-        $block = $script:TkKeyboardButtons[$key]
+        $block = $script:TkKeyboardButtons[$identity]
 
-        $block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
-        $block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+        Set-TkKeyBlockRest -Block $block
+
+        # A key held across the reset would otherwise stay sunk for good.
+        $block.RenderTransform.Y = 0
+        $block.BorderThickness   = New-Object System.Windows.Thickness(1, 1, 1, 3)
     }
 
     Update-TkKeyboardProgress
@@ -301,89 +465,403 @@ function Reset-TkKeyboardTest {
 
 <#
 .SYNOPSIS
-    Marks the key from one PreviewKeyDown event, and keeps it in the window.
+    Reads which physical key a WPF key event is about.
 
 .DESCRIPTION
-    An Alt combination arrives as Key.System with the real key in SystemKey,
-    so that is unwrapped first. The event is then marked handled, which keeps
-    keys the test needs, Tab, the arrows, Space, Enter, inside the window
-    instead of moving the focus or pressing a button. The Windows key and
-    Alt+Tab are not here to handle: the shell took them first.
+    KeyEventArgs carries the scan code and the extended flag of the key message
+    that raised it, in two properties WPF does not make public: ScanCode and
+    IsExtendedKey. They are read by reflection because the public Key cannot
+    replace them. It reports the keypad Enter and the main Enter as the same
+    value, and it moves with the Windows layout, so a layout selector built on
+    it would match nothing once another layout is picked.
+
+    The virtual key is read from the key WPF actually means: Alt arrives as
+    Key.System with the real key in SystemKey, and the same holds for keys
+    taken by an input method or a dead key.
+
+    A missing property, should a future WPF rename one, leaves a scan code of 0.
+    Resolve-TkKeyIdentity then recovers the position from the virtual key, so
+    the test degrades to losing the keypad Enter rather than every key.
+
+.PARAMETER KeyArgs
+    The event arguments of a key down or key up event.
+
+.OUTPUTS
+    An object with ScanCode, Extended and VirtualKey.
 #>
-function Update-TkKeyboardFromEvent {
+function Get-TkKeyEventPosition {
     [CmdletBinding()]
+    [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory)]
-        $KeyArgs
+        [System.Windows.Input.KeyEventArgs] $KeyArgs
     )
 
-    $key = if ($KeyArgs.Key -eq [System.Windows.Input.Key]::System) {
-               $KeyArgs.SystemKey
-           }
-           else {
-               $KeyArgs.Key
-           }
+    if ($null -eq $script:TkKeyScanCodeProperty) {
 
-    # Keep the key inside the window: without this, Tab moves the focus off
-    # the page and Space presses whatever button has it.
-    $KeyArgs.Handled = $true
+        $flags = [System.Reflection.BindingFlags] 'Instance, Public, NonPublic'
+        $type  = [System.Windows.Input.KeyEventArgs]
 
-    # Escape twice in quick succession is the way out. One press cannot be,
-    # because Escape is a key the test has to cover.
-    if ($key -eq [System.Windows.Input.Key]::Escape) {
-
-        $now = Get-Date
-
-        if (($now - $script:TkLastEscape).TotalMilliseconds -lt 1000) {
-
-            Set-TkKeySeen -Key $key
-            Stop-TkKeyboardTest
-            return
-        }
-
-        $script:TkLastEscape = $now
+        $script:TkKeyScanCodeProperty = $type.GetProperty('ScanCode', $flags)
+        $script:TkKeyExtendedProperty = $type.GetProperty('IsExtendedKey', $flags)
     }
 
-    Set-TkKeySeen -Key $key
+    $key = $KeyArgs.Key
+
+    switch ($key) {
+        ([System.Windows.Input.Key]::System)            { $key = $KeyArgs.SystemKey }
+        ([System.Windows.Input.Key]::ImeProcessed)      { $key = $KeyArgs.ImeProcessedKey }
+        ([System.Windows.Input.Key]::DeadCharProcessed) { $key = $KeyArgs.DeadCharProcessedKey }
+    }
+
+    $scanCode = 0
+    $extended = $false
+
+    if ($script:TkKeyScanCodeProperty) {
+        $scanCode = [int] $script:TkKeyScanCodeProperty.GetValue($KeyArgs, $null)
+    }
+
+    if ($script:TkKeyExtendedProperty) {
+        $extended = [bool] $script:TkKeyExtendedProperty.GetValue($KeyArgs, $null)
+    }
+
+    return [pscustomobject] @{
+        ScanCode   = $scanCode
+        Extended   = $extended
+        VirtualKey = [System.Windows.Input.KeyInterop]::VirtualKeyFromKey($key)
+    }
 }
 
 <#
 .SYNOPSIS
-    Colours one key as seen.
+    Names the key a press belongs to, the way the keyboard map names it.
 
-.PARAMETER Key
-    A System.Windows.Input.Key value.
+.DESCRIPTION
+    The map names a key by scan code and extended flag, and adds the virtual
+    key only for the pair that shares a scan code: Pause and Num Lock.
+
+    Tried in order:
+    - scan code, extended flag and virtual key, for that pair;
+    - scan code and extended flag, for every other key;
+    - scan code and virtual key whatever the extended flag, so Num Lock still
+      matches on a board or driver that reports it extended.
+
+    An injected key, and some remote desktop sessions and software keyboards,
+    report no scan code at all. Asking Windows which key produces the virtual
+    key recovers it.
+
+.PARAMETER ScanCode
+    Scan code reported with the key, 0 when none was.
+
+.PARAMETER Extended
+    Extended flag reported with the key.
+
+.PARAMETER VirtualKey
+    Virtual key code.
+
+.PARAMETER Known
+    The identities drawn on the board, as keys of a hashtable.
+
+.OUTPUTS
+    System.String, empty when the key has no position at all.
+#>
+function Resolve-TkKeyIdentity {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [int] $ScanCode = 0,
+
+        [Parameter()]
+        [bool] $Extended = $false,
+
+        [Parameter()]
+        [int] $VirtualKey = 0,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [hashtable] $Known
+    )
+
+    if ($ScanCode -eq 0 -and $VirtualKey -gt 0) {
+        $ScanCode = Get-TkScanCodeForVirtualKey -VirtualKey $VirtualKey
+    }
+
+    if ($ScanCode -eq 0) {
+        return ''
+    }
+
+    $full = '{0}:{1}:{2}' -f $ScanCode, [int] $Extended, $VirtualKey
+
+    if ($Known.ContainsKey($full)) {
+        return $full
+    }
+
+    $short = '{0}:{1}' -f $ScanCode, [int] $Extended
+
+    if ($Known.ContainsKey($short)) {
+        return $short
+    }
+
+    $other = '{0}:{1}:{2}' -f $ScanCode, [int] (-not $Extended), $VirtualKey
+
+    if ($VirtualKey -gt 0 -and $Known.ContainsKey($other)) {
+        return $other
+    }
+
+    # Not drawn on the board: a media key, a vendor button. Still worth a name,
+    # because "this key sends something" is an answer.
+    return $short
+}
+
+<#
+.SYNOPSIS
+    Handles one key event while the keyboard test runs.
+
+.PARAMETER KeyArgs
+    The event arguments.
+
+.PARAMETER Down
+    True for a key down event, false for a key up event.
+#>
+function Update-TkKeyboardFromKeyEvent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Input.KeyEventArgs] $KeyArgs,
+
+        [Parameter(Mandatory)]
+        [bool] $Down
+    )
+
+    # Runs inside a WPF event handler: an exception escaping here would reach
+    # the dispatcher, so it is logged instead.
+    try {
+        $position = Get-TkKeyEventPosition -KeyArgs $KeyArgs
+
+        $identity = Resolve-TkKeyIdentity -ScanCode $position.ScanCode -Extended $position.Extended `
+                                          -VirtualKey $position.VirtualKey -Known $script:TkKeyboardButtons
+
+        if (-not $identity) {
+            return
+        }
+
+        if (-not $Down) {
+
+            # Print Screen sends no key down at all, only its release, so a
+            # release of a key that was never seen going down counts as a press.
+            $wasHeld = $script:TkKeyboardPressed.ContainsKey($identity)
+
+            Set-TkKeyPressed -Identity $identity -Down $false
+
+            if (-not $wasHeld) {
+                Set-TkKeySeen -Identity $identity
+            }
+
+            return
+        }
+
+        Set-TkKeyPressed -Identity $identity -Down $true
+
+        # Escape twice in quick succession is the way out. One press cannot be,
+        # because Escape is a key the test has to cover.
+        if ($position.VirtualKey -eq 0x1B -and -not $KeyArgs.IsRepeat) {
+
+            $now = Get-Date
+
+            if (($now - $script:TkLastEscape).TotalMilliseconds -lt 1000) {
+
+                Set-TkKeySeen -Identity $identity
+                Stop-TkKeyboardTest
+                return
+            }
+
+            $script:TkLastEscape = $now
+        }
+
+        Set-TkKeySeen -Identity $identity
+    }
+    catch {
+        Write-TkLog -Level Warning -Category 'Hardware' -Message (
+            'A key event could not be read by the keyboard test: {0}' -f $_.Exception.Message
+        )
+    }
+}
+
+<#
+.SYNOPSIS
+    Shows a key as held down, or lets it back up.
+
+.DESCRIPTION
+    A held key is filled orange and drops two pixels with its bottom edge
+    collapsing, which is what a keycap does. The orange applies whether or not
+    the key has already been validated: it answers "the board is reading the
+    key under my finger", which is a different question from "has this key been
+    covered", and a key that were already green would answer nothing.
+
+    Letting go settles the key: green if it has been validated, back to the
+    resting colour otherwise. That is why the fade to green happens here rather
+    than in Set-TkKeySeen, which would be overpainted by the press.
+#>
+function Set-TkKeyPressed {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Identity,
+
+        [Parameter(Mandatory)]
+        [bool] $Down
+    )
+
+    if (-not $script:TkKeyboardButtons.ContainsKey($Identity)) {
+        return
+    }
+
+    $block = $script:TkKeyboardButtons[$Identity]
+
+    if ($Down) {
+
+        if ($script:TkKeyboardPressed.ContainsKey($Identity)) {
+            return
+        }
+
+        $script:TkKeyboardPressed[$Identity] = $true
+
+        $block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Warning')
+        $block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'Warning')
+
+        $block.RenderTransform.Y = 2
+        $block.BorderThickness   = New-Object System.Windows.Thickness(1, 1, 1, 1)
+
+        return
+    }
+
+    $script:TkKeyboardPressed.Remove($Identity)
+
+    $block.RenderTransform.Y = 0
+    $block.BorderThickness   = New-Object System.Windows.Thickness(1, 1, 1, 3)
+
+    if ($script:TkKeyboardSeen.ContainsKey($Identity)) {
+        Set-TkKeyBlockSeen -Block $block -Animate $true
+    }
+    else {
+        Set-TkKeyBlockRest -Block $block
+    }
+}
+
+<#
+.SYNOPSIS
+    Paints one block as untested.
+
+.DESCRIPTION
+    Resource references rather than brushes, so a resting key follows a theme
+    change. Only a validated or a held key is painted explicitly.
+#>
+function Set-TkKeyBlockRest {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.Border] $Block
+    )
+
+    $Block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
+    $Block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+}
+
+<#
+.SYNOPSIS
+    Records a key as tested and colours it.
 #>
 function Set-TkKeySeen {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [System.Windows.Input.Key] $Key
+        [string] $Identity
     )
 
-    $name = $Key.ToString()
-
-    if (-not $script:TkKeyboardButtons.ContainsKey($name)) {
-
-        # A key the map does not draw: a media key, a vendor button, or a
-        # board with more keys than a standard one. Worth recording rather
-        # than dropping, because "this key sends something" is the answer.
-        $script:TkKeyboardSeen[$name] = $true
+    if ($script:TkKeyboardSeen.ContainsKey($Identity)) {
         return
     }
 
-    if ($script:TkKeyboardSeen.ContainsKey($name)) {
+    # A key the board does not draw: a media key, a vendor button, or a board
+    # with more keys than a standard one. Worth recording rather than dropping,
+    # because "this key sends something" is the answer.
+    $script:TkKeyboardSeen[$Identity] = $true
+
+    if (-not $script:TkKeyboardButtons.ContainsKey($Identity)) {
         return
     }
 
-    $script:TkKeyboardSeen[$name] = $true
-
-    $block = $script:TkKeyboardButtons[$name]
-
-    $block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Success')
-    $block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'Success')
+    # While the key is held it stays orange. Releasing it paints the green,
+    # which is also what makes the fade visible instead of instantaneous.
+    if (-not $script:TkKeyboardPressed.ContainsKey($Identity)) {
+        Set-TkKeyBlockSeen -Block $script:TkKeyboardButtons[$Identity] -Animate $true
+    }
 
     Update-TkKeyboardProgress
+}
+
+<#
+.SYNOPSIS
+    Paints one block as tested.
+
+.DESCRIPTION
+    Fades to the success colour over two hundred milliseconds when the key was
+    just pressed, and switches straight to it when the board is being redrawn
+    for another layout, where a hundred simultaneous fades would only look like
+    a fault.
+
+    A validated block gets a brush of its own rather than a resource reference,
+    which is what makes the animation possible and what stops it following a
+    later theme change. Redrawing the board repaints them from the current
+    palette.
+#>
+function Set-TkKeyBlockSeen {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.Border] $Block,
+
+        [Parameter()]
+        [bool] $Animate = $true
+    )
+
+    $ctx = Get-TkContext
+
+    $target = if ($ctx.Window) { $ctx.Window.Resources['Success'] } else { $null }
+
+    if ($null -eq $target) {
+        $Block.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Success')
+        $Block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'Success')
+        return
+    }
+
+    $Block.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'Success')
+
+    if (-not $Animate) {
+        $Block.Background = $target
+        return
+    }
+
+    # Read from the block rather than assumed, because the fade now starts
+    # from the orange of a key being released, not only from the resting
+    # colour. A new brush every time: animating the palette's own brush would
+    # turn every surface in the window green.
+    $from = if ($Block.Background -is [System.Windows.Media.SolidColorBrush]) {
+                $Block.Background.Color
+            }
+            else {
+                $target.Color
+            }
+
+    $brush = New-Object System.Windows.Media.SolidColorBrush($from)
+    $Block.Background = $brush
+
+    $fade = New-Object System.Windows.Media.Animation.ColorAnimation
+    $fade.To       = $target.Color
+    $fade.Duration = New-Object System.Windows.Duration ([TimeSpan]::FromMilliseconds(200))
+
+    $brush.BeginAnimation([System.Windows.Media.SolidColorBrush]::ColorProperty, $fade)
 }
 
 <#
@@ -402,39 +880,43 @@ function Update-TkKeyboardProgress {
 
     $missing = @()
 
-    foreach ($key in $script:TkKeyboardButtons.Keys) {
+    foreach ($identity in $script:TkKeyboardButtons.Keys) {
 
-        if (-not $script:TkKeyboardSeen.ContainsKey($key)) {
-            $missing += $script:TkKeyboardButtons[$key].Child.Text
+        if (-not $script:TkKeyboardSeen.ContainsKey($identity)) {
+            $missing += $script:TkKeyboardButtons[$identity].Child.Text
         }
     }
 
     $seen = $total - $missing.Count
 
-    Set-TkOutput -ControlName 'KeyboardProgress' -Text (
-        '{0} of {1} keys seen.' -f $seen, $total
-    )
+    Set-TkOutput -ControlName 'KeyboardProgress' -Text ('{0} of {1} keys' -f $seen, $total)
 
-    if ($script:TkKeyboardRunning) {
-        return
-    }
-
-    if ($seen -eq 0) {
-        Set-TkOutput -ControlName 'KeyboardResult' -Text ''
+    if ($script:TkKeyboardRunning -or $seen -eq 0) {
         return
     }
 
     if ($missing.Count -eq 0) {
 
         Set-TkOutput -ControlName 'KeyboardResult' -Text (
-            'Every key on the map registered. ' + ((Get-TkUntestableKeyNote)[0])
+            'Every key on the board registered. ' + ((Get-TkUntestableKeyNote)[0])
         )
 
         return
     }
 
+    $names = @($missing | Sort-Object -Unique)
+
+    # Stopping after two keys would otherwise list the hundred you had not got
+    # to yet, which buries the two that matter.
+    $shown = if ($names.Count -gt 24) {
+                 '{0} and {1} more' -f (($names | Select-Object -First 24) -join ', '), ($names.Count - 24)
+             }
+             else {
+                 $names -join ', '
+             }
+
     Set-TkOutput -ControlName 'KeyboardResult' -Text (
-        ('Not seen: {0}.' -f (($missing | Sort-Object -Unique) -join ', ')) +
+        ('Not seen ({0}): {1}.' -f $names.Count, $shown) +
         ' A key that never registers is either faulty, remapped in the keyboard, or not present on this board. ' +
         ((Get-TkUntestableKeyNote)[0])
     )
