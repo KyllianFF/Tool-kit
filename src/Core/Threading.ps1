@@ -86,6 +86,10 @@ function Initialize-TkRunspacePool {
         'TkVirusTotalBaseUri',
         'TkEmbeddedCatalogs',
 
+        # Background operations write to the intervention journal, under the
+        # session of the window that started them.
+        'TkSessionId', 'TkJournalKind',
+
         # The audit runs in a worker, so the table it reads its controls from
         # has to exist there. The two Defender variables are the per run cache
         # the controls share; seeded so the worker starts from a known empty

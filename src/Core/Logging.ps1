@@ -200,4 +200,10 @@ function Stop-TkOperation {
     Write-TkLog -Level $level -Category $Category -Message (
         '{0}: {1} ({2} ms)' -f $status, $Name, $Stopwatch.ElapsedMilliseconds
     )
+
+    # Every timed operation also goes into the intervention journal, so a new
+    # feature that times itself is journaled without anyone remembering to.
+    if (Get-Command -Name 'Add-TkJournalEntry' -ErrorAction SilentlyContinue) {
+        Add-TkJournalEntry -Name $Name -Category $Category -Success $Success -DurationMs $Stopwatch.ElapsedMilliseconds
+    }
 }

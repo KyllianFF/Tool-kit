@@ -336,6 +336,8 @@ function New-TkSupportBundle {
         $(if ($errors.Count -gt 0) { ' with {0} section(s) missing' -f $errors.Count } else { '' })
     )
 
+    Add-TkJournalEntry -Name 'Support bundle created' -Category 'Bundle' -Detail $zipPath
+
     return $zipPath
 }
 

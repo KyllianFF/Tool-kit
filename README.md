@@ -52,6 +52,7 @@ Light and dark themes are switched from the header and remembered.
 | **Software** | 142 applications across 12 categories, installed through winget with a search box and a category filter. Multi-select, batch install, uninstall, upgrade everything, and an installed-state indicator. |
 | **Tweaks** | 35 declarative tweaks across 6 categories: privacy, interface, performance, gaming, hardening and advanced settings. Every one of them is reversible, the current state is read from the registry rather than remembered, and a restore point is taken before a batch is applied. |
 | **Fixes** | 12 repair actions with the symptom each one addresses: TCP/IP and Winsock reset, DNS cache, firewall defaults, Windows Update rebuild, sfc and DISM, temporary files, icon cache, Explorer, print spooler, Microsoft Store cache and search index. Plus automatic logon, configured properly (see below). |
+| **Intervention** | A journal written as the work happens: every fix, tweak, installation, audit correction, network profile, SSH key, audit, investigation, report and support bundle run through the toolkit, with its outcome, for this session, today or the last 7 days. Add the ticket reference, the technician and notes, then create the **intervention report**: one HTML file with the machine, its health, the latest audit, what was done and the notes, to attach to a ticket or send to a customer. The journal is kept per day under `%LOCALAPPDATA%\Toolkit\journal`. |
 
 ### Troubleshooting
 
