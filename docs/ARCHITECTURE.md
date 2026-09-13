@@ -190,9 +190,14 @@ Least privilege applied to a tool run on machines that are not yours.
   rather than throwing an access denied from deep inside the work.
 - Elevation is a deliberate action: the header badge states the current level
   and offers the restart.
-- A restart with no script on disk replays the HTTPS source URL the operator
-  originally typed. A non-HTTPS source is refused, because an on-path attacker
-  would otherwise choose the code that runs as Administrator.
+- A restart re-runs the script file when there is one. Launched through
+  `irm | iex` there is none, and no argument either, so it replays a source
+  URL instead: the one passed with `-SourceUri`, or else the published build,
+  `$script:TkDefaultSourceUri` in `Config.ps1`. That default is part of the
+  code, never read from downloaded content. Without it the usual launch could
+  not restart elevated at all, and the security audit could not be reached.
+- A non-HTTPS source is refused, because an on-path attacker would otherwise
+  choose the code that runs as Administrator.
 
 ---
 
