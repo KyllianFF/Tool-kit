@@ -206,7 +206,15 @@ function New-TkSupportBundle {
         @(
             (ConvertTo-TkBundleText -Title 'Pending reboot'      -InputObject (Get-TkPendingRebootStatus))
             (ConvertTo-TkBundleText -Title 'Storage health'      -As Table -InputObject (Get-TkStorageHealth))
+            (ConvertTo-TkBundleText -Title 'Devices'             -As Table -InputObject (
+                Get-TkDeviceProblem | Select-Object Severity, Name, Code, ProblemName, Meaning, DeviceId))
             (ConvertTo-TkBundleText -Title 'Stability'           -As Table -InputObject (Get-TkStabilityReport))
+            (ConvertTo-TkBundleText -Title 'Crash history'       -As Table -InputObject (
+                Get-TkCrashHistory -Days 90 | Select-Object When, Kind,
+                    @{ Name = 'StopCode'; Expression = { $_.Info.CodeHex } },
+                    @{ Name = 'Name';     Expression = { $_.Info.Name } },
+                    DumpPath,
+                    @{ Name = 'DriversRegisteredBefore'; Expression = { (@($_.Drivers) | ForEach-Object { $_.Name }) -join ', ' } }))
             (ConvertTo-TkBundleText -Title 'Update history'      -As Table -InputObject (Get-TkUpdateHistory))
             (ConvertTo-TkBundleText -Title 'Printing'            -As Table -InputObject (Get-TkPrintingReport))
             (ConvertTo-TkBundleText -Title 'Profiles and policy' -As Table -InputObject (Get-TkUserContextReport))

@@ -1291,7 +1291,7 @@
                                     <TextBlock x:Name="DashHealthCardLoadingText" Style="{StaticResource Muted}" Text="Reading restart state, updates, disks and battery..." />
                                 </StackPanel>
                                 <StackPanel x:Name="DashHealthCardContent" Visibility="Collapsed">
-                                    <UniformGrid x:Name="DashHealth" Columns="5" />
+                                    <UniformGrid x:Name="DashHealth" Columns="4" />
                                     <TextBlock x:Name="DashHealthNote" Style="{StaticResource Muted}" Margin="0,10,0,0" />
                                 </StackPanel>
                             </StackPanel>
@@ -2317,7 +2317,11 @@
                                             <TextBlock Text="Storage health" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Bug checks, unexpected shutdowns and repeated application faults.">
+                                                     ToolTip="Every device Device Manager flags, with its problem code explained and what to try.">
+                                            <TextBlock Text="Devices" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Blue screens with their stop code explained and the drivers registered before them, hard resets, and repeated application faults.">
                                             <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"

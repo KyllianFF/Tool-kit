@@ -162,7 +162,10 @@ function Import-TkAllCatalogs {
         'fixes',
         'network-knowledge',
         'vendor-commands',
-        'vendor-support'
+        'vendor-support',
+        'bug-checks',
+        'bug-check-names',
+        'device-problems'
     )
 
     foreach ($name in $names) {

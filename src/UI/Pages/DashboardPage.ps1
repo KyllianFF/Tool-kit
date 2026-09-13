@@ -247,7 +247,8 @@ function New-TkHealthTile {
     $border = New-Object System.Windows.Controls.Border
     $border.CornerRadius    = New-Object System.Windows.CornerRadius(7)
     $border.Padding         = New-Object System.Windows.Thickness(12, 10, 12, 10)
-    $border.Margin          = New-Object System.Windows.Thickness(0, 0, 8, 0)
+    # The same gap below as to the right: the tiles wrap onto a second row.
+    $border.Margin          = New-Object System.Windows.Thickness(0, 0, 8, 8)
     $border.BorderThickness = New-Object System.Windows.Thickness(3, 1, 1, 1)
     $border.Cursor          = [System.Windows.Input.Cursors]::Hand
     $border.Tag             = $Tile

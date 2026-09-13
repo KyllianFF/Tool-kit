@@ -450,6 +450,9 @@ Describe 'Catalog integrity' {
         @{ Name = 'network-knowledge' }
         @{ Name = 'vendor-commands' }
         @{ Name = 'vendor-support' }
+        @{ Name = 'bug-checks' }
+        @{ Name = 'bug-check-names' }
+        @{ Name = 'device-problems' }
     ) {
         param($Name)
         Import-TkCatalog -Name $Name | Should -Not -BeNullOrEmpty
@@ -1732,6 +1735,165 @@ Describe 'Keyboard key events' {
     }
 }
 
+Describe 'Crash analysis' {
+
+    It 'reads the stop code and its parameters from the untranslated event property' {
+
+        # The property of the blue screen of 13 September 2026 on the machine
+        # this was written on.
+        $parsed = ConvertFrom-TkBugCheckText -Text '0x000000f7 (0xffffc18bfc43e460, 0x00005eafe2bb4f1b, 0xffffa1501d44b0e4, 0x0000000000000000)'
+
+        $parsed.Code              | Should -Be 247
+        $parsed.CodeHex           | Should -Be '0x000000F7'
+        $parsed.Parameters.Count  | Should -Be 4
+        $parsed.Parameters[0]     | Should -Be '0xffffc18bfc43e460'
+    }
+
+    It 'returns nothing for text that holds no stop code' {
+        ConvertFrom-TkBugCheckText -Text 'The computer has rebooted.' | Should -BeNullOrEmpty
+    }
+
+    It 'prints a stop code on eight digits, even one PowerShell reads as negative' {
+        Format-TkBugCheckCode -Code 0xC000021A | Should -Be '0xC000021A'
+        Format-TkBugCheckCode -Code 10         | Should -Be '0x0000000A'
+    }
+
+    It 'names and explains a stop code a support call meets' {
+
+        $info = Get-TkBugCheckInfo -Code 0xF7
+
+        $info.Name          | Should -Be 'DRIVER_OVERRAN_STACK_BUFFER'
+        $info.Kind          | Should -Be 'driver'
+        $info.Meaning       | Should -Not -BeNullOrEmpty
+        @($info.Steps).Count | Should -BeGreaterThan 0
+    }
+
+    It 'names a rare stop code without inventing advice for it' {
+
+        $info = Get-TkBugCheckInfo -Code 0x1
+
+        $info.Name    | Should -Be 'APC_INDEX_MISMATCH'
+        $info.Meaning | Should -BeNullOrEmpty
+    }
+
+    It 'says so when a stop code is not in the published list' {
+        (Get-TkBugCheckInfo -Code 0x7777).Name | Should -Match 'not in the published list'
+    }
+
+    It 'names every code it explains, and declares every family it cites' {
+
+        $names   = (Import-TkCatalog -Name 'bug-check-names').names
+        $details = Import-TkCatalog -Name 'bug-checks'
+        $kinds   = @($details.kinds | ForEach-Object { $_.id })
+
+        foreach ($entry in $details.codes) {
+            $names.PSObject.Properties[$entry.code] | Should -Not -BeNullOrEmpty -Because $entry.code
+            $kinds | Should -Contain $entry.kind -Because $entry.code
+        }
+    }
+
+    It 'flags only the drivers registered before more than one blue screen' {
+
+        $driver = { param($name) [pscustomobject] @{ Name = $name; ImagePath = "C:\$name.sys"; When = (Get-Date) } }
+
+        $crashes = @(
+            [pscustomobject] @{ Code = 0xF7;  Drivers = @((& $driver 'RTCore64'), (& $driver 'cpuz160'), (& $driver 'travis')) }
+            [pscustomobject] @{ Code = 0x1AA; Drivers = @((& $driver 'RTCore64'), (& $driver 'RTCore64'), (& $driver 'cpuz160')) }
+            [pscustomobject] @{ Code = 0;     Drivers = @((& $driver 'travis')) }
+        )
+
+        $recurring = @(Get-TkRecurringCrashDriver -Crash $crashes)
+
+        @($recurring | ForEach-Object { $_.Name }) | Should -Be @('cpuz160', 'RTCore64')
+
+        # Registered twice before one crash still counts as one crash.
+        ($recurring | Where-Object { $_.Name -eq 'RTCore64' }).Crashes | Should -Be 2
+    }
+
+    It 'finds nothing recurring with a single blue screen' {
+
+        $crashes = @([pscustomobject] @{ Code = 0xF7; Drivers = @([pscustomobject] @{ Name = 'RTCore64'; ImagePath = ''; When = (Get-Date) }) })
+
+        @(Get-TkRecurringCrashDriver -Crash $crashes).Count | Should -Be 0
+    }
+}
+
+Describe 'Device problems' {
+
+    It 'explains every code Device Manager reports, from 1 to 54' {
+
+        foreach ($code in 1..54) {
+
+            $info = Get-TkDeviceProblemInfo -Code $code
+
+            $info.Name     | Should -Match '^CM_PROB_' -Because $code
+            $info.Severity | Should -BeIn @('Fail', 'Warning', 'Info') -Because $code
+            $info.Action   | Should -Not -BeNullOrEmpty -Because $code
+        }
+    }
+
+    It 'treats a device disabled on purpose as information, not a fault' {
+        (Get-TkDeviceProblemInfo -Code 22).Severity | Should -Be 'Info'
+    }
+
+    It 'points a USB device that never identified itself at the connection' {
+
+        # The device on the machine this was written on.
+        $info = Get-TkDeviceProblemInfo -Code 43 -HardwareId 'USB\VID_0000&PID_0002\8&23E2028E&0&2'
+
+        $info.Severity | Should -Be 'Fail'
+        $info.Hint     | Should -Match 'never identified itself'
+    }
+
+    It 'gives no hint to a device that identified itself' {
+        (Get-TkDeviceProblemInfo -Code 43 -HardwareId 'USB\VID_046D&PID_0A87\1').Hint | Should -BeNullOrEmpty
+    }
+
+    It 'keeps a code missing from the catalog visible' {
+
+        $info = Get-TkDeviceProblemInfo -Code 99
+
+        $info.Severity | Should -Be 'Warning'
+        $info.Meaning  | Should -Match '99'
+    }
+
+    It 'opens Device Manager through the allow list, and nothing appended to it' {
+
+        (Get-TkRemediationTable)['open-device-manager'].Kind | Should -Be 'Open'
+
+        Test-TkRemediationTarget -Target 'devmgmt.msc'        | Should -BeTrue
+        Test-TkRemediationTarget -Target 'devmgmt.msc & calc' | Should -BeFalse
+    }
+}
+
+Describe 'Diagnostic reports' {
+
+    BeforeAll {
+        $script:Markup = Get-TkMainWindowXaml
+    }
+
+    It 'runs a report for every entry of the list, in the same order' {
+
+        # The list used to be wired by position, so inserting an entry sent
+        # every entry below it to the wrong report.
+        $start  = $script:Markup.IndexOf('x:Name="DiagnosticChoices"')
+        $end    = $script:Markup.IndexOf('</ListBox>', $start)
+        $slice  = $script:Markup.Substring($start, $end - $start)
+        $titles = @([regex]::Matches($slice, 'Text="(?<title>[^"]+)" Style="\{StaticResource ChoiceTitle\}"') |
+                    ForEach-Object { $_.Groups['title'].Value })
+
+        ($titles -join ',') | Should -Be ((@(Get-TkDiagnosticReport) | ForEach-Object { $_.Title }) -join ',')
+    }
+
+    It 'names functions that exist' {
+
+        foreach ($report in (Get-TkDiagnosticReport)) {
+            Get-Command -Name $report.Show -ErrorAction SilentlyContinue |
+                Should -Not -BeNullOrEmpty -Because $report.Title
+        }
+    }
+}
+
 Describe 'Test tone' {
 
     It 'writes a valid RIFF WAVE header' {
@@ -2900,6 +3062,15 @@ Describe 'Dashboard and pages' {
                     [pscustomobject] @{ Name = 'NVMe 1TB'; Severity = 'Pass'; Notes = '' }
                 )
                 Battery    = @()
+                Devices    = @(
+                    [pscustomobject] @{ Name = 'Unknown USB device'; Severity = 'Fail'; Code = 43 }
+                    [pscustomobject] @{ Name = 'Serial port';        Severity = 'Info'; Code = 22 }
+                )
+                Crashes    = @(
+                    [pscustomobject] @{ When = [datetime] '2026-09-01 08:00'; Code = 0;   Info = $null }
+                    [pscustomobject] @{ When = [datetime] '2026-09-13 11:47'; Code = 247
+                                        Info = [pscustomobject] @{ CodeHex = '0x000000F7'; Name = 'DRIVER_OVERRAN_STACK_BUFFER' } }
+                )
             }
 
             $script:Tiles = @(ConvertTo-TkDashboardHealth -Snapshot $script:Snapshot `
@@ -2908,7 +3079,37 @@ Describe 'Dashboard and pages' {
 
         It 'draws one tile per question' {
 
-            $script:Tiles.Count | Should -Be 5
+            $script:Tiles.Count | Should -Be 7
+        }
+
+        It 'counts the devices with a problem, not the ones disabled on purpose' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -eq 'Devices' }
+
+            $tile.Severity | Should -Be 'Fail'
+            $tile.Value    | Should -Be '1 failing'
+            $tile.Detail   | Should -Not -Match 'Serial port'
+            $tile.Choice   | Should -Be 'Devices'
+        }
+
+        It 'counts blue screens and names the last one, leaving hard resets out' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -eq 'Blue screens' }
+
+            $tile.Severity | Should -Be 'Fail'
+            $tile.Value    | Should -Be '1 in 30 days'
+            $tile.Detail   | Should -Match 'DRIVER_OVERRAN_STACK_BUFFER'
+            $tile.Choice   | Should -Be 'Crashes'
+        }
+
+        It 'says unknown rather than healthy when devices and crashes were not read' {
+
+            $old = [pscustomobject] @{ Reboot = $null; LastHotFix = $null; Volumes = @(); Disks = @(); Battery = @() }
+
+            foreach ($title in @('Devices', 'Blue screens')) {
+                (@(ConvertTo-TkDashboardHealth -Snapshot $old) | Where-Object { $_.Title -eq $title }).Severity |
+                    Should -Be 'NotAssessed' -Because $title
+            }
         }
 
         It 'flags a pending restart and says why' {

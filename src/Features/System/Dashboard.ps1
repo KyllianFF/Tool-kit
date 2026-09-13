@@ -75,6 +75,8 @@ function Get-TkDashboardHealthData {
         Volumes    = @(Read-TkDashboardPart -Part 'Volumes' -Reader { Get-TkVolumeUsage })
         Disks      = $disks
         Battery    = @(Read-TkDashboardPart -Part 'Battery' -Reader { Get-TkBatteryState })
+        Devices    = @(Read-TkDashboardPart -Part 'Devices' -Reader { Get-TkDeviceProblem })
+        Crashes    = @(Read-TkDashboardPart -Part 'Crash history' -Reader { Get-TkCrashHistory -Days 30 })
     }
 }
 
@@ -109,6 +111,8 @@ function Get-TkDashboardSnapshot {
         Volumes    = $health.Volumes
         Disks      = $health.Disks
         Battery    = $health.Battery
+        Devices    = $health.Devices
+        Crashes    = $health.Crashes
     }
 }
 
@@ -360,6 +364,54 @@ function ConvertTo-TkDashboardHealth {
         else {
             $tiles += New-TkHealthTileData @disksOpen -Title 'Disks' -Value 'All healthy' -Severity 'Pass' `
                                            -Detail ('{0} physical disk(s)' -f $disks.Count)
+        }
+    }
+
+    # --- Devices ----------------------------------------------------------
+    # A device disabled on purpose is information, not a problem to count.
+    $devicesOpen = @{ Page = 'Diagnostics'; TabControl = 'DiagnosticsTabs'; Tab = 'Reports'; List = 'DiagnosticChoices'; Choice = 'Devices' }
+
+    if ($null -eq $Snapshot.PSObject.Properties['Devices']) {
+        $tiles += New-TkHealthTileData @devicesOpen -Title 'Devices' -Value 'Unknown' -Severity 'NotAssessed' `
+                                       -Detail 'The devices were not read.'
+    }
+    else {
+        $problems = @($Snapshot.Devices | Where-Object { $null -ne $_ -and $_.Severity -ne 'Info' })
+        $failing  = @($problems | Where-Object { $_.Severity -eq 'Fail' })
+
+        if ($problems.Count -eq 0) {
+            $tiles += New-TkHealthTileData @devicesOpen -Title 'Devices' -Value 'No problem' -Severity 'Pass' `
+                                           -Detail 'No device flagged in Device Manager.'
+        }
+        else {
+            $tiles += New-TkHealthTileData @devicesOpen -Title 'Devices' `
+                                           -Value $(if ($failing.Count -gt 0) { '{0} failing' -f $failing.Count } else { '{0} worth a look' -f $problems.Count }) `
+                                           -Severity $(if ($failing.Count -gt 0) { 'Fail' } else { 'Warning' }) `
+                                           -Detail ((@($problems | ForEach-Object { 'Code {0}: {1}' -f $_.Code, $_.Name })) -join '; ')
+        }
+    }
+
+    # --- Blue screens -----------------------------------------------------
+    $crashesOpen = @{ Page = 'Diagnostics'; TabControl = 'DiagnosticsTabs'; Tab = 'Reports'; List = 'DiagnosticChoices'; Choice = 'Crashes' }
+
+    if ($null -eq $Snapshot.PSObject.Properties['Crashes']) {
+        $tiles += New-TkHealthTileData @crashesOpen -Title 'Blue screens' -Value 'Unknown' -Severity 'NotAssessed' `
+                                       -Detail 'The crash history was not read.'
+    }
+    else {
+        $blue = @($Snapshot.Crashes | Where-Object { $null -ne $_ -and $_.Code -ne 0 } |
+                  Sort-Object -Property When -Descending)
+
+        if ($blue.Count -eq 0) {
+            $tiles += New-TkHealthTileData @crashesOpen -Title 'Blue screens' -Value 'None in 30 days' -Severity 'Pass' `
+                                           -Detail 'No stop code recorded.'
+        }
+        else {
+            $last = $blue[0]
+
+            $tiles += New-TkHealthTileData @crashesOpen -Title 'Blue screens' -Value ('{0} in 30 days' -f $blue.Count) `
+                                           -Severity 'Fail' `
+                                           -Detail ('Last: {0} {1}, {2}' -f $last.Info.CodeHex, $last.Info.Name, ([datetime] $last.When).ToString('yyyy-MM-dd'))
         }
     }
 
