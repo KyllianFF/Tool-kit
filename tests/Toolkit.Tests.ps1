@@ -2032,6 +2032,88 @@ Describe 'Sign-in and management' {
     }
 }
 
+Describe 'Search' {
+
+    BeforeAll {
+        $script:Index = @(Get-TkSearchIndex -Markup (Get-TkMainWindowXaml) -Force)
+    }
+
+    It 'indexes every page, under the label of its navigation button' {
+
+        $pages = @($script:Index | Where-Object { $_.Kind -eq 'Page' })
+
+        @($pages | ForEach-Object { $_.Page }) | Should -Be @(Get-TkPageName)
+        ($pages | Where-Object { $_.Page -eq 'Security' }).Title | Should -Be 'Audit'
+    }
+
+    It 'indexes tabs with the tab control that holds them' {
+
+        $tab = $script:Index | Where-Object { $_.Kind -eq 'Tab' -and $_.Title -eq 'Hardware tests' }
+
+        $tab.Page       | Should -Be 'Diagnostics'
+        $tab.TabControl | Should -Be 'DiagnosticsTabs'
+    }
+
+    It 'indexes report entries with the tab and list they are in' {
+
+        $report = $script:Index | Where-Object { $_.Kind -eq 'Report' -and $_.Title -eq 'Sign-in and management' }
+
+        $report.Tab    | Should -Be 'Reports'
+        $report.List   | Should -Be 'DiagnosticChoices'
+        $report.Choice | Should -Be 'Sign-in and management'
+    }
+
+    It 'indexes every catalog it promises' {
+
+        foreach ($kind in @('Fix', 'Tweak', 'Application', 'Topic', 'Command', 'Hardware test', 'Investigation', 'Action')) {
+            @($script:Index | Where-Object { $_.Kind -eq $kind }).Count | Should -BeGreaterThan 0 -Because $kind
+        }
+
+        @($script:Index | Where-Object { $_.Kind -eq 'Command' }).Count | Should -Be 272
+    }
+
+    It 'points every search box and list it names at a control in the markup' {
+
+        $markup = Get-TkMainWindowXaml
+
+        foreach ($name in @($script:Index | ForEach-Object { $_.SearchBox; $_.List; $_.TabControl } | Where-Object { $_ } | Sort-Object -Unique)) {
+            $markup | Should -Match ('x:Name="{0}"' -f [regex]::Escape($name)) -Because $name
+        }
+    }
+
+    It 'puts the page before the long lists when the words match both' {
+
+        $hits = @(Find-TkSearchEntry -Index $script:Index -Query 'network')
+
+        $hits[0].Kind  | Should -Be 'Page'
+        $hits[0].Title | Should -Be 'Network'
+    }
+
+    It 'requires every word, in any order' {
+
+        $hits = @(Find-TkSearchEntry -Index $script:Index -Query 'spooler print')
+
+        $hits.Count | Should -BeGreaterThan 0
+        foreach ($hit in $hits) {
+            ('{0} {1} {2}' -f $hit.Title, $hit.Kind, $hit.Detail) | Should -Match 'spooler'
+        }
+    }
+
+    It 'finds a vendor command and fills the vendor search box with it' {
+
+        $hit = @(Find-TkSearchEntry -Index $script:Index -Query 'show vlan brief') | Where-Object { $_.Kind -eq 'Command' } | Select-Object -First 1
+
+        $hit.Page      | Should -Be 'VendorCommands'
+        $hit.SearchBox | Should -Be 'VendorSearch'
+    }
+
+    It 'returns nothing for an empty query, and caps the results' {
+
+        @(Find-TkSearchEntry -Index $script:Index -Query '   ').Count | Should -Be 0
+        @(Find-TkSearchEntry -Index $script:Index -Query 'e' -Limit 5).Count | Should -Be 5
+    }
+}
+
 Describe 'Diagnostic reports' {
 
     BeforeAll {

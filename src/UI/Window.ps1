@@ -1391,6 +1391,7 @@ function Initialize-TkShell {
 
     Initialize-TkThemeSelector
     Update-TkElevationBadge
+    Initialize-TkSearch
 
     # --- Navigation -------------------------------------------------------
     foreach ($page in @(Get-TkPageName)) {

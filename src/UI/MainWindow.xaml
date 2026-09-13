@@ -1098,6 +1098,8 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnSearch" Content="Search    Ctrl+K" Style="{StaticResource GlyphButton}" Tag="&#xE721;"
+                            Margin="0,0,18,0" ToolTip="Find a page, a report, a fix, a tweak, an application, a topic or a vendor command." />
                     <TextBlock Text="Theme" Style="{StaticResource Muted}"
                                VerticalAlignment="Center" Margin="0,0,8,0" />
                     <ComboBox x:Name="ThemeSelect" Width="110" Margin="0,0,14,0" />
@@ -3002,5 +3004,26 @@
                              Background="{DynamicResource SurfaceRaised}" Foreground="{DynamicResource Accent}" />
             </Grid>
         </Border>
+
+        <!-- ========================== Search palette ========================== -->
+        <!--
+            Over the whole window, opened with Ctrl+K or the header button. The
+            backdrop is a translucent black rather than a palette colour on
+            purpose: it dims whatever theme is under it by the same amount, and
+            clicking it closes the palette.
+        -->
+        <Grid Grid.Row="0" Grid.RowSpan="4" x:Name="SearchOverlay" Visibility="Collapsed">
+            <Border x:Name="SearchBackdrop" Background="#99000000" />
+            <Border Style="{StaticResource Card}" Width="680" Margin="0,64,0,0" Padding="12"
+                    HorizontalAlignment="Center" VerticalAlignment="Top">
+                <StackPanel>
+                    <TextBox x:Name="SearchInput" FontSize="15"
+                             Tag="Search pages, reports, fixes, tweaks, applications, topics and commands" />
+                    <TextBlock x:Name="SearchHint" Style="{StaticResource Muted}" Margin="4,8,4,6" />
+                    <ListBox x:Name="SearchResults" MaxHeight="440" Background="Transparent" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>
