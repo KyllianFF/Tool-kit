@@ -1780,13 +1780,39 @@ Describe 'Security audit engine' {
             }
         }
 
-        It 'backs every remediation with a function that exists' {
+        It 'backs every correction with what it needs: a function to fix, a vetted page to open' {
 
             $table = Get-TkRemediationTable
 
             foreach ($id in $table.Keys) {
-                Get-Command -Name $table[$id].Action -ErrorAction SilentlyContinue |
-                    Should -Not -BeNullOrEmpty -Because ('{0} names {1}' -f $id, $table[$id].Action)
+
+                $entry = $table[$id]
+
+                $entry.Kind | Should -BeIn @('Fix', 'Open') -Because $id
+
+                if ($entry.Kind -eq 'Fix') {
+                    Get-Command -Name $entry.Action -ErrorAction SilentlyContinue |
+                        Should -Not -BeNullOrEmpty -Because ('{0} names {1}' -f $id, $entry.Action)
+                }
+                else {
+                    Test-TkRemediationTarget -Target $entry.Target | Should -BeTrue -Because $id
+
+                    if ($entry.ContainsKey('Fallback')) {
+                        Test-TkRemediationTarget -Target $entry.Fallback | Should -BeTrue -Because $id
+                    }
+                }
+            }
+        }
+
+        It 'gives every control an action for its warnings and failures' {
+
+            # No warning is left without a way forward: a correction where one
+            # safe step exists, the page where the setting lives otherwise.
+            $table = Get-TkRemediationTable
+
+            foreach ($control in (Get-TkAuditControl)) {
+                $control.Action | Should -Not -BeNullOrEmpty -Because $control.Function
+                $table.Keys     | Should -Contain $control.Action
             }
         }
     }
@@ -1937,6 +1963,261 @@ The command completed successfully.
 
             $policy.MinimumPasswordLength | Should -BeNullOrEmpty
             $policy.LockoutThreshold      | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Actions' {
+
+        BeforeAll {
+            $script:ExampleControl = [pscustomobject] @{
+                Function = 'Test-Example'; Weight = 6; Level = 'Essential'; Action = 'open-windows-update'
+            }
+        }
+
+        It 'gives a warning the action of its control when the check chose none' {
+
+            $finding = New-TkAuditFinding -Id 'X-001' -Name 'Example' -Category 'Endpoint' -Status 'Warning' -Detail 'x'
+
+            (Set-TkFindingControlDefault -Finding $finding -Control $script:ExampleControl).RemediationId |
+                Should -Be 'open-windows-update'
+        }
+
+        It 'keeps the action a check chose for itself' {
+
+            $finding = New-TkAuditFinding -Id 'X-001' -Name 'Example' -Category 'Endpoint' -Status 'Fail' `
+                                          -Detail 'x' -RemediationId 'enable-rdp-nla'
+
+            (Set-TkFindingControlDefault -Finding $finding -Control $script:ExampleControl).RemediationId |
+                Should -Be 'enable-rdp-nla'
+        }
+
+        It 'puts no button on a pass, an informational result, or what could not be read' {
+
+            foreach ($status in @('Pass', 'Info', 'NotAssessed')) {
+
+                $finding = New-TkAuditFinding -Id 'X-001' -Name 'Example' -Category 'Endpoint' -Status $status -Detail 'x'
+
+                (Set-TkFindingControlDefault -Finding $finding -Control $script:ExampleControl).RemediationId |
+                    Should -BeNullOrEmpty -Because $status
+            }
+        }
+
+        It 'takes the weight and the level from the table' {
+
+            $finding = New-TkAuditFinding -Id 'X-001' -Name 'Example' -Category 'Endpoint' -Status 'Pass' `
+                                          -Detail 'x' -Weight 1 -Level 'Full'
+
+            $stamped = Set-TkFindingControlDefault -Finding $finding -Control $script:ExampleControl
+
+            $stamped.Weight | Should -Be 6
+            $stamped.Level  | Should -Be 'Essential'
+        }
+
+        It 'opens the pages it is meant to open' {
+
+            foreach ($target in @(
+                'ms-settings:windowsupdate'
+                'windowsdefender://threat'
+                'lusrmgr.msc'
+                'control.exe /name Microsoft.BitLockerDriveEncryption'
+                'https://learn.microsoft.com/windows-server/identity/laps/laps-overview'
+            )) {
+                Test-TkRemediationTarget -Target $target | Should -BeTrue -Because $target
+            }
+        }
+
+        It 'refuses to open anything else' {
+
+            foreach ($target in @(
+                ''
+                'cmd.exe'
+                'powershell.exe -c calc'
+                'ms-settings:windowsupdate & calc'
+                'windowsdefender://threat;calc'
+                'file:///C:/Windows/System32/calc.exe'
+                'http://learn.microsoft.com/x'
+                'https://learn.microsoft.com.evil.example/x'
+                'LUSRMGR.MSC'
+                'lusrmgr.msc /s'
+                'control.exe /name Microsoft.Something'
+            )) {
+                Test-TkRemediationTarget -Target $target | Should -BeFalse -Because $target
+            }
+        }
+
+        It 'refuses to run an entry that only opens a page' {
+
+            Invoke-TkRemediation -Id 'open-windows-update' -Confirm:$false | Should -BeFalse
+        }
+
+        It 'offers Credential Guard only where the edition can run it' {
+
+            foreach ($edition in @('Enterprise', 'EnterpriseS', 'Education', 'IoTEnterprise', 'ServerStandard')) {
+                Test-TkCredentialGuardEdition -EditionId $edition | Should -BeTrue -Because $edition
+            }
+
+            foreach ($edition in @('Professional', 'ProfessionalEducation', 'Core', 'Unknown')) {
+                Test-TkCredentialGuardEdition -EditionId $edition | Should -BeFalse -Because $edition
+            }
+        }
+    }
+
+    Context 'Drive encryption' {
+
+        BeforeAll {
+            # A volume shaped like Get-BitLockerVolume output. Enum values are
+            # compared as strings by the control, so strings stand in for them.
+            $script:NewVolume = {
+                param(
+                    [string]   $Mount,
+                    [string]   $Type       = 'Data',
+                    [string]   $Status     = 'FullyEncrypted',
+                    [string]   $Protection = 'On',
+                    [string]   $Method     = 'XtsAes128',
+                    [string[]] $Protectors = @('Tpm', 'RecoveryPassword'),
+                    [bool]     $AutoUnlock = $false
+                )
+
+                [pscustomobject] @{
+                    MountPoint           = $Mount
+                    VolumeType           = $Type
+                    VolumeStatus         = $Status
+                    ProtectionStatus     = $Protection
+                    EncryptionMethod     = $Method
+                    EncryptionPercentage = 100
+                    AutoUnlockEnabled    = $AutoUnlock
+                    KeyProtector         = @($Protectors | ForEach-Object {
+                        [pscustomobject] @{
+                            KeyProtectorType    = $_
+                            AutoUnlockProtector = ($AutoUnlock -and $_ -eq 'ExternalKey')
+                        }
+                    })
+                }
+            }
+        }
+
+        It 'passes when every fixed drive is protected and recoverable' {
+
+            $finding = ConvertTo-TkBitLockerFinding -Volume @(
+                (& $script:NewVolume -Mount 'C:' -Type 'OperatingSystem' -Protectors @('TpmPin', 'RecoveryPassword'))
+                (& $script:NewVolume -Mount 'D:' -Protectors @('ExternalKey', 'RecoveryPassword') -AutoUnlock $true)
+            )
+
+            $finding.Status   | Should -Be 'Pass'
+            $finding.Measured | Should -Be '2 of 2 fixed drive(s) protected'
+        }
+
+        It 'fails on an unencrypted data drive even when the system drive is protected' {
+
+            # The case the old control could not see: it only ever asked about C:.
+            $finding = ConvertTo-TkBitLockerFinding -Volume @(
+                (& $script:NewVolume -Mount 'C:' -Type 'OperatingSystem')
+                (& $script:NewVolume -Mount 'D:' -Status 'FullyDecrypted' -Protection 'Off' -Method 'None' -Protectors @())
+            )
+
+            $finding.Status         | Should -Be 'Fail'
+            $finding.Detail         | Should -Match 'D: \(data\): not encrypted'
+            $finding.Recommendation | Should -Match 'D:'
+        }
+
+        It 'fails a system drive with no recovery password' {
+
+            $finding = ConvertTo-TkBitLockerFinding -Volume @(
+                (& $script:NewVolume -Mount 'C:' -Type 'OperatingSystem' -Protectors @('Tpm'))
+            )
+
+            $finding.Status | Should -Be 'Fail'
+        }
+
+        It 'warns when protection is suspended, and offers to resume it' {
+
+            $finding = ConvertTo-TkBitLockerFinding -Volume @(
+                (& $script:NewVolume -Mount 'C:' -Type 'OperatingSystem' -Protection 'Off')
+            )
+
+            $finding.Status        | Should -Be 'Warning'
+            $finding.RemediationId | Should -Be 'resume-bitlocker'
+        }
+
+        It 'says how each drive unlocks' {
+
+            $finding = ConvertTo-TkBitLockerFinding -Volume @(
+                (& $script:NewVolume -Mount 'C:' -Type 'OperatingSystem' -Protectors @('TpmPin', 'RecoveryPassword'))
+                (& $script:NewVolume -Mount 'D:' -Protectors @('ExternalKey', 'RecoveryPassword') -AutoUnlock $true)
+            )
+
+            $finding.Detail | Should -Match 'C: \(system\): protected, XTS-AES 128, TPM \+ PIN, recovery password present'
+            $finding.Detail | Should -Match 'D: \(data\): protected, XTS-AES 128, automatic unlock, recovery password present'
+        }
+
+        It 'notes TPM alone on the system drive without marking it down' {
+
+            $finding = ConvertTo-TkBitLockerFinding -Volume @(
+                (& $script:NewVolume -Mount 'C:' -Type 'OperatingSystem' -Protectors @('Tpm', 'RecoveryPassword'))
+            )
+
+            $finding.Status | Should -Be 'Pass'
+            $finding.Detail | Should -Match 'TPM and PIN'
+        }
+
+        It 'warns about the legacy AES-CBC ciphers' {
+
+            $finding = ConvertTo-TkBitLockerFinding -Volume @(
+                (& $script:NewVolume -Mount 'C:' -Type 'OperatingSystem' -Method 'Aes128')
+            )
+
+            $finding.Status | Should -Be 'Warning'
+            $finding.Detail | Should -Match 'AES-CBC 128'
+        }
+
+        It 'skips volumes without a letter and never fails a removable drive' {
+
+            $finding = ConvertTo-TkBitLockerFinding -RemovableMountPoint @('E:') -Volume @(
+                (& $script:NewVolume -Mount 'C:' -Type 'OperatingSystem')
+                (& $script:NewVolume -Mount '\\?\Volume{0a1b2c3d-0000-0000-0000-000000000000}\' -Status 'FullyDecrypted' -Protection 'Off' -Protectors @())
+                (& $script:NewVolume -Mount 'E:' -Status 'FullyDecrypted' -Protection 'Off' -Protectors @())
+            )
+
+            $finding.Status | Should -Be 'Pass'
+            $finding.Detail | Should -Match 'E: \(removable\): not encrypted'
+            $finding.Detail | Should -Not -Match 'Volume\{'
+        }
+    }
+
+    Context 'Audit policy' {
+
+        It 'lists eight baseline subcategories, each by GUID' {
+
+            $baseline = @(Get-TkAuditPolicyBaseline)
+
+            $baseline.Count | Should -Be 8
+
+            foreach ($item in $baseline) {
+                $item.Guid | Should -Match '^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$'
+            }
+        }
+
+        It 'reads each setting by GUID, whatever language the names are in' {
+
+            $text = @'
+Machine Name,Policy Target,Subcategory,Subcategory GUID,Inclusion Setting,Exclusion Setting,Setting Value
+PC,System,Ouvrir la session,{0CCE9215-69AE-11D9-BED3-505054503030},Succes et echec,,3
+PC,System,Creation du processus,{0CCE922B-69AE-11D9-BED3-505054503030},Aucun audit,,0
+PC,System,Verrouillage du compte,{0cce9217-69ae-11d9-bed3-505054503030},Succes,,1
+,,Option:CrashOnAuditFail,,Disabled,,0
+'@
+
+            $settings = ConvertFrom-TkAuditPolicyBackup -Text $text
+
+            $settings.Count | Should -Be 3
+            $settings['{0CCE9215-69AE-11D9-BED3-505054503030}'] | Should -Be 3
+            $settings['{0CCE922B-69AE-11D9-BED3-505054503030}'] | Should -Be 0
+            $settings['{0CCE9217-69AE-11D9-BED3-505054503030}'] | Should -Be 1
+        }
+
+        It 'returns nothing from something that is not a backup' {
+
+            (ConvertFrom-TkAuditPolicyBackup -Text 'not a backup').Count | Should -Be 0
         }
     }
 

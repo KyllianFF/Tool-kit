@@ -33,6 +33,47 @@
 
 <#
 .SYNOPSIS
+    Returns the Windows edition identifier, such as Professional or Enterprise.
+#>
+function Get-TkWindowsEditionId {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $value = Get-TkRegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name 'EditionID'
+
+    if ($value) {
+        return [string] $value
+    }
+
+    return 'Unknown'
+}
+
+<#
+.SYNOPSIS
+    Says whether this edition of Windows can run Credential Guard.
+
+.DESCRIPTION
+    Enterprise, Education, IoT Enterprise and Server, with their N and LTSC
+    variants. Pro cannot run it whatever is configured, and neither can Pro
+    Education, whose identifier ends in Education but starts with Professional.
+
+.PARAMETER EditionId
+    Defaults to the edition of this machine.
+#>
+function Test-TkCredentialGuardEdition {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter()]
+        [string] $EditionId = (Get-TkWindowsEditionId)
+    )
+
+    return ($EditionId -match '^(Enterprise|Education|IoTEnterprise|Server)')
+}
+
+<#
+.SYNOPSIS
     Checks whether Credential Guard is running.
 #>
 function Test-TkCredentialGuard {
@@ -55,6 +96,15 @@ function Test-TkCredentialGuard {
     }
     catch {
         $null = $_
+    }
+
+    # On an edition without Credential Guard a warning would ask for something
+    # this machine cannot do. It is reported, not marked down.
+    if (-not $running -and -not (Test-TkCredentialGuardEdition)) {
+
+        return New-TkAuditFinding -Id 'CRED-001' -Name 'Credential Guard' -Category 'Credentials' `
+            -Status 'Info' -Measured ('Not available on {0}' -f (Get-TkWindowsEditionId)) `
+            -Detail 'Credential Guard requires Windows Enterprise or Education. On this edition, LSA protection (CRED-002) closes the most direct route to the same credentials.'
     }
 
     return New-TkAuditFinding -Id 'CRED-001' -Name 'Credential Guard' -Category 'Credentials' `
@@ -117,6 +167,15 @@ function Test-TkAsrRules {
     [CmdletBinding()]
     param()
 
+    $defender = Get-TkDefenderActiveState
+
+    if (-not $defender.Active) {
+
+        return New-TkAuditFinding -Id 'EDR-001' -Name 'Attack Surface Reduction rules' -Category 'Endpoint' `
+            -Status 'Info' -Measured ('Defender: {0}' -f $defender.Mode) `
+            -Detail 'ASR rules only apply while Microsoft Defender is the active antivirus. Another product owns protection here, and the equivalent behaviour rules belong to it.'
+    }
+
     try {
         $preference = Get-MpPreference -ErrorAction Stop
 
@@ -154,6 +213,15 @@ function Test-TkAsrRules {
 function Test-TkTamperProtection {
     [CmdletBinding()]
     param()
+
+    $defender = Get-TkDefenderActiveState
+
+    if (-not $defender.Active) {
+
+        return New-TkAuditFinding -Id 'EDR-002' -Name 'Tamper protection' -Category 'Endpoint' `
+            -Status 'Info' -Measured ('Defender: {0}' -f $defender.Mode) `
+            -Detail 'Tamper protection guards the settings of Defender, which is not the active antivirus here. The product that owns protection has its own self protection setting.'
+    }
 
     try {
         $status = Get-TkDefenderStatus
@@ -205,6 +273,90 @@ function Test-TkPowerShellLogging {
 
 <#
 .SYNOPSIS
+    Returns the audit subcategories every workstation should record.
+
+.DESCRIPTION
+    Identified by GUID because auditpol prints and accepts names only in the
+    language of the machine. Each GUID was checked against
+    "auditpol /list /subcategory:* /r" on a French Windows.
+
+.OUTPUTS
+    PSCustomObject[] with Guid and Name.
+#>
+function Get-TkAuditPolicyBaseline {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    return @(
+        [pscustomobject] @{ Guid = '{0CCE9215-69AE-11D9-BED3-505054503030}'; Name = 'logon' }
+        [pscustomobject] @{ Guid = '{0CCE921B-69AE-11D9-BED3-505054503030}'; Name = 'special logon' }
+        [pscustomobject] @{ Guid = '{0CCE923F-69AE-11D9-BED3-505054503030}'; Name = 'credential validation' }
+        [pscustomobject] @{ Guid = '{0CCE9217-69AE-11D9-BED3-505054503030}'; Name = 'account lockout' }
+        [pscustomobject] @{ Guid = '{0CCE9235-69AE-11D9-BED3-505054503030}'; Name = 'user account management' }
+        [pscustomobject] @{ Guid = '{0CCE9237-69AE-11D9-BED3-505054503030}'; Name = 'security group management' }
+        [pscustomobject] @{ Guid = '{0CCE922F-69AE-11D9-BED3-505054503030}'; Name = 'audit policy change' }
+        [pscustomobject] @{ Guid = '{0CCE922B-69AE-11D9-BED3-505054503030}'; Name = 'process creation' }
+    )
+}
+
+<#
+.SYNOPSIS
+    Reads the setting of each audit subcategory out of an auditpol backup.
+
+.DESCRIPTION
+    The backup is read rather than "auditpol /get", because /get words its
+    settings in the language of the machine ("Succes et echec" on a French
+    Windows). A backup row carries the subcategory GUID and ends in a number:
+    1 records successes, 2 failures, 3 both, 0 nothing.
+
+    A row without a GUID, such as an option, is skipped. Where a GUID appears
+    more than once the highest setting is kept.
+
+.PARAMETER Text
+    The content of the file written by "auditpol /backup".
+
+.OUTPUTS
+    Hashtable of upper case GUID in braces to setting.
+#>
+function ConvertFrom-TkAuditPolicyBackup {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Text
+    )
+
+    $settings = @{}
+
+    foreach ($row in ($Text -split "`r?`n")) {
+
+        $guid = [regex]::Match($row, '\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}')
+
+        if (-not $guid.Success) {
+            continue
+        }
+
+        $last = ($row.TrimEnd() -split ',')[-1].Trim()
+
+        if ($last -notmatch '^[0-3]$') {
+            continue
+        }
+
+        $key   = $guid.Value.ToUpperInvariant()
+        $value = [int] $last
+
+        if (-not $settings.ContainsKey($key) -or $settings[$key] -lt $value) {
+            $settings[$key] = $value
+        }
+    }
+
+    return $settings
+}
+
+<#
+.SYNOPSIS
     Checks whether the audit policy records what an investigation needs.
 #>
 function Test-TkAuditPolicy {
@@ -218,26 +370,50 @@ function Test-TkAuditPolicy {
             -Detail 'The effective audit policy is only readable as an administrator.'
     }
 
-    $result = Invoke-TkProcess -FilePath 'auditpol' -ArgumentList @('/get', '/category:*') -TimeoutSeconds 30
+    # Under the Windows temporary folder, whose path has no space in it to
+    # quote, and which only an administrator can write to.
+    $file = Join-Path (Join-Path $env:SystemRoot 'Temp') ('tk-auditpol-{0}.csv' -f [guid]::NewGuid())
+    $text = ''
 
-    if ($result.ExitCode -ne 0) {
+    try {
+        $result = Invoke-TkProcess -FilePath 'auditpol.exe' -ArgumentList @('/backup', ('/file:{0}' -f $file)) -TimeoutSeconds 30
 
-        return New-TkAuditFinding -Id 'LOG-002' -Name 'Audit policy' -Category 'Logging' `
-            -Status 'NotAssessed' -Measured 'Not readable' -Detail 'auditpol did not answer.'
+        if ($result.ExitCode -eq 0 -and (Test-Path -LiteralPath $file)) {
+            $text = [string] (Get-Content -LiteralPath $file -Raw)
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
     }
 
-    # Counting subcategories that record something at all is a crude measure,
-    # but it separates a default installation from a configured one, which is
-    # the distinction that matters.
-    $lines     = $result.StandardOutput -split "`r?`n"
-    $auditing  = @($lines | Where-Object { $_ -match '\s(Success|Failure|Succ.s|.chec)' }).Count
+    $settings = ConvertFrom-TkAuditPolicyBackup -Text $text
 
-    $severity = if ($auditing -ge 20) { 'Pass' } elseif ($auditing -ge 8) { 'Warning' } else { 'Fail' }
+    if ($settings.Count -eq 0) {
+
+        return New-TkAuditFinding -Id 'LOG-002' -Name 'Audit policy' -Category 'Logging' `
+            -Status 'NotAssessed' -Measured 'Not readable' -Detail 'auditpol did not return a policy that could be read.'
+    }
+
+    $baseline = @(Get-TkAuditPolicyBaseline)
+
+    $missing = @($baseline | Where-Object {
+        -not ($settings.ContainsKey($_.Guid) -and ($settings[$_.Guid] -band 1))
+    })
+
+    $recorded = $baseline.Count - $missing.Count
+
+    $status = if ($missing.Count -eq 0) { 'Pass' } elseif ($recorded -gt 0) { 'Warning' } else { 'Fail' }
+
+    $detail = 'A default Windows installation audits very little, and none of these events can be recovered after the fact.'
+
+    if ($missing.Count -gt 0) {
+        $detail += ' Not recording successes: {0}.' -f ((@($missing | ForEach-Object { $_.Name })) -join ', ')
+    }
 
     return New-TkAuditFinding -Id 'LOG-002' -Name 'Audit policy' -Category 'Logging' `
-        -Status $severity -Measured ('{0} subcategories recording' -f $auditing) `
-        -Detail 'A default Windows installation audits very little. Logon events, process creation and object access have to be turned on deliberately, and none of them can be recovered after the fact.' `
-        -Recommendation $(if ($severity -eq 'Pass') { '' } else { 'Apply an audit policy baseline. At minimum: logon and logoff, account logon, process creation, and account management, success and failure.' })
+        -Status $status -Measured ('{0} of {1} baseline events recorded' -f $recorded, $baseline.Count) `
+        -Detail $detail `
+        -Recommendation $(if ($status -eq 'Pass') { '' } else { 'Record the baseline: logon, special logon, credential validation, account lockout, account and group management, audit policy changes and process creation.' })
 }
 
 # ---------------------------------------------------------------------------
@@ -300,7 +476,7 @@ function Test-TkNtlmRestriction {
 }
 
 # ---------------------------------------------------------------------------
-# Recovery and administration
+# Administration
 # ---------------------------------------------------------------------------
 
 <#
@@ -323,45 +499,4 @@ function Test-TkLaps {
                  else { 'No LAPS policy' }) `
         -Detail 'A shared local administrator password is what turns one compromised workstation into all of them: the hash is the same everywhere, so it can be replayed against every machine. LAPS gives each machine its own, rotated, and escrowed in the directory.' `
         -Recommendation $(if ($present) { '' } else { 'Deploy Windows LAPS. It is built into current Windows and needs a schema extension plus a policy.' })
-}
-
-<#
-.SYNOPSIS
-    Checks whether the BitLocker recovery key is escrowed somewhere.
-#>
-function Test-TkBitLockerEscrow {
-    [CmdletBinding()]
-    param()
-
-    try {
-        $volume = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop
-
-        if ($volume.ProtectionStatus -ne 'On') {
-
-            return New-TkAuditFinding -Id 'ENC-002' -Name 'BitLocker recovery key' -Category 'Data protection' `
-                -Status 'Fail' -Measured 'The system drive is not encrypted' `
-                -Detail 'Without encryption, a stolen laptop is a data breach rather than a hardware loss.' `
-                -Recommendation 'Enable BitLocker and confirm the recovery key is escrowed before the machine leaves the building.'
-        }
-
-        $recoveryProtector = @($volume.KeyProtector | Where-Object { $_.KeyProtectorType -eq 'RecoveryPassword' })
-
-        if ($recoveryProtector.Count -eq 0) {
-
-            return New-TkAuditFinding -Id 'ENC-002' -Name 'BitLocker recovery key' -Category 'Data protection' `
-                -Status 'Fail' -Measured 'Encrypted, but no recovery password protector' `
-                -Detail 'With no recovery password, a firmware change or a TPM reset makes the data unrecoverable. There is no support path from there.' `
-                -Recommendation 'Add a recovery password protector and back it up to the directory or to Entra ID.'
-        }
-
-        return New-TkAuditFinding -Id 'ENC-002' -Name 'BitLocker recovery key' -Category 'Data protection' `
-            -Status 'Pass' -Measured ('{0} recovery protector(s) present' -f $recoveryProtector.Count) `
-            -Detail 'A recovery password exists, so the volume can be unlocked after a firmware or TPM change.' `
-            -Recommendation 'Confirm separately that it is escrowed centrally, which cannot be verified from the machine itself.'
-    }
-    catch {
-        return New-TkAuditFinding -Id 'ENC-002' -Name 'BitLocker recovery key' -Category 'Data protection' `
-            -Status 'NotAssessed' -Measured 'Not readable' `
-            -Detail 'BitLocker state needs elevation, or this edition does not support it.'
-    }
 }

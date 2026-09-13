@@ -1117,7 +1117,12 @@ function New-TkRemediationButton {
     $entry = $table[$RemediationId]
 
     $button = New-Object System.Windows.Controls.Button
-    $button.Content    = 'Fix this'
+    # The label says which of the two things happens: a correction, or a page
+    # opening. An entry can name its own when neither fits, such as a guide.
+    $button.Content = if ($entry.ContainsKey('Button')) { [string] $entry.Button }
+                      elseif ([string] $entry.Kind -eq 'Open') { 'Open settings' }
+                      else { 'Fix this' }
+
     $button.Tag        = $RemediationId
     $button.Margin     = New-Object System.Windows.Thickness(12, 0, 0, 0)
     $button.MinWidth   = 90

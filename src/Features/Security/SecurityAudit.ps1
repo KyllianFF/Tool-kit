@@ -33,59 +33,64 @@
     Level is what an Essential pass covers: the controls that go wrong often
     enough, and are cheap enough to fix, to be worth checking on every machine.
     Full adds the ones that need a decision, a licence or a domain behind them.
+
+    Action is what the button on a warning or a failure does: a correction
+    where one safe step exists, the page where the setting lives otherwise.
+    Every control has one, because a warning with no way forward is a report
+    that stops being read. A check can still choose a different action for one
+    of its paths; the table only fills in what the check left empty.
 #>
 $script:TkAuditControl = @(
 
     # --- Data protection ---------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditBitLocker';           Weight = 10; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkBitLockerEscrow';          Weight =  7; Level = 'Full'      }
+    [pscustomobject] @{ Function = 'Test-TkAuditBitLocker';           Weight = 10; Level = 'Essential'; Action = 'open-bitlocker' }
 
     # --- Endpoint protection -----------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditAntivirus';           Weight = 10; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditDefenderSignature';   Weight =  4; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkTamperProtection';         Weight =  6; Level = 'Full'      }
-    [pscustomobject] @{ Function = 'Test-TkAsrRules';                 Weight =  5; Level = 'Full'      }
-    [pscustomobject] @{ Function = 'Test-TkAuditUac';                 Weight =  7; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditPowerShellV2';        Weight =  5; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditAutoPlay';            Weight =  3; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditScreenLock';          Weight =  6; Level = 'Essential' }
+    [pscustomobject] @{ Function = 'Test-TkAuditAntivirus';           Weight = 10; Level = 'Essential'; Action = 'open-windows-security' }
+    [pscustomobject] @{ Function = 'Test-TkAuditDefenderSignature';   Weight =  4; Level = 'Essential'; Action = 'update-signatures' }
+    [pscustomobject] @{ Function = 'Test-TkTamperProtection';         Weight =  6; Level = 'Full';      Action = 'open-defender-settings' }
+    [pscustomobject] @{ Function = 'Test-TkAsrRules';                 Weight =  5; Level = 'Full';      Action = 'asr-audit-mode' }
+    [pscustomobject] @{ Function = 'Test-TkAuditUac';                 Weight =  7; Level = 'Essential'; Action = 'enable-uac' }
+    [pscustomobject] @{ Function = 'Test-TkAuditPowerShellV2';        Weight =  5; Level = 'Essential'; Action = 'disable-powershell-v2' }
+    [pscustomobject] @{ Function = 'Test-TkAuditAutoPlay';            Weight =  3; Level = 'Essential'; Action = 'disable-autorun' }
+    [pscustomobject] @{ Function = 'Test-TkAuditScreenLock';          Weight =  6; Level = 'Essential'; Action = 'set-inactivity-lock' }
 
     # --- Platform ----------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditSecureBoot';          Weight =  6; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditTpm';                 Weight =  4; Level = 'Essential' }
+    [pscustomobject] @{ Function = 'Test-TkAuditSecureBoot';          Weight =  6; Level = 'Essential'; Action = 'restart-to-firmware' }
+    [pscustomobject] @{ Function = 'Test-TkAuditTpm';                 Weight =  4; Level = 'Essential'; Action = 'restart-to-firmware' }
 
     # --- Credential protection ---------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkWdigest';                  Weight =  8; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkLsaProtection';            Weight =  6; Level = 'Full'      }
-    [pscustomobject] @{ Function = 'Test-TkCredentialGuard';          Weight =  5; Level = 'Full'      }
+    [pscustomobject] @{ Function = 'Test-TkWdigest';                  Weight =  8; Level = 'Essential'; Action = 'disable-wdigest' }
+    [pscustomobject] @{ Function = 'Test-TkLsaProtection';            Weight =  6; Level = 'Full';      Action = 'enable-lsa-protection' }
+    [pscustomobject] @{ Function = 'Test-TkCredentialGuard';          Weight =  5; Level = 'Full';      Action = 'enable-credential-guard' }
 
     # --- Network -----------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditFirewall';            Weight =  9; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditSmbV1';               Weight =  8; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkSmbSigning';               Weight =  5; Level = 'Full'      }
-    [pscustomobject] @{ Function = 'Test-TkNtlmRestriction';          Weight =  6; Level = 'Full'      }
-    [pscustomobject] @{ Function = 'Test-TkAuditLlmnr';               Weight =  4; Level = 'Essential' }
+    [pscustomobject] @{ Function = 'Test-TkAuditFirewall';            Weight =  9; Level = 'Essential'; Action = 'enable-firewall' }
+    [pscustomobject] @{ Function = 'Test-TkAuditSmbV1';               Weight =  8; Level = 'Essential'; Action = 'disable-smbv1' }
+    [pscustomobject] @{ Function = 'Test-TkSmbSigning';               Weight =  5; Level = 'Full';      Action = 'require-smb-signing' }
+    [pscustomobject] @{ Function = 'Test-TkNtlmRestriction';          Weight =  6; Level = 'Full';      Action = 'set-lm-level' }
+    [pscustomobject] @{ Function = 'Test-TkAuditLlmnr';               Weight =  4; Level = 'Essential'; Action = 'disable-llmnr' }
 
     # --- Remote access -----------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditRemoteDesktop';       Weight =  7; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditRdpNla';              Weight =  8; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditWinRm';               Weight =  5; Level = 'Full'      }
+    [pscustomobject] @{ Function = 'Test-TkAuditRemoteDesktop';       Weight =  7; Level = 'Essential'; Action = 'open-remote-desktop' }
+    [pscustomobject] @{ Function = 'Test-TkAuditRdpNla';              Weight =  8; Level = 'Essential'; Action = 'enable-rdp-nla' }
+    [pscustomobject] @{ Function = 'Test-TkAuditWinRm';               Weight =  5; Level = 'Full';      Action = 'disable-winrm' }
 
     # --- Accounts ----------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditGuestAccount';        Weight =  5; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditLocalAdministrators'; Weight =  7; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditPasswordPolicy';      Weight =  5; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditAccountLockout';      Weight =  6; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditStaleLocalAccount';   Weight =  4; Level = 'Full'      }
-    [pscustomobject] @{ Function = 'Test-TkLaps';                     Weight =  5; Level = 'Full'      }
+    [pscustomobject] @{ Function = 'Test-TkAuditGuestAccount';        Weight =  5; Level = 'Essential'; Action = 'disable-guest' }
+    [pscustomobject] @{ Function = 'Test-TkAuditLocalAdministrators'; Weight =  7; Level = 'Essential'; Action = 'open-local-users' }
+    [pscustomobject] @{ Function = 'Test-TkAuditPasswordPolicy';      Weight =  5; Level = 'Essential'; Action = 'set-password-length' }
+    [pscustomobject] @{ Function = 'Test-TkAuditAccountLockout';      Weight =  6; Level = 'Essential'; Action = 'set-account-lockout' }
+    [pscustomobject] @{ Function = 'Test-TkAuditStaleLocalAccount';   Weight =  4; Level = 'Full';      Action = 'open-local-users' }
+    [pscustomobject] @{ Function = 'Test-TkLaps';                     Weight =  5; Level = 'Full';      Action = 'open-laps-guide' }
 
     # --- Servicing ---------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditWindowsUpdate';       Weight =  8; Level = 'Essential' }
-    [pscustomobject] @{ Function = 'Test-TkAuditUpdatePaused';        Weight =  5; Level = 'Essential' }
+    [pscustomobject] @{ Function = 'Test-TkAuditWindowsUpdate';       Weight =  8; Level = 'Essential'; Action = 'open-windows-update' }
+    [pscustomobject] @{ Function = 'Test-TkAuditUpdatePaused';        Weight =  5; Level = 'Essential'; Action = 'open-windows-update' }
 
     # --- Logging -----------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkPowerShellLogging';        Weight =  4; Level = 'Full'      }
-    [pscustomobject] @{ Function = 'Test-TkAuditPolicy';              Weight =  4; Level = 'Full'      }
+    [pscustomobject] @{ Function = 'Test-TkPowerShellLogging';        Weight =  4; Level = 'Full';      Action = 'enable-script-block-logging' }
+    [pscustomobject] @{ Function = 'Test-TkAuditPolicy';              Weight =  4; Level = 'Full';      Action = 'enable-baseline-audit-policy' }
 )
 
 <#
@@ -175,12 +180,7 @@ function Invoke-TkSecurityAudit {
                     continue
                 }
 
-                # Stamped here so a check stays a question about the machine,
-                # and the risk weighting stays in one reviewable table.
-                $finding.Weight = $control.Weight
-                $finding.Level  = $control.Level
-
-                $findings += $finding
+                $findings += (Set-TkFindingControlDefault -Finding $finding -Control $control)
             }
         }
         catch {
@@ -201,6 +201,48 @@ function Invoke-TkSecurityAudit {
     )
 
     return $findings
+}
+
+<#
+.SYNOPSIS
+    Stamps a finding with what the control table says about its control.
+
+.DESCRIPTION
+    Weight and level always come from the table, so a check stays a question
+    about the machine and the risk weighting stays in one reviewable place.
+
+    The action comes from the table only for a warning or a failure the check
+    left without one. A check still decides when one of its paths needs a
+    different action: Remote Desktop without NLA gets the NLA correction
+    rather than the settings page.
+
+    A pass, an informational result and a control that could not be read get
+    no button. There is nothing on them to act on.
+
+.OUTPUTS
+    PSCustomObject, the finding it was given.
+#>
+function Set-TkFindingControlDefault {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject] $Finding,
+
+        [Parameter(Mandatory)]
+        [pscustomobject] $Control
+    )
+
+    $Finding.Weight = $Control.Weight
+    $Finding.Level  = $Control.Level
+
+    $actionable = ($Finding.Status -in @('Warning', 'Fail'))
+
+    if ($actionable -and [string]::IsNullOrEmpty($Finding.RemediationId) -and $Control.PSObject.Properties['Action']) {
+        $Finding.RemediationId = [string] $Control.Action
+    }
+
+    return $Finding
 }
 
 <#
@@ -415,6 +457,39 @@ function Get-TkDefenderStatus {
 
 <#
 .SYNOPSIS
+    Says whether Microsoft Defender is the antivirus protecting the machine.
+
+.DESCRIPTION
+    Attack Surface Reduction rules and tamper protection are Defender features.
+    When another product owns protection, Defender is passive or stopped and
+    the rules do not apply; marking them down would ask the operator to replace
+    an antivirus that works. The mode comes back with the answer so a finding
+    can name it.
+
+.OUTPUTS
+    PSCustomObject with Active and Mode.
+#>
+function Get-TkDefenderActiveState {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    $status = Get-TkDefenderStatus
+
+    $mode = if ($status -and $status.PSObject.Properties['AMRunningMode']) { [string] $status.AMRunningMode } else { '' }
+
+    # Older builds do not report a mode; real time protection answers for them.
+    $active = ($mode -eq 'Normal') -or
+              (-not $mode -and $null -ne $status -and [bool] $status.RealTimeProtectionEnabled)
+
+    return [pscustomobject] @{
+        Active = $active
+        Mode   = $(if ($mode) { $mode } elseif ($null -eq $status) { 'Not available' } else { 'Unknown' })
+    }
+}
+
+<#
+.SYNOPSIS
     Decodes the productState bit field Security Center reports for a product.
 
 .DESCRIPTION
@@ -530,29 +605,330 @@ function Get-TkAntivirusProduct {
 
 <#
 .SYNOPSIS
-    Checks whether the system drive is encrypted.
+    Checks BitLocker on every drive, not only the system drive.
+
+.DESCRIPTION
+    One control where there used to be two. The audit and the hardening check
+    each asked whether the system drive was encrypted, and neither looked at
+    any other drive. A data drive lifted out of a desktop is readable in any
+    other machine, which is the same breach as a stolen laptop.
+
+    Reading happens here and judging in ConvertTo-TkBitLockerFinding, so the
+    judgement can be tested without a BitLocker drive to test it on.
 #>
 function Test-TkAuditBitLocker {
     [CmdletBinding()]
     param()
 
     try {
-        $volume = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop
-
-        if ($volume.ProtectionStatus -eq 'On') {
-
-            return New-TkAuditFinding -Id 'ENC-001' -Name 'Disk encryption' -Category 'Data protection' `
-                -Status 'Pass' -Detail ('BitLocker is on ({0}, {1}% encrypted).' -f $volume.EncryptionMethod, $volume.EncryptionPercentage)
-        }
-
-        return New-TkAuditFinding -Id 'ENC-001' -Name 'Disk encryption' -Category 'Data protection' `
-            -Status 'Fail' -Detail 'The system drive is not encrypted.' `
-            -Recommendation 'Enable BitLocker. A stolen laptop without it is a data breach, not a hardware loss.'
+        $volumes = @(Get-BitLockerVolume -ErrorAction Stop)
     }
     catch {
-        return New-TkAuditFinding -Id 'ENC-001' -Name 'Disk encryption' -Category 'Data protection' `
-            -Status 'NotAssessed' -Detail 'BitLocker state could not be read (needs elevation, or an edition without it).'
+        return New-TkAuditFinding -Id 'ENC-001' -Name 'Drive encryption' -Category 'Data protection' `
+            -Status 'NotAssessed' -Measured 'Not readable' `
+            -Detail 'BitLocker could not be read: it needs elevation, and not every edition includes it.'
     }
+
+    # Removable drives are listed but never judged: whether a USB stick has to
+    # be encrypted is a policy of the estate, not a property of this machine.
+    $removable = @(Get-TkCimInstanceSafe -ClassName 'Win32_LogicalDisk' -Filter 'DriveType = 2' -All |
+                   ForEach-Object { [string] $_.DeviceID })
+
+    return ConvertTo-TkBitLockerFinding -Volume $volumes -RemovableMountPoint $removable
+}
+
+<#
+.SYNOPSIS
+    Describes how a BitLocker drive unlocks, in the words a technician uses.
+
+.DESCRIPTION
+    The recovery password is left out: it is the way back in, not the way the
+    drive opens every day, and the finding reports it on its own. So is the key
+    behind automatic unlock, which is shown as automatic unlock rather than as
+    the startup key it technically is.
+
+.OUTPUTS
+    System.String
+#>
+function Get-TkBitLockerUnlockMethod {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        $Volume
+    )
+
+    $names = @{
+        'Tpm'              = 'TPM only'
+        'TpmPin'           = 'TPM + PIN'
+        'TpmStartupKey'    = 'TPM + startup key'
+        'TpmPinStartupKey' = 'TPM + PIN + startup key'
+        'TpmNetworkKey'    = 'network unlock'
+        'ExternalKey'      = 'startup key on USB'
+        'Password'         = 'password'
+        'PublicKey'        = 'smart card'
+        'AdAccountOrGroup' = 'domain account'
+    }
+
+    $methods = @()
+
+    foreach ($protector in @($Volume.KeyProtector)) {
+
+        if ($null -eq $protector -or $protector.AutoUnlockProtector -eq $true) {
+            continue
+        }
+
+        $type = [string] $protector.KeyProtectorType
+
+        if ($names.ContainsKey($type) -and $methods -notcontains $names[$type]) {
+            $methods += $names[$type]
+        }
+    }
+
+    if ($Volume.AutoUnlockEnabled -eq $true) {
+        $methods += 'automatic unlock'
+    }
+
+    if ($methods.Count -eq 0) {
+        return 'no unlock method'
+    }
+
+    return ($methods -join ', ')
+}
+
+<#
+.SYNOPSIS
+    Turns a BitLocker encryption method into the name of the cipher.
+#>
+function ConvertTo-TkBitLockerCipherName {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Method
+    )
+
+    switch ($Method) {
+        'XtsAes128'      { return 'XTS-AES 128' }
+        'XtsAes256'      { return 'XTS-AES 256' }
+        'Aes128'         { return 'AES-CBC 128' }
+        'Aes256'         { return 'AES-CBC 256' }
+        'Aes128Diffuser' { return 'AES-CBC 128 with diffuser' }
+        'Aes256Diffuser' { return 'AES-CBC 256 with diffuser' }
+        'Hardware'       { return 'drive hardware encryption' }
+        default          { return $Method }
+    }
+}
+
+<#
+.SYNOPSIS
+    Judges a set of BitLocker volumes and returns one finding.
+
+.DESCRIPTION
+    Fixed drives are judged. Removable drives are listed and never judged.
+    Volumes without a letter, such as the recovery partition, are skipped:
+    they hold no user data.
+
+    Failure: a fixed drive that is not encrypted, or a system drive with no
+    recovery password, which is one firmware update away from being lost for
+    good.
+
+    Warning: protection suspended, a data drive without a recovery password,
+    the old AES-CBC ciphers, or encryption handed to the drive's own hardware,
+    which Microsoft stopped trusting by default after several self-encrypting
+    drives were found to protect nothing (advisory ADV180028).
+
+    TPM only on the system drive is not marked down. It is the Windows default
+    and it protects a drive taken out of the machine; the detail says that the
+    ANSSI asks for TPM and PIN on a laptop, which is a policy for the estate.
+
+.PARAMETER Volume
+    Objects shaped like the output of Get-BitLockerVolume.
+
+.PARAMETER RemovableMountPoint
+    Drive letters, such as "E:", that belong to removable drives.
+
+.OUTPUTS
+    PSCustomObject, a finding.
+#>
+function ConvertTo-TkBitLockerFinding {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]] $Volume,
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [string[]] $RemovableMountPoint = @()
+    )
+
+    $encryptedStates = @(
+        'FullyEncrypted', 'EncryptionInProgress', 'EncryptionSuspended',
+        'FullyEncryptedWipeInProgress', 'FullyEncryptedWipeSuspended'
+    )
+
+    $removable = @($RemovableMountPoint | ForEach-Object { ([string] $_).TrimEnd('\').ToUpperInvariant() })
+
+    $lines = @()
+    $notes = @()
+
+    $fixed     = 0
+    $protected = 0
+
+    $unencrypted      = @()
+    $suspended        = @()
+    $systemNoRecovery = @()
+    $dataNoRecovery   = @()
+    $legacyCipher     = @()
+    $hardware         = @()
+    $tpmOnly          = $false
+
+    foreach ($item in ($Volume | Sort-Object -Property { [string] $_.MountPoint })) {
+
+        $mount = ([string] $item.MountPoint).TrimEnd('\')
+
+        if ($mount -notmatch '^[A-Za-z]:$') {
+            continue
+        }
+
+        $mount = $mount.ToUpperInvariant()
+
+        $isSystem    = ([string] $item.VolumeType -eq 'OperatingSystem')
+        $isRemovable = ($removable -contains $mount)
+
+        $role = if ($isSystem) { 'system' } elseif ($isRemovable) { 'removable' } else { 'data' }
+
+        if (-not $isRemovable) {
+            $fixed++
+        }
+
+        $status    = [string] $item.VolumeStatus
+        $encrypted = ($encryptedStates -contains $status)
+
+        if (-not $encrypted) {
+
+            $lines += '{0} ({1}): not encrypted' -f $mount, $role
+
+            if (-not $isRemovable) {
+                $unencrypted += $mount
+            }
+
+            continue
+        }
+
+        $isOn        = ([string] $item.ProtectionStatus -eq 'On')
+        $encrypting  = ($status -eq 'EncryptionInProgress')
+        $hasRecovery = (@($item.KeyProtector | Where-Object {
+                            $null -ne $_ -and [string] $_.KeyProtectorType -eq 'RecoveryPassword'
+                        }).Count -gt 0)
+
+        $state = if ($encrypting) { 'encrypting, {0}% done' -f [int] $item.EncryptionPercentage }
+                 elseif ($isOn) { 'protected' }
+                 else { 'encrypted but protection suspended' }
+
+        $method = [string] $item.EncryptionMethod
+        $unlock = Get-TkBitLockerUnlockMethod -Volume $item
+
+        $lines += '{0} ({1}): {2}, {3}, {4}, {5}' -f $mount, $role, $state,
+            (ConvertTo-TkBitLockerCipherName -Method $method), $unlock,
+            $(if ($hasRecovery) { 'recovery password present' } else { 'no recovery password' })
+
+        if ($isRemovable) {
+            continue
+        }
+
+        if ($isOn) {
+            $protected++
+        }
+        elseif (-not $encrypting) {
+            $suspended += $mount
+        }
+
+        if (-not $hasRecovery) {
+            if ($isSystem) { $systemNoRecovery += $mount } else { $dataNoRecovery += $mount }
+        }
+
+        if ($method -in @('Aes128', 'Aes256', 'Aes128Diffuser', 'Aes256Diffuser')) {
+            $legacyCipher += $mount
+        }
+
+        if ($method -eq 'Hardware') {
+            $hardware += $mount
+        }
+
+        if ($isSystem -and $unlock -eq 'TPM only') {
+            $tpmOnly = $true
+        }
+    }
+
+    if ($fixed -eq 0) {
+
+        return New-TkAuditFinding -Id 'ENC-001' -Name 'Drive encryption' -Category 'Data protection' `
+            -Status 'NotAssessed' -Measured 'No fixed drive found' `
+            -Detail 'BitLocker reported no fixed drive with a letter.'
+    }
+
+    if ($tpmOnly) {
+        $notes += 'The system drive unlocks with the TPM alone, the Windows default. That protects a drive taken out of the machine; on a laptop the ANSSI asks for TPM and PIN, so that a stolen machine does not start Windows by itself.'
+    }
+
+    if ($legacyCipher.Count -gt 0) {
+        $notes += 'Legacy AES-CBC on {0}: XTS-AES has been the Windows default since Windows 10 1511, and changing it means decrypting and encrypting again.' -f ($legacyCipher -join ', ')
+    }
+
+    if ($hardware.Count -gt 0) {
+        $notes += 'Encryption is left to the drive itself on {0}. Several self-encrypting drives were found to protect nothing (Microsoft advisory ADV180028), and Windows no longer trusts them by default.' -f ($hardware -join ', ')
+    }
+
+    $measured = '{0} of {1} fixed drive(s) protected' -f $protected, $fixed
+    $detail   = (@($lines) + @($notes)) -join [Environment]::NewLine
+
+    if ($unencrypted.Count -gt 0 -or $systemNoRecovery.Count -gt 0) {
+
+        $advice = @()
+
+        if ($unencrypted.Count -gt 0) {
+            $advice += 'Encrypt {0}. Every fixed drive needs it, not only the system drive: a data drive taken out of the machine is readable anywhere.' -f ($unencrypted -join ', ')
+        }
+
+        if ($systemNoRecovery.Count -gt 0) {
+            $advice += 'Add a recovery password to {0} and keep it somewhere you can reach: without one, a firmware update or a TPM reset locks the data away for good.' -f ($systemNoRecovery -join ', ')
+        }
+
+        return New-TkAuditFinding -Id 'ENC-001' -Name 'Drive encryption' -Category 'Data protection' `
+            -Status 'Fail' -Measured $measured -Detail $detail -Recommendation ($advice -join ' ')
+    }
+
+    if ($suspended.Count -gt 0) {
+
+        return New-TkAuditFinding -Id 'ENC-001' -Name 'Drive encryption' -Category 'Data protection' `
+            -Status 'Warning' -Measured $measured -Detail $detail `
+            -Recommendation ('Resume protection on {0}. While suspended, the key is stored in the clear on the drive.' -f ($suspended -join ', ')) `
+            -RemediationId 'resume-bitlocker'
+    }
+
+    if ($dataNoRecovery.Count -gt 0 -or $legacyCipher.Count -gt 0 -or $hardware.Count -gt 0) {
+
+        $advice = @()
+
+        if ($dataNoRecovery.Count -gt 0) {
+            $advice += 'Add a recovery password to {0}.' -f ($dataNoRecovery -join ', ')
+        }
+
+        if ($legacyCipher.Count -gt 0 -or $hardware.Count -gt 0) {
+            $advice += 'Re-encrypt {0} with XTS-AES when the machine can spare the time.' -f ((@($legacyCipher) + @($hardware) | Select-Object -Unique) -join ', ')
+        }
+
+        return New-TkAuditFinding -Id 'ENC-001' -Name 'Drive encryption' -Category 'Data protection' `
+            -Status 'Warning' -Measured $measured -Detail $detail -Recommendation ($advice -join ' ')
+    }
+
+    return New-TkAuditFinding -Id 'ENC-001' -Name 'Drive encryption' -Category 'Data protection' `
+        -Status 'Pass' -Measured $measured -Detail $detail `
+        -Recommendation 'Confirm the recovery keys are escrowed centrally, which cannot be seen from the machine itself.'
 }
 
 <#
@@ -887,7 +1263,8 @@ function Test-TkAuditRemoteDesktop {
 
     return New-TkAuditFinding -Id 'RDP-001' -Name 'Remote Desktop' -Category 'Remote access' `
         -Status 'Fail' -Detail 'Remote Desktop is enabled without Network Level Authentication.' `
-        -Recommendation 'Require NLA: without it the logon screen is rendered before authentication, which is a free pre-auth attack surface.'
+        -Recommendation 'Require NLA: without it the logon screen is rendered before authentication, which is a free pre-auth attack surface.' `
+        -RemediationId 'enable-rdp-nla'
 }
 
 <#
