@@ -157,6 +157,8 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Performance';         Show = 'Show-TkPerformanceReport' }
         [pscustomobject] @{ Title = 'Devices';             Show = 'Show-TkDeviceReport' }
         [pscustomobject] @{ Title = 'Crashes';             Show = 'Show-TkStabilityReport' }
+        [pscustomobject] @{ Title = 'Wi-Fi';               Show = 'Show-TkWifiReport' }
+        [pscustomobject] @{ Title = 'Proxy';               Show = 'Show-TkProxyReport' }
         [pscustomobject] @{ Title = 'Sign-in and management'; Show = 'Show-TkIdentityReport' }
         [pscustomobject] @{ Title = 'Update history';      Show = 'Show-TkUpdateHistory' }
         [pscustomobject] @{ Title = 'Printing';            Show = 'Show-TkPrintingReport' }
@@ -323,6 +325,151 @@ function Show-TkPerformanceReport {
                     -Weight @(1.6, 0.8, 0.7, 3.0) `
                     -Row @($startup | ForEach-Object {
                         , @($_.Name, $_.Scope, $(if ($_.Enabled) { 'Runs' } else { 'Disabled' }), $_.Command)
+                    })
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows the Wi-Fi connection: signal, band, rate, security and drops.
+#>
+function Show-TkWifiReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the Wi-Fi connection...' `
+        -ScriptBlock { Get-TkWifiStatus -Days 7 } `
+        -OnComplete {
+            param($result)
+
+            $status = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Interfaces'] } | Select-Object -First 1
+
+            if (-not $status) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'wifi' -Data $status
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Wi-Fi' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '"The Wi-Fi is bad" covers causes that look alike from the chair: a weak signal, a crowded 2.4 GHz channel, a low link rate, an old standard, or a connection that keeps dropping. Read from the Wi-Fi API rather than netsh, so the display language does not matter.'
+            )
+
+            foreach ($finding in @(Get-TkWifiFinding -Status $status)) {
+                Add-TkSeverityLine -Document $document -Severity $finding.Severity -Heading $finding.Heading `
+                    -Detail $finding.Detail -Note $finding.Note -RemediationId $finding.RemediationId
+            }
+
+            foreach ($adapter in @($status.Interfaces | Where-Object { $_ })) {
+
+                $connected = if ($adapter.Connection) { $adapter.Connection.Bssid } else { '' }
+                $networks  = @($adapter.Networks | Sort-Object -Property Rssi -Descending | Select-Object -First 20)
+
+                if ($networks.Count -gt 0) {
+
+                    Add-TkHeading -Document $document -Text 'Networks in range' -Level 2
+                    Add-TkParagraph -Document $document -Muted -Text (
+                        'As last seen by the adapter. Above -67 dBm is good for calls, below -80 dBm is barely usable. Several rows with one name are the bands and access points of one network.'
+                    )
+
+                    Add-TkTable -Document $document -Column @('Network', 'Signal', 'Band', 'Channel', 'Standard', 'Access point') `
+                        -Weight @(1.9, 0.7, 0.7, 0.6, 1.2, 1.3) `
+                        -Row @($networks | ForEach-Object {
+                            $name = if ($_.Ssid) { $_.Ssid } else { '(hidden)' }
+
+                            , @($(if ($_.Bssid -eq $connected) { $name + ' (connected)' } else { $name }),
+                                ('{0} dBm' -f [string] $_.Rssi), $_.Band, [string] $_.Channel, $_.Standard, $_.Bssid)
+                        })
+                }
+
+                $recent = @($adapter.Events | Where-Object { $_ -and $_.Kind -ne 'Connected' } |
+                            Sort-Object -Property When -Descending | Select-Object -First 12)
+
+                if ($recent.Count -gt 0) {
+
+                    Add-TkHeading -Document $document -Text 'Recent disconnections and failed attempts' -Level 2
+
+                    Add-TkTable -Document $document -Column @('When', 'Event', 'Network', 'Reason') `
+                        -Weight @(1.1, 0.8, 1.2, 3.0) `
+                        -Row @($recent | ForEach-Object {
+                            , @(([datetime] $_.When).ToString('yyyy-MM-dd HH:mm'),
+                                $(if ($_.Expected) { $_.Kind + ' (expected)' } else { $_.Kind }), $_.Ssid, $_.Reason)
+                        })
+                }
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows the three proxy settings, whether each one answers, and what
+    automatic detection finds.
+#>
+function Show-TkProxyReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the proxy settings and checking they answer...' `
+        -ScriptBlock {
+            $setting = Get-TkProxySetting
+
+            [pscustomobject] @{
+                Setting = $setting
+                Probe   = Invoke-TkProxyProbe -Setting $setting
+            }
+        } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Setting'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'proxy' -Data $report
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Proxy' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                'Windows keeps three proxy settings and each program reads one of them. A difference between them is why the web works while Windows Update fails, or the browser works while git does not.'
+            )
+
+            foreach ($finding in @(Get-TkProxyFinding -Setting $report.Setting -Probe $report.Probe)) {
+                Add-TkSeverityLine -Document $document -Severity $finding.Severity -Heading $finding.Heading `
+                    -Detail $finding.Detail -Note $finding.Note -RemediationId $finding.RemediationId
+            }
+
+            Add-TkHeading -Document $document -Text 'Where each program looks' -Level 2
+
+            $rows = @(
+                , @('Applications (WinINET)', 'Browsers, Office, most applications', (Format-TkProxyDescription -Setting $report.Setting.User))
+                , @('Services (WinHTTP)', 'Windows Update, BITS, Defender, Intune', (Format-TkProxyDescription -Setting $report.Setting.Machine))
+            )
+
+            foreach ($variable in @($report.Setting.Environment | Where-Object { $_ })) {
+                $rows += , @(('{0} ({1})' -f $variable.Name, $variable.Scope), 'git, curl, Python, Node', $variable.Value)
+            }
+
+            Add-TkTable -Document $document -Column @('Setting', 'Read by', 'Value') -Weight @(1.2, 1.5, 2.6) -Row $rows
+
+            $targets = @($report.Probe.Targets | Where-Object { $_ })
+
+            if ($targets.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Checked' -Level 2
+
+                Add-TkTable -Document $document -Column @('Address', 'Answers', 'Time') -Weight @(2.4, 0.8, 0.8) `
+                    -Row @($targets | ForEach-Object {
+                        , @($_.Address, $(if ($_.Open) { 'Yes' } else { 'No' }), ('{0} ms' -f [string] $_.ResponseMs))
                     })
             }
 
@@ -647,6 +794,11 @@ function Invoke-TkDiagnosticOverview {
                 Stability = Get-TkStabilityReport -Days 14
                 Crashes   = @(Get-TkCrashHistory -Days 30)
                 Printing  = Get-TkPrintingReport
+                Wifi      = Get-TkWifiStatus -Days 7
+                Proxy     = & {
+                                $setting = Get-TkProxySetting
+                                [pscustomobject] @{ Setting = $setting; Probe = Invoke-TkProxyProbe -Setting $setting }
+                            }
                 Context   = Get-TkUserContextReport
             }
         } `
@@ -739,8 +891,24 @@ function Invoke-TkDiagnosticOverview {
                 }
             }
 
+            # --- Network access -----------------------------------------
+            Add-TkHeading -Document $document -Text '6. Wi-Fi and proxy' -Level 2
+
+            $accessProblems = @(@(Get-TkWifiFinding -Status $report.Wifi) + @(Get-TkProxyFinding -Setting $report.Proxy.Setting -Probe $report.Proxy.Probe) |
+                                Where-Object { $_ -and $_.Severity -in @('Warning', 'Fail') })
+
+            if ($accessProblems.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'Nothing wrong with the Wi-Fi or the proxy'
+            }
+            else {
+                foreach ($row in $accessProblems) {
+                    Add-TkSeverityLine -Document $document -Severity $row.Severity -Heading $row.Heading `
+                        -Detail $row.Detail -Note $row.Note -RemediationId $row.RemediationId
+                }
+            }
+
             # --- Context ------------------------------------------------
-            Add-TkHeading -Document $document -Text '6. Profiles, drives and policy' -Level 2
+            Add-TkHeading -Document $document -Text '7. Profiles, drives and policy' -Level 2
 
             foreach ($row in $report.Context) {
                 Add-TkSeverityLine -Document $document -Severity $row.Severity `

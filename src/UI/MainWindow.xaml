@@ -2336,6 +2336,14 @@
                                             <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Signal, band and channel, link rate, security, how crowded the channel is, and how often the connection dropped.">
+                                            <TextBlock Text="Wi-Fi" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="The proxy applications, services and command line tools each use, whether it answers, and what automatic detection finds.">
+                                            <TextBlock Text="Proxy" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Domain, Microsoft Entra and Intune: how the device is joined, its single sign-on token, the domain controller and clock, and the MDM.">
                                             <TextBlock Text="Sign-in and management" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>

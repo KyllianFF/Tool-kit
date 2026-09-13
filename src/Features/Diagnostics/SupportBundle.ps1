@@ -199,6 +199,13 @@ function New-TkSupportBundle {
             (ConvertTo-TkBundleText -Title 'Adapters' -As Table -InputObject (Get-TkNetworkAdapterInfo -IncludeDisconnected))
             (ConvertTo-TkBundleText -Title 'Routing table' -As Table -InputObject (Get-TkRouteTable))
             (ConvertTo-TkBundleText -Title 'Listening ports' -As Table -InputObject (Get-TkListeningPort))
+            (ConvertTo-TkBundleText -Title 'Wi-Fi' -As Table -InputObject (
+                Get-TkWifiFinding -Status (Get-TkWifiStatus) | Select-Object Severity, Heading, Detail))
+            (ConvertTo-TkBundleText -Title 'Proxy' -As Table -InputObject (
+                & {
+                    $proxy = Get-TkProxySetting
+                    Get-TkProxyFinding -Setting $proxy -Probe (Invoke-TkProxyProbe -Setting $proxy)
+                } | Select-Object Severity, Heading, Detail))
         ) -join ''
     } | Set-Content -LiteralPath (Join-Path $workFolder '20-network.txt') -Encoding UTF8
 

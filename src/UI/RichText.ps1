@@ -1106,8 +1106,12 @@ function Add-TkFindingCard {
     if ($State) {
 
         $stateText = New-TkSelectableText -Value $State
+        # A state is normally a word or a value. One that is a whole sentence,
+        # such as a reason Windows wrote, wraps in a bounded column rather than
+        # taking the width of the title and folding it one word per line.
         $stateText.FontSize          = 12
-        $stateText.TextWrapping      = [System.Windows.TextWrapping]::NoWrap
+        $stateText.TextWrapping      = [System.Windows.TextWrapping]::Wrap
+        $stateText.MaxWidth          = 340
         $stateText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
         $stateText.SetResourceReference([System.Windows.Controls.TextBox]::ForegroundProperty, 'TextMuted')
 

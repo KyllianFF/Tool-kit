@@ -2635,6 +2635,508 @@ Describe 'Performance' {
     }
 }
 
+Describe 'Wi-Fi and proxy' {
+
+    BeforeAll {
+
+        # Writes a little endian value into a byte array, the way the Wi-Fi
+        # API lays out its structures.
+        function Set-WlanTestByte {
+            param([byte[]] $Bytes, [int] $Offset, $Value)
+
+            [byte[]] $data = if ($Value -is [byte[]]) { $Value } else { [BitConverter]::GetBytes($Value) }
+            [Array]::Copy($data, 0, $Bytes, $Offset, $data.Length)
+        }
+
+        function New-ProxyTestBlob {
+            param([int] $Flags, [string[]] $Text = @())
+
+            $list = New-Object System.Collections.Generic.List[byte]
+            $list.AddRange([BitConverter]::GetBytes([int] 0x46))
+            $list.AddRange([BitConverter]::GetBytes([int] 1))
+            $list.AddRange([BitConverter]::GetBytes($Flags))
+
+            foreach ($item in $Text) {
+                $data = [Text.Encoding]::ASCII.GetBytes($item)
+                $list.AddRange([BitConverter]::GetBytes([int] $data.Length))
+                $list.AddRange($data)
+            }
+
+            return , $list.ToArray()
+        }
+
+        function New-WifiTestStatus {
+            param($Connection, $AccessPoint, $Networks = @(), $Events = @(), $Radio, [switch] $LocationDenied, [int] $State = 1)
+
+            [pscustomobject] @{
+                Available      = $true
+                ServiceRunning = $true
+                Error          = ''
+                Days           = 7
+                Interfaces     = @([pscustomobject] @{
+                    Guid = [guid]::Empty; Description = 'Wi-Fi'; State = $State; StateName = 'Connected'
+                    Radio = $Radio; LocationDenied = [bool] $LocationDenied; Connection = $Connection
+                    AccessPoint = $AccessPoint; Rssi = $null; Networks = @($Networks); Events = @($Events)
+                })
+            }
+        }
+
+        function New-WifiTestConnection {
+            param([int] $Phy = 10, [int] $Auth = 7, [int] $Cipher = 4, [double] $Rx = 866.7, [double] $Tx = 648.5)
+
+            [pscustomobject] @{
+                Ssid = 'Office'; Bssid = 'AA-AA-AA-AA-AA-AA'; PhyType = $Phy; Standard = (Get-TkWlanName -Kind Phy -Value $Phy)
+                SignalQuality = 90; RxMbps = $Rx; TxMbps = $Tx; SecurityEnabled = $true; OneXEnabled = $false
+                AuthAlgorithm = $Auth; Authentication = (Get-TkWlanName -Kind Authentication -Value $Auth)
+                CipherAlgorithm = $Cipher; Cipher = (Get-TkWlanName -Kind Cipher -Value $Cipher)
+            }
+        }
+
+        function New-WifiTestNetwork {
+            param([string] $Ssid = 'Office', [string] $Bssid = 'AA-AA-AA-AA-AA-AA', [int] $Rssi = -50, [int] $Frequency = 5180)
+
+            $channel = Get-TkWifiChannel -FrequencyMHz $Frequency
+
+            [pscustomobject] @{
+                Ssid = $Ssid; Bssid = $Bssid; Rssi = $Rssi; Band = $channel.Band; Channel = $channel.Channel
+                Standard = '802.11ax (Wi-Fi 6)'; FrequencyMHz = $Frequency
+            }
+        }
+    }
+
+    It 'names the band and channel of <Frequency> MHz' -TestCases @(
+        @{ Frequency = 2412; Band = '2.4 GHz'; Channel = 1 }
+        @{ Frequency = 2437; Band = '2.4 GHz'; Channel = 6 }
+        @{ Frequency = 2484; Band = '2.4 GHz'; Channel = 14 }
+        @{ Frequency = 5180; Band = '5 GHz';   Channel = 36 }
+        @{ Frequency = 5825; Band = '5 GHz';   Channel = 165 }
+        @{ Frequency = 5935; Band = '6 GHz';   Channel = 2 }
+        @{ Frequency = 5955; Band = '6 GHz';   Channel = 1 }
+        @{ Frequency = 6295; Band = '6 GHz';   Channel = 69 }
+        @{ Frequency = 900;  Band = '';        Channel = 0 }
+    ) {
+        param($Frequency, $Band, $Channel)
+
+        $result = Get-TkWifiChannel -FrequencyMHz $Frequency
+
+        $result.Band    | Should -Be $Band
+        $result.Channel | Should -Be $Channel
+    }
+
+    It 'decodes the adapters from a WLAN_INTERFACE_INFO_LIST' {
+
+        $guid  = [guid] '835099d0-542e-48d4-bade-8b3bdec58d94'
+        $bytes = New-Object byte[] (8 + 532)
+
+        Set-WlanTestByte $bytes 0 1
+        Set-WlanTestByte $bytes 8 $guid.ToByteArray()
+        Set-WlanTestByte $bytes 24 ([Text.Encoding]::Unicode.GetBytes('Intel(R) Wi-Fi 6E AX210 160MHz'))
+        Set-WlanTestByte $bytes 536 4
+
+        $adapters = @(ConvertFrom-TkWlanInterfaceList -Bytes $bytes)
+
+        $adapters.Count          | Should -Be 1
+        $adapters[0].Guid        | Should -Be $guid
+        $adapters[0].Description | Should -Be 'Intel(R) Wi-Fi 6E AX210 160MHz'
+        $adapters[0].StateName   | Should -Be 'Disconnected'
+    }
+
+    It 'decodes the current connection, with rates in megabits and names for the security' {
+
+        $bytes = New-Object byte[] 604
+
+        Set-WlanTestByte $bytes 0   1
+        Set-WlanTestByte $bytes 8   ([Text.Encoding]::Unicode.GetBytes('Office'))
+        Set-WlanTestByte $bytes 520 ([uint32] 6)
+        Set-WlanTestByte $bytes 524 ([Text.Encoding]::UTF8.GetBytes('Office'))
+        Set-WlanTestByte $bytes 560 ([byte[]] (0x22, 0x66, 0xCF, 0x4E, 0x9C, 0x34))
+        Set-WlanTestByte $bytes 568 10
+        Set-WlanTestByte $bytes 576 ([uint32] 80)
+        Set-WlanTestByte $bytes 580 ([uint32] 866700)
+        Set-WlanTestByte $bytes 584 ([uint32] 648500)
+        Set-WlanTestByte $bytes 588 1
+        Set-WlanTestByte $bytes 596 7
+        Set-WlanTestByte $bytes 600 4
+
+        $connection = ConvertFrom-TkWlanConnection -Bytes $bytes
+
+        $connection.StateName      | Should -Be 'Connected'
+        $connection.ProfileName    | Should -Be 'Office'
+        $connection.Ssid           | Should -Be 'Office'
+        $connection.Bssid          | Should -Be '22-66-CF-4E-9C-34'
+        $connection.Standard       | Should -Be '802.11ax (Wi-Fi 6)'
+        $connection.SignalQuality  | Should -Be 80
+        $connection.RxMbps         | Should -Be 866.7
+        $connection.TxMbps         | Should -Be 648.5
+        $connection.Authentication | Should -Be 'WPA2-Personal'
+        $connection.Cipher         | Should -Be 'AES-CCMP'
+
+        ConvertFrom-TkWlanConnection -Bytes (New-Object byte[] 100) | Should -BeNullOrEmpty
+    }
+
+    It 'decodes the access points, with a negative signal and the band from the frequency' {
+
+        $bytes = New-Object byte[] (8 + 2 * 360)
+
+        Set-WlanTestByte $bytes 0 ([uint32] $bytes.Length)
+        Set-WlanTestByte $bytes 4 ([uint32] 2)
+
+        Set-WlanTestByte $bytes 8   ([uint32] 7)
+        Set-WlanTestByte $bytes 12  ([Text.Encoding]::UTF8.GetBytes('Freebox'))
+        Set-WlanTestByte $bytes 48  ([byte[]] (0x68, 0xA3, 0x78, 0x76, 0xCD, 0xA0))
+        Set-WlanTestByte $bytes 60  7
+        Set-WlanTestByte $bytes 64  (-75)
+        Set-WlanTestByte $bytes 96  ([uint16] 0x1411)
+        Set-WlanTestByte $bytes 100 ([uint32] 2437000)
+
+        Set-WlanTestByte $bytes 368 ([uint32] 12)
+        Set-WlanTestByte $bytes 372 ([Text.Encoding]::UTF8.GetBytes('Freebox_6GHz'))
+        Set-WlanTestByte $bytes 420 10
+        Set-WlanTestByte $bytes 424 (-55)
+        Set-WlanTestByte $bytes 460 ([uint32] 6295000)
+
+        $networks = @(ConvertFrom-TkWlanBssList -Bytes $bytes)
+
+        $networks.Count        | Should -Be 2
+        $networks[0].Ssid      | Should -Be 'Freebox'
+        $networks[0].Bssid     | Should -Be '68-A3-78-76-CD-A0'
+        $networks[0].Rssi      | Should -Be -75
+        $networks[0].Band      | Should -Be '2.4 GHz'
+        $networks[0].Channel   | Should -Be 6
+        $networks[0].Protected | Should -BeTrue
+        $networks[1].Rssi      | Should -Be -55
+        $networks[1].Band      | Should -Be '6 GHz'
+        $networks[1].Channel   | Should -Be 69
+        $networks[1].Protected | Should -BeFalse
+    }
+
+    It 'reads the radio as off only when every PHY is off' {
+
+        $bytes = New-Object byte[] 28
+
+        Set-WlanTestByte $bytes 0  2
+        Set-WlanTestByte $bytes 8  1
+        Set-WlanTestByte $bytes 12 1
+        Set-WlanTestByte $bytes 16 1
+        Set-WlanTestByte $bytes 20 1
+        Set-WlanTestByte $bytes 24 1
+
+        (ConvertFrom-TkWlanRadioState -Bytes $bytes).SoftwareOff | Should -BeFalse
+
+        Set-WlanTestByte $bytes 8  2
+        (ConvertFrom-TkWlanRadioState -Bytes $bytes).SoftwareOff | Should -BeFalse
+
+        Set-WlanTestByte $bytes 20 2
+        $radio = ConvertFrom-TkWlanRadioState -Bytes $bytes
+
+        $radio.SoftwareOff | Should -BeTrue
+        $radio.HardwareOff | Should -BeFalse
+    }
+
+    It 'tells a drop from a disconnection the user or a cable caused' {
+
+        $cable = ConvertFrom-TkWlanEvent -Id 8003 -Data @{ SSID = 'Office'; ReasonCode = '5'; Reason = 'policy' }
+        $lost  = ConvertFrom-TkWlanEvent -Id 8003 -Data @{ SSID = 'Office'; ReasonCode = '65539'; Reason = 'lost' }
+        $fail  = ConvertFrom-TkWlanEvent -Id 8002 -Data @{ SSID = 'Office'; ReasonCode = '229396'; FailureReason = 'wrong key' }
+
+        $cable.Kind     | Should -Be 'Disconnected'
+        $cable.Expected | Should -BeTrue
+        $lost.Expected  | Should -BeFalse
+        $fail.Kind      | Should -Be 'Failed'
+        $fail.Reason    | Should -Be 'wrong key'
+
+        ConvertFrom-TkWlanEvent -Id 11000 -Data @{} | Should -BeNullOrEmpty
+    }
+
+    Context 'Wi-Fi judgement' {
+
+        It 'judges a signal of <Rssi> dBm as <Severity>' -TestCases @(
+            @{ Rssi = -55; Severity = 'Pass' }
+            @{ Rssi = -72; Severity = 'Warning' }
+            @{ Rssi = -85; Severity = 'Fail' }
+        ) {
+            param($Rssi, $Severity)
+
+            $point    = New-WifiTestNetwork -Rssi $Rssi
+            $findings = Get-TkWifiFinding -Status (New-WifiTestStatus -Connection (New-WifiTestConnection) -AccessPoint $point -Networks @($point))
+
+            ($findings | Where-Object { $_.Heading -like 'Signal*' }).Severity | Should -Be $Severity
+        }
+
+        It 'warns on 2.4 GHz when the same network is offered on a faster band' {
+
+            $point = New-WifiTestNetwork -Frequency 2437
+            $fast  = New-WifiTestNetwork -Bssid 'BB-BB-BB-BB-BB-BB' -Frequency 5180
+
+            $band = Get-TkWifiFinding -Status (New-WifiTestStatus -Connection (New-WifiTestConnection) -AccessPoint $point -Networks @($point, $fast)) |
+                    Where-Object { $_.Heading -like 'On 2.4 GHz*' }
+
+            $band.Severity | Should -Be 'Warning'
+            $band.Heading  | Should -BeLike '*5 GHz*'
+        }
+
+        It 'counts overlapping 2.4 GHz channels as crowding, and not channels further away' {
+
+            $point     = New-WifiTestNetwork -Frequency 2437
+            $neighbours = @(1..8 | ForEach-Object { New-WifiTestNetwork -Ssid "N$_" -Bssid "0$_-00-00-00-00-00" -Frequency $(if ($_ % 2) { 2427 } else { 2447 }) })
+            $far       = New-WifiTestNetwork -Ssid 'Far' -Bssid '09-00-00-00-00-00' -Frequency 2462
+
+            $crowded = Get-TkWifiFinding -Status (New-WifiTestStatus -Connection (New-WifiTestConnection) -AccessPoint $point -Networks (@($point, $far) + $neighbours)) |
+                       Where-Object { $_.Heading -like '*crowded*' }
+
+            $crowded.Severity | Should -Be 'Warning'
+            $crowded.Detail   | Should -BeLike '8 other*'
+        }
+
+        It 'judges the security of <Auth>/<Cipher> as <Severity>' -TestCases @(
+            @{ Auth = 1; Cipher = 0; Severity = 'Fail' }
+            @{ Auth = 2; Cipher = 1; Severity = 'Fail' }
+            @{ Auth = 4; Cipher = 2; Severity = 'Warning' }
+            @{ Auth = 7; Cipher = 4; Severity = 'Pass' }
+            @{ Auth = 9; Cipher = 4; Severity = 'Pass' }
+        ) {
+            param($Auth, $Cipher, $Severity)
+
+            $point    = New-WifiTestNetwork
+            $security = Get-TkWifiFinding -Status (New-WifiTestStatus -Connection (New-WifiTestConnection -Auth $Auth -Cipher $Cipher) -AccessPoint $point -Networks @($point)) |
+                        Where-Object { $_.Heading -match 'Open network|Protected|Enhanced Open' }
+
+            $security.Severity | Should -Be $Severity
+        }
+
+        It 'warns on a slow link, with the rate written with a point on a French Windows' {
+
+            $culture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+
+            try {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('fr-FR')
+
+                $point    = New-WifiTestNetwork
+                $findings = Get-TkWifiFinding -Status (New-WifiTestStatus -Connection (New-WifiTestConnection -Rx 6.5 -Tx 12) -AccessPoint $point -Networks @($point))
+            }
+            finally {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = $culture
+            }
+
+            $rate = $findings | Where-Object { $_.Heading -like 'Link rate*' }
+
+            $rate.Severity | Should -Be 'Warning'
+            $rate.Heading  | Should -BeLike '*6.5 Mbps received*'
+        }
+
+        It 'points to the location setting when Windows hides the connection' {
+
+            $findings = Get-TkWifiFinding -Status (New-WifiTestStatus -LocationDenied)
+
+            @($findings | Where-Object { $_.RemediationId -eq 'open-location-privacy' }).Count | Should -Be 1
+        }
+
+        It 'counts the drops nobody asked for' {
+
+            $events = @(
+                1..5 | ForEach-Object { [pscustomobject] @{ Kind = 'Disconnected'; Expected = $false; Reason = 'lost.'; Ssid = 'Office'; When = Get-Date } }
+                1..3 | ForEach-Object { [pscustomobject] @{ Kind = 'Disconnected'; Expected = $true;  Reason = 'cable'; Ssid = 'Office'; When = Get-Date } }
+            )
+
+            $drops = Get-TkWifiFinding -Status (New-WifiTestStatus -State 4 -Events $events) | Where-Object { $_.Heading -like '*dropped*' }
+
+            $drops.Severity | Should -Be 'Warning'
+            $drops.Heading  | Should -BeLike '*5 time(s) in 7 days'
+            $drops.Detail   | Should -Be '"Office"'
+            $drops.Note     | Should -BeLike 'Most often: lost (5). Drops*'
+        }
+
+        It 'says when the radio is off, and when there is no Wi-Fi at all' {
+
+            $off = Get-TkWifiFinding -Status (New-WifiTestStatus -Radio ([pscustomobject] @{ Phys = 1; SoftwareOff = $true; HardwareOff = $false }))
+
+            $off[0].Heading       | Should -Be 'Wi-Fi is turned off'
+            $off[0].RemediationId | Should -Be 'open-wifi-settings'
+
+            (Get-TkWifiFinding -Status ([pscustomobject] @{ Available = $false })).Heading | Should -Be 'No Wi-Fi on this machine'
+        }
+    }
+
+    It 'reads automatic detection from the bytes the Settings page writes' {
+
+        # The value read on a real machine: version 0x46, counter 2, flags 9.
+        $bytes = New-Object byte[] 56
+        $bytes[0] = 0x46
+        $bytes[4] = 2
+        $bytes[8] = 9
+
+        $setting = ConvertFrom-TkProxyBlob -Bytes $bytes
+
+        $setting.Direct      | Should -BeTrue
+        $setting.AutoDetect  | Should -BeTrue
+        $setting.UseProxy    | Should -BeFalse
+        $setting.ProxyServer | Should -Be ''
+    }
+
+    It 'reads the proxy, the bypass list and the script, and survives a value cut short' {
+
+        $bytes   = New-ProxyTestBlob -Flags 7 -Text @('proxy.corp.local:3128', '<local>;*.corp.local', 'http://pac.corp.local/proxy.pac')
+        $setting = ConvertFrom-TkProxyBlob -Bytes $bytes
+
+        $setting.UseProxy      | Should -BeTrue
+        $setting.UseScript     | Should -BeTrue
+        $setting.AutoDetect    | Should -BeFalse
+        $setting.ProxyServer   | Should -Be 'proxy.corp.local:3128'
+        $setting.Bypass        | Should -Be '<local>;*.corp.local'
+        $setting.AutoConfigUrl | Should -Be 'http://pac.corp.local/proxy.pac'
+
+        $cut = ConvertFrom-TkProxyBlob -Bytes ([byte[]] $bytes[0..19])
+
+        $cut.UseProxy    | Should -BeTrue
+        $cut.ProxyServer | Should -Be ''
+
+        (ConvertFrom-TkProxyBlob -Bytes (New-ProxyTestBlob -Flags 3 -Text @('http=10.0.0.1:8080', ''))).AutoConfigUrl | Should -Be ''
+    }
+
+    It 'splits proxy settings into addresses, and never keeps credentials' {
+
+        $single = @(ConvertFrom-TkProxyServerList -Text 'proxy.corp.local:3128')
+        $single[0].Host | Should -Be 'proxy.corp.local'
+        $single[0].Port | Should -Be 3128
+
+        $schemes = @(ConvertFrom-TkProxyServerList -Text 'http=a.corp:80;https=b.corp:443')
+        $schemes.Count       | Should -Be 2
+        $schemes[1].Scheme   | Should -Be 'https'
+        $schemes[1].Address  | Should -Be 'b.corp:443'
+
+        $url = @(ConvertFrom-TkProxyServerList -Text 'http://user:secret@corp-proxy:8080/')
+        $url[0].Host    | Should -Be 'corp-proxy'
+        $url[0].Port    | Should -Be 8080
+
+        (@(ConvertFrom-TkProxyServerList -Text '[::1]:8888'))[0].Host | Should -Be '::1'
+        (@(ConvertFrom-TkProxyServerList -Text 'proxy'))[0].Port       | Should -Be 80
+
+        Hide-TkProxyCredential -Text 'http://user:secret@corp-proxy:8080' | Should -Be 'http://corp-proxy:8080'
+        Hide-TkProxyCredential -Text 'user:secret@corp-proxy:8080'        | Should -Be 'corp-proxy:8080'
+        Hide-TkProxyCredential -Text 'corp-proxy:8080'                    | Should -Be 'corp-proxy:8080'
+    }
+
+    It 'describes a setting in the order Windows tries it' {
+
+        Format-TkProxyDescription -Setting $null | Should -Be 'Direct, never set'
+        Format-TkProxyDescription -Setting (ConvertFrom-TkProxyBlob -Bytes (New-ProxyTestBlob -Flags 1)) | Should -Be 'Direct'
+        Format-TkProxyDescription -Setting (ConvertFrom-TkProxyBlob -Bytes (New-ProxyTestBlob -Flags 11 -Text @('proxy:3128', '<local>'))) |
+            Should -Be 'Automatic detection, then proxy proxy:3128, not for <local>'
+    }
+
+    Context 'Proxy judgement' {
+
+        BeforeAll {
+
+            function New-ProxyTestSetting {
+                param($User, $Machine, $Environment = @())
+
+                [pscustomobject] @{ Scope = 'this user'; MachineWide = $false; User = $User; Machine = $Machine; Environment = @($Environment) }
+            }
+
+            function New-ProxyTestValue {
+                param([int] $Flags = 1, [string] $Server = '', [string] $Url = '')
+
+                ConvertFrom-TkProxyBlob -Bytes (New-ProxyTestBlob -Flags $Flags -Text @($Server, '', $Url))
+            }
+        }
+
+        It 'passes a machine where nothing uses a proxy' {
+
+            $findings = @(Get-TkProxyFinding -Setting (New-ProxyTestSetting -User (New-ProxyTestValue -Flags 9) -Machine (New-ProxyTestValue)) `
+                                             -Probe ([pscustomobject] @{ Targets = @(); WpadChecked = $true; WpadAddresses = @() }))
+
+            $findings.Count       | Should -Be 1
+            $findings[0].Severity | Should -Be 'Pass'
+        }
+
+        It 'warns when applications go through a program on the machine itself' {
+
+            $finding = Get-TkProxyFinding -Setting (New-ProxyTestSetting -User (New-ProxyTestValue -Flags 3 -Server '127.0.0.1:8888')) |
+                       Where-Object { $_.Heading -like 'Applications*' }
+
+            $finding.Severity      | Should -Be 'Warning'
+            $finding.Heading       | Should -BeLike '*program on this machine*'
+            $finding.RemediationId | Should -Be 'open-proxy-settings'
+        }
+
+        It 'fails a proxy or a script that does not answer' {
+
+            $probe = [pscustomobject] @{
+                Targets       = @(
+                    [pscustomobject] @{ Address = 'proxy.corp.local:3128'; Open = $false; ResponseMs = 2000 }
+                    [pscustomobject] @{ Address = 'pac.corp.local:80';     Open = $false; ResponseMs = 2000 }
+                )
+                WpadChecked   = $false
+                WpadAddresses = @()
+            }
+
+            $findings = @(Get-TkProxyFinding -Setting (New-ProxyTestSetting -User (New-ProxyTestValue -Flags 7 -Server 'proxy.corp.local:3128' -Url 'http://pac.corp.local/proxy.pac')) -Probe $probe)
+
+            @($findings | Where-Object { $_.Severity -eq 'Fail' }).Count | Should -Be 2
+            ($findings | Where-Object { $_.Heading -like 'Proxy proxy.corp.local*' }).RemediationId | Should -Be 'open-proxy-settings'
+        }
+
+        It 'warns when services go through a proxy that applications do not use' {
+
+            $finding = Get-TkProxyFinding -Setting (New-ProxyTestSetting -User (New-ProxyTestValue) -Machine (New-ProxyTestValue -Flags 3 -Server 'old-proxy:8080')) |
+                       Where-Object { $_.Heading -like 'Services*' }
+
+            $finding.Severity | Should -Be 'Warning'
+        }
+
+        It 'notes that services go direct while applications use a proxy' {
+
+            $finding = Get-TkProxyFinding -Setting (New-ProxyTestSetting -User (New-ProxyTestValue -Flags 3 -Server 'proxy:3128') -Machine (New-ProxyTestValue)) |
+                       Where-Object { $_.Heading -eq 'Services go direct' }
+
+            $finding.Severity | Should -Be 'Info'
+        }
+    }
+
+    It 'opens only settings pages the remediation allow list accepts' {
+
+        $table = Get-TkRemediationTable
+
+        foreach ($id in @('open-wifi-settings', 'open-proxy-settings', 'open-location-privacy')) {
+            $table.ContainsKey($id)                           | Should -BeTrue -Because $id
+            Test-TkRemediationTarget -Target $table[$id].Target | Should -BeTrue -Because $id
+        }
+    }
+
+    It 'wraps a long state in a bounded column instead of squeezing the title' {
+
+        # A failure reason Windows wrote once took the whole width of a card
+        # and folded its title one word per line.
+        $state    = 'Sorry, we could not connect you because no connectable access point was visible, ' * 2
+        $document = New-TkFlowDocument
+
+        Add-TkFindingCard -Document $document -Severity 'Info' -Title '1 failed connection attempt(s) in 7 days' -State $state
+
+        $found = New-Object System.Collections.Generic.List[object]
+        $walk  = {
+            param($node)
+
+            foreach ($child in [System.Windows.LogicalTreeHelper]::GetChildren($node)) {
+
+                if ($child -is [System.Windows.Controls.TextBox] -and $child.Text -eq $state) {
+                    $found.Add($child)
+                }
+
+                if ($child -is [System.Windows.DependencyObject]) {
+                    & $walk $child
+                }
+            }
+        }
+
+        & $walk $document
+
+        $found.Count           | Should -Be 1
+        $found[0].TextWrapping | Should -Be ([System.Windows.TextWrapping]::Wrap)
+        $found[0].MaxWidth     | Should -BeLessThan 400
+    }
+}
+
 Describe 'Diagnostic reports' {
 
     BeforeAll {
