@@ -51,6 +51,30 @@ function Initialize-TkDiagnosticsPage {
 
 <#
 .SYNOPSIS
+    Starts the full check as though it had been chosen in the list.
+
+.DESCRIPTION
+    The entry is selected rather than the report called directly, so the list
+    shows what is running. The selection is cleared first, because selecting
+    the entry that is already selected raises no event and would start nothing.
+#>
+function Start-TkFullDiagnostic {
+    [CmdletBinding()]
+    param()
+
+    $choices = Get-TkControl -Name 'DiagnosticChoices'
+
+    if ($null -eq $choices) {
+        Invoke-TkDiagnosticOverview
+        return
+    }
+
+    $choices.SelectedIndex = -1
+    $choices.SelectedIndex = 0
+}
+
+<#
+.SYNOPSIS
     Builds the support bundle in the background and opens the folder.
 
 .DESCRIPTION

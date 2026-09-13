@@ -86,6 +86,26 @@ function Initialize-TkSystemPage {
     }
 
     Register-TkClick -Name 'BtnExportReport' -Action { Export-TkSystemReportFromUi }
+
+    $volumeBox = Get-TkControl -Name 'SystemVolumeChoice'
+
+    if ($volumeBox) {
+
+        $volumeBox.Add_SelectionChanged({
+
+            $box = Get-TkControl -Name 'SystemVolumeChoice'
+
+            if ($box -and $box.SelectedItem) {
+                Show-TkSystemVolume -Drive ([string] $box.SelectedItem.Tag)
+            }
+        })
+    }
+
+    Add-TkQuickActionPanel -PanelName 'SystemQuickActions'
+
+    # The inventory costs a few seconds of CIM queries, and the toolkit opens
+    # on the Dashboard now, so it waits for the page to be opened.
+    Register-TkFirstShow -PageName 'System' -Action { Update-TkSystemPage }
 }
 
 <#
@@ -106,6 +126,7 @@ function Update-TkSystemPage {
                 Hardware = Get-TkHardwareInfo
                 Security = Get-TkPlatformSecurityInfo
                 Bios     = Get-TkBiosStatus
+                Volumes  = @(Get-TkVolumeUsage)
             }
         } `
         -OnComplete {
@@ -183,6 +204,8 @@ function Write-TkSystemPageFields {
         'ValTpm'          = $security.Tpm
         'ValBitLocker'    = $security.BitLocker
         'ValFirewall'     = $security.Firewall
+        'ValAntivirus'    = $security.Antivirus
+        'ValDefender'     = $security.Defender
     }
 
     foreach ($name in $fields.Keys) {
@@ -194,17 +217,186 @@ function Write-TkSystemPageFields {
         }
     }
 
-    Set-TkObjectTable -ControlName 'DocVolumes' -InputObject $hardware.Volumes `
-        -Property @('Drive', 'Label', 'FileSystem', 'Size', 'Free', 'UsedPercent') `
-        -Column   @('Drive', 'Label', 'File system', 'Size', 'Free', 'Used %') `
-        -Weight   @(0.6, 1.6, 0.9, 1.0, 1.0, 0.7) `
-        -EmptyText 'No volume was returned.'
+    # A board that never recorded a serial number reports the placeholder.
+    # Copying it would put the words "Not available" on the clipboard, and a
+    # warranty lookup would search for them, so both buttons stand down.
+    $hasSerial = -not [string]::IsNullOrWhiteSpace($identity.SerialNumber) -and
+                 $identity.SerialNumber -ne (Format-TkValue $null)
+
+    foreach ($name in @('BtnCopySerial', 'BtnVendorWarranty')) {
+
+        $button = Get-TkControl -Name $name
+
+        if ($button) {
+            $button.IsEnabled = $hasSerial
+        }
+    }
+
+    Update-TkSystemVolumeChoice -Volume @($Snapshot.Volumes)
+    Update-TkVendorToolButton -Identity $identity
 
     Set-TkObjectTable -ControlName 'DocDisks' -InputObject $hardware.Disks `
         -Property @('Name', 'Size', 'MediaType', 'BusType', 'Health') `
         -Column   @('Model', 'Size', 'Type', 'Bus', 'Health') `
         -Weight   @(3.0, 1.0, 0.9, 0.9, 0.9) `
         -EmptyText 'No physical disk was returned.'
+}
+
+<#
+.SYNOPSIS
+    Lists the volumes in the disk selector, with the system drive selected.
+
+.PARAMETER Volume
+    Output of Get-TkVolumeUsage.
+#>
+function Update-TkSystemVolumeChoice {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [object[]] $Volume = @()
+    )
+
+    $box = Get-TkControl -Name 'SystemVolumeChoice'
+
+    if ($null -eq $box) {
+        return
+    }
+
+    $box.Items.Clear()
+
+    $volumes = @($Volume | Where-Object { $null -ne $_ })
+
+    if ($volumes.Count -eq 0) {
+
+        Set-TkUsageBar -BarName 'SystemVolumeBar' -FillName 'SystemVolumeFill' -Percent 0
+
+        $detail = Get-TkControl -Name 'SystemVolumeDetail'
+
+        if ($detail) {
+            $detail.Text = 'No fixed volume was returned.'
+        }
+
+        return
+    }
+
+    $selected = $null
+
+    foreach ($item in $volumes) {
+
+        $entry = New-Object System.Windows.Controls.ComboBoxItem
+        $entry.Content = '{0}  {1}' -f $item.Drive, $item.Label
+        $entry.Tag     = [string] $item.Drive
+
+        [void] $box.Items.Add($entry)
+
+        # The system drive, because it is the one that stops Windows when it
+        # fills.
+        if ([string] $item.Drive -eq $env:SystemDrive) {
+            $selected = $entry
+        }
+    }
+
+    if ($null -eq $selected) {
+        $selected = $box.Items[0]
+    }
+
+    # Selecting raises SelectionChanged, which draws the bar.
+    $box.SelectedItem = $selected
+}
+
+<#
+.SYNOPSIS
+    Draws the fill bar and the figures for one volume.
+
+.PARAMETER Drive
+    Drive letter with its colon, such as C:.
+#>
+function Show-TkSystemVolume {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Drive
+    )
+
+    $volume = @($script:TkSystemSnapshot.Volumes) |
+              Where-Object { $null -ne $_ -and [string] $_.Drive -eq $Drive } |
+              Select-Object -First 1
+
+    $detail = Get-TkControl -Name 'SystemVolumeDetail'
+
+    if ($null -eq $volume) {
+
+        Set-TkUsageBar -BarName 'SystemVolumeBar' -FillName 'SystemVolumeFill' -Percent 0
+
+        if ($detail) {
+            $detail.Text = 'This volume is no longer in the inventory. Refresh the page.'
+        }
+
+        return
+    }
+
+    Set-TkUsageBar -BarName 'SystemVolumeBar' -FillName 'SystemVolumeFill' `
+                   -Percent $volume.UsedPercent -Severity $volume.Severity
+
+    if ($detail) {
+
+        # A whole percentage: formatted in the local culture, a decimal would
+        # read 46,6 on a French Windows next to sizes printed as 1.99 TB.
+        $text = '{0}% used: {1} free of {2}, {3}.' -f [math]::Round($volume.UsedPercent), $volume.Free, $volume.Size, $volume.FileSystem
+
+        if ($volume.Note) {
+            $text += ' ' + $volume.Note
+        }
+
+        $detail.Text = $text
+    }
+}
+
+<#
+.SYNOPSIS
+    Shows the firmware utility button only when the catalog knows one.
+
+.DESCRIPTION
+    A button that answers "no utility is known for this manufacturer" after
+    being pressed is a button that should not have been there. The hint beside
+    it says what happens either way.
+
+.PARAMETER Identity
+    The machine identity from the inventory.
+#>
+function Update-TkVendorToolButton {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        $Identity
+    )
+
+    $vendor = if ($Identity) { Get-TkVendorProfile -Manufacturer $Identity.Manufacturer } else { $null }
+    $known  = ($null -ne $vendor -and -not [string]::IsNullOrWhiteSpace($vendor.updateToolPackage))
+
+    $button = Get-TkControl -Name 'BtnVendorTool'
+
+    if ($button) {
+
+        $button.Visibility = if ($known) { [System.Windows.Visibility]::Visible }
+                             else { [System.Windows.Visibility]::Collapsed }
+
+        if ($known) {
+            $button.Content = 'Install {0}' -f $vendor.updateToolName
+        }
+    }
+
+    $hint = Get-TkControl -Name 'ValVendorToolHint'
+
+    if ($hint) {
+        $hint.Text = if ($known) {
+                         'The toolkit never flashes firmware itself: it installs {0}, which takes over from there.' -f $vendor.updateToolName
+                     }
+                     else {
+                         'No firmware utility is known for this manufacturer. The support site, beside the manufacturer above, has the downloads.'
+                     }
+    }
 }
 
 <#

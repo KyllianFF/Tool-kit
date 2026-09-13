@@ -153,25 +153,8 @@ function Get-TkHardwareInfo {
     }
 
     # --- Logical volumes --------------------------------------------------
-    $volumes = @()
-
-    foreach ($volume in (Get-TkCimInstanceSafe -ClassName 'Win32_LogicalDisk' -Filter 'DriveType=3' -All)) {
-
-        $usedPercent = 0
-
-        if ($volume.Size -gt 0) {
-            $usedPercent = [math]::Round((($volume.Size - $volume.FreeSpace) / $volume.Size) * 100, 1)
-        }
-
-        $volumes += [pscustomobject]@{
-            Drive       = $volume.DeviceID
-            Label       = Format-TkValue $volume.VolumeName -Placeholder '(no label)'
-            FileSystem  = Format-TkValue $volume.FileSystem
-            Size        = Format-TkBytes -Bytes $volume.Size
-            Free        = Format-TkBytes -Bytes $volume.FreeSpace
-            UsedPercent = $usedPercent
-        }
-    }
+    # The columns the reports have always printed, from the one volume reader.
+    $volumes = @(Get-TkVolumeUsage | Select-Object -Property Drive, Label, FileSystem, Size, Free, UsedPercent)
 
     # --- Graphics ---------------------------------------------------------
     $graphics = @()
@@ -204,6 +187,120 @@ function Get-TkHardwareInfo {
 
 <#
 .SYNOPSIS
+    Judges how full a volume is.
+
+.DESCRIPTION
+    The one place these thresholds live. The storage diagnostic, the disk bar
+    on the System page and the storage tile on the Dashboard all ask here, so
+    the three can never disagree about the same drive.
+
+    Below twelve percent free Windows starts to run short of room for updates,
+    the page file and restore points; below five, those start to fail.
+
+.PARAMETER FreePercent
+    Free space as a percentage of the volume.
+
+.OUTPUTS
+    PSCustomObject with Severity and Note.
+#>
+function Get-TkFreeSpaceAssessment {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [double] $FreePercent
+    )
+
+    if ($FreePercent -lt 5) {
+        return [pscustomobject] @{ Severity = 'Fail'; Note = 'Critically full. Updates and restore points will fail.' }
+    }
+
+    if ($FreePercent -lt 12) {
+        return [pscustomobject] @{ Severity = 'Warning'; Note = 'Low. Windows needs headroom for servicing.' }
+    }
+
+    return [pscustomobject] @{ Severity = 'Pass'; Note = '' }
+}
+
+<#
+.SYNOPSIS
+    Turns logical disk records into volume usage, with a judgement on each.
+
+.DESCRIPTION
+    Kept apart from the CIM query, so the arithmetic, a volume that reports no
+    size and the thresholds can all be tested without a disk.
+
+.PARAMETER LogicalDisk
+    Objects shaped like Win32_LogicalDisk: DeviceID, VolumeName, FileSystem,
+    Size and FreeSpace.
+
+.OUTPUTS
+    PSCustomObject[]
+#>
+function ConvertTo-TkVolumeUsage {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]] $LogicalDisk
+    )
+
+    $result = @()
+
+    foreach ($disk in $LogicalDisk) {
+
+        $size = [double] $disk.Size
+        $free = [double] $disk.FreeSpace
+
+        $usedPercent = 0.0
+        $freePercent = 0.0
+
+        if ($size -gt 0) {
+            $usedPercent = [math]::Round((($size - $free) / $size) * 100, 1)
+            $freePercent = [math]::Round(($free / $size) * 100, 1)
+        }
+
+        # A volume with no size is a card reader with nothing in it, not a
+        # full disk. Judging it would raise an alarm about an empty slot.
+        $assessment = if ($size -gt 0) { Get-TkFreeSpaceAssessment -FreePercent $freePercent }
+                      else { [pscustomobject] @{ Severity = 'Info'; Note = 'The volume reports no size.' } }
+
+        $result += [pscustomobject] @{
+            Drive       = [string] $disk.DeviceID
+            Label       = Format-TkValue $disk.VolumeName -Placeholder '(no label)'
+            FileSystem  = Format-TkValue $disk.FileSystem
+            Size        = Format-TkBytes -Bytes $size
+            Free        = Format-TkBytes -Bytes $free
+            UsedPercent = $usedPercent
+            FreePercent = $freePercent
+            Severity    = $assessment.Severity
+            Note        = $assessment.Note
+        }
+    }
+
+    return $result
+}
+
+<#
+.SYNOPSIS
+    Reads the fixed volumes of this machine with their usage.
+
+.OUTPUTS
+    PSCustomObject[], as built by ConvertTo-TkVolumeUsage.
+#>
+function Get-TkVolumeUsage {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    return (ConvertTo-TkVolumeUsage -LogicalDisk @(
+        Get-TkCimInstanceSafe -ClassName 'Win32_LogicalDisk' -Filter 'DriveType=3' -All
+    ))
+}
+
+<#
+.SYNOPSIS
     Collects the platform security posture.
 
 .DESCRIPTION
@@ -228,14 +325,19 @@ function Get-TkPlatformSecurityInfo {
         $secureBoot = if (Confirm-SecureBootUEFI -ErrorAction Stop) { 'Enabled' } else { 'Disabled' }
     }
     catch {
-        # Access denied when not elevated; keep the default message otherwise.
-        if ($_.Exception.Message -match 'denied|privilege') {
+        # Unelevated, the cmdlet is refused before it can say anything about
+        # the firmware. That used to be recognised by the word "denied" in the
+        # message, which a French Windows words "Acces refuse", so every UEFI
+        # machine read as legacy BIOS. Elevation is the question to ask.
+        if (-not (Test-TkIsElevated)) {
             $secureBoot = 'Unknown (needs elevation)'
         }
     }
 
     # --- TPM --------------------------------------------------------------
-    $tpmText = 'Not available'
+    # The TPM class is only readable elevated. Without it, "not available"
+    # would claim the chip is missing when it has simply not been asked.
+    $tpmText = if (Test-TkIsElevated) { 'Not available' } else { 'Unknown (needs elevation)' }
 
     $tpm = Get-TkCimInstanceSafe -ClassName 'Win32_Tpm' -Namespace 'Root\CIMV2\Security\MicrosoftTpm'
 
@@ -245,27 +347,49 @@ function Get-TkPlatformSecurityInfo {
     }
 
     # --- BitLocker --------------------------------------------------------
-    $bitLocker = 'Unknown'
+    # Every fixed drive, judged the way the audit judges it, so this page and
+    # the audit cannot give two answers about the same machine.
+    $bitLocker = 'Not available (needs elevation or unsupported edition)'
 
     try {
-        $volume = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop
-        $bitLocker = '{0} ({1}%)' -f $volume.ProtectionStatus, $volume.EncryptionPercentage
+        $bitLockerVolumes = @(Get-BitLockerVolume -ErrorAction Stop)
+
+        $removable = @(Get-TkCimInstanceSafe -ClassName 'Win32_LogicalDisk' -Filter 'DriveType = 2' -All |
+                       ForEach-Object { [string] $_.DeviceID })
+
+        $bitLocker = (ConvertTo-TkBitLockerFinding -Volume $bitLockerVolumes -RemovableMountPoint $removable).Measured
     }
     catch {
-        $bitLocker = 'Not available (needs elevation or unsupported edition)'
+        $null = $_
     }
 
-    # --- Defender ---------------------------------------------------------
-    $defender = 'Unknown'
+    # --- Defender and the antivirus in charge ------------------------------
+    # Defender's own state alone reads as "off" on a machine another antivirus
+    # protects, which is the misreading the audit was rebuilt to stop. So the
+    # product actually protecting the machine is reported first, and Defender's
+    # mode beside it explains the rest.
+    $defender        = 'Not available'
+    $defenderRunning = $false
 
     try {
-        $status   = Get-MpComputerStatus -ErrorAction Stop
-        $defender = 'Real-time: {0} | Signatures: {1}' -f
-            $status.RealTimeProtectionEnabled, $status.AntivirusSignatureVersion
+        $status = Get-MpComputerStatus -ErrorAction Stop
+
+        $mode = if ($status.PSObject.Properties['AMRunningMode']) { [string] $status.AMRunningMode } else { 'Mode unknown' }
+
+        $defenderRunning = [bool] $status.RealTimeProtectionEnabled
+        $defender        = '{0}, real time protection {1}' -f $mode, $(if ($defenderRunning) { 'on' } else { 'off' })
     }
     catch {
-        $defender = 'Not available'
+        $null = $_
     }
+
+    $running = @(Get-TkAntivirusProduct | Where-Object { $_.RealTimeEnabled -eq $true } | ForEach-Object { $_.Name })
+
+    # Server editions have no Security Center to list products, so Defender
+    # speaks for itself there.
+    $antivirus = if ($running.Count -gt 0) { $running -join ', ' }
+                 elseif ($defenderRunning) { 'Microsoft Defender' }
+                 else { 'None running' }
 
     # --- Firewall ---------------------------------------------------------
     $firewall = 'Unknown'
@@ -284,6 +408,7 @@ function Get-TkPlatformSecurityInfo {
         SecureBoot = $secureBoot
         Tpm        = $tpmText
         BitLocker  = $bitLocker
+        Antivirus  = $antivirus
         Defender   = $defender
         Firewall   = $firewall
     }

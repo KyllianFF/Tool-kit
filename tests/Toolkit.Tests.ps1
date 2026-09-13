@@ -1121,7 +1121,7 @@ Describe 'Interface rendering' {
 
             # A code point the font does not carry renders as an empty box.
             # Nothing else in the suite can see that.
-            foreach ($name in @('NavSystem', 'NavSoftware', 'NavTweaks', 'NavFixes',
+            foreach ($name in @('NavDashboard', 'NavSystem', 'NavSoftware', 'NavTweaks', 'NavFixes',
                                 'NavNetwork', 'NavDiagnostics', 'NavSecurity')) {
 
                 $button = $script:Window.FindName($name)
@@ -2257,6 +2257,217 @@ PC,System,Verrouillage du compte,{0cce9217-69ae-11d9-bed3-505054503030},Succes,,
         It 'does not assess a group it could not read' {
 
             (Test-TkAuditLocalAdministrators -Member @() -ExcludedAccount @()).Status | Should -Be 'NotAssessed'
+        }
+    }
+}
+
+Describe 'Dashboard and pages' {
+
+    BeforeAll {
+        $script:Markup = Get-TkMainWindowXaml
+    }
+
+    Context 'Pages' {
+
+        It 'gives every page a navigation button and a panel' {
+
+            foreach ($page in (Get-TkPageName)) {
+                $script:Markup | Should -Match ('x:Name="Nav{0}"' -f $page)
+                $script:Markup | Should -Match ('x:Name="Page{0}"' -f $page)
+            }
+        }
+
+        It 'has no page in the markup that the page list does not know' {
+
+            # A panel added to the markup but not to the list can never be
+            # shown; a button would do nothing.
+            $known = @(Get-TkPageName)
+
+            foreach ($match in [regex]::Matches($script:Markup, 'x:Name="(?:Nav|Page)(?<name>[A-Za-z]+)"')) {
+
+                $name = $match.Groups['name'].Value
+
+                if ($name -eq 'Host') {
+                    continue
+                }
+
+                $known | Should -Contain $name
+            }
+        }
+
+        It 'opens on the Dashboard' {
+
+            @(Get-TkPageName)[0] | Should -Be 'Dashboard'
+        }
+    }
+
+    Context 'Quick actions' {
+
+        It 'point at pages, tabs and functions that exist' {
+
+            $actions = @(Get-TkQuickAction)
+            $pages   = @(Get-TkPageName)
+
+            $actions.Count | Should -BeGreaterThan 2
+
+            foreach ($action in $actions) {
+
+                if ($action.Page) {
+                    $pages | Should -Contain $action.Page -Because $action.Id
+                }
+
+                if ($action.TabControl) {
+                    $script:Markup | Should -Match ('<TabControl x:Name="{0}"' -f $action.TabControl) -Because $action.Id
+                    $script:Markup | Should -Match ('<TabItem Header="{0}"' -f [regex]::Escape($action.Tab)) -Because $action.Id
+                }
+
+                Get-Command -Name $action.Start -ErrorAction SilentlyContinue |
+                    Should -Not -BeNullOrEmpty -Because ('{0} starts {1}' -f $action.Id, $action.Start)
+            }
+        }
+
+        It 'have unique identifiers' {
+
+            $ids = @(Get-TkQuickAction | ForEach-Object { $_.Id })
+
+            @($ids | Sort-Object -Unique).Count | Should -Be $ids.Count
+        }
+    }
+
+    Context 'Readings' {
+
+        It 'judges free space with one set of thresholds' {
+
+            (Get-TkFreeSpaceAssessment -FreePercent 4.9).Severity  | Should -Be 'Fail'
+            (Get-TkFreeSpaceAssessment -FreePercent 5).Severity    | Should -Be 'Warning'
+            (Get-TkFreeSpaceAssessment -FreePercent 11.9).Severity | Should -Be 'Warning'
+            (Get-TkFreeSpaceAssessment -FreePercent 12).Severity   | Should -Be 'Pass'
+        }
+
+        It 'works out volume usage, and does not judge a volume with no size' {
+
+            $usage = @(ConvertTo-TkVolumeUsage -LogicalDisk @(
+                [pscustomobject] @{ DeviceID = 'C:'; VolumeName = 'System'; FileSystem = 'NTFS'; Size = 100GB; FreeSpace = 10GB }
+                [pscustomobject] @{ DeviceID = 'F:'; VolumeName = '';       FileSystem = '';     Size = 0;     FreeSpace = 0 }
+            ))
+
+            $usage.Count          | Should -Be 2
+            $usage[0].UsedPercent | Should -Be 90
+            $usage[0].FreePercent | Should -Be 10
+            $usage[0].Severity    | Should -Be 'Warning'
+            $usage[1].UsedPercent | Should -Be 0
+            $usage[1].Severity    | Should -Be 'Info'
+        }
+
+        It 'picks the adapter with a gateway over a VPN without one' {
+
+            $vpn      = [pscustomobject] @{ Name = 'VPN';      IPv4Address = '10.8.0.2';     Gateway = 'None' }
+            $ethernet = [pscustomobject] @{ Name = 'Ethernet'; IPv4Address = '192.168.1.20'; Gateway = '192.168.1.1' }
+
+            (Select-TkPrimaryAdapter -Adapter @($vpn, $ethernet)).Name | Should -Be 'Ethernet'
+        }
+
+        It 'falls back to an adapter with an address, then to none' {
+
+            $noAddress = [pscustomobject] @{ Name = 'Bluetooth'; IPv4Address = 'None';       Gateway = 'None' }
+            $address   = [pscustomobject] @{ Name = 'Wi-Fi';     IPv4Address = '172.16.0.4'; Gateway = 'None' }
+
+            (Select-TkPrimaryAdapter -Adapter @($noAddress, $address)).Name | Should -Be 'Wi-Fi'
+            Select-TkPrimaryAdapter -Adapter @() | Should -BeNullOrEmpty
+        }
+
+        It 'unrolls a reader that returns its array with the comma operator' {
+
+            # Get-TkBatteryState returns , @() on a desktop. Taken as one item,
+            # that empty array was counted as a battery.
+            @(Read-TkDashboardPart -Part 'Empty' -Reader { return , @() }).Count        | Should -Be 0
+            @(Read-TkDashboardPart -Part 'Two'   -Reader { return , @('a', 'b') }).Count | Should -Be 2
+        }
+
+        It 'judges patch age with the same thresholds as the audit' {
+
+            Get-TkPatchAgeSeverity -Days 35 | Should -Be 'Pass'
+            Get-TkPatchAgeSeverity -Days 36 | Should -Be 'Warning'
+            Get-TkPatchAgeSeverity -Days 60 | Should -Be 'Warning'
+            Get-TkPatchAgeSeverity -Days 61 | Should -Be 'Fail'
+        }
+
+        It 'takes the most recent dated hotfix and skips undated ones' {
+
+            $last = Select-TkLastHotFix -HotFix @(
+                [pscustomobject] @{ HotFixID = 'KB1'; InstalledOn = [datetime] '2026-08-01' }
+                [pscustomobject] @{ HotFixID = 'KB2'; InstalledOn = $null }
+                [pscustomobject] @{ HotFixID = 'KB3'; InstalledOn = [datetime] '2026-09-01' }
+            )
+
+            $last.HotFixID | Should -Be 'KB3'
+        }
+    }
+
+    Context 'Health tiles' {
+
+        BeforeAll {
+            $script:Snapshot = [pscustomobject] @{
+                Reboot     = [pscustomobject] @{ Pending = $true; Reasons = @('Windows Update is waiting for a restart.'); Uptime = '3 days' }
+                LastHotFix = [pscustomobject] @{ HotFixID = 'KB5099999'; InstalledOn = [datetime] '2026-08-01' }
+                Volumes    = @(
+                    [pscustomobject] @{ Drive = 'D:'; UsedPercent = 20;   Free = '800 GB'; Size = '1 TB';   Severity = 'Pass' }
+                    [pscustomobject] @{ Drive = 'C:'; UsedPercent = 96.5; Free = '17 GB';  Size = '476 GB'; Severity = 'Fail' }
+                )
+                Disks      = @(
+                    [pscustomobject] @{ Name = 'NVMe 1TB'; Severity = 'Pass'; Notes = '' }
+                )
+                Battery    = @()
+            }
+
+            $script:Tiles = @(ConvertTo-TkDashboardHealth -Snapshot $script:Snapshot `
+                                                          -Now ([datetime] '2026-09-13') -SystemDrive 'C:')
+        }
+
+        It 'draws one tile per question' {
+
+            $script:Tiles.Count | Should -Be 5
+        }
+
+        It 'flags a pending restart and says why' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -eq 'Restart' }
+
+            $tile.Severity | Should -Be 'Warning'
+            $tile.Detail   | Should -Match 'Windows Update'
+        }
+
+        It 'reports storage for the system drive, not the first drive listed' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -like 'Storage*' }
+
+            $tile.Title    | Should -Be 'Storage C:'
+            $tile.Severity | Should -Be 'Fail'
+            $tile.Percent  | Should -Be 96.5
+            $tile.Page     | Should -Be 'System'
+        }
+
+        It 'measures patch age from the date it is given' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -eq 'Updates' }
+
+            $tile.Value    | Should -Be '43 days ago'
+            $tile.Severity | Should -Be 'Warning'
+        }
+
+        It 'reports a machine with no battery without marking it down' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -eq 'Battery' }
+
+            $tile.Value    | Should -Be 'No battery'
+            $tile.Severity | Should -Be 'Info'
+        }
+
+        It 'names a page that exists on every tile' {
+
+            foreach ($tile in $script:Tiles) {
+                @(Get-TkPageName) | Should -Contain $tile.Page
+            }
         }
     }
 }

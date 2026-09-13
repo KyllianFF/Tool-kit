@@ -256,22 +256,44 @@ function Register-TkFirstShow {
 
 <#
 .SYNOPSIS
+    Returns the page names, in navigation order.
+
+.DESCRIPTION
+    The one list of pages. Adding a page used to mean a parameter validation
+    and three copies of the same array in this file, and missing one left a
+    page that could be shown but never highlighted, or a button that did
+    nothing. A test checks that every name here has its navigation button and
+    its panel in the markup, and that the markup has no page this list lacks.
+
+.OUTPUTS
+    System.String[]
+#>
+function Get-TkPageName {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+
+    return @('Dashboard', 'System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')
+}
+
+<#
+.SYNOPSIS
     Shows one feature page and hides the others.
 
 .PARAMETER Name
-    Page key: System, Software, Tweaks, Fixes, Network or Security.
+    Page key, one of the names Get-TkPageName returns.
 #>
 function Show-TkPage {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')]
+        [ValidateScript({ @(Get-TkPageName) -contains $_ })]
         [string] $Name
     )
 
     $ctx = Get-TkContext
 
-    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')) {
+    foreach ($page in @(Get-TkPageName)) {
 
         $control = Get-TkControl -Name ('Page{0}' -f $page)
 
@@ -288,7 +310,7 @@ function Show-TkPage {
     }
 
     # Highlight the active navigation entry.
-    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')) {
+    foreach ($page in @(Get-TkPageName)) {
 
         $button = Get-TkControl -Name ('Nav{0}' -f $page)
 
@@ -328,6 +350,51 @@ function Show-TkPage {
             }
         }
     }
+}
+
+<#
+.SYNOPSIS
+    Selects a tab by its header.
+
+.DESCRIPTION
+    Matched on the header rather than the position, so a tab moved or added
+    later cannot silently send a quick action to the wrong place.
+
+.PARAMETER TabControlName
+    Name of the TabControl in the markup.
+
+.PARAMETER Header
+    Header text of the tab to select.
+
+.OUTPUTS
+    System.Boolean, true when the tab was found.
+#>
+function Select-TkTab {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $TabControlName,
+
+        [Parameter(Mandatory)]
+        [string] $Header
+    )
+
+    $tabs = Get-TkControl -Name $TabControlName
+
+    if ($null -eq $tabs) {
+        return $false
+    }
+
+    foreach ($item in $tabs.Items) {
+
+        if ($item -is [System.Windows.Controls.TabItem] -and [string] $item.Header -eq $Header) {
+            $item.IsSelected = $true
+            return $true
+        }
+    }
+
+    return $false
 }
 
 <#
@@ -979,7 +1046,7 @@ function Initialize-TkShell {
     Update-TkElevationBadge
 
     # --- Navigation -------------------------------------------------------
-    foreach ($page in @('System', 'Software', 'Tweaks', 'Fixes', 'Network', 'Diagnostics', 'Hardware', 'Security')) {
+    foreach ($page in @(Get-TkPageName)) {
 
         $name = 'Nav{0}' -f $page
 

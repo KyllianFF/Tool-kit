@@ -617,3 +617,44 @@ function Get-TkPublicIpAddress {
         return 'Not available'
     }
 }
+
+<#
+.SYNOPSIS
+    Picks the adapter that carries this machine's traffic.
+
+.DESCRIPTION
+    The one with a default gateway: that is the route everything leaves by,
+    and the address a user reads out on a support call. Failing that, the
+    first with an IPv4 address; failing that, the first adapter at all.
+
+    A machine with a VPN client and a virtual switch has several addresses,
+    and the wrong one shown on the Dashboard is worse than none.
+
+.PARAMETER Adapter
+    Output of Get-TkNetworkAdapterInfo.
+
+.OUTPUTS
+    PSCustomObject, or null when there is no adapter.
+#>
+function Select-TkPrimaryAdapter {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]] $Adapter
+    )
+
+    $withAddress = @($Adapter | Where-Object { $_.IPv4Address -and $_.IPv4Address -ne 'None' })
+    $withGateway = @($withAddress | Where-Object { $_.Gateway -and $_.Gateway -ne 'None' })
+
+    if ($withGateway.Count -gt 0) {
+        return $withGateway[0]
+    }
+
+    if ($withAddress.Count -gt 0) {
+        return $withAddress[0]
+    }
+
+    return ($Adapter | Select-Object -First 1)
+}

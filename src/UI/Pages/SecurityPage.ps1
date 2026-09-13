@@ -754,27 +754,8 @@ function Show-TkAuditScore {
         $summary.Text = $text
     }
 
-    # Two star columns rather than a ProgressBar or a measured width. The fill
-    # carries the result colour without restyling a control for one use, and it
-    # stays proportional through a resize without any code measuring anything.
-    $bar  = Get-TkControl -Name 'AuditScoreBar'
-    $fill = Get-TkControl -Name 'AuditScoreFill'
-
-    if ($bar -and $bar.ColumnDefinitions.Count -eq 2) {
-
-        $filled = [math]::Max(0, [math]::Min(100, [int] $score.Score))
-
-        $bar.ColumnDefinitions[0].Width = New-Object System.Windows.GridLength(
-            $filled, [System.Windows.GridUnitType]::Star)
-
-        $bar.ColumnDefinitions[1].Width = New-Object System.Windows.GridLength(
-            (100 - $filled), [System.Windows.GridUnitType]::Star)
-    }
-
-    if ($fill) {
-        $fill.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty,
-            (Get-TkSeverityBrushKey -Severity $severity))
-    }
+    # The same bar as the disk space bars, from the same helper.
+    Set-TkUsageBar -BarName 'AuditScoreBar' -FillName 'AuditScoreFill' -Percent $score.Score -Severity $severity
 }
 
 <#

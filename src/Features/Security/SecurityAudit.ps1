@@ -1439,6 +1439,67 @@ function Get-TkLocalAdministrator {
 
 <#
 .SYNOPSIS
+    Judges how long ago the last update was installed.
+
+.DESCRIPTION
+    One patch cycle is a month. Past thirty five days one has been missed;
+    past sixty, two, which is where publicly exploited vulnerabilities live.
+    The audit and the Dashboard both ask here, so they never disagree.
+
+.PARAMETER Days
+    Days since the last update was installed.
+
+.OUTPUTS
+    System.String: Pass, Warning or Fail.
+#>
+function Get-TkPatchAgeSeverity {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [double] $Days
+    )
+
+    if ($Days -gt 60) {
+        return 'Fail'
+    }
+
+    if ($Days -gt 35) {
+        return 'Warning'
+    }
+
+    return 'Pass'
+}
+
+<#
+.SYNOPSIS
+    Returns the most recently installed hotfix, or nothing.
+
+.DESCRIPTION
+    Entries without an install date are skipped: Windows leaves the date empty
+    on some servicing stack updates, and sorting them in would put an undated
+    entry first.
+
+.PARAMETER HotFix
+    Output of Get-HotFix.
+#>
+function Select-TkLastHotFix {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]] $HotFix
+    )
+
+    return ($HotFix |
+            Where-Object { $null -ne $_ -and $_.InstalledOn } |
+            Sort-Object -Property InstalledOn -Descending |
+            Select-Object -First 1)
+}
+
+<#
+.SYNOPSIS
     Checks how long ago the last update was installed.
 #>
 function Test-TkAuditWindowsUpdate {
@@ -1446,10 +1507,7 @@ function Test-TkAuditWindowsUpdate {
     param()
 
     try {
-        $lastUpdate = Get-HotFix -ErrorAction Stop |
-                      Where-Object { $_.InstalledOn } |
-                      Sort-Object -Property InstalledOn -Descending |
-                      Select-Object -First 1
+        $lastUpdate = Select-TkLastHotFix -HotFix @(Get-HotFix -ErrorAction Stop)
 
         if (-not $lastUpdate) {
 
@@ -1459,14 +1517,16 @@ function Test-TkAuditWindowsUpdate {
 
         $age = (Get-Date) - $lastUpdate.InstalledOn
 
-        if ($age.TotalDays -gt 60) {
+        $severity = Get-TkPatchAgeSeverity -Days $age.TotalDays
+
+        if ($severity -eq 'Fail') {
 
             return New-TkAuditFinding -Id 'UPD-001' -Name 'Patch level' -Category 'Servicing' `
                 -Status 'Fail' -Detail ('The last update was installed {0} days ago ({1}).' -f [int] $age.TotalDays, $lastUpdate.HotFixID) `
                 -Recommendation 'Run a Windows Update scan. Two missed patch cycles is where publicly exploited vulnerabilities live.'
         }
 
-        if ($age.TotalDays -gt 35) {
+        if ($severity -eq 'Warning') {
 
             return New-TkAuditFinding -Id 'UPD-001' -Name 'Patch level' -Category 'Servicing' `
                 -Status 'Warning' -Detail ('The last update was installed {0} days ago.' -f [int] $age.TotalDays) `

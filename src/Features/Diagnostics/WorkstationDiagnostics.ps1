@@ -182,19 +182,11 @@ function Get-TkStorageHealth {
             $freePercent = [math]::Round(($volume.FreeSpace / $volume.Size) * 100, 1)
         }
 
-        $severity = 'Pass'
-        $notes    = ''
-
-        # Below ten percent Windows starts to struggle: no room for updates,
-        # no room for the page file to grow, no room for a restore point.
-        if ($freePercent -lt 5) {
-            $severity = 'Fail'
-            $notes    = 'Critically full. Updates and restore points will fail.'
-        }
-        elseif ($freePercent -lt 12) {
-            $severity = 'Warning'
-            $notes    = 'Low. Windows needs headroom for servicing.'
-        }
+        # The thresholds live in Get-TkFreeSpaceAssessment, shared with the
+        # System page and the Dashboard.
+        $assessment = Get-TkFreeSpaceAssessment -FreePercent $freePercent
+        $severity   = $assessment.Severity
+        $notes      = $assessment.Note
 
         $results += [pscustomobject]@{
             Severity     = $severity
