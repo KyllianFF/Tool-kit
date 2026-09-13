@@ -461,6 +461,43 @@ function Get-TkSwitchNeighbour {
 
 <#
 .SYNOPSIS
+    Reads a pcapng capture file and decodes the announcements in it.
+
+.DESCRIPTION
+    A missing file and a file with no packet in it both give no frame and no
+    neighbour, never a null: the first version assigned the result of an if
+    statement, which yields nothing at all when its branch is an empty array,
+    and the null that followed failed the whole discovery after a capture that
+    had simply heard nothing.
+
+.PARAMETER Path
+    The pcapng file pktmon wrote.
+
+.OUTPUTS
+    PSCustomObject with Frames, a count, and Neighbours, an array.
+#>
+function Read-TkSwitchCapture {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path
+    )
+
+    $frames = @(
+        if (Test-Path -LiteralPath $Path) {
+            ConvertFrom-TkPcapNg -Bytes ([System.IO.File]::ReadAllBytes($Path))
+        }
+    )
+
+    return [pscustomobject] @{
+        Frames     = $frames.Count
+        Neighbours = @(Get-TkSwitchNeighbour -Frame $frames)
+    }
+}
+
+<#
+.SYNOPSIS
     Writes the result of a discovery as text for the output box.
 
 .PARAMETER Discovery
@@ -583,6 +620,13 @@ function Invoke-TkSwitchPortDiscovery {
                     & $tool filter add $filter.Name -m $spelling 2>&1 | Out-Null
 
                     if ($LASTEXITCODE -eq 0) {
+
+                        # Recorded, so a silent capture can be told from a
+                        # filter that matched nothing because of its spelling.
+                        Write-TkLog -Level Information -Category 'Capture' -Message (
+                            'Packet Monitor filter "{0}" set on {1}.' -f $filter.Name, $spelling
+                        )
+
                         $added = $true
                         break
                     }
@@ -608,12 +652,11 @@ function Invoke-TkSwitchPortDiscovery {
 
         & $tool etl2pcap $etl --out $pcap 2>&1 | Out-Null
 
-        $frames     = if (Test-Path -LiteralPath $pcap) { @(ConvertFrom-TkPcapNg -Bytes ([System.IO.File]::ReadAllBytes($pcap))) } else { @() }
-        $neighbours = @(Get-TkSwitchNeighbour -Frame $frames)
+        $capture = Read-TkSwitchCapture -Path $pcap
 
         Stop-TkOperation -Name 'Switch port discovery' -Stopwatch $stopwatch -Category 'Capture'
 
-        return (& $result $(if ($neighbours.Count -gt 0) { 'Found' } else { 'Silent' }) $neighbours $frames.Count '')
+        return (& $result $(if ($capture.Neighbours.Count -gt 0) { 'Found' } else { 'Silent' }) $capture.Neighbours $capture.Frames '')
     }
     catch {
         Stop-TkOperation -Name 'Switch port discovery' -Stopwatch $stopwatch -Category 'Capture' -Success $false

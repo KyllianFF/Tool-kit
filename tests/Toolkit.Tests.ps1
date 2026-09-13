@@ -2434,6 +2434,61 @@ Describe 'Switch port discovery' {
 
         (Invoke-TkSwitchPortDiscovery -Seconds 5).Status | Should -Be 'NotElevated'
     }
+
+    It 'reads a capture that heard nothing as no frame, not as a failure' {
+
+        # The first run on a real machine: pktmon wrote a pcapng with its
+        # headers and no packet, and the empty result became a null that failed
+        # the whole discovery.
+        $path = Join-Path $TestDrive 'silent.pcapng'
+        [System.IO.File]::WriteAllBytes($path, (ConvertTo-TestPcapNg -Frame @()))
+
+        $capture = Read-TkSwitchCapture -Path $path
+
+        $capture.Frames            | Should -Be 0
+        @($capture.Neighbours).Count | Should -Be 0
+    }
+
+    It 'reads a missing capture file as no frame' {
+        (Read-TkSwitchCapture -Path (Join-Path $TestDrive 'never-written.pcapng')).Frames | Should -Be 0
+    }
+
+    It 'finds the neighbour in a capture file that has one' {
+
+        $path = Join-Path $TestDrive 'heard.pcapng'
+        [System.IO.File]::WriteAllBytes($path, (ConvertTo-TestPcapNg @($script:ArpFrame, $script:CdpFrame)))
+
+        $capture = Read-TkSwitchCapture -Path $path
+
+        $capture.Frames                  | Should -Be 2
+        @($capture.Neighbours)[0].Port   | Should -Be 'GigabitEthernet0/5'
+    }
+}
+
+Describe 'Logging from background workers' {
+
+    AfterEach {
+        $script:TkWorker = $null
+    }
+
+    It 'keeps worker lines out of the console window, which a selection would freeze' {
+
+        Mock Write-Host { }
+
+        $script:TkWorker = $true
+        Write-TkLog -Level Information -Category 'Test' -Message 'From a worker'
+
+        Should -Invoke Write-Host -Times 0 -Exactly
+    }
+
+    It 'still writes to the console from the interface thread' {
+
+        Mock Write-Host { }
+
+        Write-TkLog -Level Information -Category 'Test' -Message 'From the interface'
+
+        Should -Invoke Write-Host -Times 1 -Exactly
+    }
 }
 
 Describe 'Diagnostic reports' {

@@ -78,6 +78,16 @@ function Write-TkLog {
     }
 
     # --- Console sink -----------------------------------------------------
+    # Not from a background worker. A console window in selection mode, which
+    # a single click in it turns on, holds every write until the selection
+    # ends: a worker writing there waits with it, its task never completes,
+    # and the interface keeps showing the work as running. The file above has
+    # the line either way.
+    if ($script:TkWorker) {
+        Write-TkUiConsole -Line $line -Level $Level
+        return
+    }
+
     switch ($Level) {
         'Error'       { Write-Host $line -ForegroundColor Red    ; break }
         'Warning'     { Write-Host $line -ForegroundColor Yellow ; break }
