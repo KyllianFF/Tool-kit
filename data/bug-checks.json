@@ -1,0 +1,134 @@
+{
+  "reference": "https://learn.microsoft.com/windows-hardware/drivers/debugger/bug-check-code-reference2",
+  "kinds": [
+    {
+      "id": "driver",
+      "name": "A driver",
+      "steps": [
+        "Look at the kernel drivers registered shortly before the crash: hardware monitoring, overclocking, RGB, anti-cheat and antivirus tools install their own, and they are the usual suspects.",
+        "Update or uninstall the most recent of them, then watch whether the crash comes back.",
+        "Update the graphics, network, storage and chipset drivers from the manufacturer rather than through a driver updater."
+      ]
+    },
+    {
+      "id": "memory",
+      "name": "Memory, or a driver corrupting it",
+      "steps": [
+        "Run the Windows Memory Diagnostic from Diagnostics, Hardware tests, Memory.",
+        "Remove any overclock or XMP/EXPO memory profile and test again at the default speed.",
+        "If memory tests clean, treat it as a driver problem: the same code is often a driver writing where it should not."
+      ]
+    },
+    {
+      "id": "storage",
+      "name": "Storage",
+      "steps": [
+        "Read Storage health first: a failing disk explains this family of codes.",
+        "Update the storage controller driver and the SSD firmware.",
+        "Check the cable or the seating of the drive, then run chkdsk on the system volume."
+      ]
+    },
+    {
+      "id": "graphics",
+      "name": "The graphics driver or card",
+      "steps": [
+        "Install the current driver from the card manufacturer, removing the old one first.",
+        "Remove any GPU overclock and check the card temperature under load.",
+        "If a new driver started it, roll back to the previous version."
+      ]
+    },
+    {
+      "id": "hardware",
+      "name": "Hardware",
+      "steps": [
+        "Remove every overclock and undervolt, and load the firmware defaults.",
+        "Check temperatures and cooling under load.",
+        "Update the system firmware; a processor reporting uncorrectable errors after that needs the hardware checked."
+      ]
+    },
+    {
+      "id": "power",
+      "name": "Power management",
+      "steps": [
+        "Note whether it happens on sleep, resume or shutdown.",
+        "Update the chipset, graphics and network drivers, and the system firmware.",
+        "Turn off fast startup to see whether the crash stops."
+      ]
+    },
+    {
+      "id": "system",
+      "name": "Windows system files",
+      "steps": [
+        "Run the System File Checker and the DISM repair from Fixes.",
+        "Read Storage health, because damaged system files often come from a failing disk.",
+        "Check whether the crash started with an update, in Update history."
+      ]
+    },
+    {
+      "id": "firmware",
+      "name": "Firmware",
+      "steps": [
+        "Update the system firmware from the manufacturer.",
+        "Load the firmware defaults, then change only what is needed."
+      ]
+    },
+    {
+      "id": "manual",
+      "name": "Started on purpose",
+      "steps": [
+        "Nothing is broken: the crash was triggered deliberately, by a key combination set up for debugging, a tool, or holding the power button."
+      ]
+    }
+  ],
+  "codes": [
+    { "code": "0x0000000A", "kind": "driver",   "meaning": "A driver, or faulty memory, accessed memory it was not allowed to at that moment." },
+    { "code": "0x00000019", "kind": "memory",   "meaning": "A memory pool header was found corrupted, usually by a driver." },
+    { "code": "0x0000001A", "kind": "memory",   "meaning": "The memory manager found its own structures damaged. Faulty memory is the first suspect." },
+    { "code": "0x0000001E", "kind": "driver",   "meaning": "Code running in the kernel raised an exception that nothing handled." },
+    { "code": "0x00000024", "kind": "storage",  "meaning": "The NTFS file system driver hit a problem, typically damage on the disk." },
+    { "code": "0x0000003B", "kind": "driver",   "meaning": "An exception happened while a system service was running, often in a graphics or antivirus driver." },
+    { "code": "0x00000050", "kind": "memory",   "meaning": "Memory that must always be present was referenced and was not valid: faulty memory, a driver or antivirus software." },
+    { "code": "0x00000074", "kind": "system",   "meaning": "The system registry hive is damaged." },
+    { "code": "0x00000077", "kind": "storage",  "meaning": "Kernel data could not be read back from the paging file." },
+    { "code": "0x0000007A", "kind": "storage",  "meaning": "Kernel data could not be read from the disk into memory: a failing disk, cable or controller." },
+    { "code": "0x0000007B", "kind": "storage",  "meaning": "Windows lost access to the system drive during start up: a changed storage controller mode, a driver, or the disk itself." },
+    { "code": "0x0000007E", "kind": "driver",   "meaning": "A system thread raised an exception that nothing handled." },
+    { "code": "0x0000007F", "kind": "hardware", "meaning": "The processor raised a trap the kernel did not catch: unstable hardware, overheating, or a driver." },
+    { "code": "0x00000080", "kind": "hardware", "meaning": "A hardware failure was signalled to the processor." },
+    { "code": "0x0000009C", "kind": "hardware", "meaning": "The processor reported a fatal machine check error." },
+    { "code": "0x0000009F", "kind": "power",    "meaning": "A driver did not finish a power transition in time, often on sleep, resume or shutdown." },
+    { "code": "0x000000A0", "kind": "power",    "meaning": "The power policy manager hit a fatal error, often around hibernation." },
+    { "code": "0x000000A5", "kind": "firmware", "meaning": "The firmware ACPI tables are not compatible with Windows." },
+    { "code": "0x000000BE", "kind": "driver",   "meaning": "A driver tried to write to read only memory." },
+    { "code": "0x000000C2", "kind": "driver",   "meaning": "A driver made a bad memory pool request." },
+    { "code": "0x000000C4", "kind": "driver",   "meaning": "Driver Verifier caught a driver breaking a rule. Verifier is turned on for this machine; turn it off with verifier /reset once the driver is known." },
+    { "code": "0x000000C5", "kind": "driver",   "meaning": "A driver corrupted the kernel memory pool." },
+    { "code": "0x000000D1", "kind": "driver",   "meaning": "A driver accessed pageable memory at a moment it was not allowed to. Network, storage and antivirus drivers are the usual cause." },
+    { "code": "0x000000E2", "kind": "manual",   "meaning": "The crash was started deliberately." },
+    { "code": "0x000000ED", "kind": "storage",  "meaning": "The system volume could not be mounted during start up." },
+    { "code": "0x000000EF", "kind": "system",   "meaning": "A process Windows cannot run without stopped. Damaged system files and a failing disk are the common causes." },
+    { "code": "0x000000F4", "kind": "storage",  "meaning": "A critical process or thread ended, most often because the disk stopped answering." },
+    { "code": "0x000000F7", "kind": "driver",   "meaning": "A driver overran a buffer on its stack. Windows stopped on purpose, because that is how an attack takes control of the kernel." },
+    { "code": "0x000000FC", "kind": "driver",   "meaning": "Code tried to run from memory marked as not executable." },
+    { "code": "0x000000FE", "kind": "driver",   "meaning": "A USB driver hit a fatal error." },
+    { "code": "0x00000101", "kind": "hardware", "meaning": "A processor stopped answering its clock interrupt: processor instability from overclocking, voltage or heat, or old firmware." },
+    { "code": "0x00000109", "kind": "memory",   "meaning": "Kernel code or data was modified: a driver patching the kernel, or faulty memory." },
+    { "code": "0x0000010D", "kind": "driver",   "meaning": "A driver built on the Windows Driver Framework broke a framework rule." },
+    { "code": "0x00000113", "kind": "graphics", "meaning": "The graphics kernel hit a fatal error." },
+    { "code": "0x00000116", "kind": "graphics", "meaning": "The graphics driver stopped responding and could not be recovered." },
+    { "code": "0x00000117", "kind": "graphics", "meaning": "The graphics driver stopped responding and was reset." },
+    { "code": "0x00000119", "kind": "graphics", "meaning": "The graphics scheduler hit a fatal error." },
+    { "code": "0x00000124", "kind": "hardware", "meaning": "The processor reported an uncorrectable hardware error: processor, memory, heat, voltage or overclocking." },
+    { "code": "0x0000012B", "kind": "memory",   "meaning": "A single bit error was found in a memory page: faulty memory." },
+    { "code": "0x00000133", "kind": "driver",   "meaning": "A deferred procedure call ran too long, typically in a storage or network driver, or SSD firmware." },
+    { "code": "0x00000139", "kind": "driver",   "meaning": "The kernel detected that a critical data structure was corrupted, usually by a driver." },
+    { "code": "0x0000013A", "kind": "driver",   "meaning": "The kernel heap was corrupted, usually by a driver." },
+    { "code": "0x00000144", "kind": "driver",   "meaning": "A USB 3 controller or driver hit a fatal error." },
+    { "code": "0x00000154", "kind": "storage",  "meaning": "The memory store component raised an unexpected exception, most often because of the disk or its firmware." },
+    { "code": "0x000001AA", "kind": "driver",   "meaning": "An exception was raised on a stack that was not valid: kernel stack corruption, typically by a driver." },
+    { "code": "0x000001C8", "kind": "manual",   "meaning": "The power button was held to force the crash." },
+    { "code": "0x000001D5", "kind": "driver",   "meaning": "A driver took too long to handle a Plug and Play operation." },
+    { "code": "0xC000021A", "kind": "system",   "meaning": "A critical user mode subsystem failed, often after a damaged update or system files." },
+    { "code": "0xDEADDEAD", "kind": "manual",   "meaning": "The crash was started deliberately." }
+  ]
+}

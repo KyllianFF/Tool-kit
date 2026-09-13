@@ -252,12 +252,23 @@ function Get-TkStabilityReport {
 
     foreach ($record in @($bugChecks | Select-Object -First 10)) {
 
+        # The stop code from the untranslated property, named from the
+        # catalog. The message around it is in the display language.
+        $parsed = ConvertFrom-TkBugCheckText -Text ([string] @($record.Properties)[0].Value)
+
+        $detail = if ($parsed) {
+                      '{0} {1}' -f $parsed.CodeHex, (Get-TkBugCheckInfo -Code $parsed.Code).Name
+                  }
+                  else {
+                      ($record.Message -split "`r?`n" | Where-Object { $_ } | Select-Object -First 1)
+                  }
+
         $results += [pscustomobject]@{
             Severity = 'Fail'
             Kind     = 'Bug check'
             When     = $record.TimeCreated
             Source   = 'Windows kernel'
-            Detail   = ($record.Message -split "`r?`n" | Where-Object { $_ } | Select-Object -First 1)
+            Detail   = $detail
         }
     }
 

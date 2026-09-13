@@ -38,6 +38,8 @@ src/Features/Security/ThreatHunting.ps1
 src/Features/Security/HardeningCheck.ps1
 src/Features/Security/Remediation.ps1
 src/Features/Diagnostics/WorkstationDiagnostics.ps1
+src/Features/Diagnostics/CrashAnalysis.ps1
+src/Features/Diagnostics/DeviceProblems.ps1
 src/Features/Diagnostics/HardwareTests.ps1
 src/Features/Diagnostics/SupportBundle.ps1
 

@@ -95,6 +95,15 @@ function Get-TkRemediationTable {
             Elevated    = $false
         }
 
+        'open-device-manager' = @{
+            Kind        = 'Open'
+            Name        = 'Open Device Manager'
+            Button      = 'Open Device Manager'
+            Explanation = 'Shows the device with its status. Update, roll back or reinstall the driver from its properties. Nothing is changed from here, because which driver version is right for the device is a decision to make with it in front of you.'
+            Target      = 'devmgmt.msc'
+            Elevated    = $false
+        }
+
         'open-laps-guide' = @{
             Kind        = 'Open'
             Name        = 'Open the Windows LAPS deployment guide'
@@ -491,6 +500,7 @@ function Test-TkRemediationTarget {
     $tools = @(
         'control.exe /name Microsoft.BitLockerDriveEncryption'
         'lusrmgr.msc'
+        'devmgmt.msc'
     )
 
     return ($tools -ccontains $Target)
