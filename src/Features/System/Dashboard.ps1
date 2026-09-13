@@ -77,6 +77,7 @@ function Get-TkDashboardHealthData {
         Battery    = @(Read-TkDashboardPart -Part 'Battery' -Reader { Get-TkBatteryState })
         Devices    = @(Read-TkDashboardPart -Part 'Devices' -Reader { Get-TkDeviceProblem })
         Crashes    = @(Read-TkDashboardPart -Part 'Crash history' -Reader { Get-TkCrashHistory -Days 30 })
+        SignIn     = @(Read-TkDashboardPart -Part 'Sign-in and management' -Reader { Get-TkIdentityHealth })
     }
 }
 
@@ -113,6 +114,7 @@ function Get-TkDashboardSnapshot {
         Battery    = $health.Battery
         Devices    = $health.Devices
         Crashes    = $health.Crashes
+        SignIn     = $health.SignIn
     }
 }
 
@@ -413,6 +415,41 @@ function ConvertTo-TkDashboardHealth {
                                            -Severity 'Fail' `
                                            -Detail ('Last: {0} {1}, {2}' -f $last.Info.CodeHex, $last.Info.Name, ([datetime] $last.When).ToString('yyyy-MM-dd'))
         }
+    }
+
+    # --- Sign-in and management -------------------------------------------
+    # The join type is the value; the first problem found is the detail.
+    $identityOpen = @{ Page = 'Diagnostics'; TabControl = 'DiagnosticsTabs'; Tab = 'Reports'; List = 'DiagnosticChoices'; Choice = 'Sign-in and management' }
+
+    # SignIn rather than Identity: a whole snapshot already has an Identity,
+    # the name and model of the workstation.
+    if ($null -eq $Snapshot.PSObject.Properties['SignIn']) {
+        $tiles += New-TkHealthTileData @identityOpen -Title 'Sign-in' -Value 'Unknown' -Severity 'NotAssessed' `
+                                       -Detail 'Sign-in and management were not read.'
+    }
+    else {
+        $identity = @($Snapshot.SignIn | Where-Object { $null -ne $_ })
+        $join     = [string] (@($identity | Where-Object { $_.Kind -eq 'Join' }) | Select-Object -First 1).Value
+        $problem  = @($identity | Where-Object { $_.Severity -eq 'Fail' }) + @($identity | Where-Object { $_.Severity -eq 'Warning' }) |
+                    Select-Object -First 1
+
+        $short = switch ($join) {
+            'Microsoft Entra hybrid joined' { 'Hybrid joined' }
+            'Microsoft Entra joined'        { 'Entra joined' }
+            'Microsoft Entra registered'    { 'Entra registered' }
+            ''                              { 'Unknown' }
+            default                         { $join }
+        }
+
+        $severity = if (@($identity | Where-Object { $_.Severity -eq 'Fail' }).Count -gt 0) { 'Fail' }
+                    elseif (@($identity | Where-Object { $_.Severity -eq 'Warning' }).Count -gt 0) { 'Warning' }
+                    elseif ($join -eq 'Not joined') { 'Info' }
+                    else { 'Pass' }
+
+        $tiles += New-TkHealthTileData @identityOpen -Title 'Sign-in' -Value $short -Severity $severity `
+                                       -Detail $(if ($problem) { '{0}: {1}' -f $problem.Kind, $problem.Value }
+                                                 elseif ($join -eq 'Not joined') { 'Local or personal accounts only.' }
+                                                 else { 'No sign-in or management problem found.' })
     }
 
     # --- Battery ----------------------------------------------------------

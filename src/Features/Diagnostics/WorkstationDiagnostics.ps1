@@ -570,37 +570,9 @@ function Get-TkUserContextReport {
         }
     }
 
-    # --- Domain membership and secure channel ----------------------------
-    $computer = Get-TkCimInstanceSafe -ClassName 'Win32_ComputerSystem'
-
-    if ($computer.PartOfDomain) {
-
-        $channelHealthy = $null
-
-        try {
-            $channelHealthy = Test-ComputerSecureChannel -ErrorAction Stop
-        }
-        catch {
-            $null = $_
-        }
-
-        $results += [pscustomobject]@{
-            Severity = $(if ($channelHealthy -eq $false) { 'Fail' } elseif ($null -eq $channelHealthy) { 'Info' } else { 'Pass' })
-            Kind     = 'Domain'
-            Name     = $computer.Domain
-            Value    = $(if ($null -eq $channelHealthy) { 'not tested' } elseif ($channelHealthy) { 'secure channel healthy' } else { 'SECURE CHANNEL BROKEN' })
-            Detail   = $(if ($channelHealthy -eq $false) {
-                             'The machine password no longer matches the directory. Domain logons will fail; reset it with Test-ComputerSecureChannel -Repair.'
-                         }
-                         else { 'Domain joined.' })
-        }
-    }
-    else {
-        $results += [pscustomobject]@{
-            Severity = 'Info'; Kind = 'Domain'; Name = $computer.Workgroup
-            Value = 'workgroup'; Detail = 'Not domain joined.'
-        }
-    }
+    # Domain membership and the secure channel moved to the Sign-in and
+    # management report (Get-TkIdentityHealth), beside the domain controller,
+    # the clock and the Microsoft Entra state they belong with.
 
     # --- Logon duration ---------------------------------------------------
     # Group policy processing time is the usual answer to "logon takes ages",

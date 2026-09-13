@@ -95,6 +95,24 @@ function Get-TkRemediationTable {
             Elevated    = $false
         }
 
+        'open-work-access' = @{
+            Kind        = 'Open'
+            Name        = 'Open Access work or school'
+            Button      = 'Open Access work or school'
+            Explanation = 'Shows the work or school account connected to this device, its info page with the Sync button for the MDM, and where to connect or disconnect it. Nothing is changed from here: disconnecting an account removes its policies and access.'
+            Target      = 'ms-settings:workplace'
+            Elevated    = $false
+        }
+
+        'open-date-time' = @{
+            Kind        = 'Open'
+            Name        = 'Open the date and time settings'
+            Button      = 'Open date and time'
+            Explanation = 'Shows the time zone, whether the time is set automatically, and a Sync now button. On a domain member the time comes from the domain, so a clock that stays wrong points at the time service or the domain controller.'
+            Target      = 'ms-settings:dateandtime'
+            Elevated    = $false
+        }
+
         'open-device-manager' = @{
             Kind        = 'Open'
             Name        = 'Open Device Manager'

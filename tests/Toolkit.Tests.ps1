@@ -1866,6 +1866,172 @@ Describe 'Device problems' {
     }
 }
 
+Describe 'Sign-in and management' {
+
+    BeforeAll {
+
+        # dsregcmd /status on the machine this was written on: a workgroup
+        # computer with no work account.
+        $script:Workgroup = ConvertFrom-TkDsregStatus -Line @(
+            '| Device State                                                         |'
+            '             AzureAdJoined : NO'
+            '          EnterpriseJoined : NO'
+            '              DomainJoined : NO'
+            '                    NgcSet : NO'
+            '           WorkplaceJoined : NO'
+            '                AzureAdPrt : NO'
+            'For more information, please visit https://www.microsoft.com/aadjerrors'
+        )
+
+        # Built from the samples Microsoft publishes for dsregcmd.
+        $script:EntraLines = @(
+            '             AzureAdJoined : YES'
+            '          EnterpriseJoined : NO'
+            '              DomainJoined : NO'
+            '          DeviceAuthStatus : SUCCESS'
+            '                TenantName : Contoso'
+            '                    MdmUrl : https://enrollment.manage.microsoft.com/EnrollmentServer/Discovery.svc'
+            '                    NgcSet : YES'
+        )
+
+        $script:Stopped = [pscustomobject] @{ Status = 'Stopped'; StartType = 'Manual'; Server = 'pool.ntp.org,0x8' }
+        $script:Running = [pscustomobject] @{ Status = 'Running'; StartType = 'Automatic'; Server = '' }
+        $script:Now     = [datetime]::SpecifyKind([datetime] '2026-09-13 12:00', [DateTimeKind]::Utc)
+    }
+
+    It 'reads names with spaces, and values holding a colon' {
+
+        $status = ConvertFrom-TkDsregStatus -Line @(
+            '              DomainName : HYBRIDADFS'
+            '     Previous Prt Attempt : 2020-07-18 20:10:33.789 UTC'
+            '              Client Time : 2019-01-31 09:25:31.000 UTC'
+        )
+
+        $status['DomainName']           | Should -Be 'HYBRIDADFS'
+        $status['Previous Prt Attempt'] | Should -Be '2020-07-18 20:10:33.789 UTC'
+        $status['Client Time']          | Should -Be '2019-01-31 09:25:31.000 UTC'
+    }
+
+    It 'names the join type <Expected>' -TestCases @(
+        @{ Entra = 'YES'; Enterprise = 'NO';  Domain = 'NO';  Workplace = 'NO';  Expected = 'Microsoft Entra joined' }
+        @{ Entra = 'NO';  Enterprise = 'NO';  Domain = 'YES'; Workplace = 'NO';  Expected = 'Domain joined' }
+        @{ Entra = 'YES'; Enterprise = 'NO';  Domain = 'YES'; Workplace = 'NO';  Expected = 'Microsoft Entra hybrid joined' }
+        @{ Entra = 'NO';  Enterprise = 'YES'; Domain = 'YES'; Workplace = 'NO';  Expected = 'On-premises DRS joined' }
+        @{ Entra = 'NO';  Enterprise = 'NO';  Domain = 'NO';  Workplace = 'YES'; Expected = 'Microsoft Entra registered' }
+        @{ Entra = 'NO';  Enterprise = 'NO';  Domain = 'NO';  Workplace = 'NO';  Expected = 'Not joined' }
+    ) {
+        param($Entra, $Enterprise, $Domain, $Workplace, $Expected)
+
+        $status = ConvertFrom-TkDsregStatus -Line @(
+            "AzureAdJoined : $Entra", "EnterpriseJoined : $Enterprise", "DomainJoined : $Domain", "WorkplaceJoined : $Workplace"
+        )
+
+        Get-TkJoinType -Status $status | Should -Be $Expected
+    }
+
+    It 'reads a dsregcmd time as UTC' {
+
+        $time = ConvertFrom-TkDsregTime -Text '2019-01-24 19:15:33.000 UTC'
+
+        $time.Kind | Should -Be 'Utc'
+        $time.Hour | Should -Be 19
+    }
+
+    It 'reads the clock offset from w32tm, with either decimal separator' {
+
+        ConvertFrom-TkStripchartOffset -Line @('Tracking time.windows.com.', '19:42:54, -05.6530458s') | Should -Be -5.6530458
+        ConvertFrom-TkStripchartOffset -Line @('19:42:54, +00,1250000s') | Should -Be 0.125
+        ConvertFrom-TkStripchartOffset -Line @('The following error occurred') | Should -BeNullOrEmpty
+    }
+
+    It 'reports a workgroup computer as information only' {
+
+        $rows = @(ConvertTo-TkIdentityHealth -Status $script:Workgroup -TimeService $script:Stopped -Now $script:Now)
+
+        ($rows | Where-Object { $_.Kind -eq 'Join' }).Value | Should -Be 'Not joined'
+        @($rows | Where-Object { $_.Severity -in @('Fail', 'Warning') }).Count | Should -Be 0
+    }
+
+    It 'fails single sign-on without a token, and says why the last attempt failed' {
+
+        $status = ConvertFrom-TkDsregStatus -Line ($script:EntraLines + @('AzureAdPrt : NO', 'Attempt Status : 0xc000006d'))
+        $sso    = ConvertTo-TkIdentityHealth -Status $status -TimeService $script:Running -Now $script:Now |
+                  Where-Object { $_.Kind -eq 'Single sign-on' }
+
+        $sso.Severity      | Should -Be 'Fail'
+        $sso.Detail        | Should -Match '0xc000006d'
+        $sso.RemediationId | Should -Be 'open-work-access'
+    }
+
+    It 'warns about a token not renewed for a day' {
+
+        $status = ConvertFrom-TkDsregStatus -Line ($script:EntraLines + @('AzureAdPrt : YES', 'AzureAdPrtUpdateTime : 2026-09-12 06:00:00.000 UTC'))
+        $sso    = ConvertTo-TkIdentityHealth -Status $status -TimeService $script:Running -Now $script:Now |
+                  Where-Object { $_.Kind -eq 'Single sign-on' }
+
+        $sso.Severity | Should -Be 'Warning'
+        $sso.Value    | Should -Match '30 hours'
+    }
+
+    It 'fails a device disabled or deleted in Microsoft Entra ID' {
+
+        $lines  = $script:EntraLines -replace 'DeviceAuthStatus : SUCCESS', 'DeviceAuthStatus : FAILED. Device is either disabled or deleted'
+        $device = ConvertTo-TkIdentityHealth -Status (ConvertFrom-TkDsregStatus -Line $lines) -Now $script:Now |
+                  Where-Object { $_.Kind -eq 'Entra device' }
+
+        $device.Severity | Should -Be 'Fail'
+    }
+
+    It 'warns when the tenant enrolls devices automatically and this one is not enrolled' {
+
+        $mdm = ConvertTo-TkIdentityHealth -Status (ConvertFrom-TkDsregStatus -Line ($script:EntraLines + 'AzureAdPrt : YES')) -Now $script:Now |
+               Where-Object { $_.Kind -eq 'Device management' }
+
+        $mdm.Severity | Should -Be 'Warning'
+        $mdm.Value    | Should -Be 'Not enrolled'
+    }
+
+    It 'judges the clock of a domain member against Kerberos: <Offset> s is <Expected>' -TestCases @(
+        @{ Offset = 0.4;  Expected = 'Pass' }
+        @{ Offset = -90;  Expected = 'Warning' }
+        @{ Offset = 400;  Expected = 'Fail' }
+    ) {
+        param($Offset, $Expected)
+
+        $domain = [pscustomobject] @{ Domain = 'corp.contoso.com'; Name = 'DC01.corp.contoso.com'; Site = 'Paris'; Reachable = $true; Error = '' }
+
+        $clock = ConvertTo-TkIdentityHealth -DomainJoined $true -Domain $domain -SecureChannel $true `
+                                            -TimeService $script:Running -ClockOffset $Offset -Now $script:Now |
+                 Where-Object { $_.Kind -eq 'Clock' }
+
+        $clock.Severity | Should -Be $Expected
+    }
+
+    It 'fails a domain member that reaches no domain controller or has a broken secure channel' {
+
+        $domain = [pscustomobject] @{ Domain = ''; Name = ''; Site = ''; Reachable = $false; Error = 'The specified domain either does not exist or could not be contacted.' }
+
+        $rows = @(ConvertTo-TkIdentityHealth -DomainJoined $true -Domain $domain -SecureChannel $false -TimeService $script:Running -Now $script:Now)
+
+        ($rows | Where-Object { $_.Kind -eq 'Domain controller' }).Severity | Should -Be 'Fail'
+        ($rows | Where-Object { $_.Kind -eq 'Secure channel' }).Severity    | Should -Be 'Fail'
+    }
+
+    It 'offers only corrections the allow list knows' {
+
+        $table  = Get-TkRemediationTable
+        $status = ConvertFrom-TkDsregStatus -Line ($script:EntraLines + 'AzureAdPrt : NO')
+        $domain = [pscustomobject] @{ Domain = 'x'; Name = 'DC01'; Site = ''; Reachable = $true; Error = '' }
+
+        $rows = @(ConvertTo-TkIdentityHealth -Status $status -DomainJoined $true -Domain $domain -SecureChannel $true `
+                                             -TimeService $script:Stopped -ClockOffset 400 -Now $script:Now)
+
+        foreach ($id in @($rows | ForEach-Object { $_.RemediationId } | Where-Object { $_ })) {
+            $table.Keys | Should -Contain $id
+        }
+    }
+}
+
 Describe 'Diagnostic reports' {
 
     BeforeAll {
@@ -3071,6 +3237,10 @@ Describe 'Dashboard and pages' {
                     [pscustomobject] @{ When = [datetime] '2026-09-13 11:47'; Code = 247
                                         Info = [pscustomobject] @{ CodeHex = '0x000000F7'; Name = 'DRIVER_OVERRAN_STACK_BUFFER' } }
                 )
+                SignIn     = @(
+                    [pscustomobject] @{ Severity = 'Info';    Kind = 'Join';           Value = 'Microsoft Entra hybrid joined' }
+                    [pscustomobject] @{ Severity = 'Warning'; Kind = 'Single sign-on'; Value = 'Token not renewed for 30 hours' }
+                )
             }
 
             $script:Tiles = @(ConvertTo-TkDashboardHealth -Snapshot $script:Snapshot `
@@ -3079,7 +3249,17 @@ Describe 'Dashboard and pages' {
 
         It 'draws one tile per question' {
 
-            $script:Tiles.Count | Should -Be 7
+            $script:Tiles.Count | Should -Be 8
+        }
+
+        It 'names the join type and the first sign-in problem' {
+
+            $tile = $script:Tiles | Where-Object { $_.Title -eq 'Sign-in' }
+
+            $tile.Value    | Should -Be 'Hybrid joined'
+            $tile.Severity | Should -Be 'Warning'
+            $tile.Detail   | Should -Be 'Single sign-on: Token not renewed for 30 hours'
+            $tile.Choice   | Should -Be 'Sign-in and management'
         }
 
         It 'counts the devices with a problem, not the ones disabled on purpose' {
@@ -3106,7 +3286,7 @@ Describe 'Dashboard and pages' {
 
             $old = [pscustomobject] @{ Reboot = $null; LastHotFix = $null; Volumes = @(); Disks = @(); Battery = @() }
 
-            foreach ($title in @('Devices', 'Blue screens')) {
+            foreach ($title in @('Devices', 'Blue screens', 'Sign-in')) {
                 (@(ConvertTo-TkDashboardHealth -Snapshot $old) | Where-Object { $_.Title -eq $title }).Severity |
                     Should -Be 'NotAssessed' -Because $title
             }
