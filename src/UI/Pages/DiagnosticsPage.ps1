@@ -128,6 +128,9 @@ function Set-TkLastDiagnostic {
 
     $script:TkLastDiagnostic     = $Data
     $script:TkLastDiagnosticName = $Name
+
+    # Recorded when the report is shown, which is when it was actually read.
+    Add-TkJournalEntry -Name ('Report: {0}' -f $Name) -Category 'Diagnostics'
 }
 
 <#

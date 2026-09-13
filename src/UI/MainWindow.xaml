@@ -1149,6 +1149,7 @@
                             <Button x:Name="NavSoftware"       Content="Software"        Style="{StaticResource NavButton}" Tag="&#xECA5;" />
                             <Button x:Name="NavTweaks"         Content="Tweaks"          Style="{StaticResource NavButton}" Tag="&#xE9E9;" />
                             <Button x:Name="NavFixes"          Content="Fixes"           Style="{StaticResource NavButton}" Tag="&#xE90F;" />
+                            <Button x:Name="NavIntervention"   Content="Intervention"    Style="{StaticResource NavButton}" Tag="&#xE70F;" />
 
                             <TextBlock Text="TROUBLESHOOTING" Style="{StaticResource NavSection}" />
                             <Button x:Name="NavDiagnostics"    Content="Diagnostics"     Style="{StaticResource NavButton}" Tag="&#xE95E;" />
@@ -2927,6 +2928,78 @@
                                          IsDocumentEnabled="True" />
                         </Border>
                     </Grid>
+                </Grid>
+
+                <!-- ====================== INTERVENTION ====================== -->
+                <!--
+                    The journal of what was done on this machine, and the report of
+                    the visit. The journal fills itself as operations run; the
+                    technician adds the ticket and the notes.
+                -->
+                <Grid x:Name="PageIntervention" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Text="Intervention" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                   Text="What was done on this machine, written down as it happens, and the report of the visit. Every fix, tweak, installation, audit correction, audit and report run through the toolkit appears in the journal." />
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,10,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Ticket" Style="{StaticResource FormLabel}" />
+                            <TextBox   Grid.Row="0" Grid.Column="1" x:Name="InterventionTicket" Margin="0,0,16,0"
+                                       Tag="Ticket or case reference" />
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Technician" Style="{StaticResource FormLabel}" />
+                            <TextBox   Grid.Row="0" Grid.Column="3" x:Name="InterventionTechnician" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Notes" Style="{StaticResource FormLabel}"
+                                       VerticalAlignment="Top" Margin="0,18,12,0" />
+                            <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" x:Name="InterventionNotes" Margin="0,10,0,0"
+                                       Height="96" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                       VerticalContentAlignment="Top"
+                                       Tag="What was reported, what was found, what was done by hand, what is left to do" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <DockPanel Grid.Row="0" Margin="0,0,0,10" LastChildFill="False">
+                                <TextBlock Text="Journal" Style="{StaticResource SubHeading}" VerticalAlignment="Center" />
+                                <ComboBox x:Name="JournalPeriod" Width="150" Margin="16,0,0,0" />
+                                <Button x:Name="BtnJournalRefresh" Content="Refresh" Style="{StaticResource GlyphButton}"
+                                        Tag="&#xE72C;" Margin="8,0,0,0" />
+                                <Button x:Name="BtnInterventionReport" DockPanel.Dock="Right" Content="Create the intervention report"
+                                        Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE8A5;" Margin="0"
+                                        ToolTip="One HTML file with the machine, its health, the latest audit, what was done and the notes, to attach to the ticket." />
+                                <Button x:Name="BtnJournalFolder" DockPanel.Dock="Right" Content="Open journal folder" Margin="0,0,8,0" />
+                            </DockPanel>
+
+                            <RichTextBox Grid.Row="1" x:Name="JournalOutput" IsReadOnly="True"
+                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                         IsDocumentEnabled="True" />
+                        </Grid>
+                    </Border>
                 </Grid>
 
                 <!-- ======================== SETTINGS ======================== -->

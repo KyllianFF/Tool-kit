@@ -121,6 +121,7 @@ function Start-Toolkit {
         Initialize-TkThreatHuntingPage
         Initialize-TkDiagnosticsPage
         Initialize-TkHardwarePage
+        Initialize-TkInterventionPage
 
         # After every page is wired, so each control exists to be disabled.
         Update-TkPrivilegedControls

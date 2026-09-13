@@ -2114,6 +2114,145 @@ Describe 'Search' {
     }
 }
 
+Describe 'Intervention journal' {
+
+    BeforeAll {
+        # Written to a temporary folder, never to the journal of the account
+        # that runs the tests.
+        $script:RealDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:RealDataRoot
+    }
+
+    It 'tells a change from a check: <Category> is <Kind>' -TestCases @(
+        @{ Category = 'Tweaks';      Kind = 'Change' }
+        @{ Category = 'Remediation'; Kind = 'Change' }
+        @{ Category = 'Audit';       Kind = 'Check' }
+        @{ Category = 'Bundle';      Kind = 'Collection' }
+        @{ Category = 'Unheard of';  Kind = 'Other' }
+    ) {
+        param($Category, $Kind)
+
+        Get-TkJournalKind -Category $Category | Should -Be $Kind
+    }
+
+    It 'reads back what it wrote, under this session' {
+
+        Add-TkJournalEntry -Name 'Apply: Example tweak' -Category 'Tweaks' -DurationMs 42
+
+        $entry = @(Get-TkJournalEntry -Since (Get-Date).AddMinutes(-1)) | Where-Object { $_.Name -eq 'Apply: Example tweak' }
+
+        $entry.Kind       | Should -Be 'Change'
+        $entry.Outcome    | Should -Be 'Done'
+        $entry.Session    | Should -Be $script:TkSessionId
+        $entry.Time       | Should -BeOfType ([datetime])
+        $entry.DurationMs | Should -Be 42
+    }
+
+    It 'journals every operation timed through Stop-TkOperation' {
+
+        $stopwatch = Start-TkOperation -Name 'Reset the example' -Category 'Fixes'
+        Stop-TkOperation -Name 'Reset the example' -Stopwatch $stopwatch -Category 'Fixes' -Success $false
+
+        $entry = @(Get-TkJournalEntry) | Where-Object { $_.Name -eq 'Reset the example' }
+
+        $entry.Outcome | Should -Be 'Failed'
+        $entry.Kind    | Should -Be 'Change'
+    }
+
+    It 'keeps only the session asked for, and skips a line cut short' {
+
+        $path = Join-Path (Get-TkJournalFolder) ('journal-{0}.jsonl' -f (Get-Date -Format 'yyyyMMdd'))
+
+        $other = New-TkJournalEntry -Name 'Earlier session' -Category 'Software'
+        $other.Session = 'another-session'
+
+        Add-Content -LiteralPath $path -Value ($other | ConvertTo-Json -Compress)
+        Add-Content -LiteralPath $path -Value '{"Time":"2026-09-13T10:00'
+
+        $mine = @(Get-TkJournalEntry -Session $script:TkSessionId)
+
+        @($mine | Where-Object { $_.Name -eq 'Earlier session' }).Count | Should -Be 0
+        @(Get-TkJournalEntry | Where-Object { $_.Name -eq 'Earlier session' }).Count | Should -Be 1
+    }
+
+    It 'turns the period chosen into a start and a session' {
+
+        $now = [datetime] '2026-09-13 15:30'
+
+        (Get-TkJournalPeriod -Choice 'Today' -Now $now).Since        | Should -Be ([datetime] '2026-09-13')
+        (Get-TkJournalPeriod -Choice 'Last 7 days' -Now $now).Since  | Should -Be ([datetime] '2026-09-07')
+        (Get-TkJournalPeriod -Choice 'This session' -Now $now).Session | Should -Be $script:TkSessionId
+    }
+
+    Context 'Report' {
+
+        BeforeAll {
+            $script:Report = [pscustomobject] @{
+                Computer    = 'PC-<b>01</b>'
+                GeneratedAt = [datetime] '2026-09-13 16:00'
+                Toolkit     = 'Toolkit 1.0.0 (test)'
+                Technician  = 'Kyllian'
+                Ticket      = 'INC-1234'
+                Notes       = "User reported blue screens.`n<script>alert(1)</script>"
+                Period      = 'Today'
+                Identity    = [pscustomobject] @{ Manufacturer = 'ASUS'; Model = 'Z790'; SerialNumber = 'SN1'; LoggedOnUser = 'PC\User'; Domain = 'WORKGROUP' }
+                OS          = [pscustomobject] @{ Caption = 'Windows 11 Pro'; DisplayVersion = '25H2'; Build = '26200'; UptimeText = '0d 5h' }
+                Tiles       = @([pscustomobject] @{ Title = 'Devices'; Value = '1 failing'; Severity = 'Fail'; Detail = 'Code 43' })
+                Audit       = [pscustomobject] @{
+                    Score    = [pscustomobject] @{ Score = 72; Passed = 20; Failed = 2; Warnings = 3; NotAssessed = 1 }
+                    Findings = @([pscustomobject] @{ Id = 'ENC-001'; Name = 'Drive encryption'; Status = 'Fail'; Detail = 'C: is not encrypted' })
+                }
+                Entries     = @([pscustomobject] @{ Time = [datetime] '2026-09-13 15:10'; Kind = 'Change'; Name = 'Run the System File Checker'; Outcome = 'Done' })
+            }
+
+            $script:Html = ConvertTo-TkInterventionHtml -Report $script:Report
+        }
+
+        It 'encodes every value it was given, notes and computer name included' {
+
+            $script:Html | Should -Match '&lt;script&gt;alert\(1\)&lt;/script&gt;'
+            $script:Html | Should -Match 'PC-&lt;b&gt;01&lt;/b&gt;'
+            $script:Html | Should -Not -Match '<script'
+        }
+
+        It 'is one file, with nothing loaded from anywhere else' {
+            $script:Html | Should -Not -Match '<link|<img|<iframe|\ssrc=|https?://'
+        }
+
+        It 'writes one row per machine fact, with its label and its whole value' {
+
+            # A list of inline arrays is flattened by PowerShell, and the first
+            # version printed each fact as a single letter.
+            $script:Html | Should -Match '<tr><td>Manufacturer and model</td><td>ASUS Z790</td></tr>'
+            $script:Html | Should -Match '<tr><td>Windows</td><td>Windows 11 Pro 25H2, build 26200</td></tr>'
+            $script:Html | Should -Match '<tr><td>Serial number</td><td>SN1</td></tr>'
+        }
+
+        It 'carries the ticket, the health, the audit and what was done' {
+
+            foreach ($expected in @('INC-1234', '1 failing', '72 of 100', 'ENC-001', 'Run the System File Checker')) {
+                $script:Html | Should -Match ([regex]::Escape($expected))
+            }
+        }
+
+        It 'says so when nothing was done and no audit was run' {
+
+            $empty = $script:Report.PSObject.Copy()
+            $empty.Entries = @()
+            $empty.Audit   = $null
+
+            $html = ConvertTo-TkInterventionHtml -Report $empty
+
+            $html | Should -Match 'No operation was run through the toolkit'
+            $html | Should -Not -Match 'Security audit</h2>'
+        }
+    }
+}
+
 Describe 'Diagnostic reports' {
 
     BeforeAll {
