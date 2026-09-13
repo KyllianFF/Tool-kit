@@ -48,6 +48,7 @@ src/Features/Diagnostics/SupportBundle.ps1
 src/UI/Theme.ps1
 src/UI/Window.ps1
 src/UI/RichText.ps1
+src/UI/Search.ps1
 src/UI/Pages/DashboardPage.ps1
 src/UI/Pages/SystemPage.ps1
 src/UI/Pages/SoftwarePage.ps1
