@@ -215,6 +215,8 @@ function New-TkSupportBundle {
                     @{ Name = 'Name';     Expression = { $_.Info.Name } },
                     DumpPath,
                     @{ Name = 'DriversRegisteredBefore'; Expression = { (@($_.Drivers) | ForEach-Object { $_.Name }) -join ', ' } }))
+            (ConvertTo-TkBundleText -Title 'Sign-in and management' -As Table -InputObject (
+                Get-TkIdentityHealth | Select-Object Severity, Kind, Value, Detail))
             (ConvertTo-TkBundleText -Title 'Update history'      -As Table -InputObject (Get-TkUpdateHistory))
             (ConvertTo-TkBundleText -Title 'Printing'            -As Table -InputObject (Get-TkPrintingReport))
             (ConvertTo-TkBundleText -Title 'Profiles and policy' -As Table -InputObject (Get-TkUserContextReport))

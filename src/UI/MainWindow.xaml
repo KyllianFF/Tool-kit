@@ -2325,6 +2325,10 @@
                                             <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Domain, Microsoft Entra and Intune: how the device is joined, its single sign-on token, the domain controller and clock, and the MDM.">
+                                            <TextBlock Text="Sign-in and management" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Through the update session, so driver and feature updates appear.">
                                             <TextBlock Text="Update history" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
@@ -2333,7 +2337,7 @@
                                             <TextBlock Text="Printing" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Profile sizes, mapped drives, domain channel, logon timing.">
+                                                     ToolTip="Profile sizes, mapped drives and logon timing. The domain is under Sign-in and management.">
                                             <TextBlock Text="Profiles and policy" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                     </ListBox>

@@ -153,6 +153,7 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Storage health';      Show = 'Show-TkStorageHealth' }
         [pscustomobject] @{ Title = 'Devices';             Show = 'Show-TkDeviceReport' }
         [pscustomobject] @{ Title = 'Crashes';             Show = 'Show-TkStabilityReport' }
+        [pscustomobject] @{ Title = 'Sign-in and management'; Show = 'Show-TkIdentityReport' }
         [pscustomobject] @{ Title = 'Update history';      Show = 'Show-TkUpdateHistory' }
         [pscustomobject] @{ Title = 'Printing';            Show = 'Show-TkPrintingReport' }
         [pscustomobject] @{ Title = 'Profiles and policy'; Show = 'Show-TkUserContext' }
@@ -247,6 +248,40 @@ function Show-TkRebootStatus {
 
             foreach ($reason in $status.Reasons) {
                 Add-TkSeverityLine -Document $document -Severity 'Info' -Heading $reason
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows how the device is joined and managed, and whether sign-in can work.
+#>
+function Show-TkIdentityReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading sign-in and management...' `
+        -ScriptBlock { Get-TkIdentityHealth } `
+        -OnComplete {
+            param($result)
+
+            $rows = @($result.Output | Where-Object { $_ })
+            Set-TkLastDiagnostic -Name 'sign-in' -Data $rows
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Sign-in and management' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '"I cannot sign in", "Outlook keeps asking for my password" and "the policy never arrived" are answered here: how the device is joined, its single sign-on token, the domain controller it reaches, the clock Kerberos depends on, and whether an MDM manages it.'
+            )
+
+            foreach ($row in $rows) {
+
+                Add-TkSeverityLine -Document $document -Severity $row.Severity `
+                    -Heading ('{0}: {1}' -f $row.Kind, $row.Value) `
+                    -Note $row.Detail -RemediationId $row.RemediationId
             }
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
