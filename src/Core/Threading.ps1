@@ -1,4 +1,4 @@
-<#
+﻿<#
     Toolkit - Core / Threading
 
     Long operations (winget installs, port scans, VirusTotal lookups) must
@@ -80,7 +80,14 @@ function Initialize-TkRunspacePool {
         'TkAppName', 'TkAppVersion', 'TkAppCommit', 'TkRepository',
         'TkLogLevels', 'TkMinimumLogLevel',
         'TkVirusTotalBaseUri',
-        'TkEmbeddedCatalogs'
+        'TkEmbeddedCatalogs',
+
+        # The audit runs in a worker, so the table it reads its controls from
+        # has to exist there. The two Defender variables are the per run cache
+        # the controls share; seeded so the worker starts from a known empty
+        # state rather than from whatever the dispatcher thread last read.
+        'TkAuditControl', 'TkAuditExcludedAccount',
+        'TkDefenderStatus', 'TkDefenderStatusRead'
     )
 
     foreach ($name in $sharedVariables) {

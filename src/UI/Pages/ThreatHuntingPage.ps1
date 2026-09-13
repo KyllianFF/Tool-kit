@@ -129,6 +129,36 @@ function Invoke-TkRemediationFromUi {
 
     $entry = $table[$RemediationId]
 
+    # Opening a page changes nothing, and it still asks first. A button that
+    # launches something unannounced teaches people to stop reading buttons,
+    # and the next one they stop reading is the one that changes the machine.
+    if ([string] $entry.Kind -eq 'Open') {
+
+        $message = @(
+            $entry.Explanation
+            ''
+            'This opens:'
+            ''
+            '    ' + $entry.Target
+            ''
+            'Nothing on this machine changes until you change it there.'
+        ) -join [Environment]::NewLine
+
+        if (-not (Show-TkDialog -Title $entry.Name -Message $message -Kind 'Question' `
+                                -AcceptText 'Open' -RejectText 'Cancel')) {
+            return
+        }
+
+        if (Open-TkRemediationTarget -Id $RemediationId -Confirm:$false) {
+            Set-TkStatus -Text ('Opened: {0}. Run the audit again once the change is made.' -f $entry.Name)
+        }
+        else {
+            Set-TkStatus -Text ('Could not open: {0}. See the output panel.' -f $entry.Name)
+        }
+
+        return
+    }
+
     if ($entry.Elevated -and -not (Test-TkIsElevated)) {
         Set-TkStatus -Text 'This correction needs an elevated instance.'
         return

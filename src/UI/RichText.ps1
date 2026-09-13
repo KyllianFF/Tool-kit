@@ -739,6 +739,87 @@ function Get-TkSeverityBrushKey {
 
 <#
 .SYNOPSIS
+    Returns the icon character for a severity.
+
+.DESCRIPTION
+    Colour alone carries a result badly. Roughly one man in twelve cannot
+    separate the red from the green, the two that matter most here, and a
+    printed or screenshotted report loses the distinction for everyone. The
+    shape says the same thing a second way.
+
+    Characters from Segoe Fluent Icons, which the IconFont resource already
+    falls back correctly for on Windows 10.
+
+.OUTPUTS
+    String, one character.
+#>
+function Get-TkSeverityGlyph {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Severity
+    )
+
+    $code = switch ($Severity) {
+        'Fail'        { 0xEA39 }   # ErrorBadge
+        'Warning'     { 0xE7BA }   # Warning
+        'Pass'        { 0xE930 }   # Completed
+        'Info'        { 0xE946 }   # Info
+        'NotAssessed' { 0xE9CE }   # Unknown
+        default       { 0xE946 }
+    }
+
+    return [string][char] $code
+}
+
+<#
+.SYNOPSIS
+    Returns a faint fill in the severity colour, for a whole card.
+
+.DESCRIPTION
+    Built from the palette's own colour at low alpha rather than from a fixed
+    pair of light and dark tints, so it stays right through a theme change and
+    there is still only one place where Danger is defined.
+
+    A new brush every time: tinting the palette's shared brush would repaint
+    every surface in the window.
+
+.OUTPUTS
+    System.Windows.Media.SolidColorBrush, or null when there is no window.
+#>
+function Get-TkSeverityTintBrush {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Severity,
+
+        [Parameter()]
+        [byte] $Alpha = 38
+    )
+
+    $ctx = Get-TkContext
+
+    if ($null -eq $ctx.Window) {
+        return $null
+    }
+
+    $source = $ctx.Window.Resources[(Get-TkSeverityBrushKey -Severity $Severity)]
+
+    if ($null -eq $source) {
+        return $null
+    }
+
+    $colour = [System.Windows.Media.Color]::FromArgb(
+        $Alpha, $source.Color.R, $source.Color.G, $source.Color.B)
+
+    return New-Object System.Windows.Media.SolidColorBrush($colour)
+}
+
+<#
+.SYNOPSIS
     Appends a finding as a self contained card.
 
 .DESCRIPTION
@@ -801,17 +882,44 @@ function Add-TkFindingCard {
 
         [Parameter()]
         [AllowEmptyString()]
-        [string] $RemediationId = ''
+        [string] $RemediationId = '',
+
+        # Colours the whole card by result and puts an icon in front of the
+        # title. A neutral card with a coloured chip reads as a list; a page of
+        # results has to be scannable without reading it, which is what an audit
+        # is for.
+        [Parameter()]
+        [switch] $Tinted
     )
 
     $card = New-Object System.Windows.Controls.Border
-    $card.BorderThickness = New-Object System.Windows.Thickness(1)
-    $card.CornerRadius    = New-Object System.Windows.CornerRadius(7)
-    $card.Padding         = New-Object System.Windows.Thickness(14, 11, 14, 11)
-    $card.Margin          = New-Object System.Windows.Thickness(0, 0, 0, 9)
+    $card.CornerRadius = New-Object System.Windows.CornerRadius(7)
+    $card.Padding      = New-Object System.Windows.Thickness(14, 11, 14, 11)
+    $card.Margin       = New-Object System.Windows.Thickness(0, 0, 0, 9)
 
-    $card.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Surface')
-    $card.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+    $severityKey = Get-TkSeverityBrushKey -Severity $Severity
+
+    if ($Tinted) {
+
+        # A thick left edge in the full colour, and the body in the same colour
+        # at low alpha. The edge is what the eye follows down a long report.
+        $card.BorderThickness = New-Object System.Windows.Thickness(4, 1, 1, 1)
+        $card.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, $severityKey)
+
+        $tint = Get-TkSeverityTintBrush -Severity $Severity
+
+        if ($tint) {
+            $card.Background = $tint
+        }
+        else {
+            $card.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Surface')
+        }
+    }
+    else {
+        $card.BorderThickness = New-Object System.Windows.Thickness(1)
+        $card.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Surface')
+        $card.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'BorderSubtle')
+    }
 
     $stack = New-Object System.Windows.Controls.StackPanel
     $card.Child = $stack
@@ -829,9 +937,23 @@ function Add-TkFindingCard {
         $header.ColumnDefinitions.Add($definition)
     }
 
-    $chip = New-TkSeverityChip -Severity $Severity
-    [System.Windows.Controls.Grid]::SetColumn($chip, 0)
-    [void] $header.Children.Add($chip)
+    if ($Tinted) {
+
+        $icon = New-Object System.Windows.Controls.TextBlock
+        $icon.Text              = Get-TkSeverityGlyph -Severity $Severity
+        $icon.FontSize          = 16
+        $icon.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+        $icon.SetResourceReference([System.Windows.Controls.TextBlock]::FontFamilyProperty, 'IconFont')
+        $icon.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, $severityKey)
+
+        [System.Windows.Controls.Grid]::SetColumn($icon, 0)
+        [void] $header.Children.Add($icon)
+    }
+    else {
+        $chip = New-TkSeverityChip -Severity $Severity
+        [System.Windows.Controls.Grid]::SetColumn($chip, 0)
+        [void] $header.Children.Add($chip)
+    }
 
     $titleText = New-TkSelectableText -Value $Title
     $titleText.FontWeight        = [System.Windows.FontWeights]::SemiBold
@@ -995,7 +1117,12 @@ function New-TkRemediationButton {
     $entry = $table[$RemediationId]
 
     $button = New-Object System.Windows.Controls.Button
-    $button.Content    = 'Fix this'
+    # The label says which of the two things happens: a correction, or a page
+    # opening. An entry can name its own when neither fits, such as a guide.
+    $button.Content = if ($entry.ContainsKey('Button')) { [string] $entry.Button }
+                      elseif ([string] $entry.Kind -eq 'Open') { 'Open settings' }
+                      else { 'Fix this' }
+
     $button.Tag        = $RemediationId
     $button.Margin     = New-Object System.Windows.Thickness(12, 0, 0, 0)
     $button.MinWidth   = 90
