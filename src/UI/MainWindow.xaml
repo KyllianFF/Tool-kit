@@ -2324,6 +2324,10 @@
                                             <TextBlock Text="Storage health" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="What uses the processor, memory and disks right now, the programs that start with Windows, and how long start up takes and what slows it.">
+                                            <TextBlock Text="Performance" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Every device Device Manager flags, with its problem code explained and what to try.">
                                             <TextBlock Text="Devices" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>

@@ -2491,6 +2491,150 @@ Describe 'Logging from background workers' {
     }
 }
 
+Describe 'Performance' {
+
+    It 'groups process instances by application and shares the processor time out' {
+
+        $rows = @(
+            [pscustomobject] @{ Name = 'brave';   PercentProcessorTime = 320; WorkingSetPrivate = 300MB; IODataBytesPersec = 2KB }
+            [pscustomobject] @{ Name = 'brave#1'; PercentProcessorTime = 160; WorkingSetPrivate = 200MB; IODataBytesPersec = 1KB }
+            [pscustomobject] @{ Name = 'Idle';    PercentProcessorTime = 2800; WorkingSetPrivate = 0; IODataBytesPersec = 0 }
+            [pscustomobject] @{ Name = '_Total';  PercentProcessorTime = 3200; WorkingSetPrivate = 0; IODataBytesPersec = 0 }
+        )
+
+        $apps = @(Group-TkProcessUsage -Process $rows -LogicalProcessors 32)
+
+        $apps.Count            | Should -Be 1
+        $apps[0].Name          | Should -Be 'brave'
+        $apps[0].Instances     | Should -Be 2
+        $apps[0].CpuPercent    | Should -Be 15
+        $apps[0].MemoryMB      | Should -Be 500
+        $apps[0].IoKBps        | Should -Be 3
+    }
+
+    It 'finds where Task Manager records a startup entry for <Location>' -TestCases @(
+        @{ Location = 'Startup';                                                               Key = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder' }
+        @{ Location = 'Common Startup';                                                        Key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder' }
+        @{ Location = 'HKU\S-1-5-21-1-1001\SOFTWARE\Microsoft\Windows\CurrentVersion\Run';     Key = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run' }
+        @{ Location = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run';                    Key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run' }
+        @{ Location = 'HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run';        Key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32' }
+        @{ Location = 'Somewhere else';                                                        Key = '' }
+    ) {
+        param($Location, $Key)
+
+        Get-TkStartupApprovalKey -Location $Location | Should -Be $Key
+    }
+
+    It 'reads the startup switch from the lowest bit, and an absent value as enabled' {
+
+        Test-TkStartupApproved -Value $null                          | Should -BeTrue
+        Test-TkStartupApproved -Value ([byte[]] (0x02, 0, 0, 0))     | Should -BeTrue
+        Test-TkStartupApproved -Value ([byte[]] (0x06, 0, 0, 0))     | Should -BeTrue
+        Test-TkStartupApproved -Value ([byte[]] (0x03, 0, 0, 0))     | Should -BeFalse
+        Test-TkStartupApproved -Value ([byte[]] (0x07, 0, 0, 0))     | Should -BeFalse
+    }
+
+    It 'reads a start up and what slowed it from the Diagnostics-Performance events' {
+
+        $boot = ConvertFrom-TkBootEvent -Id 100 -Data @{ BootTime = '95000'; MainPathBootTime = '70000'; BootPostBootTime = '25000'; BootIsDegradation = 'true' }
+
+        $boot.MainPathMs | Should -Be 70000
+        $boot.Degraded   | Should -BeTrue
+
+        $driver = ConvertFrom-TkBootEvent -Id 102 -Data @{ Name = 'rtcore64.sys'; FriendlyName = 'MSI Afterburner driver'; TotalTime = '4200'; DegradationTime = '3100' }
+
+        $driver.Kind          | Should -Be 'Driver'
+        $driver.Name          | Should -Be 'MSI Afterburner driver'
+        $driver.DegradationMs | Should -Be 3100
+
+        ConvertFrom-TkBootEvent -Id 999 -Data @{} | Should -BeNullOrEmpty
+    }
+
+    Context 'Judgement' {
+
+        BeforeAll {
+            $script:Busy = [pscustomobject] @{
+                CpuPercent = 92; MemoryUsedPercent = 98; MemoryTotalGB = 8; MemoryFreeGB = 0.2; CommitPercent = 95
+                Applications = @(
+                    [pscustomobject] @{ Name = 'Teams'; Instances = 6; CpuPercent = 40; MemoryMB = 2100; IoKBps = 10 }
+                    [pscustomobject] @{ Name = 'chrome'; Instances = 20; CpuPercent = 25; MemoryMB = 3100; IoKBps = 50 }
+                )
+                Disks = @([pscustomobject] @{ Name = '0 C:'; BusyPercent = 96; Queue = 4.5; ReadKBps = 900; WriteKBps = 12000 })
+            }
+        }
+
+        It 'flags a busy processor and names what uses it' {
+
+            $cpu = Get-TkPerformanceFinding -Snapshot $script:Busy | Where-Object { $_.Heading -like 'Processor*' }
+
+            $cpu.Severity | Should -Be 'Warning'
+            $cpu.Detail   | Should -Match '^Teams 40%'
+        }
+
+        It 'writes decimals with a point whatever the display language' {
+
+            $culture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+
+            try {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('fr-FR')
+
+                $snapshot = $script:Busy.PSObject.Copy()
+                $snapshot.Applications = @([pscustomobject] @{ Name = 'brave'; Instances = 16; CpuPercent = 2.3; MemoryMB = 1596; IoKBps = 0 })
+
+                $findings = @(Get-TkPerformanceFinding -Snapshot $snapshot)
+
+                ($findings | Where-Object { $_.Heading -like 'Processor*' }).Detail | Should -Be 'brave 2.3%'
+                ($findings | Where-Object { $_.Heading -like 'Memory*' }).Detail    | Should -Match '^0\.2 GB free of 8 GB'
+                ($findings | Where-Object { $_.Heading -like 'Disk*' }).Detail      | Should -Match '^Queue 4\.5,'
+            }
+            finally {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = $culture
+            }
+        }
+
+        It 'fails memory nearly exhausted, and warns about a busy disk' {
+
+            $findings = @(Get-TkPerformanceFinding -Snapshot $script:Busy)
+
+            ($findings | Where-Object { $_.Heading -like 'Memory*' }).Severity | Should -Be 'Fail'
+            ($findings | Where-Object { $_.Heading -like 'Disk 0 C:*' }).Severity | Should -Be 'Warning'
+        }
+
+        It 'counts only the startup programs that actually run' {
+
+            $startup = @(1..17 | ForEach-Object { [pscustomobject] @{ Name = "App$_"; Enabled = $true } }) +
+                       @(1..5  | ForEach-Object { [pscustomobject] @{ Name = "Off$_"; Enabled = $false } })
+
+            $line = Get-TkPerformanceFinding -Startup $startup | Where-Object { $_.Heading -like '*start with Windows' }
+
+            $line.Heading  | Should -Be '17 program(s) start with Windows'
+            $line.Severity | Should -Be 'Warning'
+        }
+
+        It 'says start up time needs elevation instead of guessing' {
+
+            $line = Get-TkPerformanceFinding -Boot ([pscustomobject] @{ Available = $false; Boots = @(); Slowdowns = @() })
+
+            $line.Severity | Should -Be 'Info'
+            $line.Detail   | Should -Be 'Needs administrator rights'
+        }
+
+        It 'judges start up on the time to the desktop, and lists what slowed it' {
+
+            $boot = [pscustomobject] @{
+                Available = $true
+                Boots     = @(1..5 | ForEach-Object { [pscustomobject] @{ When = (Get-Date).AddDays(-$_); BootMs = 90000; MainPathMs = 75000; PostBootMs = 20000; Degraded = $false } })
+                Slowdowns = @([pscustomobject] @{ Kind = 'Application'; Name = 'Steam'; Count = 3; AddedMs = 8000 })
+            }
+
+            $findings = @(Get-TkPerformanceFinding -Boot $boot)
+
+            ($findings | Where-Object { $_.Heading -like 'Start up*' }).Severity | Should -Be 'Warning'
+            ($findings | Where-Object { $_.Heading -eq 'Application: Steam' }).Detail | Should -Be 'Added 8 s, 3 time(s)'
+        }
+    }
+}
+
 Describe 'Diagnostic reports' {
 
     BeforeAll {
