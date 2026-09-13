@@ -154,6 +154,7 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Full check';          Show = 'Invoke-TkDiagnosticOverview' }
         [pscustomobject] @{ Title = 'Pending reboot';      Show = 'Show-TkRebootStatus' }
         [pscustomobject] @{ Title = 'Storage health';      Show = 'Show-TkStorageHealth' }
+        [pscustomobject] @{ Title = 'Performance';         Show = 'Show-TkPerformanceReport' }
         [pscustomobject] @{ Title = 'Devices';             Show = 'Show-TkDeviceReport' }
         [pscustomobject] @{ Title = 'Crashes';             Show = 'Show-TkStabilityReport' }
         [pscustomobject] @{ Title = 'Sign-in and management'; Show = 'Show-TkIdentityReport' }
@@ -251,6 +252,78 @@ function Show-TkRebootStatus {
 
             foreach ($reason in $status.Reasons) {
                 Add-TkSeverityLine -Document $document -Severity 'Info' -Heading $reason
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows what the machine is doing, what starts with it, and how long start
+    up takes.
+#>
+function Show-TkPerformanceReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Measuring what the machine is doing...' `
+        -ScriptBlock {
+            [pscustomobject] @{
+                Snapshot = Get-TkPerformanceSnapshot
+                Startup  = @(Get-TkStartupProgram)
+                Boot     = Get-TkBootPerformance -Days 30
+            }
+        } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Snapshot'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'performance' -Data $report
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Performance' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '"The machine is slow" has an answer once it is split up: what is using the processor, the memory and the disks right now, what starts with Windows, and how long start up takes and what slows it.'
+            )
+
+            foreach ($finding in @(Get-TkPerformanceFinding -Snapshot $report.Snapshot -Startup @($report.Startup) -Boot $report.Boot)) {
+                Add-TkSeverityLine -Document $document -Severity $finding.Severity -Heading $finding.Heading `
+                    -Detail $finding.Detail -Note $finding.Note
+            }
+
+            $applications = @($report.Snapshot.Applications | Sort-Object -Property @{ Expression = 'CpuPercent'; Descending = $true },
+                                                                                   @{ Expression = 'MemoryMB'; Descending = $true } |
+                              Select-Object -First 12)
+
+            if ($applications.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Applications using the most right now' -Level 2
+
+                Add-TkTable -Document $document -Column @('Application', 'Processes', 'CPU %', 'Memory MB', 'Disk KB/s') `
+                    -Weight @(2.2, 0.8, 0.7, 0.9, 0.9) `
+                    -Row @($applications | ForEach-Object {
+                        , @($_.Name, [string] $_.Instances, [string] $_.CpuPercent, [string] $_.MemoryMB, [string] $_.IoKBps)
+                    })
+            }
+
+            $startup = @($report.Startup | Where-Object { $_ })
+
+            if ($startup.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Programs that start with Windows' -Level 2
+
+                Add-TkTable -Document $document -Column @('Program', 'For', 'State', 'Command') `
+                    -Weight @(1.6, 0.8, 0.7, 3.0) `
+                    -Row @($startup | ForEach-Object {
+                        , @($_.Name, $_.Scope, $(if ($_.Enabled) { 'Runs' } else { 'Disabled' }), $_.Command)
+                    })
             }
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document

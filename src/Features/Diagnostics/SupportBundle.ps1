@@ -206,6 +206,11 @@ function New-TkSupportBundle {
         @(
             (ConvertTo-TkBundleText -Title 'Pending reboot'      -InputObject (Get-TkPendingRebootStatus))
             (ConvertTo-TkBundleText -Title 'Storage health'      -As Table -InputObject (Get-TkStorageHealth))
+            (ConvertTo-TkBundleText -Title 'Performance'         -As Table -InputObject (
+                Get-TkPerformanceFinding -Snapshot (Get-TkPerformanceSnapshot) -Startup @(Get-TkStartupProgram) -Boot (Get-TkBootPerformance) |
+                    Select-Object Severity, Heading, Detail))
+            (ConvertTo-TkBundleText -Title 'Programs that start with Windows' -As Table -InputObject (
+                Get-TkStartupProgram | Select-Object Name, Scope, Enabled, Command))
             (ConvertTo-TkBundleText -Title 'Devices'             -As Table -InputObject (
                 Get-TkDeviceProblem | Select-Object Severity, Name, Code, ProblemName, Meaning, DeviceId))
             (ConvertTo-TkBundleText -Title 'Stability'           -As Table -InputObject (Get-TkStabilityReport))
