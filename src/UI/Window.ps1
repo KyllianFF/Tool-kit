@@ -1494,6 +1494,7 @@ function Update-TkPrivilegedControls {
         'BtnRemoveRoute'       = 'Removing a route'
         'BtnAddProxy'          = 'Publishing a port'
         'BtnRemoveProxy'       = 'Removing a port proxy rule'
+        'BtnSwitchPort'        = 'Listening for the switch announcement with Packet Monitor'
     }
 
     foreach ($name in $controls.Keys) {

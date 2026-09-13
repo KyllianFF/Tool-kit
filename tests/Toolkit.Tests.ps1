@@ -2253,6 +2253,189 @@ Describe 'Intervention journal' {
     }
 }
 
+Describe 'Switch port discovery' {
+
+    BeforeAll {
+
+        # Frames are built from their fields rather than pasted as hex, so the
+        # lengths are computed and a test cannot pass on a miscounted byte.
+        function Join-TestByte {
+            param([object[]] $Part)
+            $list = New-Object System.Collections.Generic.List[byte]
+            foreach ($piece in $Part) { foreach ($value in @($piece)) { $list.Add([byte] $value) } }
+            return , $list.ToArray()
+        }
+
+        function Get-TestAscii {
+            param([string] $Text)
+            return , [System.Text.Encoding]::ASCII.GetBytes($Text)
+        }
+
+        function New-TestLldpTlv {
+            param([int] $Type, [byte[]] $Value)
+            $word = ($Type -shl 9) -bor $Value.Length
+            return , (Join-TestByte @(($word -shr 8), ($word -band 0xFF), $Value))
+        }
+
+        function New-TestCdpTlv {
+            param([int] $Type, [byte[]] $Value)
+            $length = $Value.Length + 4
+            return , (Join-TestByte @(($Type -shr 8), ($Type -band 0xFF), ($length -shr 8), ($length -band 0xFF), $Value))
+        }
+
+        $lldpBody = Join-TestByte @(
+            (New-TestLldpTlv 1 (Join-TestByte @(0x04, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE)))
+            (New-TestLldpTlv 2 (Join-TestByte @(0x05, (Get-TestAscii 'Gi1/0/12'))))
+            (New-TestLldpTlv 3 (Join-TestByte @(0x00, 0x78)))
+            (New-TestLldpTlv 4 (Get-TestAscii 'Office 2.14'))
+            (New-TestLldpTlv 5 (Get-TestAscii 'SW-CORE-01'))
+            (New-TestLldpTlv 6 (Get-TestAscii 'Aruba 2930F'))
+            (New-TestLldpTlv 7 (Join-TestByte @(0x00, 0x14, 0x00, 0x14)))
+            (New-TestLldpTlv 8 (Join-TestByte @(0x05, 0x01, 10, 0, 1, 5, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00)))
+            (New-TestLldpTlv 127 (Join-TestByte @(0x00, 0x80, 0xC2, 0x01, 0x00, 20)))
+            # LLDP-MED voice policy: tagged, VLAN 30, priority 5, DSCP 46.
+            (New-TestLldpTlv 127 (Join-TestByte @(0x00, 0x12, 0xBB, 0x02, 0x01, 0x40, 0x3D, 0x6E)))
+            (0x00, 0x00)
+        )
+
+        $script:LldpFrame = Join-TestByte @(0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x88, 0xCC, $lldpBody)
+        $script:TaggedLldpFrame = Join-TestByte @(0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x81, 0x00, 0x00, 0x0A, 0x88, 0xCC, $lldpBody)
+
+        $cdpBody = Join-TestByte @(
+            (0xAA, 0xAA, 0x03, 0x00, 0x00, 0x0C, 0x20, 0x00)
+            (0x02, 0xB4, 0x00, 0x00)
+            (New-TestCdpTlv 0x0001 (Get-TestAscii 'SW-ACCESS-2'))
+            (New-TestCdpTlv 0x0002 (Join-TestByte @(0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0xCC, 0x00, 0x04, 10, 0, 2, 10)))
+            (New-TestCdpTlv 0x0003 (Get-TestAscii 'GigabitEthernet0/5'))
+            (New-TestCdpTlv 0x0006 (Get-TestAscii 'cisco WS-C2960'))
+            (New-TestCdpTlv 0x000A (Join-TestByte @(0x00, 40)))
+            (New-TestCdpTlv 0x000E (Join-TestByte @(0x01, 0x00, 50)))
+        )
+
+        $script:CdpFrame = Join-TestByte @(0x01, 0x00, 0x0C, 0xCC, 0xCC, 0xCC, 0x00, 0x11, 0x22, 0x33, 0x44, 0x66,
+                                           ($cdpBody.Length -shr 8), ($cdpBody.Length -band 0xFF), $cdpBody)
+
+        $script:ArpFrame = Join-TestByte @(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x11, 0x22, 0x33, 0x44, 0x77, 0x08, 0x06, (0..27 | ForEach-Object { 0 }))
+
+        # A pcapng file the way pktmon writes one: section header, interface
+        # description, then one enhanced packet block per frame.
+        function ConvertTo-TestPcapNg {
+            param([object[]] $Frame)
+
+            $stream = New-Object System.IO.MemoryStream
+            $writer = New-Object System.IO.BinaryWriter($stream)
+
+            $writer.Write([uint32] 0x0A0D0D0A); $writer.Write([uint32] 28); $writer.Write([uint32] 0x1A2B3C4D)
+            $writer.Write([uint16] 1); $writer.Write([uint16] 0); $writer.Write([int64] -1); $writer.Write([uint32] 28)
+
+            $writer.Write([uint32] 1); $writer.Write([uint32] 20); $writer.Write([uint16] 1); $writer.Write([uint16] 0)
+            $writer.Write([uint32] 0); $writer.Write([uint32] 20)
+
+            foreach ($data in $Frame) {
+                $padded = [int] ([math]::Ceiling($data.Length / 4) * 4)
+                $length = 32 + $padded
+                $writer.Write([uint32] 6); $writer.Write([uint32] $length); $writer.Write([uint32] 0)
+                $writer.Write([uint32] 0); $writer.Write([uint32] 0)
+                $writer.Write([uint32] $data.Length); $writer.Write([uint32] $data.Length)
+                $writer.Write([byte[]] $data); $writer.Write((New-Object byte[] ($padded - $data.Length)))
+                $writer.Write([uint32] $length)
+            }
+
+            $writer.Flush()
+            return , $stream.ToArray()
+        }
+    }
+
+    It 'reads the switch, port, VLANs and management address from LLDP' {
+
+        $neighbour = ConvertFrom-TkLldpFrame -Frame $script:LldpFrame
+
+        $neighbour.SwitchName        | Should -Be 'SW-CORE-01'
+        $neighbour.Port              | Should -Be 'Gi1/0/12'
+        $neighbour.PortDescription   | Should -Be 'Office 2.14'
+        $neighbour.Vlan              | Should -Be 20
+        $neighbour.VoiceVlan         | Should -Be 30
+        $neighbour.ManagementAddress | Should -Be '10.0.1.5'
+        $neighbour.ChassisId         | Should -Be '00-AA-BB-CC-DD-EE'
+        $neighbour.Capabilities      | Should -Be 'Bridge, Router'
+        $neighbour.Platform          | Should -Be 'Aruba 2930F'
+    }
+
+    It 'reads LLDP behind an 802.1Q tag' {
+        (ConvertFrom-TkLldpFrame -Frame $script:TaggedLldpFrame).SwitchName | Should -Be 'SW-CORE-01'
+    }
+
+    It 'reads the switch, port, VLANs and management address from CDP' {
+
+        $neighbour = ConvertFrom-TkCdpFrame -Frame $script:CdpFrame
+
+        $neighbour.SwitchName        | Should -Be 'SW-ACCESS-2'
+        $neighbour.Port              | Should -Be 'GigabitEthernet0/5'
+        $neighbour.Vlan              | Should -Be 40
+        $neighbour.VoiceVlan         | Should -Be 50
+        $neighbour.ManagementAddress | Should -Be '10.0.2.10'
+        $neighbour.Platform          | Should -Be 'cisco WS-C2960'
+    }
+
+    It 'ignores any other frame' {
+
+        ConvertFrom-TkLldpFrame -Frame $script:ArpFrame | Should -BeNullOrEmpty
+        ConvertFrom-TkCdpFrame  -Frame $script:ArpFrame | Should -BeNullOrEmpty
+        ConvertFrom-TkCdpFrame  -Frame $script:LldpFrame | Should -BeNullOrEmpty
+        ConvertFrom-TkLldpFrame -Frame $script:CdpFrame | Should -BeNullOrEmpty
+    }
+
+    It 'extracts every frame from a pcapng capture' {
+
+        $frames = @(ConvertFrom-TkPcapNg -Bytes (ConvertTo-TestPcapNg @($script:LldpFrame, $script:ArpFrame)))
+
+        $frames.Count | Should -Be 2
+        [Convert]::ToBase64String($frames[0].Data) | Should -Be ([Convert]::ToBase64String($script:LldpFrame))
+    }
+
+    It 'stops at a block cut short, without throwing' {
+
+        # The comma keeps the frame one element: @() would unroll its bytes.
+        $bytes = ConvertTo-TestPcapNg (, $script:LldpFrame)
+        $cut   = New-Object byte[] ($bytes.Length - 10)
+        [Array]::Copy($bytes, $cut, $cut.Length)
+
+        { ConvertFrom-TkPcapNg -Bytes $cut } | Should -Not -Throw
+        @(ConvertFrom-TkPcapNg -Bytes $cut).Count | Should -Be 0
+    }
+
+    It 'keeps one record per protocol, switch and port' {
+
+        $frames = @(ConvertFrom-TkPcapNg -Bytes (ConvertTo-TestPcapNg @($script:LldpFrame, $script:LldpFrame, $script:CdpFrame, $script:ArpFrame)))
+
+        $neighbours = @(Get-TkSwitchNeighbour -Frame $frames)
+
+        $neighbours.Count | Should -Be 2
+        @($neighbours | ForEach-Object { $_.Protocol }) | Should -Be @('LLDP', 'CDP')
+    }
+
+    It 'writes what was heard, and why nothing may have been' {
+
+        $found = [pscustomobject] @{ Status = 'Found'; Seconds = 65; Frames = 3; Error = ''; Neighbours = @(ConvertFrom-TkLldpFrame -Frame $script:LldpFrame) }
+        $text  = Format-TkSwitchDiscoveryText -Discovery $found
+
+        $text | Should -Match 'SW-CORE-01'
+        $text | Should -Match 'Gi1/0/12 \(Office 2.14\)'
+        $text | Should -Match 'VLAN\s+: 20'
+
+        Format-TkSwitchDiscoveryText -Discovery ([pscustomobject] @{ Status = 'Silent'; Seconds = 65; Frames = 0; Error = ''; Neighbours = @() }) |
+            Should -Match 'Wi-Fi'
+    }
+
+    It 'does not start Packet Monitor without administrator rights' {
+
+        Mock Assert-TkElevated { $false }
+        Mock Start-TkOperation { throw 'must not be reached' }
+
+        (Invoke-TkSwitchPortDiscovery -Seconds 5).Status | Should -Be 'NotElevated'
+    }
+}
+
 Describe 'Diagnostic reports' {
 
     BeforeAll {

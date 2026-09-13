@@ -90,6 +90,9 @@ function Initialize-TkRunspacePool {
         # session of the window that started them.
         'TkSessionId', 'TkJournalKind',
 
+        # The switch port capture runs in a worker and filters on these.
+        'TkLldpMultiCast', 'TkCdpMultiCast',
+
         # The audit runs in a worker, so the table it reads its controls from
         # has to exist there. The two Defender variables are the per run cache
         # the controls share; seeded so the worker starts from a known empty

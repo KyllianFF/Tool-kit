@@ -33,6 +33,7 @@ $script:TkJournalKind = @{
     Audit       = 'Check'
     Hunting     = 'Check'
     Integrity   = 'Check'
+    Capture     = 'Check'
     Diagnostics = 'Check'
 }
 
