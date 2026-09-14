@@ -155,6 +155,12 @@ function Get-TkHeadlessReport {
             , @(Get-TkUserContextReport)
         })
 
+        (& $row 'Lifecycle' $false 'Whether Windows and the installed programs still receive security fixes.' {
+            param($Options)
+            $null = $Options
+            Get-TkSoftwareLifecycleReport
+        })
+
         (& $row 'Audit' $true 'The security audit with its score, at the level asked for.' {
             param($Options)
 

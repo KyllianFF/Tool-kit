@@ -3936,6 +3936,216 @@ Describe 'Wi-Fi and proxy' {
     }
 }
 
+Describe 'Software lifecycle' {
+
+    BeforeAll {
+        $script:Lifecycle    = Import-TkCatalog -Name 'software-lifecycle'
+        $script:LifecycleNow = [datetime]::new(2026, 9, 14)
+
+        function New-LifecycleTestFact {
+            param([int] $Build, [string] $EditionId, [string] $InstallationType = 'Client')
+            [pscustomobject] @{ Caption = 'Windows'; EditionId = $EditionId; InstallationType = $InstallationType; DisplayVersion = ''; Build = $Build }
+        }
+    }
+
+    Context 'Catalog' {
+
+        It 'dates every cycle as yyyy-MM-dd, compiles every pattern and names each product once' {
+
+            $dates    = New-Object System.Collections.Generic.List[object]
+            $patterns = New-Object System.Collections.Generic.List[string]
+
+            foreach ($product in @($script:Lifecycle.products)) {
+
+                $product.id        | Should -Match '^[a-z0-9-]+$'
+                $product.risk      | Should -BeIn @('High', 'Medium', 'Low')
+                $product.reference | Should -Match '^https://'
+                @($product.cycles).Count | Should -BeGreaterThan 0
+
+                $patterns.Add($product.match)
+
+                if ($product.PSObject.Properties['exclude']) { $patterns.Add($product.exclude) }
+
+                foreach ($cycle in @($product.cycles)) {
+
+                    $cycle.cycle | Should -Not -BeNullOrEmpty
+
+                    foreach ($field in @('name', 'version')) {
+                        if ($cycle.PSObject.Properties[$field]) { $patterns.Add($cycle.$field) }
+                    }
+
+                    if ($null -ne $cycle.end) { $dates.Add($cycle.end) }
+                }
+            }
+
+            foreach ($entry in @($script:Lifecycle.windows)) {
+
+                $entry.channel | Should -BeIn @('Client', 'Ltsc', 'Server')
+
+                foreach ($property in $entry.ends.PSObject.Properties) {
+                    $property.Name | Should -BeIn @('Consumer', 'Enterprise', 'Ltsc', 'IotLtsc', 'Server')
+                    $dates.Add($property.Value)
+                }
+            }
+
+            $dates.Count | Should -BeGreaterThan 100
+
+            foreach ($date in $dates) {
+                { ConvertTo-TkLifecycleDate -Value $date } | Should -Not -Throw -Because ([string] $date)
+            }
+
+            foreach ($pattern in $patterns) {
+                { [void] [regex]::new($pattern) } | Should -Not -Throw -Because $pattern
+            }
+
+            @($script:Lifecycle.products | ForEach-Object { $_.id } | Sort-Object -Unique).Count | Should -Be @($script:Lifecycle.products).Count
+        }
+    }
+
+    Context 'Judgement' {
+
+        It 'warns within six months, fails a high risk product past its date, and only informs for a low risk one' {
+
+            (Get-TkLifecycleState -End '2026-09-14' -Now $script:LifecycleNow).Status          | Should -Be 'Ending'
+            (Get-TkLifecycleState -End '2026-09-14' -Now $script:LifecycleNow).DaysLeft        | Should -Be 0
+            (Get-TkLifecycleState -End '2026-09-13' -Now $script:LifecycleNow).Severity        | Should -Be 'Fail'
+            (Get-TkLifecycleState -End '2026-09-13' -Risk Medium -Now $script:LifecycleNow).Severity | Should -Be 'Warning'
+            (Get-TkLifecycleState -End '2026-09-13' -Risk Low -Now $script:LifecycleNow).Severity    | Should -Be 'Info'
+            (Get-TkLifecycleState -End '2027-09-14' -Now $script:LifecycleNow).Severity        | Should -Be 'Pass'
+            (Get-TkLifecycleState -End $null -Now $script:LifecycleNow).Status                 | Should -Be 'Supported'
+            (Get-TkLifecycleState -End ([datetime]::new(2026, 10, 13, 0, 0, 0)) -Now $script:LifecycleNow).DaysLeft | Should -Be 29
+        }
+    }
+
+    Context 'Windows' {
+
+        It 'follows the calendar of <EditionId> (<InstallationType>): <Audience>' -TestCases @(
+            @{ EditionId = 'Professional';          InstallationType = 'Client';      Audience = 'Consumer' }
+            @{ EditionId = 'Core';                  InstallationType = 'Client';      Audience = 'Consumer' }
+            @{ EditionId = 'ProfessionalEducation'; InstallationType = 'Client';      Audience = 'Consumer' }
+            @{ EditionId = 'Enterprise';            InstallationType = 'Client';      Audience = 'Enterprise' }
+            @{ EditionId = 'Education';             InstallationType = 'Client';      Audience = 'Enterprise' }
+            @{ EditionId = 'EnterpriseS';           InstallationType = 'Client';      Audience = 'Ltsc' }
+            @{ EditionId = 'IoTEnterpriseS';        InstallationType = 'Client';      Audience = 'IotLtsc' }
+            @{ EditionId = 'ServerStandard';        InstallationType = 'Server';      Audience = 'Server' }
+            @{ EditionId = 'ServerDatacenter';      InstallationType = 'Server Core'; Audience = 'Server' }
+        ) {
+            param($EditionId, $InstallationType, $Audience)
+
+            (Get-TkWindowsAudience -EditionId $EditionId -InstallationType $InstallationType).Audience | Should -Be $Audience
+        }
+
+        It 'judges build <Build> <EditionId> as <Status> until <Ends>' -TestCases @(
+            @{ Build = 26200; EditionId = 'Professional';   InstallationType = 'Client'; Status = 'Supported'; Ends = '2027-10-12' }
+            @{ Build = 26100; EditionId = 'Professional';   InstallationType = 'Client'; Status = 'Ending';    Ends = '2026-10-13' }
+            @{ Build = 26100; EditionId = 'Enterprise';     InstallationType = 'Client'; Status = 'Supported'; Ends = '2027-10-12' }
+            @{ Build = 26100; EditionId = 'EnterpriseS';    InstallationType = 'Client'; Status = 'Supported'; Ends = '2029-10-09' }
+            @{ Build = 26100; EditionId = 'ServerStandard'; InstallationType = 'Server'; Status = 'Supported'; Ends = '2034-10-10' }
+            @{ Build = 19045; EditionId = 'Professional';   InstallationType = 'Client'; Status = 'Ended';     Ends = '2025-10-14' }
+            @{ Build = 19044; EditionId = 'EnterpriseS';    InstallationType = 'Client'; Status = 'Ending';    Ends = '2027-01-12' }
+            @{ Build = 18363; EditionId = 'Enterprise';     InstallationType = 'Client'; Status = 'Ended';     Ends = '2022-05-10' }
+            @{ Build = 14393; EditionId = 'ServerStandard'; InstallationType = 'Server'; Status = 'Ending';    Ends = '2027-01-12' }
+            @{ Build = 99999; EditionId = 'Professional';   InstallationType = 'Client'; Status = 'Unknown';   Ends = '' }
+        ) {
+            param($Build, $EditionId, $InstallationType, $Status, $Ends)
+
+            $row = Resolve-TkWindowsLifecycle -Fact (New-LifecycleTestFact -Build $Build -EditionId $EditionId -InstallationType $InstallationType) `
+                                              -Catalog $script:Lifecycle -Now $script:LifecycleNow
+
+            $row.Status | Should -Be $Status
+            $row.Ends   | Should -Be $Ends
+        }
+
+        It 'turns the Windows row into an audit finding' {
+
+            $ended   = Resolve-TkWindowsLifecycle -Fact (New-LifecycleTestFact -Build 19045 -EditionId 'Professional') -Catalog $script:Lifecycle -Now $script:LifecycleNow
+            $current = Resolve-TkWindowsLifecycle -Fact (New-LifecycleTestFact -Build 26200 -EditionId 'Professional') -Catalog $script:Lifecycle -Now $script:LifecycleNow
+            $unknown = Resolve-TkWindowsLifecycle -Fact (New-LifecycleTestFact -Build 99999 -EditionId 'Professional') -Catalog $script:Lifecycle -Now $script:LifecycleNow
+
+            $finding = ConvertTo-TkWindowsSupportFinding -Lifecycle $ended
+
+            $finding.Status         | Should -Be 'Fail'
+            $finding.Detail         | Should -BeLike '*Extended Security Updates*'
+            $finding.Recommendation | Should -Not -BeNullOrEmpty
+
+            (ConvertTo-TkWindowsSupportFinding -Lifecycle $current).Status | Should -Be 'Pass'
+            (ConvertTo-TkWindowsSupportFinding -Lifecycle $unknown).Status | Should -Be 'Info'
+            $unknown.Note | Should -BeLike '*newer than every release*'
+        }
+    }
+
+    Context 'Programs' {
+
+        It 'keeps the programs Installed apps would show' {
+
+            $rows = @(Select-TkInstalledProgram -Entry @(
+                @{ DisplayName = 'Visible'; DisplayVersion = '1.0' }
+                @{ DisplayName = 'Visible'; DisplayVersion = '1.0' }
+                @{ DisplayName = 'Component'; SystemComponent = 1 }
+                @{ DisplayName = 'KB5000000'; ParentKeyName = 'Office' }
+                @{ DisplayName = 'Security Update for Something (KB1)' }
+                @{ DisplayName = 'Patch'; ReleaseType = 'Hotfix' }
+                @{ DisplayName = '' }
+                @{ DisplayVersion = '2.0' }
+            ))
+
+            $rows.Count   | Should -Be 1
+            $rows[0].Name | Should -Be 'Visible'
+        }
+
+        It 'recognises programs, groups their copies, and judges each by its risk' {
+
+            $programs = @(
+                [pscustomobject] @{ Name = 'Microsoft Office Professional Plus 2021 - fr-fr';               Version = '16.0.20326.20144' }
+                [pscustomobject] @{ Name = 'Microsoft Office Proofing Tools 2016 - English';                Version = '16.0.4266.1001' }
+                [pscustomobject] @{ Name = 'Microsoft Visual C++ 2010  x64 Redistributable - 10.0.40219';   Version = '10.0.40219' }
+                [pscustomobject] @{ Name = 'Microsoft Visual C++ 2010  x86 Redistributable - 10.0.40219';   Version = '10.0.40219' }
+                [pscustomobject] @{ Name = 'Microsoft Visual C++ v14 Redistributable (x64) - 14.51.36247'; Version = '14.51.36247.0' }
+                [pscustomobject] @{ Name = 'Python 3.9.13 (64-bit)';                                        Version = '3.9.13150.0' }
+                [pscustomobject] @{ Name = 'Python Launcher';                                               Version = '3.14.6150.0' }
+                [pscustomobject] @{ Name = 'Microsoft Windows Desktop Runtime 10.0.12 (x64)';               Version = '10.0.12.50000' }
+                [pscustomobject] @{ Name = 'Adobe Acrobat DC';                                              Version = '20.006.20042' }
+                [pscustomobject] @{ Name = 'Adobe Flash Player 32 NPAPI';                                   Version = '32.0.0.465' }
+                [pscustomobject] @{ Name = 'Notepad++ (64-bit x64)';                                        Version = '8.6' }
+            )
+
+            $rows = @(Resolve-TkProgramLifecycle -Program $programs -Catalog $script:Lifecycle -Now $script:LifecycleNow)
+            $by   = @{}
+
+            foreach ($row in $rows) {
+                $by['{0} {1}' -f $row.ProductId, $row.Cycle] = $row
+            }
+
+            $rows.Count | Should -Be 7
+
+            $by['office 2021'].Status   | Should -Be 'Ending'
+            $by['office 2021'].DaysLeft | Should -Be 29
+
+            $by['vcredist 2010'].Status              | Should -Be 'Ended'
+            $by['vcredist 2010'].Severity            | Should -Be 'Info'
+            @($by['vcredist 2010'].Installed).Count  | Should -Be 2
+            $by['vcredist 2015 and later (v14)'].Severity | Should -Be 'Pass'
+
+            $by['python 3.9'].Severity      | Should -Be 'Warning'
+            $by['dotnet 10 (LTS)'].Ends     | Should -Be '2028-11-14'
+            $by['acrobat continuous (DC)'].Status | Should -Be 'Outdated'
+            $by['flash all versions'].Severity    | Should -Be 'Fail'
+
+            $rows[0].Severity | Should -Be 'Fail'
+        }
+
+        It 'says a version is not in the catalog rather than guessing' {
+
+            $row = @(Resolve-TkProgramLifecycle -Program @([pscustomobject] @{ Name = 'PowerShell 7.5.1.0-x64'; Version = '7.5.1.0' }) `
+                                               -Catalog $script:Lifecycle -Now $script:LifecycleNow)[0]
+
+            $row.Status   | Should -Be 'Unknown'
+            $row.Severity | Should -Be 'Info'
+            $row.Note     | Should -BeLike '*not in the catalog*'
+        }
+    }
+}
+
 Describe 'Diagnostic reports' {
 
     BeforeAll {

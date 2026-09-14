@@ -1,0 +1,403 @@
+{
+  "reviewed": "2026-05",
+  "about": "End of security support dates as published by each vendor. Windows is matched on its build and edition; a program on its name and version as Installed apps shows them. A program in no product is not judged, and a version in no cycle is reported as not in the catalog.",
+  "windowsReplacement": {
+    "Client": "A supported feature update, offered by Windows Update. On hardware Windows 11 does not support, Windows 10 Extended Security Updates buy time until the machine is replaced.",
+    "Ltsc": "A supported LTSC release, or the general availability channel when the device does not need a fixed feature set.",
+    "Server": "An in-place upgrade or a migration to a supported Windows Server release."
+  },
+  "windowsReference": {
+    "Client": "https://learn.microsoft.com/windows/release-health/",
+    "Ltsc": "https://learn.microsoft.com/windows/release-health/",
+    "Server": "https://learn.microsoft.com/windows/release-health/windows-server-release-info"
+  },
+  "windows": [
+    { "name": "Windows 11 25H2", "channel": "Client", "build": 26200, "ends": { "Consumer": "2027-10-12", "Enterprise": "2028-10-10" } },
+    { "name": "Windows 11 24H2", "channel": "Client", "build": 26100, "ends": { "Consumer": "2026-10-13", "Enterprise": "2027-10-12" } },
+    { "name": "Windows 11 23H2", "channel": "Client", "build": 22631, "ends": { "Consumer": "2025-11-11", "Enterprise": "2026-11-10" } },
+    { "name": "Windows 11 22H2", "channel": "Client", "build": 22621, "ends": { "Consumer": "2024-10-08", "Enterprise": "2025-10-14" } },
+    { "name": "Windows 11 21H2", "channel": "Client", "build": 22000, "ends": { "Consumer": "2023-10-10", "Enterprise": "2024-10-08" } },
+    { "name": "Windows 10 22H2", "channel": "Client", "build": 19045, "ends": { "Consumer": "2025-10-14", "Enterprise": "2025-10-14" },
+      "note": "Extended Security Updates continue to 2026-10-13 for enrolled home users, and for up to three years for organisations that pay for them. This report cannot see an enrollment: Windows Update shows it." },
+    { "name": "Windows 10 21H2", "channel": "Client", "build": 19044, "ends": { "Consumer": "2023-06-13", "Enterprise": "2024-06-11" } },
+    { "name": "Windows 10 21H1", "channel": "Client", "build": 19043, "ends": { "Consumer": "2022-12-13", "Enterprise": "2022-12-13" } },
+    { "name": "Windows 10 20H2", "channel": "Client", "build": 19042, "ends": { "Consumer": "2022-05-10", "Enterprise": "2023-05-09" } },
+    { "name": "Windows 10 2004", "channel": "Client", "build": 19041, "ends": { "Consumer": "2021-12-14", "Enterprise": "2021-12-14" } },
+    { "name": "Windows 10, a release before 2004", "channel": "Client", "buildFrom": 10240, "buildBelow": 19041, "ends": { "Consumer": "2021-05-11", "Enterprise": "2022-05-10" } },
+    { "name": "Windows 8.1", "channel": "Client", "build": 9600, "ends": { "Consumer": "2023-01-10", "Enterprise": "2023-01-10" } },
+    { "name": "Windows 7", "channel": "Client", "build": 7601, "ends": { "Consumer": "2020-01-14", "Enterprise": "2020-01-14" } },
+
+    { "name": "Windows 11 Enterprise LTSC 2024", "channel": "Ltsc", "build": 26100, "ends": { "Ltsc": "2029-10-09", "IotLtsc": "2034-10-10" } },
+    { "name": "Windows 10 Enterprise LTSC 2021", "channel": "Ltsc", "build": 19044, "ends": { "Ltsc": "2027-01-12", "IotLtsc": "2032-01-13" } },
+    { "name": "Windows 10 Enterprise LTSC 2019", "channel": "Ltsc", "build": 17763, "ends": { "Ltsc": "2029-01-09", "IotLtsc": "2029-01-09" } },
+    { "name": "Windows 10 Enterprise LTSB 2016", "channel": "Ltsc", "build": 14393, "ends": { "Ltsc": "2026-10-13", "IotLtsc": "2026-10-13" } },
+    { "name": "Windows 10 Enterprise LTSB 2015", "channel": "Ltsc", "build": 10240, "ends": { "Ltsc": "2025-10-14", "IotLtsc": "2025-10-14" } },
+
+    { "name": "Windows Server 2025", "channel": "Server", "build": 26100, "ends": { "Server": "2034-10-10" } },
+    { "name": "Windows Server, version 23H2", "channel": "Server", "build": 25398, "ends": { "Server": "2025-10-24" } },
+    { "name": "Windows Server 2022", "channel": "Server", "build": 20348, "ends": { "Server": "2031-10-14" } },
+    { "name": "Windows Server 2019", "channel": "Server", "build": 17763, "ends": { "Server": "2029-01-09" } },
+    { "name": "Windows Server 2016", "channel": "Server", "build": 14393, "ends": { "Server": "2027-01-12" } },
+    { "name": "Windows Server 2012 R2", "channel": "Server", "build": 9600, "ends": { "Server": "2023-10-10" },
+      "note": "Extended Security Updates, sold or included with Azure, can run to 2026-10-13. This report cannot see them." },
+    { "name": "Windows Server 2012", "channel": "Server", "build": 9200, "ends": { "Server": "2023-10-10" },
+      "note": "Extended Security Updates, sold or included with Azure, can run to 2026-10-13. This report cannot see them." },
+    { "name": "Windows Server 2008 R2", "channel": "Server", "build": 7601, "ends": { "Server": "2020-01-14" } }
+  ],
+  "products": [
+    {
+      "id": "access-engine", "name": "Microsoft Access database engine", "risk": "Medium",
+      "match": "^Microsoft (Office )?Access (database engine|Runtime)",
+      "replacement": "The Microsoft 365 Access Runtime, for the applications that still need the engine.",
+      "reference": "https://learn.microsoft.com/lifecycle/",
+      "cycles": [
+        { "cycle": "2016", "name": "\\b2016\\b", "end": "2025-10-14" },
+        { "cycle": "2013", "name": "\\b2013\\b", "end": "2023-04-11" },
+        { "cycle": "2010", "name": "\\b2010\\b", "end": "2020-10-13" },
+        { "cycle": "2007", "name": "\\b2007\\b", "end": "2017-10-10" }
+      ]
+    },
+    {
+      "id": "lync", "name": "Microsoft Lync", "risk": "Medium",
+      "match": "^Microsoft Lync\\b",
+      "replacement": "Microsoft Teams.",
+      "reference": "https://learn.microsoft.com/lifecycle/",
+      "cycles": [
+        { "cycle": "2013", "end": "2023-04-11" }
+      ]
+    },
+    {
+      "id": "skype-for-business", "name": "Skype for Business", "risk": "Medium",
+      "match": "^(Microsoft )?Skype for Business\\b",
+      "exclude": "Online|Basic",
+      "replacement": "Microsoft Teams.",
+      "reference": "https://learn.microsoft.com/lifecycle/",
+      "cycles": [
+        { "cycle": "2015 to 2019", "end": "2025-10-14" }
+      ]
+    },
+    {
+      "id": "skype", "name": "Skype", "risk": "Medium",
+      "match": "^Skype(\\u2122)?(\\s+version\\b|\\s+\\d|$)",
+      "replacement": "Microsoft Teams, free for personal use.",
+      "reference": "https://learn.microsoft.com/lifecycle/",
+      "cycles": [
+        { "cycle": "all versions", "end": "2025-05-05", "note": "Microsoft retired Skype: it no longer signs in or receives fixes." }
+      ]
+    },
+    {
+      "id": "teams-classic", "name": "Microsoft Teams classic", "risk": "Medium",
+      "match": "^(Microsoft Teams|Teams Machine-Wide Installer)$",
+      "replacement": "The new Microsoft Teams.",
+      "reference": "https://learn.microsoft.com/microsoftteams/teams-classic-client-end-of-availability",
+      "cycles": [
+        { "cycle": "1.x", "version": "^1\\.", "end": "2025-07-01", "note": "Classic Teams stopped working on 2025-07-01. The machine-wide installer puts it back for every new profile until it is removed." }
+      ]
+    },
+    {
+      "id": "office", "name": "Microsoft Office", "risk": "High",
+      "match": "^Microsoft (Office|Visio|Project|365)\\b",
+      "exclude": "Proofing|Language Pack|MUI|Shared|Web Components|Viewer|Runtime|Click-to-Run|Add-in|Validation|Interop|Visual Studio|Tools for|Outlook Social|Live Meeting|Communicator|Access database engine",
+      "replacement": "Microsoft 365 Apps, or Office LTSC 2024 where a perpetual licence is required.",
+      "reference": "https://learn.microsoft.com/deployoffice/",
+      "cycles": [
+        { "cycle": "Microsoft 365 Apps", "name": "^Microsoft 365|Office 365", "end": null, "note": "Supported while it stays on a supported update channel and installs its updates." },
+        { "cycle": "LTSC 2024", "name": "\\b2024\\b", "end": "2029-10-09" },
+        { "cycle": "2021", "name": "\\b2021\\b", "end": "2026-10-13", "note": "Office 2021 and Office LTSC 2021 share this date, and nothing extends it." },
+        { "cycle": "2019", "name": "\\b2019\\b", "end": "2025-10-14" },
+        { "cycle": "2016", "name": "\\b2016\\b", "end": "2025-10-14" },
+        { "cycle": "2013", "name": "\\b2013\\b", "end": "2023-04-11" },
+        { "cycle": "2013", "version": "^15\\.", "end": "2023-04-11" },
+        { "cycle": "2010", "name": "\\b2010\\b", "end": "2020-10-13" },
+        { "cycle": "2010", "version": "^14\\.", "end": "2020-10-13" },
+        { "cycle": "2007", "name": "\\b2007\\b", "end": "2017-10-10" },
+        { "cycle": "2007", "version": "^12\\.", "end": "2017-10-10" }
+      ]
+    },
+    {
+      "id": "flash", "name": "Adobe Flash Player", "risk": "High",
+      "match": "^Adobe Flash Player\\b",
+      "replacement": "Nothing: remove it. Adobe blocks Flash content since 2021-01-12 and browsers dropped it.",
+      "reference": "https://www.adobe.com/products/flashplayer/end-of-life.html",
+      "cycles": [
+        { "cycle": "all versions", "end": "2020-12-31" }
+      ]
+    },
+    {
+      "id": "shockwave", "name": "Adobe Shockwave Player", "risk": "High",
+      "match": "^Adobe Shockwave Player\\b",
+      "replacement": "Nothing: remove it.",
+      "reference": "https://helpx.adobe.com/support/programs/eol-matrix.html",
+      "cycles": [
+        { "cycle": "all versions", "end": "2019-04-09" }
+      ]
+    },
+    {
+      "id": "silverlight", "name": "Microsoft Silverlight", "risk": "High",
+      "match": "^Microsoft Silverlight\\b",
+      "replacement": "Nothing: remove it. No current browser runs it.",
+      "reference": "https://learn.microsoft.com/lifecycle/",
+      "cycles": [
+        { "cycle": "5", "end": "2021-10-12" }
+      ]
+    },
+    {
+      "id": "quicktime", "name": "Apple QuickTime for Windows", "risk": "High",
+      "match": "^QuickTime\\b",
+      "replacement": "Nothing: remove it. Apple stopped updating it with known vulnerabilities left open.",
+      "reference": "https://support.apple.com/HT205771",
+      "cycles": [
+        { "cycle": "7", "end": "2016-04-14" }
+      ]
+    },
+    {
+      "id": "acrobat", "name": "Adobe Acrobat", "risk": "High",
+      "match": "^Adobe (Acrobat|Reader)\\b",
+      "exclude": "Flash|Refresh Manager|Customization|Update|Distiller|Elements|Extension",
+      "replacement": "Adobe Acrobat or Acrobat Reader on the continuous track, kept up to date.",
+      "reference": "https://helpx.adobe.com/support/programs/eol-matrix.html",
+      "cycles": [
+        { "cycle": "2024 (classic)", "name": "\\b2024\\b", "end": null },
+        { "cycle": "2024 (classic)", "version": "^24\\.\\d{3}\\.3", "end": null },
+        { "cycle": "2020 (classic)", "name": "\\b2020\\b", "end": "2025-06-30" },
+        { "cycle": "2020 (classic)", "version": "^20\\.\\d{3}\\.3", "end": "2025-06-30" },
+        { "cycle": "2017 (classic)", "name": "\\b2017\\b", "end": "2022-06-06" },
+        { "cycle": "2017 (classic)", "version": "^17\\.\\d{3}\\.3", "end": "2022-06-06" },
+        { "cycle": "2015 (classic)", "version": "^15\\.\\d{3}\\.3", "end": "2020-04-07" },
+        { "cycle": "XI", "name": "\\bXI\\b", "end": "2017-10-15" },
+        { "cycle": "XI", "version": "^11\\.", "end": "2017-10-15" },
+        { "cycle": "X", "version": "^10\\.", "end": "2015-11-15" },
+        { "cycle": "9 and older", "version": "^[1-9]\\.", "end": "2013-06-26" },
+        { "cycle": "continuous (DC)", "version": "^\\d{2}\\.\\d{3}\\.[12]", "end": null, "yearFromMajor": true, "note": "The continuous track is supported on its latest release only." }
+      ]
+    },
+    {
+      "id": "java", "name": "Java", "risk": "High",
+      "match": "^(Java(\\(TM\\))?( SE)?( Development Kit| Runtime Environment)? ?\\d|Java \\d+ Update|Java\\(TM\\) SE|Eclipse Temurin|AdoptOpenJDK|Microsoft Build of OpenJDK|Amazon Corretto|Azul Zulu|Zulu \\d|Liberica|OpenJDK)",
+      "exclude": "Auto Updater|Updater|Access Bridge|Mission Control|Documentation",
+      "replacement": "A supported long-term release, 21 or 25, from a vendor that still ships its updates.",
+      "reference": "https://www.oracle.com/java/technologies/java-se-support-roadmap.html",
+      "cycles": [
+        { "cycle": "25 (LTS)", "version": "^25\\.", "end": null, "note": "Supported for as long as its vendor ships updates for it: check that this build still receives them." },
+        { "cycle": "21 (LTS)", "version": "^21\\.", "end": null, "note": "Supported for as long as its vendor ships updates for it: check that this build still receives them." },
+        { "cycle": "17 (LTS)", "version": "^17\\.", "end": null, "note": "Supported for as long as its vendor ships updates for it: check that this build still receives them." },
+        { "cycle": "11 (LTS)", "version": "^11\\.", "end": null, "note": "Supported for as long as its vendor ships updates for it: check that this build still receives them." },
+        { "cycle": "8 (LTS)", "version": "^8\\.", "end": null, "note": "Supported for as long as its vendor ships updates for it, and the free Oracle builds stopped long ago for business use: check that this build still receives them." },
+        { "cycle": "24", "version": "^24\\.", "end": "2025-09-16" },
+        { "cycle": "23", "version": "^23\\.", "end": "2025-03-18" },
+        { "cycle": "22", "version": "^22\\.", "end": "2024-09-17" },
+        { "cycle": "20", "version": "^20\\.", "end": "2023-09-19" },
+        { "cycle": "19", "version": "^19\\.", "end": "2023-03-21" },
+        { "cycle": "18", "version": "^18\\.", "end": "2022-09-20" },
+        { "cycle": "16", "version": "^16\\.", "end": "2021-09-14" },
+        { "cycle": "15", "version": "^15\\.", "end": "2021-03-16" },
+        { "cycle": "14", "version": "^14\\.", "end": "2020-09-15" },
+        { "cycle": "13", "version": "^13\\.", "end": "2020-03-17" },
+        { "cycle": "12", "version": "^12\\.", "end": "2019-09-17" },
+        { "cycle": "10", "version": "^10\\.", "end": "2018-09-25" },
+        { "cycle": "9", "version": "^9\\.", "end": "2018-03-20" },
+        { "cycle": "7 and older", "version": "^[1-7]\\.", "end": "2022-07-19" }
+      ]
+    },
+    {
+      "id": "dotnet", "name": "Microsoft .NET", "risk": "Medium",
+      "match": "^Microsoft (\\.NET|ASP\\.NET Core|Windows Desktop Runtime)",
+      "exclude": "NET Framework|SDK|Host|Targeting|Toolset|Templates|Workload|Manifest|IntelliSense|Standard|Native|Multi-Targeting|Documentation",
+      "replacement": ".NET 10, the current long-term release. The application using it may need an update to run on it.",
+      "reference": "https://dotnet.microsoft.com/platform/support/policy/dotnet-core",
+      "cycles": [
+        { "cycle": "10 (LTS)", "version": "^10\\.", "end": "2028-11-14" },
+        { "cycle": "9", "version": "^9\\.", "end": "2026-11-10", "note": "A short term release, supported for 24 months." },
+        { "cycle": "8 (LTS)", "version": "^8\\.", "end": "2026-11-10" },
+        { "cycle": "7", "version": "^7\\.", "end": "2024-05-14" },
+        { "cycle": "6 (LTS)", "version": "^6\\.", "end": "2024-11-12" },
+        { "cycle": "5", "version": "^5\\.", "end": "2022-05-10" },
+        { "cycle": "Core 3.1", "version": "^3\\.1\\.", "end": "2022-12-13" },
+        { "cycle": "Core 3.0", "version": "^3\\.0\\.", "end": "2020-03-03" },
+        { "cycle": "Core 2.2", "version": "^2\\.2\\.", "end": "2019-12-23" },
+        { "cycle": "Core 2.1", "version": "^2\\.1\\.", "end": "2021-08-21" },
+        { "cycle": "Core 2.0", "version": "^2\\.0\\.", "end": "2018-10-01" },
+        { "cycle": "Core 1.x", "version": "^1\\.", "end": "2019-06-27" }
+      ]
+    },
+    {
+      "id": "vcredist", "name": "Microsoft Visual C++ Redistributable", "risk": "Low",
+      "match": "^Microsoft Visual C\\+\\+ (\\d{4}|v14)",
+      "exclude": "Minimum Runtime|Additional Runtime|Debug",
+      "note": "Programs built with this version load it, so removing it breaks them. Update or replace those programs first, and the runtime goes with them.",
+      "replacement": "The latest Visual C++ Redistributable, for the programs that can use it.",
+      "reference": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+      "cycles": [
+        { "cycle": "2015 and later (v14)", "name": "2015|2017|2019|2022|v14", "end": null, "note": "Supported on its latest 14.x release." },
+        { "cycle": "2013", "name": "\\b2013\\b", "end": "2024-04-09" },
+        { "cycle": "2012", "name": "\\b2012\\b", "end": "2023-01-10" },
+        { "cycle": "2010", "name": "\\b2010\\b", "end": "2020-07-14" },
+        { "cycle": "2008", "name": "\\b2008\\b", "end": "2018-04-10" },
+        { "cycle": "2005", "name": "\\b2005\\b", "end": "2016-04-12" }
+      ]
+    },
+    {
+      "id": "visual-studio", "name": "Visual Studio", "risk": "Low",
+      "match": "^(Microsoft )?Visual Studio (Community|Professional|Enterprise|Build Tools|Team Explorer|Express|Test Professional|Premium|Ultimate)",
+      "exclude": "Installer|Code|Tools for Office|Extension|Remote",
+      "replacement": "Visual Studio 2022 or 2026.",
+      "reference": "https://learn.microsoft.com/visualstudio/productinfo/vs-servicing",
+      "cycles": [
+        { "cycle": "2026", "name": "\\b2026\\b", "end": null },
+        { "cycle": "2022", "name": "\\b2022\\b", "end": "2032-01-13" },
+        { "cycle": "2019", "name": "\\b2019\\b", "end": "2029-04-10" },
+        { "cycle": "2017", "name": "\\b2017\\b", "end": "2027-04-13" },
+        { "cycle": "2015", "name": "\\b2015\\b", "end": "2025-10-14" },
+        { "cycle": "2013", "name": "\\b2013\\b", "end": "2024-04-09" },
+        { "cycle": "2012", "name": "\\b2012\\b", "end": "2023-01-10" },
+        { "cycle": "2010", "name": "\\b2010\\b", "end": "2020-07-14" }
+      ]
+    },
+    {
+      "id": "sql-server", "name": "Microsoft SQL Server", "risk": "High",
+      "match": "^Microsoft SQL Server (20\\d\\d)( R2)?( \\((64|32)-bit\\))?$",
+      "replacement": "SQL Server 2022 or 2025.",
+      "reference": "https://learn.microsoft.com/troubleshoot/sql/releases/download-and-install-latest-updates",
+      "cycles": [
+        { "cycle": "2025", "name": "\\b2025\\b", "end": null },
+        { "cycle": "2022", "name": "\\b2022\\b", "end": "2033-01-11" },
+        { "cycle": "2019", "name": "\\b2019\\b", "end": "2030-01-08" },
+        { "cycle": "2017", "name": "\\b2017\\b", "end": "2027-10-12" },
+        { "cycle": "2016", "name": "\\b2016\\b", "end": "2026-07-14" },
+        { "cycle": "2014", "name": "\\b2014\\b", "end": "2024-07-09", "note": "Extended Security Updates were sold for a few more years. This report cannot see them." },
+        { "cycle": "2012", "name": "\\b2012\\b", "end": "2022-07-12", "note": "Extended Security Updates were sold for a few more years. This report cannot see them." },
+        { "cycle": "2008", "name": "\\b2008\\b", "end": "2019-07-09" },
+        { "cycle": "2005", "name": "\\b2005\\b", "end": "2016-04-12" }
+      ]
+    },
+    {
+      "id": "exchange", "name": "Microsoft Exchange Server", "risk": "High",
+      "match": "^Microsoft Exchange Server (20\\d\\d)\\b",
+      "replacement": "Exchange Server Subscription Edition, or Exchange Online.",
+      "reference": "https://learn.microsoft.com/exchange/new-features/build-numbers-and-release-dates",
+      "cycles": [
+        { "cycle": "2019", "name": "\\b2019\\b", "end": "2025-10-14" },
+        { "cycle": "2016", "name": "\\b2016\\b", "end": "2025-10-14" },
+        { "cycle": "2013", "name": "\\b2013\\b", "end": "2023-04-11" },
+        { "cycle": "2010", "name": "\\b2010\\b", "end": "2020-10-13" }
+      ]
+    },
+    {
+      "id": "sharepoint", "name": "Microsoft SharePoint Server", "risk": "High",
+      "match": "^Microsoft SharePoint Server (20\\d\\d)\\b",
+      "replacement": "SharePoint Server Subscription Edition, or SharePoint Online.",
+      "reference": "https://learn.microsoft.com/lifecycle/",
+      "cycles": [
+        { "cycle": "2019", "name": "\\b2019\\b", "end": "2026-07-14" },
+        { "cycle": "2016", "name": "\\b2016\\b", "end": "2026-07-14" },
+        { "cycle": "2013", "name": "\\b2013\\b", "end": "2023-04-11" },
+        { "cycle": "2010", "name": "\\b2010\\b", "end": "2021-04-13" }
+      ]
+    },
+    {
+      "id": "python", "name": "Python", "risk": "Medium",
+      "match": "^Python \\d+\\.\\d+\\.\\d+",
+      "exclude": "Launcher|Documentation|pip Bootstrap|Test Suite|Tcl|Executables|Core Interpreter|Development Libraries|Standard Library|Utility Scripts|Add to Path|Debug",
+      "replacement": "Python 3.13 or 3.14, after checking the scripts that use it.",
+      "reference": "https://devguide.python.org/versions/",
+      "cycles": [
+        { "cycle": "3.14", "name": "^Python 3\\.14\\.", "end": "2030-10-31" },
+        { "cycle": "3.13", "name": "^Python 3\\.13\\.", "end": "2029-10-31" },
+        { "cycle": "3.12", "name": "^Python 3\\.12\\.", "end": "2028-10-31" },
+        { "cycle": "3.11", "name": "^Python 3\\.11\\.", "end": "2027-10-31" },
+        { "cycle": "3.10", "name": "^Python 3\\.10\\.", "end": "2026-10-31" },
+        { "cycle": "3.9", "name": "^Python 3\\.9\\.", "end": "2025-10-31" },
+        { "cycle": "3.8", "name": "^Python 3\\.8\\.", "end": "2024-10-07" },
+        { "cycle": "3.7", "name": "^Python 3\\.7\\.", "end": "2023-06-27" },
+        { "cycle": "3.6 and older", "name": "^Python 3\\.[0-6]\\.", "end": "2021-12-23" },
+        { "cycle": "2", "name": "^Python 2\\.", "end": "2020-01-01" }
+      ]
+    },
+    {
+      "id": "nodejs", "name": "Node.js", "risk": "Medium",
+      "match": "^Node\\.js( \\d|$)",
+      "replacement": "Node.js 24, the current long-term release.",
+      "reference": "https://nodejs.org/en/about/previous-releases",
+      "cycles": [
+        { "cycle": "26", "version": "^26\\.", "end": "2029-04-30" },
+        { "cycle": "25", "version": "^25\\.", "end": "2026-06-01" },
+        { "cycle": "24 (LTS)", "version": "^24\\.", "end": "2028-04-30" },
+        { "cycle": "23", "version": "^23\\.", "end": "2025-06-01" },
+        { "cycle": "22 (LTS)", "version": "^22\\.", "end": "2027-04-30" },
+        { "cycle": "21", "version": "^21\\.", "end": "2024-06-01" },
+        { "cycle": "20 (LTS)", "version": "^20\\.", "end": "2026-04-30" },
+        { "cycle": "19", "version": "^19\\.", "end": "2023-06-01" },
+        { "cycle": "18 (LTS)", "version": "^18\\.", "end": "2025-04-30" },
+        { "cycle": "17", "version": "^17\\.", "end": "2022-06-01" },
+        { "cycle": "16 (LTS)", "version": "^16\\.", "end": "2023-09-11" },
+        { "cycle": "15 and older", "version": "^([0-9]|1[0-5])\\.", "end": "2023-04-30" }
+      ]
+    },
+    {
+      "id": "powershell", "name": "PowerShell", "risk": "Medium",
+      "match": "^PowerShell (6|7)\\b",
+      "replacement": "PowerShell 7.6, the current long-term release. Windows PowerShell 5.1 is not concerned: it follows Windows.",
+      "reference": "https://learn.microsoft.com/powershell/scripting/install/powershell-support-lifecycle",
+      "cycles": [
+        { "cycle": "7.6 (LTS)", "version": "^7\\.6\\.", "end": "2028-11-14" },
+        { "cycle": "7.4 (LTS)", "version": "^7\\.4\\.", "end": "2026-11-10" },
+        { "cycle": "7.3", "version": "^7\\.3\\.", "end": "2024-05-08" },
+        { "cycle": "7.2 (LTS)", "version": "^7\\.2\\.", "end": "2024-11-08" },
+        { "cycle": "7.1", "version": "^7\\.1\\.", "end": "2022-05-08" },
+        { "cycle": "7.0 (LTS)", "version": "^7\\.0\\.", "end": "2022-12-03" },
+        { "cycle": "6", "version": "^6\\.", "end": "2020-09-04" }
+      ]
+    },
+    {
+      "id": "mysql", "name": "MySQL Server", "risk": "High",
+      "match": "^MySQL Server \\d",
+      "replacement": "MySQL 8.4, the long-term release.",
+      "reference": "https://endoflife.date/mysql",
+      "cycles": [
+        { "cycle": "8.4 (LTS)", "name": "\\b8\\.4\\b", "end": "2032-04-30" },
+        { "cycle": "8.0", "name": "\\b8\\.0\\b", "end": "2026-04-30" },
+        { "cycle": "5.7", "name": "\\b5\\.7\\b", "end": "2023-10-31" },
+        { "cycle": "5.6 and older", "name": "\\b5\\.[0-6]\\b", "end": "2021-02-01" }
+      ]
+    },
+    {
+      "id": "postgresql", "name": "PostgreSQL", "risk": "High",
+      "match": "^PostgreSQL \\d",
+      "replacement": "PostgreSQL 17 or 18, through pg_upgrade or a dump and restore.",
+      "reference": "https://www.postgresql.org/support/versioning/",
+      "cycles": [
+        { "cycle": "18", "name": "^PostgreSQL 18\\b", "end": "2030-11-14" },
+        { "cycle": "17", "name": "^PostgreSQL 17\\b", "end": "2029-11-08" },
+        { "cycle": "16", "name": "^PostgreSQL 16\\b", "end": "2028-11-09" },
+        { "cycle": "15", "name": "^PostgreSQL 15\\b", "end": "2027-11-11" },
+        { "cycle": "14", "name": "^PostgreSQL 14\\b", "end": "2026-11-12" },
+        { "cycle": "13", "name": "^PostgreSQL 13\\b", "end": "2025-11-13" },
+        { "cycle": "12", "name": "^PostgreSQL 12\\b", "end": "2024-11-21" },
+        { "cycle": "11", "name": "^PostgreSQL 11\\b", "end": "2023-11-09" },
+        { "cycle": "10 and older", "name": "^PostgreSQL ([1-9]|10)\\b", "end": "2022-11-10" }
+      ]
+    },
+    {
+      "id": "virtualbox", "name": "Oracle VirtualBox", "risk": "Medium",
+      "match": "^Oracle (VM )?VirtualBox\\b",
+      "exclude": "Extension Pack|Guest Additions",
+      "replacement": "The latest VirtualBox 7.",
+      "reference": "https://endoflife.date/virtualbox",
+      "cycles": [
+        { "cycle": "7.2", "version": "^7\\.2\\.", "end": null },
+        { "cycle": "7.1", "version": "^7\\.1\\.", "end": null },
+        { "cycle": "6.1", "version": "^6\\.1\\.", "end": "2023-12-31" },
+        { "cycle": "6.0 and older", "version": "^([1-5]\\.|6\\.0\\.)", "end": "2020-07-01" }
+      ]
+    },
+    {
+      "id": "windows-live", "name": "Windows Live Essentials", "risk": "Medium",
+      "match": "^Windows Live (Essentials|Mail|Movie Maker|Photo Gallery|Writer|Messenger)\\b|^Windows Essentials\\b",
+      "replacement": "Nothing: remove it. Mail, Photos and Clipchamp cover what it did.",
+      "reference": "https://learn.microsoft.com/lifecycle/",
+      "cycles": [
+        { "cycle": "2012", "end": "2017-01-10" }
+      ]
+    }
+  ]
+}

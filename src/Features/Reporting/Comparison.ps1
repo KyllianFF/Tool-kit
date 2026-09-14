@@ -73,6 +73,7 @@ function Get-TkComparisonRule {
         (& $rule 'Updates'     'Updates'           ''          @('When', 'Title')          @('Title')              'Event' 'Severity' @()                                           $false)
         (& $rule 'Audit'       'Audit'             'Findings'  @('Id')                     @('Id', 'Name')         'State' 'Status'   @('Measured')                                 $false)
         (& $rule 'Network'     'Network adapters'  ''          @('Name')                   @('Name')               'State' ''         @('Status', 'IPv4Address', 'Gateway', 'DnsServers') $false)
+        (& $rule 'Lifecycle'   'Software support'  'Programs'  @('ProductId', 'Cycle')     @('Title')              'State' 'Severity' @('Version')                                  $false)
     )
 }
 
@@ -96,6 +97,7 @@ function Get-TkComparisonFact {
     return @(
         [pscustomobject] @{ Label = 'Windows version'; Path = @('Inventory.System.DisplayVersion', 'Dashboard.OS.DisplayVersion') }
         [pscustomobject] @{ Label = 'Windows build';   Path = @('Inventory.System.Build', 'Dashboard.OS.Build') }
+        [pscustomobject] @{ Label = 'Windows support'; Path = @('Lifecycle.Windows.Ends') }
         [pscustomobject] @{ Label = 'Activation';      Path = @('Inventory.System.Activation', 'Dashboard.OS.Activation') }
         [pscustomobject] @{ Label = 'BIOS version';    Path = @('Inventory.Identity.BiosVersion', 'Dashboard.Identity.BiosVersion') }
         [pscustomobject] @{ Label = 'Domain';          Path = @('Inventory.Identity.Domain', 'Dashboard.Identity.Domain') }
@@ -125,7 +127,7 @@ function Get-TkSnapshotReportName {
     param()
 
     return @('Inventory', 'Network', 'Reboot', 'Storage', 'Performance', 'Devices', 'Crashes',
-             'Wifi', 'Proxy', 'Identity', 'Updates', 'Printing', 'Audit')
+             'Wifi', 'Proxy', 'Identity', 'Updates', 'Printing', 'Lifecycle', 'Audit')
 }
 
 <#
