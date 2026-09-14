@@ -48,6 +48,7 @@ $script:TkAuditControl = @(
     # --- Endpoint protection -----------------------------------------------
     [pscustomobject] @{ Function = 'Test-TkAuditAntivirus';           Weight = 10; Level = 'Essential'; Action = 'open-windows-security' }
     [pscustomobject] @{ Function = 'Test-TkAuditDefenderSignature';   Weight =  4; Level = 'Essential'; Action = 'update-signatures' }
+    [pscustomobject] @{ Function = 'Test-TkAuditDefenderExclusion';   Weight =  6; Level = 'Essential'; Action = 'open-defender-settings' }
     [pscustomobject] @{ Function = 'Test-TkTamperProtection';         Weight =  6; Level = 'Full';      Action = 'open-defender-settings' }
     [pscustomobject] @{ Function = 'Test-TkAsrRules';                 Weight =  5; Level = 'Full';      Action = 'asr-audit-mode' }
     [pscustomobject] @{ Function = 'Test-TkAuditUac';                 Weight =  7; Level = 'Essential'; Action = 'enable-uac' }
@@ -58,18 +59,23 @@ $script:TkAuditControl = @(
     # --- Platform ----------------------------------------------------------
     [pscustomobject] @{ Function = 'Test-TkAuditSecureBoot';          Weight =  6; Level = 'Essential'; Action = 'restart-to-firmware' }
     [pscustomobject] @{ Function = 'Test-TkAuditTpm';                 Weight =  4; Level = 'Essential'; Action = 'restart-to-firmware' }
+    [pscustomobject] @{ Function = 'Test-TkAuditDriverBlocklist';     Weight =  6; Level = 'Essential'; Action = 'open-core-isolation' }
+    [pscustomobject] @{ Function = 'Test-TkMemoryIntegrity';          Weight =  5; Level = 'Full';      Action = 'open-core-isolation' }
 
     # --- Credential protection ---------------------------------------------
     [pscustomobject] @{ Function = 'Test-TkWdigest';                  Weight =  8; Level = 'Essential'; Action = 'disable-wdigest' }
     [pscustomobject] @{ Function = 'Test-TkLsaProtection';            Weight =  6; Level = 'Full';      Action = 'enable-lsa-protection' }
     [pscustomobject] @{ Function = 'Test-TkCredentialGuard';          Weight =  5; Level = 'Full';      Action = 'enable-credential-guard' }
+    [pscustomobject] @{ Function = 'Test-TkCachedLogon';              Weight =  3; Level = 'Full';      Action = 'set-cached-logons' }
 
     # --- Network -----------------------------------------------------------
     [pscustomobject] @{ Function = 'Test-TkAuditFirewall';            Weight =  9; Level = 'Essential'; Action = 'enable-firewall' }
     [pscustomobject] @{ Function = 'Test-TkAuditSmbV1';               Weight =  8; Level = 'Essential'; Action = 'disable-smbv1' }
     [pscustomobject] @{ Function = 'Test-TkSmbSigning';               Weight =  5; Level = 'Full';      Action = 'require-smb-signing' }
     [pscustomobject] @{ Function = 'Test-TkNtlmRestriction';          Weight =  6; Level = 'Full';      Action = 'set-lm-level' }
+    [pscustomobject] @{ Function = 'Test-TkNtlmSessionSecurity';      Weight =  3; Level = 'Full';      Action = 'require-ntlmv2-session' }
     [pscustomobject] @{ Function = 'Test-TkAuditLlmnr';               Weight =  4; Level = 'Essential'; Action = 'disable-llmnr' }
+    [pscustomobject] @{ Function = 'Test-TkAuditPrintSpooler';        Weight =  4; Level = 'Essential'; Action = 'disable-spooler' }
 
     # --- Remote access -----------------------------------------------------
     [pscustomobject] @{ Function = 'Test-TkAuditRemoteDesktop';       Weight =  7; Level = 'Essential'; Action = 'open-remote-desktop' }

@@ -3373,7 +3373,7 @@ Describe 'Security audit engine' {
 
             $used = @()
 
-            foreach ($file in @('SecurityAudit.ps1', 'HardeningCheck.ps1')) {
+            foreach ($file in @('SecurityAudit.ps1', 'HardeningCheck.ps1', 'AttackSurface.ps1')) {
 
                 $path = Join-Path $script:RepositoryRoot ('src\Features\Security\{0}' -f $file)
                 $text = Get-Content -LiteralPath $path -Raw
@@ -3399,7 +3399,7 @@ Describe 'Security audit engine' {
             $table = Get-TkRemediationTable
             $named = @()
 
-            foreach ($file in @('SecurityAudit.ps1', 'HardeningCheck.ps1')) {
+            foreach ($file in @('SecurityAudit.ps1', 'HardeningCheck.ps1', 'AttackSurface.ps1')) {
 
                 $path = Join-Path $script:RepositoryRoot ('src\Features\Security\{0}' -f $file)
 
@@ -3452,6 +3452,140 @@ Describe 'Security audit engine' {
                 $control.Action | Should -Not -BeNullOrEmpty -Because $control.Function
                 $table.Keys     | Should -Contain $control.Action
             }
+        }
+    }
+
+    Context 'Attack surface' {
+
+        It 'reads the driver blocklist switch, and memory integrity enforcing it anyway' {
+
+            (ConvertTo-TkDriverBlocklistFinding -Value 1).Status                                  | Should -Be 'Pass'
+            (ConvertTo-TkDriverBlocklistFinding -Value 0).Status                                  | Should -Be 'Fail'
+            (ConvertTo-TkDriverBlocklistFinding -Value 0 -MemoryIntegrityRunning $true).Status    | Should -Be 'Pass'
+            (ConvertTo-TkDriverBlocklistFinding -Value $null -Build 26100).Measured               | Should -Be 'Not recorded'
+            (ConvertTo-TkDriverBlocklistFinding -Value $null -Build 19045).Status                 | Should -Be 'Warning'
+        }
+
+        It 'judges memory integrity, and does not ask for it where the hardware cannot run it' {
+
+            $state = { param($running, $configured, $hypervisor) [pscustomobject] @{ MemoryIntegrityRunning = $running; MemoryIntegrityConfigured = $configured; HypervisorAvailable = $hypervisor } }
+
+            (ConvertTo-TkMemoryIntegrityFinding -State (& $state $true $true $true)).Status        | Should -Be 'Pass'
+            (ConvertTo-TkMemoryIntegrityFinding -State (& $state $false $false $true)).Measured    | Should -Be 'Off'
+            (ConvertTo-TkMemoryIntegrityFinding -State (& $state $false $true $true)).Measured     | Should -BeLike '*not running yet'
+
+            $unsupported = ConvertTo-TkMemoryIntegrityFinding -State (& $state $false $false $false)
+            $unsupported.Status     | Should -Be 'Info'
+            $unsupported.Applicable | Should -BeFalse
+
+            (ConvertTo-TkMemoryIntegrityFinding -State $null).Status                               | Should -Be 'NotAssessed'
+        }
+
+        It 'flags <Value> as a broad <Kind> exclusion' -TestCases @(
+            @{ Kind = 'Path';      Value = 'C:\' }
+            @{ Kind = 'Path';      Value = 'D:\*' }
+            @{ Kind = 'Path';      Value = 'C:\Users\alice\AppData\Local\Temp' }
+            @{ Kind = 'Path';      Value = 'C:\Users\alice\Downloads\' }
+            @{ Kind = 'Path';      Value = 'C:\Users\alice\AppData\Roaming' }
+            @{ Kind = 'Path';      Value = 'C:\Users' }
+            @{ Kind = 'Path';      Value = 'C:\ProgramData' }
+            @{ Kind = 'Path';      Value = '\\fileserver\share' }
+            @{ Kind = 'Process';   Value = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
+            @{ Kind = 'Process';   Value = 'mshta.exe' }
+            @{ Kind = 'Extension'; Value = '.ps1' }
+            @{ Kind = 'Extension'; Value = 'exe' }
+        ) {
+            param($Kind, $Value)
+
+            $arguments = @{ $Kind = @($Value) }
+
+            $broad = @(Get-TkBroadDefenderExclusion @arguments)
+
+            $broad.Count   | Should -Be 1
+            $broad[0].Kind | Should -Be $Kind
+        }
+
+        It 'leaves precise exclusions alone' {
+
+            @(Get-TkBroadDefenderExclusion -Path @('C:\Program Files\Veeam\Backup\VeeamAgent', 'D:\SQL\Data\*.mdf') `
+                                           -Process @('C:\Program Files\Contoso\agent.exe') `
+                                           -Extension @('.mdf', 'ldf')).Count | Should -Be 0
+        }
+
+        It 'fails a whole drive or a script host, warns on a download folder, and passes precise exclusions' {
+
+            (ConvertTo-TkDefenderExclusionFinding -Path @('C:\')).Status               | Should -Be 'Fail'
+            (ConvertTo-TkDefenderExclusionFinding -Process @('powershell.exe')).Status | Should -Be 'Fail'
+
+            $downloads = ConvertTo-TkDefenderExclusionFinding -Path @('C:\Users\alice\Downloads', 'C:\Tools\scanner')
+
+            $downloads.Status   | Should -Be 'Warning'
+            $downloads.Measured | Should -Be '1 of 2 too broad'
+            $downloads.Detail   | Should -BeLike '*C:\Users\alice\Downloads*'
+
+            (ConvertTo-TkDefenderExclusionFinding -Path @('C:\Tools\scanner')).Status  | Should -Be 'Pass'
+            (ConvertTo-TkDefenderExclusionFinding).Measured                            | Should -Be 'None'
+        }
+
+        It 'does not judge exclusions it cannot see, or those of a Defender standing aside' {
+
+            (ConvertTo-TkDefenderExclusionFinding -Readable $false).Status | Should -Be 'NotAssessed'
+
+            $passive = ConvertTo-TkDefenderExclusionFinding -DefenderActive $false -Mode 'Passive Mode' -Path @('C:\')
+
+            $passive.Status     | Should -Be 'Pass'
+            $passive.Applicable | Should -BeFalse
+        }
+
+        It 'warns about a spooler running for virtual printers only' {
+
+            $virtual = @(
+                [pscustomobject] @{ DriverName = 'Microsoft Print To PDF';              PortName = 'PORTPROMPT:' }
+                [pscustomobject] @{ DriverName = 'Microsoft XPS Document Writer v4';    PortName = 'PORTPROMPT:' }
+                [pscustomobject] @{ DriverName = 'Send to Microsoft OneNote 16 Driver'; PortName = 'nul:' }
+            )
+            $device = [pscustomobject] @{ DriverName = 'HP OfficeJet Pro 9010 series PCL-3'; PortName = 'WSD-6f1c2a' }
+
+            $idle = ConvertTo-TkSpoolerFinding -Running $true -StartType 'Automatic' -Printer $virtual
+
+            $idle.Status   | Should -Be 'Warning'
+            $idle.Measured | Should -Be 'Running, 3 virtual printer(s) only'
+
+            (ConvertTo-TkSpoolerFinding -Running $true -StartType 'Automatic' -Printer (@($virtual) + $device)).Status | Should -Be 'Pass'
+            (ConvertTo-TkSpoolerFinding -Running $false -StartType 'Disabled').Status                               | Should -Be 'Pass'
+            (ConvertTo-TkSpoolerFinding -Running $true -PrintersRead $false).Status                                  | Should -Be 'NotAssessed'
+        }
+
+        It 'requires NTLMv2 session security and 128-bit encryption on both sides' {
+
+            (ConvertTo-TkNtlmSessionFinding -Client 537395200 -Server 537395200).Status | Should -Be 'Pass'
+            (ConvertTo-TkNtlmSessionFinding -Client 537395200 -Server 536870912).Status | Should -Be 'Warning'
+
+            $default = ConvertTo-TkNtlmSessionFinding -Client $null -Server $null
+
+            $default.Status   | Should -Be 'Warning'
+            $default.Measured | Should -Be 'client: 128-bit required; server: 128-bit required'
+        }
+
+        It 'reads the LAN Manager level the way Windows applies it' {
+
+            $unset = ConvertTo-TkLmCompatibilityFinding -Level $null
+
+            $unset.Status        | Should -Be 'Warning'
+            $unset.Measured      | Should -BeLike '*level 3*'
+            $unset.RemediationId | Should -Be 'set-lm-level'
+
+            (ConvertTo-TkLmCompatibilityFinding -Level 2).Status               | Should -Be 'Fail'
+            (ConvertTo-TkLmCompatibilityFinding -Level 5).Status               | Should -Be 'Pass'
+            (ConvertTo-TkLmCompatibilityFinding -Level 5).RemediationId        | Should -Be ''
+        }
+
+        It 'judges cached sign-ins on a domain member only' {
+
+            (ConvertTo-TkCachedLogonFinding -Count '10' -DomainJoined $false).Applicable | Should -BeFalse
+            (ConvertTo-TkCachedLogonFinding -Count '10' -DomainJoined $true).Status      | Should -Be 'Warning'
+            (ConvertTo-TkCachedLogonFinding -Count $null -DomainJoined $true).Measured   | Should -Be '10 cached, the Windows default'
+            (ConvertTo-TkCachedLogonFinding -Count ' 2 ' -DomainJoined $true).Status     | Should -Be 'Pass'
         }
     }
 

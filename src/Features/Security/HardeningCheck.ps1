@@ -462,17 +462,45 @@ function Test-TkNtlmRestriction {
     [CmdletBinding()]
     param()
 
-    $level = Get-TkRegistryValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LmCompatibilityLevel'
+    return ConvertTo-TkLmCompatibilityFinding -Level (Get-TkRegistryValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LmCompatibilityLevel')
+}
 
-    # 5 means send NTLMv2 only and refuse LM and NTLM.
-    $safe = ($level -eq 5)
+<#
+.SYNOPSIS
+    Judges the LAN Manager authentication level.
+
+.DESCRIPTION
+    Levels 0 to 2 send LM or NTLMv1 responses. Level 3, the Windows default
+    when the value is absent, sends NTLMv2 responses only. Level 5 also
+    refuses LM and NTLM responses, which is what the baselines ask for.
+
+.PARAMETER Level
+    LmCompatibilityLevel, or $null when absent.
+#>
+function ConvertTo-TkLmCompatibilityFinding {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Level
+    )
+
+    $effective = if ($null -eq $Level) { 3 } else { [int] $Level }
+    $status    = if ($effective -ge 5) { 'Pass' } elseif ($effective -ge 3) { 'Warning' } else { 'Fail' }
+
+    $detail = switch ($status) {
+        'Pass'    { 'NTLMv2 responses only are sent, and LM and NTLM responses are refused.' }
+        'Warning' { 'Only NTLMv2 responses are sent, but LM and NTLM responses are still accepted. Level 5 refuses them too.' }
+        'Fail'    { 'LM or NTLMv1 responses are sent, and once captured on the network they are cracked in minutes.' }
+    }
 
     return New-TkAuditFinding -Id 'NET-002' -Name 'LAN Manager authentication level' -Category 'Network' `
-        -Status $(if ($safe) { 'Pass' } elseif ($null -eq $level) { 'Warning' } else { 'Warning' }) `
-        -Measured $(if ($null -eq $level) { 'Not configured, using the default' } else { 'Level {0}' -f $level }) `
-        -Detail 'Anything below level 5 permits LM or NTLMv1 responses, which are trivially crackable when captured. Level 5 sends NTLMv2 only and refuses the rest.' `
-        -Recommendation $(if ($safe) { '' } else { 'Set LmCompatibilityLevel to 5 by policy, after confirming no legacy appliance still needs NTLMv1.' }) `
-        -RemediationId $(if ($safe) { '' } else { 'set-lm-level' })
+        -Status $status `
+        -Measured $(if ($null -eq $Level) { 'Not set: level 3, the Windows default' } else { 'Level {0}' -f $effective }) `
+        -Detail $detail `
+        -Recommendation $(if ($status -eq 'Pass') { '' } else { 'Set LmCompatibilityLevel to 5 by policy, after confirming no legacy appliance still needs NTLMv1.' }) `
+        -RemediationId $(if ($status -eq 'Pass') { '' } else { 'set-lm-level' })
 }
 
 # ---------------------------------------------------------------------------
