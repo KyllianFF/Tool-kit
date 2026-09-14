@@ -104,6 +104,8 @@ function Initialize-TkToolsPage {
         }
     }
 
+    Initialize-TkRegexCheatSheet
+
     # --- Timestamps -------------------------------------------------------
     $timestamp = Get-TkControl -Name 'TimestampInput'
 
@@ -1830,6 +1832,119 @@ function Update-TkChmodFromText {
 # ---------------------------------------------------------------------------
 # Regex
 # ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Fills the cheat sheet beside the tester, one heading per section.
+#>
+function Initialize-TkRegexCheatSheet {
+    [CmdletBinding()]
+    param()
+
+    $list = Get-TkControl -Name 'RegexCheatSheet'
+
+    if (-not $list) {
+        return
+    }
+
+    $list.Items.Clear()
+    $section = ''
+
+    foreach ($entry in @(Get-TkRegexCheatSheet)) {
+
+        if ($entry.Section -ne $section) {
+
+            $section = $entry.Section
+
+            $title = New-Object System.Windows.Controls.TextBlock
+            $title.Text = $section.ToUpperInvariant()
+            $title.SetResourceReference([System.Windows.FrameworkElement]::StyleProperty, 'ChoiceGroupTitle')
+
+            $heading = New-Object System.Windows.Controls.ListBoxItem
+            $heading.Content = $title
+            $heading.SetResourceReference([System.Windows.FrameworkElement]::StyleProperty, 'ChoiceGroup')
+
+            [void] $list.Items.Add($heading)
+        }
+
+        $token = New-Object System.Windows.Controls.TextBlock
+        $token.Text              = $entry.Token
+        $token.Width             = 112
+        $token.TextTrimming      = [System.Windows.TextTrimming]::CharacterEllipsis
+        $token.VerticalAlignment = [System.Windows.VerticalAlignment]::Top
+        $token.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'Accent')
+
+        $description = New-Object System.Windows.Controls.TextBlock
+        $description.Text         = $entry.Description
+        $description.TextWrapping = [System.Windows.TextWrapping]::Wrap
+        $description.FontFamily   = New-Object System.Windows.Media.FontFamily('Segoe UI')
+        $description.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMuted')
+
+        $row = New-Object System.Windows.Controls.DockPanel
+        [System.Windows.Controls.DockPanel]::SetDock($token, [System.Windows.Controls.Dock]::Left)
+        [void] $row.Children.Add($token)
+        [void] $row.Children.Add($description)
+
+        $item = New-Object System.Windows.Controls.ListBoxItem
+        $item.Content = $row
+        $item.Tag     = $entry
+        $item.ToolTip = 'Double-click to insert into the {0}: {1}' -f $entry.Target.ToLowerInvariant(), $entry.Insert
+
+        [void] $list.Items.Add($item)
+    }
+
+    $list.Add_MouseDoubleClick({ Add-TkRegexCheatSheetToken })
+
+    $list.Add_KeyDown({
+        param($eventSource, $routedArgs)
+
+        if ($routedArgs.Key -eq [System.Windows.Input.Key]::Return) {
+            Add-TkRegexCheatSheetToken
+            $routedArgs.Handled = $true
+        }
+    })
+}
+
+<#
+.SYNOPSIS
+    Inserts the chosen cheat sheet token at the caret of its box.
+
+.DESCRIPTION
+    Replaces the selection when there is one, as typing would, and leaves the
+    caret after the insertion, inside the parentheses for a group so its
+    content can be typed straight away.
+#>
+function Add-TkRegexCheatSheetToken {
+    [CmdletBinding()]
+    param()
+
+    $list  = Get-TkControl -Name 'RegexCheatSheet'
+    $entry = if ($list -and $list.SelectedItem) { $list.SelectedItem.Tag } else { $null }
+
+    if (-not $entry) {
+        return
+    }
+
+    $box = Get-TkControl -Name $(if ($entry.Target -eq 'Replacement') { 'RegexReplacement' } else { 'RegexPattern' })
+
+    if (-not $box) {
+        return
+    }
+
+    $start  = $box.SelectionStart
+    $insert = [string] $entry.Insert
+    $caret  = $start + $insert.Length
+
+    # An empty group leaves the caret between its parentheses.
+    if ($insert.Length -gt 1 -and $insert.StartsWith('(') -and $insert.EndsWith(')')) {
+        $caret--
+    }
+
+    $box.Text       = $box.Text.Remove($start, $box.SelectionLength).Insert($start, $insert)
+    $box.CaretIndex = $caret
+
+    [void] $box.Focus()
+}
 
 <#
 .SYNOPSIS

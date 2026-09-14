@@ -1191,6 +1191,42 @@ Describe 'Tools calculators' {
 
             $slow.TimedOut | Should -BeTrue
         }
+
+        It 'lists cheat sheet tokens with a description, and insertions that compile where they can stand alone' {
+
+            $sheet = @(Get-TkRegexCheatSheet)
+
+            $sheet.Count | Should -BeGreaterThan 30
+
+            foreach ($entry in $sheet) {
+
+                $entry.Section     | Should -Not -BeNullOrEmpty
+                $entry.Token       | Should -Not -BeNullOrEmpty
+                $entry.Insert      | Should -Not -BeNullOrEmpty
+                $entry.Description | Should -Not -BeNullOrEmpty
+                $entry.Target      | Should -BeIn @('Pattern', 'Replacement')
+            }
+
+            # Groups, lookarounds and options are complete once inserted.
+            foreach ($entry in @($sheet | Where-Object { $_.Section -in @('Groups and alternatives', 'Lookaround', 'Inline options') -and $_.Insert -ne '\1' })) {
+                (Test-TkRegularExpression -Pattern $entry.Insert -Text 'x').Valid | Should -BeTrue -Because $entry.Insert
+            }
+        }
+
+        It 'matches the example of every ready-made pattern whole' {
+
+            $ready = @(Get-TkRegexCheatSheet | Where-Object { $_.Section -eq 'Ready-made patterns' })
+
+            $ready.Count | Should -BeGreaterThan 5
+
+            foreach ($entry in $ready) {
+                $entry.Example | Should -Not -BeNullOrEmpty -Because $entry.Token
+                $entry.Example | Should -Match ('^(?:{0})$' -f $entry.Insert) -Because $entry.Token
+            }
+
+            'Contact jane.doe@example.com today' | Should -Match (Get-TkRegexCheatSheet | Where-Object Token -eq 'E-mail address').Insert
+            '256.1.1.1'                          | Should -Not -Match ('^(?:{0})$' -f (Get-TkRegexCheatSheet | Where-Object Token -eq 'IPv4 address').Insert)
+        }
     }
 
     Context 'Timestamps' {
@@ -1783,6 +1819,21 @@ Describe 'Vendor command catalog' {
                                 'Comware', 'Meraki', 'Ubiquiti')) {
 
             ($names -join ' ') | Should -Match $expected
+        }
+    }
+
+    It 'opens with the Git, PowerShell, Bash and Linux cheat sheets' {
+
+        $ids = @($script:Vendors | ForEach-Object { $_.id })
+
+        $ids[0..3] -join ',' | Should -Be 'git,powershell,bash,linux-admin'
+        ($ids | Select-Object -Unique).Count | Should -Be $ids.Count
+
+        $powershell = $script:Vendors | Where-Object { $_.id -eq 'powershell' }
+        $sections   = @($powershell.sections | ForEach-Object { $_.name }) -join ' | '
+
+        foreach ($expected in @('Verbs', 'pipeline', 'Operators', 'classes', 'errors', 'administration')) {
+            $sections | Should -Match $expected
         }
     }
 }
@@ -3009,7 +3060,15 @@ Describe 'Search' {
             @($script:Index | Where-Object { $_.Kind -eq $kind }).Count | Should -BeGreaterThan 0 -Because $kind
         }
 
-        @($script:Index | Where-Object { $_.Kind -eq 'Command' }).Count | Should -Be 272
+        $commandCount = 0
+
+        foreach ($vendor in (Import-TkCatalog -Name 'vendor-commands').vendors) {
+            foreach ($section in $vendor.sections) {
+                $commandCount += @($section.commands).Count
+            }
+        }
+
+        @($script:Index | Where-Object { $_.Kind -eq 'Command' }).Count | Should -Be $commandCount
     }
 
     It 'points every search box and list it names at a control in the markup' {

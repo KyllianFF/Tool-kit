@@ -1,7 +1,346 @@
 {
   "schemaVersion": 1,
-  "description": "Command reference for the network and security platforms most often met in the field. Commands are grouped by task so the same question can be answered on any platform, and the search looks across every vendor at once.",
+  "description": "Command reference: cheat sheets for Git, PowerShell, Bash and Linux administration, and the network and security platforms most often met in the field. Commands are grouped by task so the same question can be answered on any platform, and the search looks across all of them at once.",
   "vendors": [
+    {
+      "id": "git",
+      "name": "Git",
+      "description": "Cheat sheet. The commands of a working day with Git, from the first commit to recovering one that seemed lost. Placeholders are written in angle brackets or as example names.",
+      "sections": [
+        {
+          "name": "Set up and start",
+          "commands": [
+            { "command": "git config --global user.name \"Jane Doe\"", "description": "The name written in every commit made on this machine." },
+            { "command": "git config --global user.email jane.doe@example.com", "description": "The address written in every commit; use the one your Git host knows, so commits link to your account." },
+            { "command": "git config --global init.defaultBranch main", "description": "New repositories start on a branch named main." },
+            { "command": "git config --list --show-origin", "description": "Every setting in effect, and the file each one comes from." },
+            { "command": "git init", "description": "Makes the current folder a repository." },
+            { "command": "git clone https://github.com/owner/repo.git", "description": "Copies a repository with its whole history into a new folder." }
+          ]
+        },
+        {
+          "name": "See what changed",
+          "commands": [
+            { "command": "git status", "description": "The branch, the staged and unstaged changes, and the untracked files." },
+            { "command": "git diff", "description": "The changes not staged yet." },
+            { "command": "git diff --staged", "description": "The changes staged for the next commit." },
+            { "command": "git log --oneline --graph --decorate --all", "description": "The history of every branch as a compact graph." },
+            { "command": "git log -p -- path/to/file", "description": "Every change made to one file, with the differences." },
+            { "command": "git show <commit>", "description": "One commit: its message, author and changes." },
+            { "command": "git blame path/to/file", "description": "Who last changed each line, and in which commit." }
+          ]
+        },
+        {
+          "name": "Commit",
+          "commands": [
+            { "command": "git add path/to/file", "description": "Stages a file for the next commit." },
+            { "command": "git add -p", "description": "Stages chosen parts of the changes, piece by piece." },
+            { "command": "git commit -m \"Describe the change\"", "description": "Records the staged changes." },
+            { "command": "git commit --amend", "description": "Rewrites the last commit with what is staged, or with a new message. Only before it is pushed." },
+            { "command": "git restore path/to/file", "description": "Throws away the unstaged changes of a file. This cannot be undone." },
+            { "command": "git restore --staged path/to/file", "description": "Unstages a file and keeps its changes." }
+          ]
+        },
+        {
+          "name": "Branches",
+          "commands": [
+            { "command": "git switch -c feature/name", "description": "Creates a branch and moves to it." },
+            { "command": "git switch main", "description": "Moves to an existing branch." },
+            { "command": "git branch -a", "description": "The local branches and the remote ones." },
+            { "command": "git merge feature/name", "description": "Joins a branch into the current one." },
+            { "command": "git rebase main", "description": "Replays the current branch on top of main, for a straight history. Not on a branch other people work on." },
+            { "command": "git branch -d feature/name", "description": "Deletes a merged branch; -D deletes it even if it is not merged." }
+          ]
+        },
+        {
+          "name": "Remotes",
+          "commands": [
+            { "command": "git remote -v", "description": "The remotes and their addresses." },
+            { "command": "git fetch --prune", "description": "Downloads the new commits and forgets the remote branches deleted, without touching your files." },
+            { "command": "git pull --rebase", "description": "Fetches, then replays your local commits on top of what arrived." },
+            { "command": "git push -u origin feature/name", "description": "Publishes a branch and remembers where it goes, so the next git push needs no argument." },
+            { "command": "git push --force-with-lease", "description": "Replaces the remote branch after a rebase, but refuses if someone pushed in the meantime." }
+          ]
+        },
+        {
+          "name": "Undo and recover",
+          "commands": [
+            { "command": "git revert <commit>", "description": "A new commit that undoes an old one: the safe way on a shared branch." },
+            { "command": "git reset --soft HEAD~1", "description": "Undoes the last commit and keeps its changes staged." },
+            { "command": "git reset --hard origin/main", "description": "Makes the branch match the remote, discarding local commits and changes." },
+            { "command": "git reflog", "description": "Everywhere HEAD has been: finds a commit that seemed lost after a reset or a rebase." },
+            { "command": "git stash push -m \"work in progress\"", "description": "Puts uncommitted changes aside; git stash pop brings them back." },
+            { "command": "git cherry-pick <commit>", "description": "Copies one commit onto the current branch." },
+            { "command": "git bisect start", "description": "Finds the commit that brought a bug by halving the history; mark each step with git bisect good or git bisect bad." }
+          ]
+        },
+        {
+          "name": "Tags and cleanup",
+          "commands": [
+            { "command": "git tag -a v1.2.0 -m \"Release 1.2.0\"", "description": "An annotated tag on the current commit; publish it with git push origin v1.2.0." },
+            { "command": "git clean -nd", "description": "Lists the untracked files and folders that git clean -fd would delete." },
+            { "command": "git rm --cached path/to/file", "description": "Stops tracking a file that should have been ignored, and keeps it on disk. Add it to .gitignore as well." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "powershell",
+      "name": "PowerShell",
+      "description": "Cheat sheet. The verbs that say what a command does, what can follow a |, the operators, objects and classes, error handling, and the commands a Windows administrator reaches for every day. Most of it works in Windows PowerShell 5.1 and PowerShell 7; what is 7 only says so.",
+      "sections": [
+        {
+          "name": "Verbs: what a command does",
+          "commands": [
+            { "command": "Get-", "description": "Reads and never changes anything: Get-Service, Get-Process, Get-ChildItem." },
+            { "command": "Set-", "description": "Changes something that exists: Set-Service, Set-Content, Set-ItemProperty." },
+            { "command": "New- / Remove-", "description": "Creates or deletes: New-Item, New-LocalUser, Remove-Item." },
+            { "command": "Add- / Clear-", "description": "Adds to a container, or empties it: Add-LocalGroupMember, Clear-DnsClientCache." },
+            { "command": "Start- / Stop- / Restart-", "description": "Runs or ends something that keeps running: Start-Service, Stop-Process, Restart-Computer." },
+            { "command": "Enable- / Disable-", "description": "Turns on or off: Enable-NetAdapter, Disable-LocalUser." },
+            { "command": "Test-", "description": "Answers true or false, or with a result to judge: Test-Path, Test-NetConnection." },
+            { "command": "Invoke-", "description": "Runs something: Invoke-Command, Invoke-WebRequest, Invoke-RestMethod." },
+            { "command": "Export- / Import-", "description": "Writes to a file or reads from one: Export-Csv, Import-Csv, Export-Clixml." },
+            { "command": "ConvertTo- / ConvertFrom-", "description": "Changes format in memory, without a file: ConvertTo-Json, ConvertFrom-Json, ConvertTo-Html." },
+            { "command": "Get-Verb", "description": "The approved verbs, and what each is for: use them in your own functions." }
+          ]
+        },
+        {
+          "name": "Find your way",
+          "commands": [
+            { "command": "Get-Command *dns*", "description": "Every command whose name holds dns." },
+            { "command": "Get-Command -Module NetTCPIP", "description": "The commands of a module." },
+            { "command": "Get-Help Get-WinEvent -Examples", "description": "Worked examples of a command; -Online opens its page." },
+            { "command": "Get-Help about_Operators", "description": "The about_ topics explain the language itself: about_Pipelines, about_Classes, about_Try_Catch_Finally." },
+            { "command": "Get-Process | Get-Member", "description": "The type of the objects a command returns, and their properties and methods." },
+            { "command": "Get-Alias ls", "description": "What an alias stands for: ls, dir and gci are all Get-ChildItem." },
+            { "command": "$PSVersionTable", "description": "The version of PowerShell and of its runtime." }
+          ]
+        },
+        {
+          "name": "The pipeline: what comes after |",
+          "commands": [
+            { "command": "Get-Service | Where-Object Status -eq 'Running'", "description": "Keeps the objects that match. The braced form takes any condition: Where-Object { $_.CPU -gt 100 }." },
+            { "command": "Get-Process | Sort-Object CPU -Descending | Select-Object -First 5", "description": "Sorts by a property and keeps the first ones." },
+            { "command": "Get-Process | Select-Object Name, Id, @{ Name = 'MemoryMB'; Expression = { [math]::Round($_.WorkingSet64 / 1MB) } }", "description": "Chooses properties, and computes new ones with a name and an expression." },
+            { "command": "Get-ChildItem -File | Group-Object Extension", "description": "Groups objects by a property, with a count per group." },
+            { "command": "Get-ChildItem -File | Measure-Object Length -Sum -Average", "description": "Count, sum, average, minimum and maximum of a property." },
+            { "command": "1..5 | ForEach-Object { $_ * 2 }", "description": "Runs a block for each object, $_ being the current one. PowerShell 7 adds -Parallel." },
+            { "command": "Get-Service | Export-Csv C:\\Temp\\services.csv -NoTypeInformation", "description": "Writes objects to a CSV file; Import-Csv reads them back as objects." },
+            { "command": "Get-Service | ConvertTo-Json -Depth 3", "description": "Objects as JSON; ConvertFrom-Json turns JSON back into objects." },
+            { "command": "Get-Service | Out-GridView -PassThru | Restart-Service", "description": "A filterable window; the rows selected carry on down the pipeline." },
+            { "command": "Get-ChildItem | Tee-Object -Variable files | Measure-Object", "description": "Keeps a copy in a variable or a file while the pipeline goes on." },
+            { "command": "Get-Service | Format-Table Name, Status -AutoSize", "description": "Formats for reading only. Put Format-* last: nothing can use what it outputs." }
+          ]
+        },
+        {
+          "name": "Operators",
+          "commands": [
+            { "command": "-eq -ne -gt -ge -lt -le", "description": "Comparisons. Text compares without regard to case; -ceq and the other c forms respect it." },
+            { "command": "$name -like 'srv*'", "description": "Wildcard match with * and ?; -notlike is the opposite." },
+            { "command": "$code -match '^\\d{3}$'", "description": "Regular expression match; the groups found are in $Matches. The Regex tool in Tools tests a pattern." },
+            { "command": "$list -contains 'srv01' / 'srv01' -in $list", "description": "Whether a list holds a value." },
+            { "command": "'a,b,c' -split ',' / $list -join ';'", "description": "Splits text into a list, or joins a list into text." },
+            { "command": "$text -replace 'World', 'There'", "description": "Replaces by regular expression; $1 in the replacement is the first group, in single quotes." },
+            { "command": "'{0} holds {1:N0} files' -f $name, $count", "description": "Formats values into text." },
+            { "command": "$a -and $b / $a -or $b / -not $a", "description": "Boolean logic. -and and -or have the same precedence: group with parentheses." },
+            { "command": "$value ?? 'default' / $object?.Property", "description": "Null coalescing and null conditional access, PowerShell 7 only." }
+          ]
+        },
+        {
+          "name": "Variables, types, objects and classes",
+          "commands": [
+            { "command": "$services = Get-Service", "description": "Keeps the objects themselves, with their properties, not their text." },
+            { "command": "[int] '42' / [datetime] '2026-09-14'", "description": "Converts a value to a type." },
+            { "command": "$list = @('a', 'b'); $list += 'c'", "description": "An array. += builds a new copy each time: use a [System.Collections.Generic.List[object]] for thousands of items." },
+            { "command": "$table = @{ Name = 'srv01'; Port = 443 }; $table['Name']", "description": "A hashtable of keys and values; [ordered] @{} keeps them in order." },
+            { "command": "[pscustomobject] @{ Name = 'srv01'; Up = $true }", "description": "An object with properties: the way a script returns a result." },
+            { "command": "class Server { [string] $Name; [int] $Port = 443; [string] Address() { return '{0}:{1}' -f $this.Name, $this.Port } }", "description": "A class, with typed properties, a default value and a method using $this." },
+            { "command": "$server = [Server]::new(); $server.Name = 'srv01'", "description": "Creates an instance of a class. Static members use ::, as in [math]::Round(2.567, 1)." },
+            { "command": "$env:COMPUTERNAME / $env:Path", "description": "Environment variables." }
+          ]
+        },
+        {
+          "name": "Scripts, errors and remoting",
+          "commands": [
+            { "command": "param([Parameter(Mandatory)] [string] $ComputerName, [int] $Port = 443)", "description": "The parameters of a script or a function, with a required one and a default value." },
+            { "command": "function Get-Uptime { [CmdletBinding()] param() }", "description": "An advanced function, which gains -Verbose, -ErrorAction and the other common parameters." },
+            { "command": "try { Get-Item C:\\Missing -ErrorAction Stop } catch { $_.Exception.Message }", "description": "Catches an error. -ErrorAction Stop turns an ordinary error into one catch receives." },
+            { "command": "$LASTEXITCODE", "description": "The exit code of the last program run outside PowerShell, such as ping or robocopy." },
+            { "command": "Set-StrictMode -Version Latest", "description": "Fails on an undefined variable or property instead of reading it as nothing." },
+            { "command": "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass", "description": "Allows scripts for this session only, and changes nothing on the machine." },
+            { "command": "Start-Transcript -Path C:\\Temp\\session.log", "description": "Records everything typed and printed until Stop-Transcript." },
+            { "command": "Invoke-Command -ComputerName srv01 -ScriptBlock { Get-Service Spooler }", "description": "Runs a block on another machine over WinRM; Enter-PSSession srv01 opens an interactive session." }
+          ]
+        },
+        {
+          "name": "Everyday administration",
+          "commands": [
+            { "command": "Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, LastBootUpTime", "description": "The edition, the build and the last start." },
+            { "command": "Get-Service Spooler | Restart-Service -Force", "description": "Restarts a service, and those that depend on it." },
+            { "command": "Get-Process -Name chrome | Stop-Process", "description": "Ends processes by name." },
+            { "command": "Get-WinEvent -FilterHashtable @{ LogName = 'System'; Level = 2; StartTime = (Get-Date).AddDays(-1) }", "description": "The errors of the System log in the last day, filtered by the event log itself rather than afterwards." },
+            { "command": "Test-NetConnection srv01 -Port 443", "description": "Whether a TCP port answers, with the address and interface used." },
+            { "command": "Resolve-DnsName contoso.com -Type MX", "description": "A DNS query for any record type." },
+            { "command": "Get-NetIPConfiguration", "description": "The address, gateway and DNS servers of each adapter." },
+            { "command": "Get-ChildItem C:\\Logs -Recurse -Filter *.log | Where-Object LastWriteTime -lt (Get-Date).AddDays(-30)", "description": "The log files not written for 30 days." },
+            { "command": "Get-Content C:\\Logs\\app.log -Tail 50 -Wait", "description": "The end of a log, followed as lines are written." },
+            { "command": "Select-String -Path C:\\Logs\\*.log -Pattern 'error'", "description": "The lines matching a pattern across files, with the file and line number." },
+            { "command": "Get-LocalGroupMember -Group Administrators", "description": "Who is a local administrator." },
+            { "command": "Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 5", "description": "The last updates installed." },
+            { "command": "Get-Acl C:\\Share | Format-List", "description": "The owner and the permissions of a file or folder." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bash",
+      "name": "Bash",
+      "description": "Cheat sheet. Writing Bash on a server or in a script: quoting, expansions, conditions and loops, functions and exit codes, redirections, arrays. Quote your variables: \"$name\" rather than $name, or a space in a value splits it into two arguments.",
+      "sections": [
+        {
+          "name": "Variables and quoting",
+          "commands": [
+            { "command": "name=\"srv01\"", "description": "Sets a variable. No space around the =." },
+            { "command": "echo \"Host: $name\" / echo 'Host: $name'", "description": "Double quotes expand variables; single quotes keep the text exactly as written." },
+            { "command": "echo \"${name}_backup\"", "description": "Braces separate the name from the text that follows." },
+            { "command": "today=$(date +%F)", "description": "Command substitution: what a command prints, in a variable." },
+            { "command": "export PATH=\"$HOME/bin:$PATH\"", "description": "Makes a variable visible to the programs the shell starts." },
+            { "command": "readonly retries=3", "description": "A variable that cannot be changed afterwards." }
+          ]
+        },
+        {
+          "name": "Parameter expansion",
+          "commands": [
+            { "command": "${file%.log}", "description": "Removes the shortest matching end: report.log becomes report." },
+            { "command": "${path##*/}", "description": "Removes the longest matching start: the file name of a path, as basename gives." },
+            { "command": "${name:-default}", "description": "The value, or default when the variable is unset or empty." },
+            { "command": "${name:?must be set}", "description": "Stops the script with the message when the variable is unset or empty." },
+            { "command": "${#name}", "description": "The length of the value." },
+            { "command": "${name//old/new}", "description": "Replaces every occurrence in the value." }
+          ]
+        },
+        {
+          "name": "Conditions and loops",
+          "commands": [
+            { "command": "if [[ -f /etc/hosts ]]; then echo exists; fi", "description": "Tests a file: -d a folder, -e anything, -z an empty string, -n a non empty one." },
+            { "command": "[[ $count -gt 10 ]]", "description": "Compares numbers with -eq -ne -lt -le -gt -ge; == and != compare text." },
+            { "command": "[[ $line =~ ^[0-9]+$ ]]", "description": "Matches a regular expression, unquoted; the groups are in BASH_REMATCH." },
+            { "command": "for host in web01 web02 db01; do ping -c1 \"$host\"; done", "description": "Loops over a list." },
+            { "command": "while IFS= read -r line; do echo \"$line\"; done < hosts.txt", "description": "Reads a file line by line, keeping spaces and backslashes." },
+            { "command": "case \"$1\" in start) echo starting ;; stop) echo stopping ;; *) echo \"usage: $0 start|stop\" ;; esac", "description": "Chooses by pattern." },
+            { "command": "make && echo built || echo failed", "description": "Runs the second command only if the first succeeds, the third if either fails." }
+          ]
+        },
+        {
+          "name": "Functions, arguments and exit codes",
+          "commands": [
+            { "command": "backup() { local source=\"$1\"; tar czf \"$source.tgz\" \"$source\"; }", "description": "A function; local keeps a variable inside it, $1 is its first argument." },
+            { "command": "\"$@\" / $# / $0", "description": "All the arguments as separate words, their number, and the script name." },
+            { "command": "echo $?", "description": "The exit code of the last command: 0 is success, anything else a failure." },
+            { "command": "set -euo pipefail", "description": "Stops at the first failing command, on an unset variable, and on a failure anywhere in a pipeline." },
+            { "command": "trap 'rm -f \"$tmp\"' EXIT", "description": "Cleans up when the script ends, even after an error." },
+            { "command": "exit 2", "description": "Ends the script with an exit code the caller can test." }
+          ]
+        },
+        {
+          "name": "Redirections and pipes",
+          "commands": [
+            { "command": "command > out.txt 2>&1", "description": "Output and errors into one file; >> appends instead of replacing." },
+            { "command": "command 2>/dev/null", "description": "Throws away the errors." },
+            { "command": "command | tee -a log.txt", "description": "Shows the output and appends it to a file at the same time." },
+            { "command": "cat <<'EOF' > config.ini", "description": "A here document, ended by a line holding only EOF. With the quotes, $ and backticks inside are kept as written." },
+            { "command": "diff <(sort a.txt) <(sort b.txt)", "description": "Process substitution: the output of a command used where a file is expected." },
+            { "command": "xargs -P4 -I{} ping -c1 {} < hosts.txt", "description": "Runs a command for each line of input, four at a time." }
+          ]
+        },
+        {
+          "name": "Arrays and globbing",
+          "commands": [
+            { "command": "hosts=(web01 web02 db01); echo \"${hosts[@]}\"", "description": "An array and all its items." },
+            { "command": "echo \"${#hosts[@]}\" / echo \"${hosts[0]}\"", "description": "The number of items, and the first one." },
+            { "command": "declare -A ports=([ssh]=22 [https]=443); echo \"${ports[https]}\"", "description": "An associative array, Bash 4 and later." },
+            { "command": "shopt -s nullglob globstar; for f in **/*.log; do echo \"$f\"; done", "description": "** goes through folders recursively, and a pattern matching nothing expands to nothing." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "linux-admin",
+      "name": "Linux system administration",
+      "description": "Cheat sheet. Files, permissions, processes and services, packages, disks and remote access on a Linux server: the networking and firewalling commands have platforms of their own below.",
+      "sections": [
+        {
+          "name": "Files and folders",
+          "commands": [
+            { "command": "ls -lah", "description": "Every file, hidden ones included, with permissions, owner and a readable size." },
+            { "command": "find /var/log -name '*.log' -mtime +30", "description": "Files matching a name and unchanged for 30 days; add -delete to remove them." },
+            { "command": "du -sh /var/* | sort -h", "description": "The size of each folder, the largest last." },
+            { "command": "df -h", "description": "The free space of each mounted file system." },
+            { "command": "tail -f /var/log/syslog", "description": "Follows a log as lines are written." },
+            { "command": "grep -rin 'error' /etc/nginx", "description": "Searches text through folders, without regard to case, with line numbers." },
+            { "command": "tar czf backup.tgz /etc", "description": "A compressed archive; tar xzf backup.tgz -C /restore extracts it." },
+            { "command": "rsync -avh --delete /data/ backup:/data/", "description": "Copies only what changed, and mirrors deletions. The trailing slash of the source means its content." }
+          ]
+        },
+        {
+          "name": "Permissions and users",
+          "commands": [
+            { "command": "chmod 640 file / chmod u+x script.sh", "description": "Sets permissions in octal or symbolic form. The chmod tool in Tools builds both." },
+            { "command": "chown -R www-data:www-data /var/www", "description": "Changes the owner and the group, recursively." },
+            { "command": "sudo -i / sudo -u postgres psql", "description": "A root shell, or one command as another user." },
+            { "command": "id jane", "description": "The identifiers of a user and the groups it belongs to." },
+            { "command": "useradd -m -s /bin/bash jane && passwd jane", "description": "Creates a user with a home folder, then sets its password." },
+            { "command": "usermod -aG sudo jane", "description": "Adds a user to a group. Without -a, the user leaves every group not listed." },
+            { "command": "setfacl -m u:jane:rw file / getfacl file", "description": "Sets or reads an access control list, for permissions beyond owner, group and others." }
+          ]
+        },
+        {
+          "name": "Processes and services",
+          "commands": [
+            { "command": "ps aux --sort=-%mem | head", "description": "The processes using the most memory." },
+            { "command": "top", "description": "Live processor and memory use per process; htop is friendlier where installed." },
+            { "command": "kill 1234 / kill -9 1234", "description": "Asks a process to stop, or forces it when it does not." },
+            { "command": "systemctl status nginx", "description": "The state of a service, its main process and its last log lines." },
+            { "command": "systemctl restart nginx / systemctl enable --now nginx", "description": "Restarts a service, or starts it now and at every boot." },
+            { "command": "systemctl list-units --failed", "description": "The units that failed." },
+            { "command": "journalctl -u nginx --since '1 hour ago'", "description": "The log of one service since a time; -f follows it, -b shows it since the last boot." }
+          ]
+        },
+        {
+          "name": "Packages",
+          "commands": [
+            { "command": "apt update && apt upgrade", "description": "Refreshes the package lists and upgrades, on Debian and Ubuntu." },
+            { "command": "apt install nginx / apt remove nginx", "description": "Installs or removes a package on Debian and Ubuntu." },
+            { "command": "dnf upgrade / dnf install nginx", "description": "The same on Red Hat Enterprise Linux, Rocky, AlmaLinux and Fedora." },
+            { "command": "dpkg -l | grep nginx / rpm -qa | grep nginx", "description": "Whether a package is installed, and which version." }
+          ]
+        },
+        {
+          "name": "System, disks and hardware",
+          "commands": [
+            { "command": "cat /etc/os-release / uname -r", "description": "The distribution and its version, and the kernel version." },
+            { "command": "uptime / w", "description": "How long since the start, the load, and who is signed in." },
+            { "command": "free -h", "description": "Memory and swap, used and free." },
+            { "command": "lsblk -f", "description": "Disks and partitions, with their file systems and mount points." },
+            { "command": "mount /dev/sdb1 /mnt", "description": "Mounts a partition; /etc/fstab lists what is mounted at boot." },
+            { "command": "dmesg -T | tail", "description": "The latest kernel messages with readable times: disks, USB devices, drivers." },
+            { "command": "timedatectl / hostnamectl", "description": "The clock, the time zone and the NTP state; the host name." }
+          ]
+        },
+        {
+          "name": "Remote access and scheduling",
+          "commands": [
+            { "command": "ssh -i ~/.ssh/id_ed25519 jane@srv01", "description": "Signs in with a key. The SSH keys tool in Tools generates one." },
+            { "command": "ssh-copy-id jane@srv01", "description": "Adds your public key to the server, so the next sign-in needs no password." },
+            { "command": "scp report.txt jane@srv01:/tmp/", "description": "Copies a file over SSH; rsync over SSH is quicker for folders." },
+            { "command": "ssh -L 8443:intranet:443 jane@bastion", "description": "Forwards a local port to a host the server can reach: open https://localhost:8443." },
+            { "command": "crontab -e / crontab -l", "description": "Edits or lists your scheduled jobs. The Crontab tool in Tools writes and explains the schedule." },
+            { "command": "last -n 10", "description": "The last sign-ins, with where they came from." }
+          ]
+        }
+      ]
+    },
     {
       "id": "aruba-cx",
       "name": "Aruba AOS-CX",

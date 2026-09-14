@@ -773,9 +773,9 @@ function Update-TkVendorSections {
     Add-TkHeading   -Document $document -Text $vendor.name -Level 1
     Add-TkParagraph -Document $document -Text $vendor.description
     Add-TkParagraph -Document $document -Muted -Text (
-        'Pick a section on the left, or type in the search box to look across every vendor at once. ' +
-        'Cross vendor search is the point of this tab: "how do I see the MAC table here" has a ' +
-        'different answer on each platform and they are worth seeing side by side.'
+        'Pick a section on the left, or type in the search box to look through every cheat sheet and ' +
+        'platform at once: "how do I see the MAC table here" has a different answer on each platform, ' +
+        'and they are worth seeing side by side.'
     )
 
     Set-TkDocument -ControlName 'VendorContent' -Document $document
