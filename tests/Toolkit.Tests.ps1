@@ -4444,6 +4444,164 @@ Describe 'Text tools' {
     }
 }
 
+Describe 'DevOps tools' {
+
+    Context 'Crontab' {
+
+        It 'describes <Expression> as <Description>' -TestCases @(
+            @{ Expression = '*/15 * * * *';      Description = 'Every 15 minutes' }
+            @{ Expression = '30 2 * * 1-5';      Description = 'At 02:30 on Monday to Friday' }
+            @{ Expression = '0 8,18 * * *';      Description = 'At 08:00 and 18:00' }
+            @{ Expression = '0 0 1 */3 *';       Description = 'At 00:00 on day 1 of the month, every 3 months' }
+            @{ Expression = '@weekly';           Description = 'At 00:00 on Sunday' }
+            @{ Expression = '0 9 * JAN,JUL MON'; Description = 'At 09:00 on Monday, in January and July' }
+            @{ Expression = '0 0 13 * 5';        Description = 'At 00:00 on day 13 of the month or on Friday' }
+        ) {
+            param($Expression, $Description)
+
+            (ConvertFrom-TkCronExpression -Expression $Expression).Description | Should -Be $Description
+        }
+
+        It 'lists the next runs, running on either day when both are set' {
+
+            $from      = [datetime]::new(2026, 9, 14, 3, 0, 0)
+            $invariant = [Globalization.CultureInfo]::InvariantCulture
+
+            $weekdays = @(Get-TkCronNextRun -Schedule (ConvertFrom-TkCronExpression -Expression '30 2 * * 1-5') -From $from -Count 3)
+            ($weekdays | ForEach-Object { $_.ToString('yyyy-MM-dd HH:mm', $invariant) }) -join ',' | Should -Be '2026-09-15 02:30,2026-09-16 02:30,2026-09-17 02:30'
+
+            $either = @(Get-TkCronNextRun -Schedule (ConvertFrom-TkCronExpression -Expression '0 0 13 * 5') -From $from -Count 5)
+            ($either | ForEach-Object { $_.ToString('yyyy-MM-dd', $invariant) }) -join ',' | Should -Be '2026-09-18,2026-09-25,2026-10-02,2026-10-09,2026-10-13'
+
+            @(Get-TkCronNextRun -Schedule (ConvertFrom-TkCronExpression -Expression '0 0 29 2 *') -From $from -Count 1)[0].ToString('yyyy-MM-dd', $invariant) | Should -Be '2028-02-29'
+        }
+
+        It 'says what is wrong with an expression' {
+
+            (ConvertFrom-TkCronExpression -Expression '61 * * * *').Error      | Should -Match 'minute field: 61 is outside 0 to 59'
+            (ConvertFrom-TkCronExpression -Expression '* * *').Error           | Should -Match 'five fields'
+            (ConvertFrom-TkCronExpression -Expression '0 */5 * * * *').Error   | Should -Match 'Quartz'
+            (ConvertFrom-TkCronExpression -Expression '0 0 * * FUNDAY').Error  | Should -Match 'day of the week'
+            (ConvertFrom-TkCronExpression -Expression '@reboot').Reboot        | Should -BeTrue
+        }
+    }
+
+    Context 'docker run to Compose' {
+
+        It 'splits a command line the way a shell does' {
+
+            (Split-TkShellWord -Text "a `"b c`" d\ e 'f g' h\`n  i") -join '|' | Should -Be 'a|b c|d e|f g|h|i'
+            { Split-TkShellWord -Text 'echo "open' } | Should -Throw
+        }
+
+        It 'writes the Compose service a docker run command describes' {
+
+            $command = @'
+docker run -d --name web --restart unless-stopped \
+  -p 8080:80 -p 127.0.0.1:8443:443 \
+  -v nginx-data:/usr/share/nginx/html:ro -v ./conf:/etc/nginx/conf.d \
+  -e TZ=Europe/Paris -e "GREETING=hello world" \
+  --network proxy --health-cmd "curl -f http://localhost/ || exit 1" --health-interval 30s \
+  nginx:1.27 nginx -g "daemon off;"
+'@
+
+            $expected = @(
+                'services:'
+                '  web:'
+                '    image: nginx:1.27'
+                '    container_name: web'
+                '    restart: unless-stopped'
+                '    command: ["nginx", "-g", "daemon off;"]'
+                '    ports:'
+                '      - "8080:80"'
+                '      - "127.0.0.1:8443:443"'
+                '    volumes:'
+                '      - nginx-data:/usr/share/nginx/html:ro'
+                '      - ./conf:/etc/nginx/conf.d'
+                '    environment:'
+                '      - TZ=Europe/Paris'
+                '      - GREETING=hello world'
+                '    networks:'
+                '      - proxy'
+                '    healthcheck:'
+                '      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]'
+                '      interval: 30s'
+                'volumes:'
+                '  nginx-data:'
+                'networks:'
+                '  proxy:'
+                '    external: true'
+            ) -join "`n"
+
+            $result = ConvertFrom-TkDockerRun -Command $command
+
+            ($result.Yaml -replace "`r", '') | Should -Be $expected
+            ($result.Notes -join ' ')        | Should -Match 'compose up -d'
+        }
+
+        It 'reads grouped short options and attached values, and notes what it leaves out' {
+
+            $result = ConvertFrom-TkDockerRun -Command 'sudo docker run -dit -p8080:80 --rm --privileged --gpus all --mount type=volume,src=pgdata,dst=/var/lib/postgresql/data postgres:17'
+            $yaml   = $result.Yaml -replace "`r", ''
+
+            $result.ServiceName | Should -Be 'postgres'
+            $yaml | Should -Match '(?m)^    stdin_open: true$'
+            $yaml | Should -Match '(?m)^    tty: true$'
+            $yaml | Should -Match '(?m)^    privileged: true$'
+            $yaml | Should -Match '(?m)^      - "8080:80"$'
+            $yaml | Should -Match '(?m)^      - pgdata:/var/lib/postgresql/data$'
+            $yaml | Should -Match '(?m)^  pgdata:$'
+
+            ($result.Notes -join ' ') | Should -Match '--rm'
+            ($result.Notes -join ' ') | Should -Match '--gpus'
+
+            { ConvertFrom-TkDockerRun -Command 'docker build .' } | Should -Throw
+            { ConvertFrom-TkDockerRun -Command 'docker run -p' }  | Should -Throw
+        }
+
+        It 'quotes a YAML value only when YAML would misread it' {
+
+            ConvertTo-TkYamlScalar -Value 'nginx:1.27' | Should -Be 'nginx:1.27'
+            ConvertTo-TkYamlScalar -Value 'yes'        | Should -Be '"yes"'
+            ConvertTo-TkYamlScalar -Value '22:22'      | Should -Be '"22:22"'
+            ConvertTo-TkYamlScalar -Value '0755'       | Should -Be '"0755"'
+            ConvertTo-TkYamlScalar -Value 'a: b'       | Should -Be '"a: b"'
+            ConvertTo-TkYamlScalar -Value '*.log'      | Should -Be '"*.log"'
+        }
+    }
+}
+
+Describe 'HTML documents' {
+
+    It 'reads HTML into the model and writes it back clean' {
+
+        $html = '<html><head><title>x</title></head><body><h1>Title</h1><p onclick="steal()">Hello <strong>bold</strong> and <a href="https://contoso.com">a <em>link</em></a>.<br>Next<script>alert(1)</script></p><ul><li>One</li> <li><u>Two</u></li></ul><p><a href="javascript:alert(1)">bad</a></p><!-- note --></body></html>'
+
+        $expected = @(
+            '<h1>Title</h1>'
+            '<p>Hello <strong>bold</strong> and <a href="https://contoso.com">a <em>link</em></a>.<br>Next</p>'
+            '<ul>'
+            '  <li>One</li>'
+            '  <li><u>Two</u></li>'
+            '</ul>'
+            '<p>bad</p>'
+        ) -join "`n"
+
+        ((ConvertTo-TkHtmlDocument -Block @(ConvertFrom-TkHtmlDocument -Html $html)) -replace "`r", '') | Should -Be $expected
+    }
+
+    It 'merges neighbouring runs with the same formatting and escapes text and links' {
+
+        $runs = @(
+            (New-TkEditorInline -Text 'one ' -Bold $true)
+            (New-TkEditorInline -Text 'two' -Bold $true -Italic $true)
+            (New-TkEditorInline -Text ' & <three>' -Link 'https://contoso.com/?a=1&b=2')
+        )
+
+        ConvertTo-TkHtmlInline -Inline $runs | Should -Be '<strong>one <em>two</em></strong><a href="https://contoso.com/?a=1&amp;b=2"> &amp; &lt;three&gt;</a>'
+    }
+}
+
 Describe 'Password strength' {
 
     It 'rates <Text> as very weak, whatever its disguise' -TestCases @(

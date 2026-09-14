@@ -2857,6 +2857,10 @@
                                          ToolTip="Read a phone number written in any form and write it as E.164, international, national and a tel: link.">
                                 <TextBlock Text="Phone numbers" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Write formatted text and get clean HTML for a signature, a ticket or a wiki, or clean up HTML pasted from elsewhere.">
+                                <TextBlock Text="HTML editor" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
 
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                 <TextBlock Text="LINUX AND DEVOPS" Style="{StaticResource ChoiceGroupTitle}" />
@@ -2864,6 +2868,14 @@
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Unix permissions as check boxes, octal and symbolic forms, and both chmod commands.">
                                 <TextBlock Text="chmod" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Write or read a crontab schedule: what it means in words and when it runs next.">
+                                <TextBlock Text="Crontab" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Turn a docker run command into the Compose service it describes.">
+                                <TextBlock Text="Docker Compose" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                         </ListBox>
 
@@ -3371,6 +3383,131 @@
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" />
                                 </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolCrontab" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Crontab" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Preset" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="CronPreset" Width="280" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Expression" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="CronExpression" Width="220" Text="*/15 * * * *" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBlock Text="Command" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="CronCommand" Width="420" Margin="0,0,8,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="/usr/local/bin/backup.sh >> /var/log/backup.log 2>&amp;1" />
+                                            <Button x:Name="BtnCopyCron" Content="Copy the crontab line" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Five fields: minute 0-59, hour 0-23, day of the month 1-31, month 1-12 or JAN-DEC, day of the week 0-7 or SUN-SAT, where 0 and 7 are Sunday. * is any value, a,b a list, a-b a range and */n every n. When both days are set, cron runs when either one matches." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="CronOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolDockerCompose" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="docker run to Compose" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="DockerRunInput" Height="110" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="docker run -d --name web -p 8080:80 -v web-data:/usr/share/nginx/html nginx" />
+                                        <WrapPanel>
+                                            <Button x:Name="BtnConvertDocker" Content="Convert" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnCopyCompose" Content="Copy" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Paste a docker run command, on one line or continued with \ or a backtick. Each option becomes its Compose key, named volumes and networks are declared at the end, and the options Compose has no place for are listed as comments rather than dropped silently." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="DockerComposeOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolHtmlEditor" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="HTML editor" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <Button x:Name="BtnEditorBold"      Content="Bold" FontWeight="Bold" Margin="0,0,6,8" />
+                                            <Button x:Name="BtnEditorItalic"    Content="Italic" FontStyle="Italic" Margin="0,0,6,8" />
+                                            <Button x:Name="BtnEditorUnderline" Content="Underline" Margin="0,0,16,8" />
+                                            <Button x:Name="BtnEditorHeading1"  Content="Heading 1" Margin="0,0,6,8" />
+                                            <Button x:Name="BtnEditorHeading2"  Content="Heading 2" Margin="0,0,6,8" />
+                                            <Button x:Name="BtnEditorBody"      Content="Body text" Margin="0,0,16,8" />
+                                            <Button x:Name="BtnEditorBullets"   Content="Bullets" Margin="0,0,6,8" />
+                                            <Button x:Name="BtnEditorNumbering" Content="Numbering" Margin="0,0,16,8" />
+                                            <Button x:Name="BtnEditorClear"     Content="Clear formatting" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBox x:Name="EditorLinkUrl" Width="320" Margin="0,0,8,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="https://... for the selected text" />
+                                            <Button x:Name="BtnEditorLink" Content="Make a link" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Write on the left with the buttons or Ctrl+B, Ctrl+I and Ctrl+U, and the HTML follows on the right: headings, paragraphs, lists, bold, italic, underline and links, nothing else, so it pastes cleanly into a signature, a ticket or a wiki. HTML pasted on the right loads into the editor without its scripts, styles and attributes." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Grid Grid.Row="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0">
+                                        <RichTextBox x:Name="HtmlEditor" AcceptsTab="True" IsDocumentEnabled="True"
+                                                     BorderThickness="0" Background="Transparent"
+                                                     Foreground="{DynamicResource TextPrimary}" CaretBrush="{DynamicResource TextPrimary}"
+                                                     VerticalScrollBarVisibility="Auto" />
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource Card}" Margin="0">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <TextBox Grid.Row="0" x:Name="HtmlSource" Style="{StaticResource Mono}"
+                                                     AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                                     HorizontalScrollBarVisibility="Disabled" />
+                                            <WrapPanel Grid.Row="1" Margin="0,8,0,0">
+                                                <Button x:Name="BtnHtmlCopy" Content="Copy HTML" Margin="0,0,8,0" />
+                                                <Button x:Name="BtnHtmlLoad" Content="Load into the editor" />
+                                            </WrapPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
                             </Grid>
 
                         </Grid>

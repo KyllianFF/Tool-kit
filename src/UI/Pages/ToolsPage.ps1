@@ -10,6 +10,10 @@
 # follow them do not answer their own change.
 $script:TkChmodUpdating = $false
 
+# Set while HTML is loaded into the editor, so the editor does not rewrite
+# the HTML box while it is being read from it.
+$script:TkEditorLoading = $false
+
 <#
 .SYNOPSIS
     Wires the calculator tabs of the Tools page.
@@ -211,10 +215,76 @@ function Initialize-TkToolsPage {
         $after.Text   = $held
     }
 
+    # --- Crontab ----------------------------------------------------------
+    $cronPreset = Get-TkControl -Name 'CronPreset'
+
+    if ($cronPreset) {
+
+        foreach ($choice in @(Get-TkCronPreset)) {
+            [void] $cronPreset.Items.Add($choice.Label)
+        }
+
+        $cronPreset.SelectedIndex = 0
+
+        $cronPreset.Add_SelectionChanged({
+            $chosen = @(Get-TkCronPreset) | Where-Object { $_.Label -eq [string] (Get-TkControl -Name 'CronPreset').SelectedItem } | Select-Object -First 1
+
+            if ($chosen -and $chosen.Expression) {
+                (Get-TkControl -Name 'CronExpression').Text = $chosen.Expression
+            }
+        })
+    }
+
+    foreach ($name in @('CronExpression', 'CronCommand')) {
+
+        $box = Get-TkControl -Name $name
+
+        if ($box) {
+            $box.Add_TextChanged({ Update-TkCronFromUi })
+        }
+    }
+
+    Register-TkClick -Name 'BtnCopyCron' -Action {
+        if (Set-TkClipboard -Text (Get-TkCronLine)) {
+            Set-TkStatus -Text 'Crontab line copied to the clipboard.'
+        }
+    }
+
+    # --- docker run to Compose --------------------------------------------
+    Register-TkClick -Name 'BtnConvertDocker' -Action { Invoke-TkDockerComposeFromUi }
+    Register-TkClick -Name 'BtnCopyCompose'   -Action { Copy-TkToolOutput -ControlName 'DockerComposeOutput' }
+
+    # --- HTML editor ------------------------------------------------------
+    $editor = Get-TkControl -Name 'HtmlEditor'
+
+    if ($editor) {
+        $editor.Document = New-TkEditorDocument -Block @(ConvertFrom-TkHtmlDocument -Html '<h2>Title</h2><p>Write here, with <strong>bold</strong>, <em>italic</em> and <a href="https://learn.microsoft.com/">links</a>.</p><ul><li>A list</li><li>of points</li></ul>')
+        $editor.Add_TextChanged({ Update-TkHtmlSourceFromUi })
+    }
+
+    Register-TkClick -Name 'BtnEditorBold'      -Action { Invoke-TkEditorCommand -Command 'ToggleBold' }
+    Register-TkClick -Name 'BtnEditorItalic'    -Action { Invoke-TkEditorCommand -Command 'ToggleItalic' }
+    Register-TkClick -Name 'BtnEditorUnderline' -Action { Invoke-TkEditorCommand -Command 'ToggleUnderline' }
+    Register-TkClick -Name 'BtnEditorBullets'   -Action { Invoke-TkEditorCommand -Command 'ToggleBullets' }
+    Register-TkClick -Name 'BtnEditorNumbering' -Action { Invoke-TkEditorCommand -Command 'ToggleNumbering' }
+    Register-TkClick -Name 'BtnEditorHeading1'  -Action { Set-TkEditorParagraphStyle -Style 'Heading1' }
+    Register-TkClick -Name 'BtnEditorHeading2'  -Action { Set-TkEditorParagraphStyle -Style 'Heading2' }
+    Register-TkClick -Name 'BtnEditorBody'      -Action { Set-TkEditorParagraphStyle -Style 'Body' }
+    Register-TkClick -Name 'BtnEditorLink'      -Action { Set-TkEditorLink }
+    Register-TkClick -Name 'BtnHtmlCopy'        -Action { Copy-TkToolOutput -ControlName 'HtmlSource' }
+    Register-TkClick -Name 'BtnHtmlLoad'        -Action { Import-TkHtmlIntoEditor }
+
+    Register-TkClick -Name 'BtnEditorClear' -Action {
+        (Get-TkControl -Name 'HtmlEditor').Selection.ClearAllProperties()
+        Update-TkHtmlSourceFromUi
+    }
+
     Update-TkSafeLinkFromUi
     Update-TkUrlFromUi
     Update-TkNatoFromUi
     Update-TkPhoneFromUi
+    Update-TkCronFromUi
+    Update-TkHtmlSourceFromUi
 }
 
 # ---------------------------------------------------------------------------
@@ -590,6 +660,479 @@ function Invoke-TkTextDiffFromUi {
     Set-TkDocument -ControlName 'DiffOutput' -Document $document
 }
 
+# ---------------------------------------------------------------------------
+# Crontab and Docker Compose
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Returns the crontab line made of the expression and the command on the page.
+#>
+function Get-TkCronLine {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $expression = ([string] (Get-TkControl -Name 'CronExpression').Text).Trim() -replace '\s+', ' '
+    $command    = ([string] (Get-TkControl -Name 'CronCommand').Text).Trim()
+
+    if (-not $command) {
+        $command = '/path/to/command'
+    }
+
+    return ('{0} {1}' -f $expression, $command)
+}
+
+<#
+.SYNOPSIS
+    Describes the cron expression on the page, as it is typed.
+#>
+function Update-TkCronFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'CronOutput'
+    $box    = Get-TkControl -Name 'CronExpression'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $schedule = ConvertFrom-TkCronExpression -Expression ([string] $box.Text)
+
+    if (-not $schedule.Valid) {
+        $output.Text = $schedule.Error
+        return
+    }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    $lines.Add(('Runs       {0}' -f $schedule.Description))
+
+    if ($schedule.Macro -and -not $schedule.Reboot) {
+        $lines.Add(('Same as    {0}' -f $schedule.Expression))
+    }
+
+    if (-not $schedule.Reboot) {
+
+        $runs = @(Get-TkCronNextRun -Schedule $schedule -Count 5)
+
+        $lines.Add('')
+
+        if ($runs.Count -eq 0) {
+            $lines.Add('Never: no date in the next nine years matches, as with 31 February.')
+        }
+        else {
+            $lines.Add('Next runs, in the time of the machine running cron')
+
+            foreach ($run in $runs) {
+                $lines.Add(('  {0}' -f $run.ToString('ddd yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)))
+            }
+        }
+    }
+
+    $lines.Add('')
+    $lines.Add('Line for crontab -e')
+    $lines.Add((Get-TkCronLine))
+
+    $output.Text = $lines -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Converts the docker run command on the page.
+#>
+function Invoke-TkDockerComposeFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'DockerComposeOutput'
+
+    try {
+        $result = ConvertFrom-TkDockerRun -Command ([string] (Get-TkControl -Name 'DockerRunInput').Text)
+    }
+    catch {
+        $output.Text = $_.Exception.Message
+        return
+    }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    $lines.Add($result.Yaml)
+
+    if (@($result.Notes).Count -gt 0) {
+
+        $lines.Add('')
+
+        foreach ($note in $result.Notes) {
+            $lines.Add(('# {0}' -f $note))
+        }
+    }
+
+    $output.Text = $lines -join [Environment]::NewLine
+}
+
+# ---------------------------------------------------------------------------
+# HTML editor
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Adds the runs of a WPF inline collection to a list of model runs.
+
+.PARAMETER Target
+    The list to add to.
+
+.PARAMETER Inlines
+    The inlines of a paragraph, a span or a hyperlink.
+
+.PARAMETER Underline
+    Whether an enclosing span underlines, since text decorations are not
+    inherited the way the font weight is.
+
+.PARAMETER Link
+    The link of an enclosing hyperlink.
+
+.PARAMETER IgnoreBold
+    For a heading, whose bold comes from the heading style.
+#>
+function Add-TkEditorInlineFromElement {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Target,
+        [Parameter(Mandatory)] $Inlines,
+        [Parameter()] [bool] $Underline = $false,
+        [Parameter()] [AllowEmptyString()] [string] $Link = '',
+        [Parameter()] [bool] $IgnoreBold = $false
+    )
+
+    foreach ($inline in $Inlines) {
+
+        $underlined = $Underline -or ($null -ne $inline.TextDecorations -and
+                      @($inline.TextDecorations | Where-Object { $_.Location -eq [System.Windows.TextDecorationLocation]::Underline }).Count -gt 0)
+
+        if ($inline -is [System.Windows.Documents.Run]) {
+
+            if ($inline.Text) {
+                $Target.Add((New-TkEditorInline -Text $inline.Text `
+                    -Bold (-not $IgnoreBold -and $inline.FontWeight.ToOpenTypeWeight() -ge 600) `
+                    -Italic ($inline.FontStyle -eq [System.Windows.FontStyles]::Italic) `
+                    -Underline $underlined -Link $Link))
+            }
+        }
+        elseif ($inline -is [System.Windows.Documents.LineBreak]) {
+            $Target.Add((New-TkEditorInline -LineBreak))
+        }
+        elseif ($inline -is [System.Windows.Documents.Hyperlink]) {
+            # The underline of a hyperlink is its style, not the text's.
+            Add-TkEditorInlineFromElement -Target $Target -Inlines $inline.Inlines -Underline $false `
+                -Link ([string] $inline.NavigateUri) -IgnoreBold $IgnoreBold
+        }
+        elseif ($inline -is [System.Windows.Documents.Span]) {
+            Add-TkEditorInlineFromElement -Target $Target -Inlines $inline.Inlines -Underline $underlined `
+                -Link $Link -IgnoreBold $IgnoreBold
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Reads the blocks of a WPF document into the document model.
+
+.PARAMETER Blocks
+    The block collection of a document or a section.
+
+.OUTPUTS
+    PSCustomObject[], as New-TkEditorBlock builds them.
+#>
+function Get-TkEditorBlock {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param(
+        [Parameter(Mandatory)]
+        $Blocks
+    )
+
+    $result = New-Object System.Collections.Generic.List[object]
+
+    foreach ($block in $Blocks) {
+
+        if ($block -is [System.Windows.Documents.Paragraph]) {
+
+            $type  = if ([string] $block.Tag -in @('Heading1', 'Heading2', 'Heading3')) { [string] $block.Tag } else { 'Paragraph' }
+            $model = New-TkEditorBlock -Type $type
+
+            Add-TkEditorInlineFromElement -Target $model.Inlines -Inlines $block.Inlines -IgnoreBold ($type -ne 'Paragraph')
+            $result.Add($model)
+        }
+        elseif ($block -is [System.Windows.Documents.List]) {
+
+            $model = New-TkEditorBlock -Type $(if ($block.MarkerStyle -eq [System.Windows.TextMarkerStyle]::Decimal) { 'NumberedList' } else { 'BulletList' })
+
+            foreach ($listItem in $block.ListItems) {
+
+                $runs  = New-Object System.Collections.Generic.List[object]
+                $first = $true
+
+                foreach ($paragraph in @($listItem.Blocks | Where-Object { $_ -is [System.Windows.Documents.Paragraph] })) {
+
+                    if (-not $first) {
+                        $runs.Add((New-TkEditorInline -LineBreak))
+                    }
+
+                    Add-TkEditorInlineFromElement -Target $runs -Inlines $paragraph.Inlines
+                    $first = $false
+                }
+
+                $model.Items.Add($runs)
+            }
+
+            $result.Add($model)
+        }
+        elseif ($block -is [System.Windows.Documents.Section]) {
+
+            foreach ($inner in @(Get-TkEditorBlock -Blocks $block.Blocks)) {
+                $result.Add($inner)
+            }
+        }
+    }
+
+    return $result.ToArray()
+}
+
+<#
+.SYNOPSIS
+    Builds a WPF document from the document model.
+
+.PARAMETER Block
+    The blocks.
+
+.OUTPUTS
+    System.Windows.Documents.FlowDocument
+#>
+function New-TkEditorDocument {
+    [CmdletBinding()]
+    [OutputType([System.Windows.Documents.FlowDocument])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]] $Block
+    )
+
+    $document          = New-TkFlowDocument
+    $document.FontSize = 14
+
+    $sizes = @{ Heading1 = 24; Heading2 = 19; Heading3 = 16 }
+
+    $fill = {
+        param($target, $runs)
+
+        # Enumerated as it is: @() on a generic list held in an object property
+        # fails inside PowerShell (see ConvertTo-TkHtmlDocument).
+        foreach ($piece in $runs) {
+
+            if ($piece.LineBreak) {
+                $target.Add((New-Object System.Windows.Documents.LineBreak))
+                continue
+            }
+
+            $run = New-Object System.Windows.Documents.Run($piece.Text)
+
+            if ($piece.Bold)      { $run.FontWeight = [System.Windows.FontWeights]::Bold }
+            if ($piece.Italic)    { $run.FontStyle = [System.Windows.FontStyles]::Italic }
+            if ($piece.Underline) { $run.TextDecorations = [System.Windows.TextDecorations]::Underline }
+
+            if ($piece.Link) {
+
+                $hyperlink = New-Object System.Windows.Documents.Hyperlink($run)
+
+                try {
+                    $hyperlink.NavigateUri = [Uri] $piece.Link
+                }
+                catch {
+                    $null = $_
+                }
+
+                $target.Add($hyperlink)
+            }
+            else {
+                $target.Add($run)
+            }
+        }
+    }
+
+    foreach ($item in $Block) {
+
+        if ($item.Type -in @('BulletList', 'NumberedList')) {
+
+            $list             = New-Object System.Windows.Documents.List
+            $list.MarkerStyle = if ($item.Type -eq 'BulletList') { [System.Windows.TextMarkerStyle]::Disc } else { [System.Windows.TextMarkerStyle]::Decimal }
+
+            foreach ($entry in $item.Items) {
+                $paragraph = New-Object System.Windows.Documents.Paragraph
+                & $fill $paragraph.Inlines $entry
+                $list.ListItems.Add((New-Object System.Windows.Documents.ListItem($paragraph)))
+            }
+
+            $document.Blocks.Add($list)
+        }
+        else {
+            $paragraph = New-Object System.Windows.Documents.Paragraph
+
+            if ($sizes.ContainsKey($item.Type)) {
+                $paragraph.Tag        = $item.Type
+                $paragraph.FontSize   = $sizes[$item.Type]
+                $paragraph.FontWeight = [System.Windows.FontWeights]::Bold
+            }
+
+            & $fill $paragraph.Inlines $item.Inlines
+            $document.Blocks.Add($paragraph)
+        }
+    }
+
+    return $document
+}
+
+<#
+.SYNOPSIS
+    Runs a formatting command on the editor selection.
+
+.PARAMETER Command
+    The editing command.
+#>
+function Invoke-TkEditorCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('ToggleBold', 'ToggleItalic', 'ToggleUnderline', 'ToggleBullets', 'ToggleNumbering')]
+        [string] $Command
+    )
+
+    $editor = Get-TkControl -Name 'HtmlEditor'
+
+    [System.Windows.Documents.EditingCommands]::$Command.Execute($null, $editor)
+    [void] $editor.Focus()
+
+    Update-TkHtmlSourceFromUi
+}
+
+<#
+.SYNOPSIS
+    Makes the selected paragraphs a heading or body text.
+
+.PARAMETER Style
+    Heading1, Heading2 or Body.
+#>
+function Set-TkEditorParagraphStyle {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Heading1', 'Heading2', 'Body')]
+        [string] $Style
+    )
+
+    $editor    = Get-TkControl -Name 'HtmlEditor'
+    $paragraph = $editor.Selection.Start.Paragraph
+    $last      = $editor.Selection.End.Paragraph
+
+    while ($paragraph) {
+
+        if ($Style -eq 'Body') {
+            $paragraph.Tag = $null
+            $paragraph.ClearValue([System.Windows.Documents.TextElement]::FontSizeProperty)
+            $paragraph.ClearValue([System.Windows.Documents.TextElement]::FontWeightProperty)
+        }
+        else {
+            $paragraph.Tag        = $Style
+            $paragraph.FontSize   = $(if ($Style -eq 'Heading1') { 24 } else { 19 })
+            $paragraph.FontWeight = [System.Windows.FontWeights]::Bold
+        }
+
+        if ($paragraph -eq $last) {
+            break
+        }
+
+        $paragraph = $paragraph.NextBlock -as [System.Windows.Documents.Paragraph]
+    }
+
+    [void] $editor.Focus()
+    Update-TkHtmlSourceFromUi
+}
+
+<#
+.SYNOPSIS
+    Turns the editor selection into a link to the address typed on the page.
+#>
+function Set-TkEditorLink {
+    [CmdletBinding()]
+    param()
+
+    $editor = Get-TkControl -Name 'HtmlEditor'
+    $url    = ([string] (Get-TkControl -Name 'EditorLinkUrl').Text).Trim()
+
+    if ($editor.Selection.IsEmpty) {
+        Set-TkStatus -Text 'Select the text to turn into a link first.'
+        return
+    }
+
+    if ($url -notmatch '^(?i)(https?://|mailto:|tel:)\S+$') {
+        Set-TkStatus -Text 'Type a link that starts with https://, http://, mailto: or tel:.'
+        return
+    }
+
+    $link             = New-Object System.Windows.Documents.Hyperlink($editor.Selection.Start, $editor.Selection.End)
+    $link.NavigateUri = [Uri] $url
+
+    Update-TkHtmlSourceFromUi
+}
+
+<#
+.SYNOPSIS
+    Writes the editor content as HTML in the box beside it.
+#>
+function Update-TkHtmlSourceFromUi {
+    [CmdletBinding()]
+    param()
+
+    if ($script:TkEditorLoading) {
+        return
+    }
+
+    $editor = Get-TkControl -Name 'HtmlEditor'
+    $source = Get-TkControl -Name 'HtmlSource'
+
+    if (-not $editor -or -not $source) {
+        return
+    }
+
+    $source.Text = ConvertTo-TkHtmlDocument -Block @(Get-TkEditorBlock -Blocks $editor.Document.Blocks)
+}
+
+<#
+.SYNOPSIS
+    Loads the HTML typed or pasted beside the editor into it.
+#>
+function Import-TkHtmlIntoEditor {
+    [CmdletBinding()]
+    param()
+
+    $editor = Get-TkControl -Name 'HtmlEditor'
+    $source = Get-TkControl -Name 'HtmlSource'
+
+    $script:TkEditorLoading = $true
+
+    try {
+        $editor.Document = New-TkEditorDocument -Block @(ConvertFrom-TkHtmlDocument -Html ([string] $source.Text))
+    }
+    finally {
+        $script:TkEditorLoading = $false
+    }
+
+    # Written back from the editor, so what is shown is the HTML kept.
+    Update-TkHtmlSourceFromUi
+    Set-TkStatus -Text 'HTML loaded into the editor, without what the editor does not keep.'
+}
+
 <#
 .SYNOPSIS
     Lists the tools of the Tools page, by category, in the order of the list.
@@ -626,7 +1169,10 @@ function Get-TkToolEntry {
         (& $tool 'Text and data'    'URL parser'     'ToolUrlParser')
         (& $tool 'Text and data'    'NATO alphabet'  'ToolNato')
         (& $tool 'Text and data'    'Phone numbers'  'ToolPhone')
+        (& $tool 'Text and data'    'HTML editor'    'ToolHtmlEditor')
         (& $tool 'Linux and DevOps' 'chmod'          'ToolChmod')
+        (& $tool 'Linux and DevOps' 'Crontab'        'ToolCrontab')
+        (& $tool 'Linux and DevOps' 'Docker Compose' 'ToolDockerCompose')
     )
 }
 
