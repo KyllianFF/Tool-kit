@@ -2,7 +2,7 @@
     Toolkit - UI / Search
 
     One search box for the whole toolkit, opened with Ctrl+K or the button in
-    the header. Twelve pages, their tabs and reports, 12 fixes, 35 tweaks,
+    the header. Twelve pages, their tabs and reports, 12 fixes, 48 tweaks,
     142 applications, 26 topics and 272 vendor commands are too many to find by
     walking the menu.
 
