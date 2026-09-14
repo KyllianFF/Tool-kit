@@ -2352,6 +2352,10 @@
                                             <TextBlock Text="Update history" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Whether this Windows release and the installed programs still receive security fixes, and what to move to when they do not.">
+                                            <TextBlock Text="Software support" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Spooler, printers, ports, drivers and queue depth.">
                                             <TextBlock Text="Printing" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>

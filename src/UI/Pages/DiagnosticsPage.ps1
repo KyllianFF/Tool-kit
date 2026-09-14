@@ -161,6 +161,7 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Proxy';               Show = 'Show-TkProxyReport' }
         [pscustomobject] @{ Title = 'Sign-in and management'; Show = 'Show-TkIdentityReport' }
         [pscustomobject] @{ Title = 'Update history';      Show = 'Show-TkUpdateHistory' }
+        [pscustomobject] @{ Title = 'Software support';    Show = 'Show-TkSoftwareLifecycleReport' }
         [pscustomobject] @{ Title = 'Printing';            Show = 'Show-TkPrintingReport' }
         [pscustomobject] @{ Title = 'Profiles and policy'; Show = 'Show-TkUserContext' }
     )
@@ -714,6 +715,100 @@ function Show-TkUpdateHistory {
 
 <#
 .SYNOPSIS
+    Writes one row of the software support report as a finding line.
+
+.PARAMETER Document
+    The document to write in.
+
+.PARAMETER Row
+    A row of Get-TkSoftwareLifecycleReport, for Windows or a program.
+#>
+function Add-TkLifecycleLine {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Document,
+        [Parameter(Mandatory)] [pscustomobject] $Row
+    )
+
+    $actionable = $Row.Severity -in @('Fail', 'Warning')
+
+    $note = @(
+        $(if (@($Row.Installed).Count -gt 0) { 'Installed: {0}.' -f ((@($Row.Installed) | Where-Object { $_ }) -join '; ') })
+        $Row.Note
+        $(if ($actionable -and $Row.Replacement) { 'Move to: {0}' -f $Row.Replacement })
+    ) | Where-Object { $_ }
+
+    $remediation = if (-not $actionable) { '' } elseif ($Row.ProductId -eq 'windows') { 'open-windows-update' } else { 'open-installed-apps' }
+
+    Add-TkSeverityLine -Document $Document -Severity $Row.Severity -Heading $Row.Title `
+        -Detail (Format-TkLifecycleDetail -Row $Row) -Note ($note -join ' ') -RemediationId $remediation
+}
+
+<#
+.SYNOPSIS
+    Shows whether Windows and the installed programs still receive security fixes.
+#>
+function Show-TkSoftwareLifecycleReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the installed programs...' `
+        -ScriptBlock { Get-TkSoftwareLifecycleReport } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'software-support' -Data $report
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Software support' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                'Software past its end of support gets no security fix again: every vulnerability found after that date stays open for good. Windows is judged from its edition and build, the installed programs against the dates their vendors publish, reviewed in {0}. A program the catalog does not list is not judged.' -f $report.Reviewed
+            )
+
+            Add-TkHeading -Document $document -Text 'Windows' -Level 2
+            Add-TkLifecycleLine -Document $document -Row $report.Windows
+
+            Add-TkHeading -Document $document -Text 'Programs' -Level 2
+
+            $recognised = @($report.Programs | Where-Object { $_ })
+            $problems   = @($recognised | Where-Object { $_.Severity -ne 'Pass' })
+
+            if ($problems.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No recognised program is past or near its end of support'
+            }
+
+            foreach ($row in $problems) {
+                Add-TkLifecycleLine -Document $document -Row $row
+            }
+
+            if ($recognised.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Recognised programs' -Level 2
+
+                Add-TkTable -Document $document -Column @('Program', 'Version', 'Support ends', 'Status') `
+                    -Weight @(2.0, 1.6, 0.9, 0.8) `
+                    -Row @($recognised | ForEach-Object {
+                        , @($_.Title, $_.Version, $(if ($_.Ends) { $_.Ends } else { '-' }), $_.Status)
+                    })
+            }
+
+            Add-TkParagraph -Document $document -Muted -Text (
+                '{0} programs installed, {1} of them recognised. A vendor can extend a date, as Microsoft does with Extended Security Updates: read the reference before retiring anything.' -f $report.InstalledCount, $recognised.Count
+            )
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
     Shows the printing subsystem.
 #>
 function Show-TkPrintingReport {
@@ -808,6 +903,7 @@ function Invoke-TkDiagnosticOverview {
                                 [pscustomobject] @{ Setting = $setting; Probe = Invoke-TkProxyProbe -Setting $setting }
                             }
                 Context   = Get-TkUserContextReport
+                Software  = Get-TkSoftwareLifecycleReport
             }
         } `
         -OnComplete {
@@ -921,6 +1017,21 @@ function Invoke-TkDiagnosticOverview {
             foreach ($row in $report.Context) {
                 Add-TkSeverityLine -Document $document -Severity $row.Severity `
                     -Heading ('{0}: {1}' -f $row.Kind, $row.Name) -Detail $row.Value -Note $row.Detail
+            }
+
+            # --- Software support ---------------------------------------
+            Add-TkHeading -Document $document -Text '8. Software support' -Level 2
+
+            $softwareProblems = @(@($report.Software.Windows) + @($report.Software.Programs) |
+                                  Where-Object { $_ -and $_.Severity -in @('Warning', 'Fail') })
+
+            if ($softwareProblems.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'Windows and the recognised programs still receive security fixes'
+            }
+            else {
+                foreach ($row in $softwareProblems) {
+                    Add-TkLifecycleLine -Document $document -Row $row
+                }
             }
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document

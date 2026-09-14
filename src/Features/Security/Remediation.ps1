@@ -140,6 +140,15 @@ function Get-TkRemediationTable {
             Elevated    = $false
         }
 
+        'open-installed-apps' = @{
+            Kind        = 'Open'
+            Name        = 'Open Installed apps'
+            Button      = 'Open Installed apps'
+            Explanation = 'Lists the installed programs, to update or uninstall the one past its end of support. Nothing is removed from here, because whether another program still needs it is for you to check.'
+            Target      = 'ms-settings:appsfeatures'
+            Elevated    = $false
+        }
+
         'open-device-manager' = @{
             Kind        = 'Open'
             Name        = 'Open Device Manager'

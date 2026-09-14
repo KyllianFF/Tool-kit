@@ -93,6 +93,7 @@ $script:TkAuditControl = @(
     # --- Servicing ---------------------------------------------------------
     [pscustomobject] @{ Function = 'Test-TkAuditWindowsUpdate';       Weight =  8; Level = 'Essential'; Action = 'open-windows-update' }
     [pscustomobject] @{ Function = 'Test-TkAuditUpdatePaused';        Weight =  5; Level = 'Essential'; Action = 'open-windows-update' }
+    [pscustomobject] @{ Function = 'Test-TkAuditWindowsSupport';      Weight =  9; Level = 'Essential'; Action = 'open-windows-update' }
 
     # --- Logging -----------------------------------------------------------
     [pscustomobject] @{ Function = 'Test-TkPowerShellLogging';        Weight =  4; Level = 'Full';      Action = 'enable-script-block-logging' }
@@ -1545,6 +1546,79 @@ function Test-TkAuditWindowsUpdate {
     catch {
         return New-TkAuditFinding -Id 'UPD-001' -Name 'Patch level' -Category 'Servicing' `
             -Status 'NotAssessed' -Detail 'The update history could not be read.'
+    }
+}
+
+<#
+.SYNOPSIS
+    Judges whether this Windows release still receives security updates.
+
+.DESCRIPTION
+    A machine fully patched on a release past its end of support still
+    misses every fix published since: the patch level control cannot see
+    that, because no update is waiting.
+
+.PARAMETER Lifecycle
+    The Windows row of Resolve-TkWindowsLifecycle.
+#>
+function ConvertTo-TkWindowsSupportFinding {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject] $Lifecycle
+    )
+
+    $measured = Format-TkLifecycleDetail -Row $Lifecycle
+
+    switch ($Lifecycle.Status) {
+
+        'Ended' {
+            return New-TkAuditFinding -Id 'UPD-003' -Name 'Windows still supported' -Category 'Servicing' `
+                -Status 'Fail' -Measured $measured `
+                -Detail (('{0} stopped receiving security updates on {1}: every vulnerability published since stays open here. {2}' -f $Lifecycle.Title, $Lifecycle.Ends, $Lifecycle.Note).Trim()) `
+                -Recommendation $Lifecycle.Replacement
+        }
+
+        'Ending' {
+            return New-TkAuditFinding -Id 'UPD-003' -Name 'Windows still supported' -Category 'Servicing' `
+                -Status 'Warning' -Measured $measured `
+                -Detail (('{0} receives its last security update on {1}, in {2} days. {3}' -f $Lifecycle.Title, $Lifecycle.Ends, $Lifecycle.DaysLeft, $Lifecycle.Note).Trim()) `
+                -Recommendation $Lifecycle.Replacement
+        }
+
+        'Supported' {
+            return New-TkAuditFinding -Id 'UPD-003' -Name 'Windows still supported' -Category 'Servicing' `
+                -Status 'Pass' -Measured $measured `
+                -Detail ('{0} receives security updates until {1}.' -f $Lifecycle.Title, $Lifecycle.Ends)
+        }
+    }
+
+    return New-TkAuditFinding -Id 'UPD-003' -Name 'Windows still supported' -Category 'Servicing' `
+        -Status 'Info' -Measured $Lifecycle.Version -Detail $Lifecycle.Note
+}
+
+<#
+.SYNOPSIS
+    Checks whether this Windows release still receives security updates.
+#>
+function Test-TkAuditWindowsSupport {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $catalog = Import-TkCatalog -Name 'software-lifecycle'
+
+        if (-not $catalog) {
+            return New-TkAuditFinding -Id 'UPD-003' -Name 'Windows still supported' -Category 'Servicing' `
+                -Status 'NotAssessed' -Detail 'The lifecycle catalog could not be loaded.'
+        }
+
+        return ConvertTo-TkWindowsSupportFinding -Lifecycle (Resolve-TkWindowsLifecycle -Fact (Get-TkWindowsVersionFact) -Catalog $catalog)
+    }
+    catch {
+        return New-TkAuditFinding -Id 'UPD-003' -Name 'Windows still supported' -Category 'Servicing' `
+            -Status 'NotAssessed' -Detail 'The Windows edition and build could not be read.'
     }
 }
 

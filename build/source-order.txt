@@ -21,6 +21,7 @@ src/Features/System/SystemInventory.ps1
 src/Features/System/VendorSupport.ps1
 src/Features/System/Dashboard.ps1
 src/Features/Software/WingetManager.ps1
+src/Features/Software/SoftwareLifecycle.ps1
 src/Features/Tweaks/TweakEngine.ps1
 src/Features/Fixes/SystemFixes.ps1
 src/Features/Fixes/AutoLogon.ps1
