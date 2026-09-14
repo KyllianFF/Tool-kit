@@ -1067,6 +1067,233 @@ Describe 'Windows reference' {
     }
 }
 
+Describe 'Tools calculators' {
+
+    Context 'Random ports' {
+
+        It 'draws distinct ports inside the range, never an excluded one' {
+
+            $exclude = @(50000..50999)
+            $ports   = @(Get-TkRandomPort -Minimum 49152 -Maximum 65535 -Count 100 -Exclude $exclude)
+
+            $ports.Count                                  | Should -Be 100
+            @($ports | Sort-Object -Unique).Count         | Should -Be 100
+            @($ports | Where-Object { $_ -lt 49152 -or $_ -gt 65535 }).Count | Should -Be 0
+            @($ports | Where-Object { $_ -in $exclude }).Count               | Should -Be 0
+        }
+
+        It 'returns every free port of a small range rather than drawing for ever' {
+
+            $ports = @(Get-TkRandomPort -Minimum 1000 -Maximum 1004 -Count 10 -Exclude @(1002))
+
+            ($ports | Sort-Object) -join ',' | Should -Be '1000,1001,1003,1004'
+        }
+
+        It 'leaves out the ports of known services when asked, and refuses a range upside down' {
+
+            @(Get-TkRandomPort -Minimum 3389 -Maximum 3390 -Count 2 -SkipKnownServices) -join ',' | Should -Be '3390'
+
+            { Get-TkRandomPort -Minimum 2000 -Maximum 1000 } | Should -Throw
+        }
+
+        It 'reads the reserved port ranges from netsh whatever the language of its headings' {
+
+            $text = @(
+                ''
+                'Plage d''exclusion de ports du protocole tcp'
+                ''
+                'Port de début    Port de fin'
+                '----------    --------'
+                '     50000       50059     *'
+                '     50060       50159'
+                ''
+                '* - Exclusions de port administrées.'
+            ) -join "`r`n"
+
+            $ranges = @(ConvertFrom-TkExcludedPortRange -Text $text)
+
+            $ranges.Count    | Should -Be 2
+            $ranges[0].Start | Should -Be 50000
+            $ranges[1].End   | Should -Be 50159
+        }
+    }
+
+    Context 'chmod' {
+
+        It 'writes <Bits> as <Octal> and <Symbolic>' -TestCases @(
+            @{ Bits = 493;  Octal = '755';  Symbolic = 'rwxr-xr-x' }
+            @{ Bits = 420;  Octal = '644';  Symbolic = 'rw-r--r--' }
+            @{ Bits = 2541; Octal = '4755'; Symbolic = 'rwsr-xr-x' }
+            @{ Bits = 1023; Octal = '1777'; Symbolic = 'rwxrwxrwt' }
+            @{ Bits = 950;  Octal = '1666'; Symbolic = 'rw-rw-rwT' }
+            @{ Bits = 2468; Octal = '4644'; Symbolic = 'rwSr--r--' }
+        ) {
+            param($Bits, $Octal, $Symbolic)
+
+            $mode = ConvertTo-TkUnixMode -Bits $Bits
+
+            $mode.Octal    | Should -Be $Octal
+            $mode.Symbolic | Should -BeExactly $Symbolic
+
+            ConvertFrom-TkUnixModeText -Text $Octal    | Should -Be $Bits
+            ConvertFrom-TkUnixModeText -Text $Symbolic | Should -Be $Bits
+        }
+
+        It 'writes both chmod commands' {
+
+            $mode = ConvertTo-TkUnixMode -Bits 2541
+
+            $mode.NumericCommand  | Should -Be 'chmod 4755 file'
+            $mode.SymbolicCommand | Should -Be 'chmod u=rwxs,g=rx,o=rx file'
+            $mode.Listing         | Should -Be '-rwsr-xr-x'
+        }
+
+        It 'reads a listing with its file type, and refuses what is not a mode' {
+
+            ConvertFrom-TkUnixModeText -Text 'drwxrwxrwt' | Should -Be 1023
+            ConvertFrom-TkUnixModeText -Text '0755'       | Should -Be 493
+            ConvertFrom-TkUnixModeText -Text '888'        | Should -BeNullOrEmpty
+            ConvertFrom-TkUnixModeText -Text 'rwxrwxrwz'  | Should -BeNullOrEmpty
+            ConvertFrom-TkUnixModeText -Text 'RWXRWXRWX'  | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Regex' {
+
+        It 'reports each match with its named groups, and the replacement' {
+
+            $result = Test-TkRegularExpression -Pattern '(?<user>\w+)@(?<domain>[\w.]+)' -Text "a@b.com`nc@d.org" -Replace -Replacement '${domain}'
+
+            $result.Valid                    | Should -BeTrue
+            @($result.Matches).Count         | Should -Be 2
+            $result.Matches[0].Groups[0].Name  | Should -Be 'user'
+            $result.Matches[0].Groups[0].Value | Should -Be 'a'
+            $result.Matches[1].Line          | Should -Be 2
+            $result.Replaced                 | Should -Be "b.com`nd.org"
+        }
+
+        It 'applies the options' {
+
+            @((Test-TkRegularExpression -Pattern '^b' -Text "a`nb").Matches).Count             | Should -Be 0
+            @((Test-TkRegularExpression -Pattern '^b' -Text "a`nb" -Multiline).Matches).Count  | Should -Be 1
+            @((Test-TkRegularExpression -Pattern 'A' -Text 'a' -IgnoreCase).Matches).Count     | Should -Be 1
+            @((Test-TkRegularExpression -Pattern 'a.b' -Text "a`nb" -Singleline).Matches).Count | Should -Be 1
+        }
+
+        It 'says why a pattern is not valid, and stops one that backtracks without end' {
+
+            $invalid = Test-TkRegularExpression -Pattern '(' -Text 'x'
+
+            $invalid.Valid | Should -BeFalse
+            $invalid.Error | Should -Not -BeNullOrEmpty
+
+            $slow = Test-TkRegularExpression -Pattern '(a+)+$' -Text (('a' * 40) + '!') -TimeoutMilliseconds 100
+
+            $slow.TimedOut | Should -BeTrue
+        }
+    }
+
+    Context 'Timestamps' {
+
+        BeforeAll {
+            $script:FixedNow = [datetime]::SpecifyKind([datetime]::new(2026, 9, 14, 8, 0, 0), [DateTimeKind]::Utc)
+        }
+
+        It 'reads Unix seconds and milliseconds' {
+
+            $seconds = ConvertFrom-TkTimestamp -Text '1726300800' -Now $script:FixedNow
+
+            $seconds.Kind        | Should -Be 'Unix time, seconds'
+            $seconds.Utc         | Should -Be ([DateTimeOffset]::FromUnixTimeSeconds(1726300800).UtcDateTime)
+
+            $milliseconds = ConvertFrom-TkTimestamp -Text '1726300800000' -Now $script:FixedNow
+
+            $milliseconds.Kind        | Should -Be 'Unix time, milliseconds'
+            $milliseconds.UnixSeconds | Should -Be 1726300800
+        }
+
+        It 'reads a Windows FILETIME, as Active Directory stores lastLogonTimestamp' {
+
+            $fileTime = $script:FixedNow.AddDays(-3).ToFileTimeUtc()
+            $result   = ConvertFrom-TkTimestamp -Text ([string] $fileTime) -Now $script:FixedNow
+
+            $result.Kind     | Should -BeLike 'Windows FILETIME*'
+            $result.Utc      | Should -Be $script:FixedNow.AddDays(-3)
+            $result.Relative | Should -Be '3 day(s) ago'
+        }
+
+        It 'names the never values of Active Directory, and reads a date' {
+
+            (ConvertFrom-TkTimestamp -Text '9223372036854775807' -Now $script:FixedNow).Kind | Should -Be 'Never'
+            (ConvertFrom-TkTimestamp -Text '0' -Now $script:FixedNow).Note                   | Should -BeLike '*never*'
+
+            $date = ConvertFrom-TkTimestamp -Text '2026-09-14T09:30:00Z' -Now $script:FixedNow
+
+            $date.Kind     | Should -Be 'Date'
+            $date.Iso      | Should -Be '2026-09-14T09:30:00.000Z'
+            $date.Relative | Should -Be 'in 1 hour(s)'
+
+            (ConvertFrom-TkTimestamp -Text 'banana').Valid | Should -BeFalse
+        }
+    }
+
+    Context 'Encoding' {
+
+        It 'converts text both ways, in UTF-8' {
+
+            $accented = 'h{0}llo' -f [char] 0xE9
+
+            Convert-TkText -Text $accented -Operation Base64Encode   | Should -Be 'aMOpbGxv'
+            Convert-TkText -Text 'aMOpbGxv' -Operation Base64Decode  | Should -Be $accented
+            Convert-TkText -Text 'a b&c' -Operation UrlEncode        | Should -Be 'a%20b%26c'
+            Convert-TkText -Text '%C3%A9' -Operation UrlDecode       | Should -Be ([string] [char] 0xE9)
+            Convert-TkText -Text '<b>' -Operation HtmlEncode         | Should -Be '&lt;b&gt;'
+            Convert-TkText -Text 'AB' -Operation HexEncode           | Should -Be '4142'
+            Convert-TkText -Text '41 42' -Operation HexDecode        | Should -Be 'AB'
+
+            { Convert-TkText -Text 'abc' -Operation HexDecode }      | Should -Throw
+            { Convert-TkText -Text 'a' -Operation Base64Decode }     | Should -Throw
+        }
+
+        It 'indents JSON the same way on every version, strings and empty containers untouched' {
+
+            $text = '{"a":[1,{"b":"x, {y}: \"z\""}],"c":{},"d":[]}'
+
+            Format-TkJsonText -Json $text | Should -Be (@(
+                '{'
+                '  "a": ['
+                '    1,'
+                '    {'
+                '      "b": "x, {y}: \"z\""'
+                '    }'
+                '  ],'
+                '  "c": {},'
+                '  "d": []'
+                '}'
+            ) -join "`n")
+        }
+
+        It 'decodes a JWT, its expiry included, without claiming it is genuine' {
+
+            $encode = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)).TrimEnd('=').Replace('+', '-').Replace('/', '_') }
+            $token  = '{0}.{1}.signature' -f (& $encode '{"alg":"HS256","typ":"JWT"}'), (& $encode '{"sub":"42","exp":1726300800}')
+
+            $decoded = ConvertFrom-TkJwt -Token $token -Now ([datetime]::new(2026, 9, 14))
+
+            $decoded.Header.alg   | Should -Be 'HS256'
+            $decoded.Payload.sub  | Should -Be '42'
+            $decoded.Expired      | Should -BeTrue
+            $decoded.Signed       | Should -BeTrue
+
+            Convert-TkText -Text $token -Operation JwtDecode | Should -BeLike '*not checked*'
+
+            $decoded.PayloadText | Should -Be "{`n  `"sub`": `"42`",`n  `"exp`": 1726300800`n}"
+
+            { ConvertFrom-TkJwt -Token 'not a token' } | Should -Throw
+        }
+    }
+}
+
 Describe 'Expand-TkVendorUrl' {
 
     It 'substitutes and encodes the serial number' {
