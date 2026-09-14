@@ -4244,6 +4244,206 @@ Describe 'Tools page' {
     }
 }
 
+Describe 'Text tools' {
+
+    Context 'UUIDs' {
+
+        It 'generates distinct version 4 UUIDs with the version and variant bits set' {
+
+            $uuids = @(New-TkUuid -Version 4 -Count 50)
+
+            $uuids.Count                          | Should -Be 50
+            @($uuids | Sort-Object -Unique).Count | Should -Be 50
+
+            foreach ($uuid in $uuids) {
+                $uuid | Should -Match '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+            }
+        }
+
+        It 'writes the time into a version 7 UUID, and reads it back' {
+
+            $now  = [datetime]::new(2026, 9, 14, 8, 30, 15, 250, [DateTimeKind]::Utc)
+            $uuid = @(New-TkUuid -Version 7 -Now $now)[0]
+
+            $uuid | Should -Match '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab]'
+
+            $info = ConvertFrom-TkUuid -Text ('{' + $uuid.ToUpperInvariant() + '}')
+
+            $info.Version | Should -Be 7
+            $info.Time    | Should -Be $now
+            $info.Variant | Should -Be 'RFC 9562'
+        }
+
+        It 'reads the time and node of a version 1 UUID, and names the nil UUID' {
+
+            $info = ConvertFrom-TkUuid -Text 'urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8'
+
+            $info.Version   | Should -Be 1
+            $info.Time.Year | Should -Be 1998
+            $info.Node      | Should -Be '00:C0:4F:D4:30:C8'
+
+            (ConvertFrom-TkUuid -Text '00000000-0000-0000-0000-000000000000').VersionName | Should -BeLike '*nil*'
+            (ConvertFrom-TkUuid -Text 'not-a-uuid').Valid | Should -BeFalse
+        }
+
+        It 'writes a UUID in each of its forms' {
+
+            $uuid = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'
+
+            Format-TkUuid -Uuid $uuid -Format Braces  | Should -BeExactly '{6BA7B810-9DAD-11D1-80B4-00C04FD430C8}'
+            Format-TkUuid -Uuid $uuid -Format Compact | Should -BeExactly '6ba7b8109dad11d180b400c04fd430c8'
+            Format-TkUuid -Uuid $uuid -Format Urn     | Should -BeExactly 'urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8'
+        }
+    }
+
+    Context 'NATO alphabet' {
+
+        It 'spells letters, capitals, digits, symbols and accented letters' {
+
+            $rows = @(ConvertTo-TkNatoAlphabet -Text ('Ab1-' + [char] 0xE9) -MarkCase)
+
+            ($rows | ForEach-Object { $_.Spoken }) -join '|' | Should -Be 'Capital Alfa|Bravo|One|Dash|Echo (with an accent)'
+            @(ConvertTo-TkNatoAlphabet -Text 'A')[0].Spoken   | Should -Be 'Alfa'
+        }
+    }
+
+    Context 'URL parser' {
+
+        It 'decodes every part of a URL' {
+
+            $part = Get-TkUrlPart -Url 'https://admin:secret@Example.com:8443/a%20b/c+d?x=1&y=hello+world&y=2&flag#top%20part'
+
+            $part.Scheme      | Should -Be 'https'
+            $part.User        | Should -Be 'admin'
+            $part.HasPassword | Should -BeTrue
+            $part.AsciiHost   | Should -Be 'example.com'
+            $part.Port        | Should -Be 8443
+            $part.Path        | Should -Be '/a b/c+d'
+            $part.Fragment    | Should -Be 'top part'
+            @($part.Query).Count | Should -Be 4
+
+            (@($part.Query | Where-Object { $_.Name -eq 'y' }) | ForEach-Object { $_.Value }) -join '|' | Should -Be 'hello world|2'
+            (@($part.Query | Where-Object { $_.Name -eq 'flag' })[0]).Value | Should -BeNullOrEmpty
+        }
+
+        It 'names the tricks phishing links use' {
+
+            $trick = Get-TkUrlPart -Url 'https://login.microsoftonline.com@203.0.113.7/reset'
+
+            $trick.AsciiHost               | Should -Be '203.0.113.7'
+            ($trick.Warnings -join ' ')    | Should -Match 'not the site'
+            ($trick.Warnings -join ' ')    | Should -Match 'IP address'
+
+            $lookalike = Get-TkUrlPart -Url 'http://xn--pple-43d.com/'
+
+            ($lookalike.Warnings -join ' ') | Should -Match 'non-Latin'
+            ($lookalike.Warnings -join ' ') | Should -Match 'Not encrypted'
+
+            (Get-TkUrlPart -Url 'www.contoso.com/docs').SchemeAssumed | Should -BeTrue
+        }
+    }
+
+    Context 'Safe Links' {
+
+        BeforeAll {
+            $script:SafeLink = 'https://eur02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fwww.contoso.com%2Freset%3Fid%3D42%26lang%3Dfr&data=05%7C02%7Cjane.doe%40fabrikam.com%7C1b2c%7C72f988bf%7C0%7C0%7C638620000000000000%7CUnknown&sdata=abc%3D&reserved=0'
+        }
+
+        It 'finds the destination and the recipient of a Safe Link' {
+
+            $row = @(ConvertFrom-TkSafeLink -Text $script:SafeLink)[0]
+
+            $row.Destination | Should -Be 'https://www.contoso.com/reset?id=42&lang=fr'
+            $row.Host        | Should -Be 'www.contoso.com'
+            $row.Recipient   | Should -Be 'jane.doe@fabrikam.com'
+            $row.Layers      | Should -Be 1
+        }
+
+        It 'decodes every link of a pasted e-mail, and unwraps a forwarded one' {
+
+            $wrapped = 'https://nam12.safelinks.protection.outlook.com/?url={0}&data=05%7C02%7C&reserved=0' -f [Uri]::EscapeDataString($script:SafeLink)
+            $mail    = "Hello,`r`nplease reset here: $($script:SafeLink).`r`nOr there ($wrapped)`r`nThanks"
+
+            $rows = @(ConvertFrom-TkSafeLink -Text $mail)
+
+            $rows.Count          | Should -Be 2
+            $rows[0].Layers      | Should -Be 1
+            $rows[1].Layers      | Should -Be 2
+            $rows[1].Destination | Should -Be 'https://www.contoso.com/reset?id=42&lang=fr'
+            $rows[1].Recipient   | Should -Be 'jane.doe@fabrikam.com'
+
+            @(ConvertFrom-TkSafeLink -Text 'https://www.contoso.com/').Count | Should -Be 0
+        }
+    }
+
+    Context 'Text diff' {
+
+        It 'finds the lines removed and added, in order' {
+
+            $result = Compare-TkText -Before "alpha`nbravo`ncharlie`ndelta" -After "alpha`nBravo`ncharlie`ndelta`necho"
+
+            $result.Removed | Should -Be 1
+            $result.Added   | Should -Be 2
+
+            ($result.Rows | ForEach-Object { '{0}:{1}' -f $_.Kind, $_.Text }) -join '|' |
+                Should -Be 'Same:alpha|Removed:bravo|Added:Bravo|Same:charlie|Same:delta|Added:echo'
+        }
+
+        It 'handles an empty side' {
+
+            $result = Compare-TkText -Before '' -After "one`ntwo"
+
+            ($result.Rows | ForEach-Object { '{0}:{1}' -f $_.Kind, $_.Text }) -join '|' | Should -Be 'Added:one|Added:two'
+            (Compare-TkText -Before '' -After '').Identical | Should -BeTrue
+        }
+
+        It 'ignores case and spaces when asked, and keeps three lines around a change' {
+
+            (Compare-TkText -Before 'Hello  World' -After 'hello world' -IgnoreCase -IgnoreWhitespace).Identical | Should -BeTrue
+
+            $before = (1..20 | ForEach-Object { "line $_" }) -join "`n"
+            $after  = $before -replace 'line 10', 'line ten'
+            $view   = @(Get-TkDiffView -Rows (Compare-TkText -Before $before -After $after).Rows -Context 3)
+
+            $view[0].Kind | Should -Be 'Gap'
+            $view[0].Text | Should -Be '6 unchanged line(s)'
+            $view[-1].Text | Should -Be '7 unchanged line(s)'
+            @($view | Where-Object { $_.Kind -eq 'Same' }).Count | Should -Be 6
+
+            Format-TkDiffText -View $view | Should -Match '(?m)^\+ line ten\r?$'
+        }
+    }
+
+    Context 'Phone numbers' {
+
+        It 'writes <Text> as <International>' -TestCases @(
+            @{ Text = '06 12 34 56 78';       Country = 'FR'; International = '+33 6 12 34 56 78'; National = '06 12 34 56 78'; E164 = '+33612345678' }
+            @{ Text = '+33 (0)1 23 45 67 89'; Country = 'FR'; International = '+33 1 23 45 67 89'; National = '01 23 45 67 89'; E164 = '+33123456789' }
+            @{ Text = '0044 20 7946 0958';    Country = 'FR'; International = '+44 20 7946 0958';  National = '020 7946 0958';  E164 = '+442079460958' }
+            @{ Text = '+1 (415) 555-2671';    Country = 'FR'; International = '+1 415 555 2671';   National = '(415) 555-2671'; E164 = '+14155552671' }
+            @{ Text = '079 123 45 67';        Country = 'CH'; International = '+41 79 123 45 67';  National = '079 123 45 67';  E164 = '+41791234567' }
+            @{ Text = '+32 470 12 34 56';     Country = 'FR'; International = '+32 470 12 34 56';  National = '0470 12 34 56';  E164 = '+32470123456' }
+        ) {
+            param($Text, $Country, $International, $National, $E164)
+
+            $number = ConvertFrom-TkPhoneNumber -Text $Text -DefaultCountry $Country
+
+            $number.Valid         | Should -BeTrue
+            $number.International | Should -Be $International
+            $number.National      | Should -Be $National
+            $number.E164          | Should -Be $E164
+        }
+
+        It 'says what is wrong with a number, and what kind of French number it is' {
+
+            (ConvertFrom-TkPhoneNumber -Text '06 12 34').Note                        | Should -Match 'has 9 digits'
+            (ConvertFrom-TkPhoneNumber -Text '06 12 34 56 78').Type                  | Should -Be 'Mobile'
+            (ConvertFrom-TkPhoneNumber -Text '+33 6 12 34 56 78 poste 204').Extension | Should -Be '204'
+            (ConvertFrom-TkPhoneNumber -Text 'call me').Valid                         | Should -BeFalse
+        }
+    }
+}
+
 Describe 'Password strength' {
 
     It 'rates <Text> as very weak, whatever its disguise' -TestCases @(

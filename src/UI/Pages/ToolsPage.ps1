@@ -128,6 +128,466 @@ function Initialize-TkToolsPage {
     Register-TkClick -Name 'BtnSwapText' -Action {
         (Get-TkControl -Name 'EncodingInput').Text = (Get-TkControl -Name 'EncodingOutput').Text
     }
+
+    # --- UUIDs ------------------------------------------------------------
+    $uuidVersion = Get-TkControl -Name 'UuidVersion'
+
+    if ($uuidVersion) {
+        [void] $uuidVersion.Items.Add('4, random')
+        [void] $uuidVersion.Items.Add('7, ordered by time')
+        $uuidVersion.SelectedIndex = 0
+    }
+
+    $uuidFormat = Get-TkControl -Name 'UuidFormat'
+
+    if ($uuidFormat) {
+
+        foreach ($choice in @(Get-TkUuidFormatChoice)) {
+            [void] $uuidFormat.Items.Add($choice.Label)
+        }
+
+        $uuidFormat.SelectedIndex = 0
+    }
+
+    Register-TkClick -Name 'BtnGenerateUuid' -Action { Invoke-TkUuidFromUi }
+    Register-TkClick -Name 'BtnCopyUuid'     -Action { Copy-TkToolOutput -ControlName 'UuidOutput' }
+    Register-TkClick -Name 'BtnDecodeUuid'   -Action { Invoke-TkUuidDecodeFromUi }
+
+    # --- Safe Links, URL parser, NATO alphabet, phone numbers -------------
+    # Worked out as the text changes: each is a few milliseconds.
+    foreach ($binding in @(
+        @{ Name = 'SafeLinkInput'; Update = { Update-TkSafeLinkFromUi } }
+        @{ Name = 'UrlInput';      Update = { Update-TkUrlFromUi } }
+        @{ Name = 'NatoInput';     Update = { Update-TkNatoFromUi } }
+        @{ Name = 'PhoneInput';    Update = { Update-TkPhoneFromUi } }
+    )) {
+        $box = Get-TkControl -Name $binding.Name
+
+        if ($box) {
+            $box.Add_TextChanged($binding.Update)
+        }
+    }
+
+    $markCase = Get-TkControl -Name 'NatoMarkCase'
+
+    if ($markCase) {
+        $markCase.Add_Click({ Update-TkNatoFromUi })
+    }
+
+    Register-TkClick -Name 'BtnCopySafeLink' -Action {
+
+        $destinations = @(ConvertFrom-TkSafeLink -Text ([string] (Get-TkControl -Name 'SafeLinkInput').Text) | ForEach-Object { $_.Destination })
+
+        if ($destinations.Count -eq 0) {
+            Set-TkStatus -Text 'No Safe Links URL to copy from.'
+            return
+        }
+
+        if (Set-TkClipboard -Text ($destinations -join [Environment]::NewLine)) {
+            Set-TkStatus -Text ('{0} destination(s) copied to the clipboard.' -f $destinations.Count)
+        }
+    }
+
+    $phoneCountry = Get-TkControl -Name 'PhoneCountry'
+
+    if ($phoneCountry) {
+
+        foreach ($country in @(Get-TkPhoneCountry)) {
+            [void] $phoneCountry.Items.Add(('{0} (+{1})' -f $country.Name, $country.Code))
+        }
+
+        $phoneCountry.SelectedIndex = 0
+        $phoneCountry.Add_SelectionChanged({ Update-TkPhoneFromUi })
+    }
+
+    # --- Text diff --------------------------------------------------------
+    Register-TkClick -Name 'BtnCompareText' -Action { Invoke-TkTextDiffFromUi }
+
+    Register-TkClick -Name 'BtnSwapDiff' -Action {
+        $before = Get-TkControl -Name 'DiffBefore'
+        $after  = Get-TkControl -Name 'DiffAfter'
+        $held         = $before.Text
+        $before.Text  = $after.Text
+        $after.Text   = $held
+    }
+
+    Update-TkSafeLinkFromUi
+    Update-TkUrlFromUi
+    Update-TkNatoFromUi
+    Update-TkPhoneFromUi
+}
+
+# ---------------------------------------------------------------------------
+# UUIDs
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Generates UUIDs from the choices on the page.
+#>
+function Invoke-TkUuidFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'UuidOutput'
+    $count  = 0
+
+    if (-not [int]::TryParse([string] (Get-TkControl -Name 'UuidCount').Text, [ref] $count) -or $count -lt 1 -or $count -gt 1000) {
+        $output.Text = 'Type how many, from 1 to 1000.'
+        return
+    }
+
+    $version = if ((Get-TkControl -Name 'UuidVersion').SelectedIndex -eq 1) { 7 } else { 4 }
+    $choice  = @(Get-TkUuidFormatChoice) | Where-Object { $_.Label -eq [string] (Get-TkControl -Name 'UuidFormat').SelectedItem } | Select-Object -First 1
+    $format  = if ($choice) { $choice.Format } else { 'Standard' }
+
+    $output.Text = (@(New-TkUuid -Version $version -Count $count) | ForEach-Object { Format-TkUuid -Uuid $_ -Format $format }) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Decodes the UUID typed on the page.
+#>
+function Invoke-TkUuidDecodeFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'UuidOutput'
+    $info   = ConvertFrom-TkUuid -Text ([string] (Get-TkControl -Name 'UuidDecodeInput').Text)
+
+    if (-not $info.Valid) {
+        $output.Text = $info.Note
+        return
+    }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    $lines.Add(('UUID      {0}' -f $info.Uuid))
+    $lines.Add(('Kind      {0}' -f $info.VersionName))
+
+    if ($info.Variant) {
+        $lines.Add(('Variant   {0}' -f $info.Variant))
+    }
+
+    if ($info.Time) {
+        $lines.Add(('Created   {0} UTC, {1}' -f $info.Time.ToString('yyyy-MM-dd HH:mm:ss.fff', [Globalization.CultureInfo]::InvariantCulture), (Format-TkRelativeTime -Utc $info.Time)))
+    }
+
+    if ($info.Node) {
+        $lines.Add(('Node      {0}, {1}' -f $info.Node, (Get-TkMacVendor -MacAddress $info.Node)))
+    }
+
+    $lines.Add('')
+    $lines.Add($info.Note)
+
+    $output.Text = $lines -join [Environment]::NewLine
+}
+
+# ---------------------------------------------------------------------------
+# Safe Links and URLs
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Decodes the Safe Links pasted on the page, as they are pasted.
+#>
+function Update-TkSafeLinkFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'SafeLinkOutput'
+    $box    = Get-TkControl -Name 'SafeLinkInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    if (-not $text.Trim()) {
+        $output.Text = 'Paste a link that starts with https://...safelinks.protection.outlook.com/, or a whole e-mail.'
+        return
+    }
+
+    $rows = @(ConvertFrom-TkSafeLink -Text $text)
+
+    if ($rows.Count -eq 0) {
+        $output.Text = 'No Safe Links URL was found in what was pasted. A link that is not wrapped can be read with the URL parser.'
+        return
+    }
+
+    $lines  = New-Object System.Collections.Generic.List[string]
+    $number = 0
+
+    foreach ($row in $rows) {
+
+        $number++
+
+        $lines.Add(('Link {0}' -f $number))
+        $lines.Add(('  Goes to    {0}' -f $row.Destination))
+        $lines.Add(('  Site       {0}' -f $row.Host))
+
+        if ($row.Recipient) {
+            $lines.Add(('  Sent to    {0}' -f $row.Recipient))
+        }
+
+        if ($row.Layers -gt 1) {
+            $lines.Add(('  Wrapped    {0} times, as happens when a message is forwarded' -f $row.Layers))
+        }
+
+        foreach ($warning in @($row.Warnings)) {
+            $lines.Add(('  Warning    {0}' -f $warning))
+        }
+
+        $lines.Add('')
+    }
+
+    $lines.Add('A Safe Links wrapper means the link is checked when it is clicked, not that the site is genuine: judge the site by its name above.')
+
+    $output.Text = $lines -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Takes apart the link typed on the page, as it is typed.
+#>
+function Update-TkUrlFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'UrlOutput'
+    $box    = Get-TkControl -Name 'UrlInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $part = Get-TkUrlPart -Url ([string] $box.Text)
+
+    if (-not $part.Valid) {
+        $output.Text = $part.Note
+        return
+    }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    $lines.Add(('Scheme      {0}' -f $part.Scheme))
+
+    if ($part.User) {
+        $lines.Add(('User        {0}{1}' -f $part.User, $(if ($part.HasPassword) { ', with a password (not shown)' } else { '' })))
+    }
+
+    $lines.Add(('Host        {0}' -f $part.UnicodeHost))
+
+    if ($part.AsciiHost -ne $part.UnicodeHost) {
+        $lines.Add(('For DNS     {0}' -f $part.AsciiHost))
+    }
+
+    $lines.Add(('Host type   {0}' -f $part.HostType))
+
+    if ($part.Port -ge 0) {
+        $lines.Add(('Port        {0}{1}' -f $part.Port, $(if ($part.IsDefaultPort) { ', the default for ' + $part.Scheme } else { '' })))
+    }
+
+    $lines.Add(('Path        {0}' -f $part.Path))
+    $lines.Add(('Origin      {0}' -f $part.Origin))
+
+    if (@($part.Query).Count -gt 0) {
+
+        $lines.Add('')
+        $lines.Add(('Query, {0} parameter(s)' -f @($part.Query).Count))
+
+        foreach ($parameter in $part.Query) {
+            $lines.Add(('  {0} = {1}' -f $parameter.Name, $(if ($null -eq $parameter.Value) { '(no value)' } else { $parameter.Value })))
+        }
+    }
+
+    if ($part.Fragment) {
+        $lines.Add('')
+        $lines.Add(('Fragment    {0}' -f $part.Fragment))
+    }
+
+    if (@($part.Warnings).Count -gt 0) {
+
+        $lines.Add('')
+
+        foreach ($warning in $part.Warnings) {
+            $lines.Add(('Warning     {0}' -f $warning))
+        }
+    }
+
+    if ($part.Note) {
+        $lines.Add('')
+        $lines.Add($part.Note)
+    }
+
+    $output.Text = $lines -join [Environment]::NewLine
+}
+
+# ---------------------------------------------------------------------------
+# NATO alphabet and phone numbers
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Spells out the text typed on the page, as it is typed.
+#>
+function Update-TkNatoFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'NatoOutput'
+    $box    = Get-TkControl -Name 'NatoInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $rows = @(ConvertTo-TkNatoAlphabet -Text ([string] $box.Text) -MarkCase:([bool] (Get-TkControl -Name 'NatoMarkCase').IsChecked))
+
+    if ($rows.Count -eq 0) {
+        $output.Text = 'Type the text to spell out.'
+        return
+    }
+
+    $lines = foreach ($row in $rows) {
+        '{0,-8} {1}' -f $(if ($row.Character -eq ' ') { '(space)' } else { $row.Character }), $row.Spoken
+    }
+
+    $output.Text = (@($lines) + @('', (($rows | ForEach-Object { $_.Spoken }) -join ' - '))) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Writes the phone number typed on the page in its standard forms.
+#>
+function Update-TkPhoneFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'PhoneOutput'
+    $box    = Get-TkControl -Name 'PhoneInput'
+    $list   = Get-TkControl -Name 'PhoneCountry'
+
+    if (-not $output -or -not $box -or -not $list) {
+        return
+    }
+
+    $countries = @(Get-TkPhoneCountry)
+    $default   = if ($list.SelectedIndex -ge 0) { $countries[$list.SelectedIndex].Iso } else { 'FR' }
+    $number    = ConvertFrom-TkPhoneNumber -Text ([string] $box.Text) -DefaultCountry $default
+
+    if (-not $number.Valid) {
+        $output.Text = $number.Note
+        return
+    }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    $lines.Add(('Country         {0}' -f $(if ($number.Country) { '{0}, +{1}' -f $number.Country, $number.CountryCode } else { '+' + $number.CountryCode })))
+
+    if ($number.Type) {
+        $lines.Add(('Type            {0}' -f $number.Type))
+    }
+
+    $lines.Add('')
+    $lines.Add(('E.164           {0}' -f $number.E164))
+    $lines.Add(('International   {0}' -f $number.International))
+
+    if ($number.National) {
+        $lines.Add(('National        {0}' -f $number.National))
+    }
+
+    $lines.Add(('Link            {0}{1}' -f $number.Rfc3966, $(if ($number.Extension) { ';ext=' + $number.Extension } else { '' })))
+
+    if ($number.Extension) {
+        $lines.Add(('Extension       {0}' -f $number.Extension))
+    }
+
+    if ($number.Note) {
+        $lines.Add('')
+        $lines.Add($number.Note)
+    }
+
+    $output.Text = $lines -join [Environment]::NewLine
+}
+
+# ---------------------------------------------------------------------------
+# Text diff
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Compares the two texts on the page and colours the changes.
+#>
+function Invoke-TkTextDiffFromUi {
+    [CmdletBinding()]
+    param()
+
+    $document = New-TkFlowDocument
+
+    try {
+        $result = Compare-TkText -Before ([string] (Get-TkControl -Name 'DiffBefore').Text) -After ([string] (Get-TkControl -Name 'DiffAfter').Text) `
+                                 -IgnoreCase:([bool] (Get-TkControl -Name 'DiffIgnoreCase').IsChecked) `
+                                 -IgnoreWhitespace:([bool] (Get-TkControl -Name 'DiffIgnoreWhitespace').IsChecked)
+    }
+    catch {
+        Add-TkParagraph -Document $document -Text ('Could not compare: {0}' -f $_.Exception.Message)
+        Set-TkDocument -ControlName 'DiffOutput' -Document $document
+        return
+    }
+
+    if ($result.Identical) {
+        Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'The two texts are the same' `
+            -Detail ('{0} line(s)' -f $result.Same)
+        Set-TkDocument -ControlName 'DiffOutput' -Document $document
+        return
+    }
+
+    Add-TkParagraph -Document $document -Muted -Text (
+        '{0} line(s) removed, {1} added, {2} unchanged. Removed lines are marked -, added lines +, with their line numbers before and after.' -f $result.Removed, $result.Added, $result.Same
+    )
+
+    $mono      = New-Object System.Windows.Media.FontFamily('Cascadia Mono, Consolas, Courier New')
+    $paragraph = $null
+    $lastKind  = ''
+
+    foreach ($row in (Get-TkDiffView -Rows $result.Rows -Context 3)) {
+
+        if ($row.Kind -ne $lastKind) {
+
+            $paragraph            = New-Object System.Windows.Documents.Paragraph
+            $paragraph.FontFamily = $mono
+            $paragraph.FontSize   = 12.5
+            $paragraph.Margin     = New-Object System.Windows.Thickness(0)
+            $paragraph.Padding    = New-Object System.Windows.Thickness(6, 1, 6, 1)
+
+            switch ($row.Kind) {
+                'Removed' { $paragraph.Background = Get-TkSeverityTintBrush -Severity 'Fail' -Alpha 60 }
+                'Added'   { $paragraph.Background = Get-TkSeverityTintBrush -Severity 'Pass' -Alpha 60 }
+                'Gap'     { $paragraph.SetResourceReference([System.Windows.Documents.TextElement]::ForegroundProperty, 'TextMuted') }
+            }
+
+            $document.Blocks.Add($paragraph)
+            $lastKind = $row.Kind
+        }
+        else {
+            $paragraph.Inlines.Add((New-Object System.Windows.Documents.LineBreak))
+        }
+
+        $marker = switch ($row.Kind) { 'Added' { '+' } 'Removed' { '-' } default { ' ' } }
+
+        $text = if ($row.Kind -eq 'Gap') {
+                    '{0,11}   ... {1}' -f '', $row.Text
+                }
+                else {
+                    '{0,5} {1,5} {2} {3}' -f $(if ($null -ne $row.Before) { [string] $row.Before } else { '' }), $(if ($null -ne $row.After) { [string] $row.After } else { '' }), $marker, $row.Text
+                }
+
+        $paragraph.Inlines.Add((New-Object System.Windows.Documents.Run($text)))
+    }
+
+    Set-TkDocument -ControlName 'DiffOutput' -Document $document
 }
 
 <#
@@ -156,10 +616,16 @@ function Get-TkToolEntry {
         (& $tool 'Security'         'Passwords'      'ToolPasswords')
         (& $tool 'Security'         'SSH keys'       'ToolSshKeys')
         (& $tool 'Security'         'File integrity' 'ToolFileIntegrity')
+        (& $tool 'Security'         'Safe Links'     'ToolSafeLinks')
         (& $tool 'Generators'       'Ports'          'ToolPorts')
+        (& $tool 'Generators'       'UUIDs'          'ToolUuids')
         (& $tool 'Text and data'    'Encoding'       'ToolEncoding')
         (& $tool 'Text and data'    'Regex'          'ToolRegex')
         (& $tool 'Text and data'    'Timestamps'     'ToolTimestamps')
+        (& $tool 'Text and data'    'Text diff'      'ToolTextDiff')
+        (& $tool 'Text and data'    'URL parser'     'ToolUrlParser')
+        (& $tool 'Text and data'    'NATO alphabet'  'ToolNato')
+        (& $tool 'Text and data'    'Phone numbers'  'ToolPhone')
         (& $tool 'Linux and DevOps' 'chmod'          'ToolChmod')
     )
 }

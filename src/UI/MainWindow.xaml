@@ -2809,6 +2809,10 @@
                                          ToolTip="Hash a file, compare it with the hash its vendor publishes, and look it up on VirusTotal.">
                                 <TextBlock Text="File integrity" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Decode Microsoft Defender Safe Links in a link or a whole e-mail, to see where they lead without opening them.">
+                                <TextBlock Text="Safe Links" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
 
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                 <TextBlock Text="GENERATORS" Style="{StaticResource ChoiceGroupTitle}" />
@@ -2816,6 +2820,10 @@
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Random ports that are free on this machine and outside the ranges Windows reserves.">
                                 <TextBlock Text="Ports" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Random version 4 and time ordered version 7 UUIDs, and what a UUID or GUID says about itself.">
+                                <TextBlock Text="UUIDs" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
 
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
@@ -2832,6 +2840,22 @@
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Unix, FILETIME and Active Directory timestamps, and dates, in every form.">
                                 <TextBlock Text="Timestamps" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Compare two texts line by line, such as two versions of a configuration file.">
+                                <TextBlock Text="Text diff" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Take a link apart: host, port, path, every query parameter decoded, and the tricks phishing links use.">
+                                <TextBlock Text="URL parser" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Spell out a serial number, a licence key or a password to dictate with the NATO phonetic alphabet.">
+                                <TextBlock Text="NATO alphabet" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Read a phone number written in any form and write it as E.164, international, national and a tel: link.">
+                                <TextBlock Text="Phone numbers" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
 
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
@@ -2967,7 +2991,7 @@
                                         <TextBlock Text="Random ports" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
                                         <WrapPanel>
                                             <TextBlock Text="Range" VerticalAlignment="Center" Margin="0,0,8,8" />
-                                            <ComboBox x:Name="PortRange" Width="250" Margin="0,0,16,8" />
+                                            <ComboBox x:Name="PortRange" Width="250" MinHeight="40" Margin="0,0,16,8" />
                                             <TextBlock Text="From" VerticalAlignment="Center" Margin="0,0,8,8" />
                                             <TextBox x:Name="PortFrom" Width="80" Text="20000" Margin="0,0,12,8" />
                                             <TextBlock Text="To" VerticalAlignment="Center" Margin="0,0,8,8" />
@@ -3146,7 +3170,7 @@
                                     <StackPanel>
                                         <TextBlock Text="Encode and decode text" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
                                         <WrapPanel Margin="0,0,0,8">
-                                            <ComboBox x:Name="EncodingOperation" Width="200" Margin="0,0,10,0" />
+                                            <ComboBox x:Name="EncodingOperation" Width="200" MinHeight="40" Margin="0,0,10,0" />
                                             <Button x:Name="BtnConvertText" Content="Convert" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" />
                                             <Button x:Name="BtnSwapText" Content="Use the result as input" />
                                         </WrapPanel>
@@ -3162,6 +3186,190 @@
                                     <TextBox x:Name="EncodingOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolSafeLinks" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Safe Links decoder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="SafeLinkInput" Height="90" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste a Safe Links URL, or a whole e-mail: every link in it is decoded" />
+                                        <WrapPanel>
+                                            <Button x:Name="BtnCopySafeLink" Content="Copy the destinations" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Microsoft Defender for Office 365 rewrites the links of e-mails and Teams messages so they are checked when clicked. Decoding shows where a link leads without opening it: nothing is opened or sent." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="SafeLinkOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolUuids" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="UUIDs" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Version" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="UuidVersion" Width="180" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Format" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="UuidFormat" Width="190" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="How many" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="UuidCount" Width="60" Text="5" Margin="0,0,16,8" />
+                                            <Button x:Name="BtnGenerateUuid" Content="Generate" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnCopyUuid" Content="Copy" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBlock Text="Decode" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="UuidDecodeInput" Width="340" Margin="0,0,8,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="A UUID or GUID, with or without braces" />
+                                            <Button x:Name="BtnDecodeUuid" Content="Decode" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Version 4 is random. Version 7 starts with the time to the millisecond, so keys generated with it stay in order in a database index. Both are drawn from the cryptographic random generator." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="UuidOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolTextDiff" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Text diff" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="12" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" x:Name="DiffBefore" Height="150"
+                                                     AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap" VerticalContentAlignment="Top"
+                                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Before" />
+                                            <TextBox Grid.Column="2" x:Name="DiffAfter" Height="150"
+                                                     AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap" VerticalContentAlignment="Top"
+                                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="After" />
+                                        </Grid>
+                                        <WrapPanel Margin="0,8,0,0">
+                                            <CheckBox x:Name="DiffIgnoreCase" Content="Ignore case" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="DiffIgnoreWhitespace" Content="Ignore spaces" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <Button x:Name="BtnCompareText" Content="Compare" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnSwapDiff" Content="Swap" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Line by line, the way diff and git compare, with three unchanged lines kept around each change: paste two versions of a configuration, a script or a list." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="DiffOutput" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 IsDocumentEnabled="True" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolUrlParser" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="URL parser" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="UrlInput" Margin="0,0,0,8"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Paste a link" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Taken apart as you type: scheme, host as DNS resolves it, port, path, every query parameter decoded, and the tricks phishing links use. The link is not opened." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="UrlOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolNato" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="NATO phonetic alphabet" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="NatoInput" Margin="0,0,0,8"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New" Tag="A serial number, a licence key or a password to spell out" />
+                                        <CheckBox x:Name="NatoMarkCase" Content="Say Capital before an upper case letter" IsChecked="True" Margin="0,0,0,8" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Spelled as you type, with the alphabet ICAO and NATO use on the radio, so a B is never heard as a D over the phone." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="NatoOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolPhone" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Phone numbers" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel>
+                                            <TextBox x:Name="PhoneInput" Width="300" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="06 12 34 56 78, +33 6..., 0044 20..." />
+                                            <TextBlock Text="Country without a code" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="PhoneCountry" Width="240" MinHeight="40" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Read as you type, and written as E.164 for directories and phone systems, in the international and national forms people dial, and as a tel: link. Numbers are grouped the way their country writes them for the countries in the list." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="PhoneOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
                                 </Border>
                             </Grid>
 
