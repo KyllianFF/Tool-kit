@@ -18,6 +18,7 @@ $script:TkSearchIndex = $null
 # What each chooser list holds, for the kind shown beside a result.
 $script:TkSearchListKind = @{
     DiagnosticChoices = 'Report'
+    ToolChoices       = 'Tool'
     HardwareChoices   = 'Hardware test'
     HuntChoices       = 'Investigation'
 }
@@ -121,6 +122,11 @@ function Get-TkMarkupSearchEntry {
             $tabControl = if ($owner) { $owner.ParentNode.GetAttribute('Name', $xamlSpace) } else { '' }
 
             foreach ($item in $list.SelectNodes('p:ListBoxItem', $names)) {
+
+                # A category heading is not somewhere to go.
+                if ($item.GetAttribute('Style') -like '*ChoiceGroup*') {
+                    continue
+                }
 
                 $text = $item.SelectSingleNode('.//p:TextBlock/@Text', $names)
 

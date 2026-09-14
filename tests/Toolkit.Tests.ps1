@@ -2904,9 +2904,20 @@ Describe 'Search' {
         $report.Choice | Should -Be 'Sign-in and management'
     }
 
+    It 'indexes tools with the list they are in, and not the category headings' {
+
+        $tool = $script:Index | Where-Object { $_.Kind -eq 'Tool' -and $_.Title -eq 'Regex' }
+
+        $tool.Page   | Should -Be 'SecurityTools'
+        $tool.List   | Should -Be 'ToolChoices'
+        $tool.Choice | Should -Be 'Regex'
+
+        @($script:Index | Where-Object { $_.Page -eq 'SecurityTools' -and $_.Title -ceq 'SECURITY' }).Count | Should -Be 0
+    }
+
     It 'indexes every catalog it promises' {
 
-        foreach ($kind in @('Fix', 'Tweak', 'Application', 'Topic', 'Command', 'Hardware test', 'Investigation', 'Action')) {
+        foreach ($kind in @('Fix', 'Tweak', 'Application', 'Topic', 'Command', 'Hardware test', 'Investigation', 'Action', 'Tool')) {
             @($script:Index | Where-Object { $_.Kind -eq $kind }).Count | Should -BeGreaterThan 0 -Because $kind
         }
 
@@ -4185,6 +4196,126 @@ Describe 'Software lifecycle' {
             $row.Severity | Should -Be 'Info'
             $row.Note     | Should -BeLike '*not in the catalog*'
         }
+    }
+}
+
+Describe 'Tools page' {
+
+    BeforeAll {
+        $script:ToolMarkup = Get-TkMainWindowXaml
+    }
+
+    It 'lists every tool of the table under its category heading, in the same order' {
+
+        $start = $script:ToolMarkup.IndexOf('x:Name="ToolChoices"')
+        $end   = $script:ToolMarkup.IndexOf('</ListBox>', $start)
+        $slice = $script:ToolMarkup.Substring($start, $end - $start)
+
+        $actual = @([regex]::Matches($slice, 'Style="\{StaticResource (?<style>ChoiceGroup|ReportChoice)\}"[\s\S]*?\sText="(?<title>[^"]+)"') |
+                    ForEach-Object { '{0}:{1}' -f $(if ($_.Groups['style'].Value -eq 'ChoiceGroup') { 'group' } else { 'tool' }), $_.Groups['title'].Value })
+
+        $expected = @()
+        $category = ''
+
+        foreach ($entry in (Get-TkToolEntry)) {
+
+            if ($entry.Category -ne $category) {
+                $category  = $entry.Category
+                $expected += 'group:{0}' -f $category.ToUpperInvariant()
+            }
+
+            $expected += 'tool:{0}' -f $entry.Title
+        }
+
+        ($actual -join '|') | Should -Be ($expected -join '|')
+    }
+
+    It 'gives every tool a panel of its own' {
+
+        $panels = @(Get-TkToolEntry | ForEach-Object { $_.Panel })
+
+        @($panels | Sort-Object -Unique).Count | Should -Be $panels.Count
+
+        foreach ($panel in $panels) {
+            $script:ToolMarkup | Should -Match ('x:Name="{0}"' -f $panel)
+        }
+
+        $script:ToolMarkup | Should -Not -Match 'SecurityToolsTabs'
+    }
+}
+
+Describe 'Password strength' {
+
+    It 'rates <Text> as very weak, whatever its disguise' -TestCases @(
+        @{ Text = 'password' }
+        @{ Text = 'P@ssw0rd' }
+        @{ Text = 'azerty123' }
+        @{ Text = 'Motdepasse' }
+        @{ Text = 'drowssap' }
+    ) {
+        param($Text)
+
+        $strength = Measure-TkPasswordStrength -Text $Text
+
+        $strength.Score | Should -Be 0
+        @($strength.Weaknesses | Where-Object { $_.Kind -eq 'Common password' }).Count | Should -BeGreaterThan 0
+    }
+
+    It 'finds <Kind> in <Text>' -TestCases @(
+        @{ Text = 'qsdfgh2024'; Kind = 'Keyboard' }
+        @{ Text = 'qsdfgh2024'; Kind = 'Year' }
+        @{ Text = 'Zmnopqr7';   Kind = 'Sequence' }
+        @{ Text = 'Kzzzzzzz9';  Kind = 'Repeat' }
+        @{ Text = 'Kev14071989'; Kind = 'Date' }
+    ) {
+        param($Text, $Kind)
+
+        $strength = Measure-TkPasswordStrength -Text $Text -Now ([datetime]::new(2026, 9, 14))
+
+        @($strength.Weaknesses | ForEach-Object { $_.Kind }) | Should -Contain $Kind
+        $strength.GuessesLog10 | Should -BeLessThan $strength.BruteForceLog10
+    }
+
+    It 'rates a long random password as very strong, beyond any brute force' {
+
+        $strength = Measure-TkPasswordStrength -Text 'q7#Rv9!mK2$wZp4&Lx8Tn5^Jb'
+
+        $strength.Score                | Should -Be 4
+        @($strength.Weaknesses).Count  | Should -Be 0
+        @($strength.CrackTimes).Count  | Should -Be 4
+        $strength.CrackTimes[3].BruteForce | Should -Be 'longer than the age of the universe'
+    }
+
+    It 'estimates a generated secret from the entropy of its generator' {
+
+        $strength = Measure-TkPasswordStrength -Text 'abcd-soleil-2024' -KnownEntropyBits 64
+
+        $strength.GuessesLog10          | Should -Be 19.27
+        $strength.EstimateLabel         | Should -Be 'Knowing how it was generated'
+        @($strength.Weaknesses).Count   | Should -Be 0
+    }
+
+    It 'orders the attacks from the slowest to the fastest' {
+
+        $strength = Measure-TkPasswordStrength -Text 'Summer2026'
+
+        $strength.CrackTimes[0].Scenario | Should -BeLike 'Online, throttled*'
+        $strength.CrackTimes[3].Scenario | Should -BeLike 'Offline, fast hash*'
+        $strength.Advice.Count           | Should -BeGreaterThan 0
+    }
+
+    It 'writes <Log10> as <Expected>' -TestCases @(
+        @{ Log10 = -1;                                  Expected = 'less than a second' }
+        @{ Log10 = 1.5;                                 Expected = '32 seconds' }
+        @{ Log10 = [math]::Log10(7200);                 Expected = '2 hours' }
+        @{ Log10 = [math]::Log10(86400);                Expected = '1 day' }
+        @{ Log10 = [math]::Log10(3 * 31557600);         Expected = '3 years' }
+        @{ Log10 = [math]::Log10(5e6 * 31557600);       Expected = '5 million years' }
+        @{ Log10 = 20;                                  Expected = 'longer than the age of the universe' }
+    ) {
+        param($Log10, $Expected)
+
+        Format-TkCrackDuration -Log10Seconds $Log10 | Should -Be $Expected
     }
 }
 

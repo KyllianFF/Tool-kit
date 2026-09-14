@@ -288,6 +288,30 @@
             <Setter Property="Margin"       Value="0,2,0,0" />
         </Style>
 
+        <!--
+            A category heading inside a chooser list. Disabled and not
+            focusable, so a click, the arrow keys and the search index all
+            pass over it to the entries.
+        -->
+        <Style x:Key="ChoiceGroup" TargetType="ListBoxItem">
+            <Setter Property="IsEnabled" Value="False" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Margin"    Value="0,12,0,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <ContentPresenter Margin="12,0,0,0" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ChoiceGroupTitle" TargetType="TextBlock">
+            <Setter Property="FontSize"   Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+        </Style>
+
         <Style x:Key="FieldLabel" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
             <Setter Property="FontSize"   Value="11" />
@@ -2754,10 +2778,74 @@
                                    Text="Generate SSH keys, passwords and ports, check a download against its published hash, and work out permissions, patterns, timestamps and encodings. Nothing here changes the machine." />
                     </StackPanel>
 
-                    <TabControl Grid.Row="1" x:Name="SecurityToolsTabs" Background="Transparent" BorderThickness="0">
+                    <!--
+                        A list by category rather than tabs: a row of twenty tabs
+                        wraps into a wall nobody reads. The list and the table in
+                        ToolsPage.ps1 (Get-TkToolEntry) name the same tools in the
+                        same order, which a test checks. Each tool is a panel of
+                        its own, shown when it is chosen.
+                    -->
+                    <Grid Grid.Row="1" Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="210" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
 
-                        <TabItem Header="SSH keys">
-                            <Grid Margin="0,16,0,0">
+                        <ListBox Grid.Column="0" x:Name="ToolChoices" Background="Transparent" BorderThickness="0" Margin="0,0,16,0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="SECURITY" Style="{StaticResource ChoiceGroupTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Generate passwords and passphrases, see how long one takes to crack, and check it against known breaches.">
+                                <TextBlock Text="Passwords" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Generate an ed25519, ECDSA or RSA key pair, list the keys and copy a public key.">
+                                <TextBlock Text="SSH keys" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Hash a file, compare it with the hash its vendor publishes, and look it up on VirusTotal.">
+                                <TextBlock Text="File integrity" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="GENERATORS" Style="{StaticResource ChoiceGroupTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Random ports that are free on this machine and outside the ranges Windows reserves.">
+                                <TextBlock Text="Ports" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="TEXT AND DATA" Style="{StaticResource ChoiceGroupTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Base64, URL, HTML and hexadecimal both ways, and JSON Web Token decoding.">
+                                <TextBlock Text="Encoding" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Test a .NET regular expression: its matches, groups and replacement, as you type.">
+                                <TextBlock Text="Regex" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Unix, FILETIME and Active Directory timestamps, and dates, in every form.">
+                                <TextBlock Text="Timestamps" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="LINUX AND DEVOPS" Style="{StaticResource ChoiceGroupTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Unix permissions as check boxes, octal and symbolic forms, and both chmod commands.">
+                                <TextBlock Text="chmod" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                        </ListBox>
+
+                        <Grid Grid.Column="1">
+
+                            <Grid x:Name="ToolSshKeys" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -2766,23 +2854,23 @@
                                 <Border Grid.Row="0" Style="{StaticResource Card}">
                                     <StackPanel>
                                         <TextBlock Text="Generate a key pair" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="SshKeyName" Tag="Key file name" Width="160" Text="id_ed25519" />
-                                            <TextBlock Text="Type" VerticalAlignment="Center" Margin="16,0,8,0" />
-                                            <ComboBox x:Name="SshKeyType" Width="110" />
-                                            <TextBlock Text="Comment" VerticalAlignment="Center" Margin="16,0,8,0" />
-                                            <TextBox x:Name="SshKeyComment" Tag="Comment identifying the key" Width="200" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Passphrase" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <PasswordBox x:Name="SshPassphrase" Width="220" />
-                                            <CheckBox x:Name="SshNoPassphrase" Content="No passphrase (not recommended)" Margin="16,0,0,0" />
-                                            <Button x:Name="BtnGenerateSshKey" Content="Generate" Style="{StaticResource PrimaryButton}" Margin="16,0,0,0" />
-                                            <Button x:Name="BtnListSshKeys"    Content="List keys" />
-                                            <Button x:Name="BtnCopyPublicKey"  Content="Copy public key" />
-                                        </StackPanel>
-                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SshKeyName" Tag="Key file name" Width="160" Text="id_ed25519" Margin="0,0,16,8" />
+                                            <TextBlock Text="Type" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="SshKeyType" Width="110" Margin="0,0,16,8" />
+                                            <TextBlock Text="Comment" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SshKeyComment" Tag="Comment identifying the key" Width="200" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBlock Text="Passphrase" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <PasswordBox x:Name="SshPassphrase" Width="220" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="SshNoPassphrase" Content="No passphrase (not recommended)" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <Button x:Name="BtnGenerateSshKey" Content="Generate" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnListSshKeys"    Content="List keys" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnCopyPublicKey"  Content="Copy public key" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
                                                    Text="ed25519 is the default. An existing key is never overwritten, and the private key permissions are restricted to the owner after generation." />
                                     </StackPanel>
                                 </Border>
@@ -2793,10 +2881,8 @@
                                              AcceptsReturn="True" />
                                 </Border>
                             </Grid>
-                        </TabItem>
 
-                        <TabItem Header="File integrity">
-                            <Grid Margin="0,16,0,0">
+                            <Grid x:Name="ToolFileIntegrity" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -2804,19 +2890,20 @@
 
                                 <Border Grid.Row="0" Style="{StaticResource Card}">
                                     <StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="File" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="HashFilePath" Tag="Path to the file to hash" Width="440" />
-                                            <Button x:Name="BtnBrowseHashFile" Content="Browse" Margin="10,0,0,0" />
-                                            <Button x:Name="BtnComputeHash"    Content="Compute hashes" Style="{StaticResource PrimaryButton}" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Expected hash" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="ExpectedHash" Tag="Paste the hash published by the vendor" Width="520" />
-                                            <Button x:Name="BtnVerifyHash" Content="Verify" Margin="10,0,0,0" />
-                                            <Button x:Name="BtnVirusTotal" Content="Check on VirusTotal" />
-                                        </StackPanel>
-                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                        <TextBlock Text="Check a file" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="File" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="HashFilePath" Tag="Path to the file to hash" Width="380" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnBrowseHashFile" Content="Browse" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnComputeHash"    Content="Compute hashes" Style="{StaticResource PrimaryButton}" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBlock Text="Expected hash" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="ExpectedHash" Tag="Paste the hash published by the vendor" Width="380" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnVerifyHash" Content="Verify" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnVirusTotal" Content="Check on VirusTotal" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
                                                    Text="The VirusTotal check sends the SHA256 only. The file itself is never uploaded, so internal documents and installers stay private." />
                                     </StackPanel>
                                 </Border>
@@ -2827,10 +2914,8 @@
                                              AcceptsReturn="True" />
                                 </Border>
                             </Grid>
-                        </TabItem>
 
-                        <TabItem Header="Credentials">
-                            <Grid Margin="0,16,0,0">
+                            <Grid x:Name="ToolPasswords" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -2838,37 +2923,40 @@
 
                                 <Border Grid.Row="0" Style="{StaticResource Card}">
                                     <StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <TextBlock Text="Length" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox x:Name="PasswordLength" Tag="Length" Width="60" Text="20" />
-                                            <CheckBox x:Name="PwdUpper"   Content="A-Z" IsChecked="True" Margin="14,0,0,0" />
-                                            <CheckBox x:Name="PwdLower"   Content="a-z" IsChecked="True" Margin="10,0,0,0" />
-                                            <CheckBox x:Name="PwdDigits"  Content="0-9" IsChecked="True" Margin="10,0,0,0" />
-                                            <CheckBox x:Name="PwdSymbols" Content="Symbols" IsChecked="True" Margin="10,0,0,0" />
-                                            <Button x:Name="BtnGeneratePassword"   Content="Generate password" Style="{StaticResource PrimaryButton}" Margin="16,0,0,0" />
-                                            <Button x:Name="BtnGeneratePassphrase" Content="Generate passphrase" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Check a password" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <PasswordBox x:Name="BreachPassword" Width="260" />
-                                            <Button x:Name="BtnCheckBreach" Content="Check against breaches" Margin="10,0,0,0" />
-                                            <Button x:Name="BtnCopyPassword" Content="Copy last generated" />
-                                        </StackPanel>
-                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
-                                                   Text="The breach check uses k-anonymity: only the first five characters of the SHA1 hash are sent, so the password never leaves this machine." />
+                                        <TextBlock Text="Generate" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Length" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="PasswordLength" Tag="Length" Width="60" Text="20" Margin="0,0,14,8" />
+                                            <CheckBox x:Name="PwdUpper"   Content="A-Z" IsChecked="True" VerticalAlignment="Center" Margin="0,0,10,8" />
+                                            <CheckBox x:Name="PwdLower"   Content="a-z" IsChecked="True" VerticalAlignment="Center" Margin="0,0,10,8" />
+                                            <CheckBox x:Name="PwdDigits"  Content="0-9" IsChecked="True" VerticalAlignment="Center" Margin="0,0,10,8" />
+                                            <CheckBox x:Name="PwdSymbols" Content="Symbols" IsChecked="True" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <Button x:Name="BtnGeneratePassword"   Content="Generate password" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnGeneratePassphrase" Content="Generate passphrase" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnCopyPassword" Content="Copy last generated" Margin="0,0,0,8" />
+                                        </WrapPanel>
+
+                                        <TextBlock Text="Check a password" Style="{StaticResource SubHeading}" Margin="0,8,0,8" />
+                                        <WrapPanel>
+                                            <PasswordBox x:Name="BreachPassword" Width="260" Margin="0,0,10,8" />
+                                            <Button x:Name="BtnAnalysePassword" Content="Analyse strength" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnCheckBreach" Content="Check against breaches" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock x:Name="PasswordStrengthMeter" TextWrapping="Wrap" Margin="0,0,0,6"
+                                                   Text="Type a password to see how strong it is." />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Strength is worked out on this machine and the password is never shown. The breach check uses k-anonymity: only the first five characters of the SHA1 hash are sent, so the password does not leave the machine either." />
                                     </StackPanel>
                                 </Border>
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="CredentialOutput" Style="{StaticResource Mono}"
-                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             AcceptsReturn="True" />
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>
-                        </TabItem>
 
-                        <TabItem Header="Ports">
-                            <Grid Margin="0,16,0,0">
+                            <Grid x:Name="ToolPorts" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -2904,10 +2992,8 @@
                                              AcceptsReturn="True" />
                                 </Border>
                             </Grid>
-                        </TabItem>
 
-                        <TabItem Header="chmod">
-                            <Grid Margin="0,16,0,0">
+                            <Grid x:Name="ToolChmod" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -2972,10 +3058,8 @@
                                              AcceptsReturn="True" />
                                 </Border>
                             </Grid>
-                        </TabItem>
 
-                        <TabItem Header="Regex">
-                            <Grid Margin="0,16,0,0">
+                            <Grid x:Name="ToolRegex" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -3024,10 +3108,8 @@
                                              AcceptsReturn="True" />
                                 </Border>
                             </Grid>
-                        </TabItem>
 
-                        <TabItem Header="Timestamps">
-                            <Grid Margin="0,16,0,0">
+                            <Grid x:Name="ToolTimestamps" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -3053,10 +3135,8 @@
                                              AcceptsReturn="True" />
                                 </Border>
                             </Grid>
-                        </TabItem>
 
-                        <TabItem Header="Encoding">
-                            <Grid Margin="0,16,0,0">
+                            <Grid x:Name="ToolEncoding" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -3084,9 +3164,9 @@
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>
-                        </TabItem>
 
-                    </TabControl>
+                        </Grid>
+                    </Grid>
                 </Grid>
 
                 <!-- ======================= KNOWLEDGE ======================== -->

@@ -272,6 +272,450 @@ function Get-TkEntropyRating {
 
 <#
 .SYNOPSIS
+    Lists the passwords and words cracking tools try first, most used first.
+
+.DESCRIPTION
+    Short on purpose: it is the head of the real lists, where most human
+    passwords fall, with the French ones a support desk in France meets.
+    Written in lower case and compared once capitals, and symbols standing
+    for letters, have been undone.
+
+.OUTPUTS
+    System.String[]
+#>
+function Get-TkCommonPasswordList {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+
+    return @(
+        'password', 'azerty', 'qwerty', '123456', '12345678', '123456789', '1234567890', '111111', '123123',
+        'abc123', 'password1', '000000', 'iloveyou', 'admin', 'welcome', 'motdepasse', 'soleil', 'bonjour',
+        'doudou', 'loulou', 'chouchou', 'marseille', 'dragon', 'monkey', 'letmein', 'football', 'baseball',
+        'master', 'sunshine', 'princess', 'qwertyuiop', 'azertyuiop', 'shadow', 'superman', 'michael',
+        'jordan', 'hello', 'freedom', 'whatever', 'trustno1', 'starwars', 'computer', 'charlie', 'nicolas',
+        'camille', 'julien', 'thomas', 'alexandre', 'pokemon', 'naruto', 'chocolat', 'coucou', 'jetaime',
+        'licorne', 'toulouse', 'paris', 'france', 'orange', 'samsung', 'google', 'microsoft', 'windows',
+        'summer', 'winter', 'spring', 'autumn', 'hiver', 'printemps', 'automne', 'changeme', 'secret',
+        'root', 'toor', 'user', 'guest', 'test', 'demo', 'login', 'access', 'entreprise', 'societe',
+        'company', 'office', 'support', 'service', 'bienvenue', 'abcdef', 'abcd1234', '1q2w3e4r',
+        '1qaz2wsx', 'zaq12wsx', 'aaaaaa', '654321', '666666', '121212', '7777777', '987654321', '159753',
+        '147258369', '112233', 'killer', 'hunter', 'ranger', 'buster', 'soccer', 'hockey', 'batman',
+        'tigger', 'ginger', 'pepper', 'cookie', 'flower', 'lovely', 'angel', 'jessica', 'ashley', 'daniel',
+        'andrew', 'matthew', 'joshua', 'robert', 'william', 'anthony', 'maxime', 'antoine', 'romain',
+        'nathalie', 'isabelle', 'sophie', 'marie', 'pierre', 'lucas', 'emma', 'chloe', 'manon', 'louise',
+        'bonheur', 'amour', 'maison', 'famille', 'vacances', 'rugby', 'olivier', 'celine'
+    )
+}
+
+<#
+.SYNOPSIS
+    Writes a number of seconds, given as its power of ten, in words.
+
+.PARAMETER Log10Seconds
+    The base 10 logarithm of the duration, so durations far beyond what a
+    double holds in seconds can still be written.
+
+.OUTPUTS
+    System.String
+#>
+function Format-TkCrackDuration {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [double] $Log10Seconds
+    )
+
+    if ($Log10Seconds -lt 0) {
+        return 'less than a second'
+    }
+
+    $count = {
+        param($number, $unit)
+        if ($number -eq 1) { '1 {0}' -f $unit } else { '{0} {1}s' -f $number, $unit }
+    }
+
+    if ($Log10Seconds -lt 7.5) {
+
+        # Each unit gives way to the next half a unit before it, so a value
+        # that rounds up reads "1 day" rather than "24 hours". The power of ten
+        # is rounded too: 10 to the log of 86400 comes back as 86399.99999.
+        $seconds = [math]::Round([math]::Pow(10, $Log10Seconds), 3)
+
+        if ($seconds -lt 59.5)                { return (& $count ([long] [math]::Round($seconds)) 'second') }
+        if ($seconds -lt 3570)                { return (& $count ([long] [math]::Round($seconds / 60)) 'minute') }
+        if ($seconds -lt 84600)               { return (& $count ([long] [math]::Round($seconds / 3600)) 'hour') }
+        if ($seconds -lt (2629800 - 43200))   { return (& $count ([long] [math]::Round($seconds / 86400)) 'day') }
+        if ($seconds -lt (31557600 - 1314900)) { return (& $count ([long] [math]::Round($seconds / 2629800)) 'month') }
+    }
+
+    $yearsLog10 = $Log10Seconds - [math]::Log10(31557600)
+
+    # The universe is about 13.8 billion years old.
+    if ($yearsLog10 -ge 10.14) {
+        return 'longer than the age of the universe'
+    }
+
+    $years = [math]::Pow(10, $yearsLog10)
+
+    if ($years -lt 1000) { return (& $count ([long] [math]::Round($years)) 'year') }
+    if ($years -lt 1e6)  { return ('{0} thousand years' -f [long] [math]::Round($years / 1e3)) }
+    if ($years -lt 1e9)  { return ('{0} million years' -f [long] [math]::Round($years / 1e6)) }
+
+    return ('{0} billion years' -f [long] [math]::Round($years / 1e9))
+}
+
+<#
+.SYNOPSIS
+    Estimates how long a password takes to crack.
+
+.DESCRIPTION
+    Two estimates, because they answer two questions:
+
+      - brute force tries every combination of the same length and the same
+        character types. It is the ceiling, and the only estimate that holds
+        for a truly random password;
+      - guessing is what cracking tools do first: common passwords, including
+        with capitals and symbols standing for letters, keyboard runs,
+        sequences, repeats, years and dates. The password is cut into the
+        pieces that are cheapest to guess, the way zxcvbn does, and the
+        pieces multiply.
+
+    Each is turned into a duration for four attacks, from a login page that
+    locks after a few tries to a stolen NTLM hash on a gaming graphics card.
+
+.PARAMETER Text
+    The password. Analysed in memory and never written anywhere.
+
+.PARAMETER KnownEntropyBits
+    For a generated secret, the entropy of the generator: an attacker who
+    knows the method guesses in that many tries, and chance patterns in a
+    random string do not help them.
+
+.PARAMETER Now
+    Today, for the distance of a year from the present.
+
+.OUTPUTS
+    PSCustomObject with Length, CharacterPool, BruteForceLog10, GuessesLog10,
+    Bits, Score (0 to 4), Rating, EstimateLabel, Weaknesses, CrackTimes and
+    Advice.
+#>
+function Measure-TkPasswordStrength {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text,
+        [Parameter()] [double] $KnownEntropyBits = 0,
+        [Parameter()] [datetime] $Now = (Get-Date)
+    )
+
+    $length = $Text.Length
+
+    # --- Brute force ---------------------------------------------------------
+    $pool = 0
+
+    if ($Text -cmatch '[a-z]')            { $pool += 26 }
+    if ($Text -cmatch '[A-Z]')            { $pool += 26 }
+    if ($Text -match '[0-9]')             { $pool += 10 }
+    if ($Text -match '[ -/:-@\[-`{-~]')   { $pool += 33 }
+    if ($Text -match '[^\x20-\x7E]')      { $pool += 100 }
+
+    $charLog10  = [math]::Log10([math]::Max(10, $pool))
+    $bruteLog10 = $length * $charLog10
+
+    # --- Patterns ------------------------------------------------------------
+    $found = New-Object System.Collections.Generic.List[object]
+
+    $add = {
+        param($start, $size, $kind, $log10, $note)
+        $found.Add([pscustomobject] @{ Start = [int] $start; End = [int] ($start + $size); Kind = $kind; Log10 = [double] $log10; Note = $note })
+    }
+
+    $lower = $Text.ToLowerInvariant()
+
+    # Common passwords and words, also written backwards or with symbols for
+    # letters. A 1 stands for an i as often as for an l, so both are tried.
+    $ranks = @{}
+    $rank  = 0
+
+    foreach ($word in (Get-TkCommonPasswordList)) {
+        $rank++
+        if (-not $ranks.ContainsKey($word)) { $ranks[$word] = $rank }
+    }
+
+    $leet = @{ '@' = 'a'; '4' = 'a'; '0' = 'o'; '3' = 'e'; '$' = 's'; '5' = 's'; '7' = 't'; '+' = 't'; '!' = 'i' }
+
+    $variants = foreach ($one in @('i', 'l')) {
+
+        $builder = New-Object System.Text.StringBuilder
+
+        foreach ($character in $lower.ToCharArray()) {
+
+            $key = [string] $character
+
+            if ($key -eq '1')                { [void] $builder.Append($one) }
+            elseif ($leet.ContainsKey($key)) { [void] $builder.Append($leet[$key]) }
+            else                             { [void] $builder.Append($key) }
+        }
+
+        $builder.ToString()
+    }
+
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+
+    for ($start = 0; $start -lt $length; $start++) {
+
+        for ($size = 4; $size -le [math]::Min(20, $length - $start); $size++) {
+
+            foreach ($variant in $variants) {
+
+                $slice    = $variant.Substring($start, $size)
+                $reversed = -join $slice.ToCharArray()[($size - 1)..0]
+                $word     = $null
+
+                if ($ranks.ContainsKey($slice))        { $word = $slice }
+                elseif ($ranks.ContainsKey($reversed)) { $word = $reversed }
+
+                if (-not $word -or -not $seen.Add(('{0}|{1}' -f $start, $size))) { continue }
+
+                $original   = $Text.Substring($start, $size)
+                $isReversed = $word -ne $slice
+                $plain      = $original.ToLowerInvariant()
+
+                if ($isReversed) { $plain = -join $plain.ToCharArray()[($size - 1)..0] }
+
+                $log10 = [math]::Log10($ranks[$word])
+                $how   = @()
+
+                if ($original -cmatch '[A-Z]') {
+                    $capitals = if ($original -cmatch '^[A-Z][^A-Z]*$' -or $original -cnotmatch '[a-z]') { 2 } else { 4 }
+                    $log10   += [math]::Log10($capitals)
+                    $how     += 'capitals'
+                }
+
+                if ($plain -ne $word) {
+                    $log10 += [math]::Log10(2)
+                    $how   += 'symbols for letters'
+                }
+
+                if ($isReversed) {
+                    $log10 += [math]::Log10(2)
+                    $how   += 'written backwards'
+                }
+
+                $note = 'a common password or word{0}' -f $(if ($how) { ' ({0})' -f ($how -join ', ') } else { '' })
+
+                & $add $start $size 'Common password' $log10 $note
+            }
+        }
+    }
+
+    # Sequences of letters or digits, up or down: abcd, 4321.
+    $classOf = {
+        param($character)
+        if ($character -cmatch '[a-z]') { 'lower' } elseif ($character -cmatch '[A-Z]') { 'upper' } elseif ($character -match '[0-9]') { 'digit' } else { '' }
+    }
+
+    $index = 0
+
+    while ($index -lt $length - 2) {
+
+        $class = & $classOf ([string] $Text[$index])
+        $delta = [int] $Text[$index + 1] - [int] $Text[$index]
+
+        if ($class -and [math]::Abs($delta) -eq 1 -and (& $classOf ([string] $Text[$index + 1])) -eq $class) {
+
+            $last = $index + 1
+
+            while ($last + 1 -lt $length -and ([int] $Text[$last + 1] - [int] $Text[$last]) -eq $delta -and
+                   (& $classOf ([string] $Text[$last + 1])) -eq $class) {
+                $last++
+            }
+
+            $size = $last - $index + 1
+
+            if ($size -ge 3) {
+
+                $base  = if ([string] $Text[$index] -in @('a', 'z', '0', '1', '9')) { 4 } elseif ($class -eq 'digit') { 10 } else { 26 }
+                $log10 = [math]::Log10($base * $size * $(if ($delta -lt 0) { 2 } else { 1 }))
+
+                & $add $index $size 'Sequence' $log10 ('a sequence of {0} characters' -f $size)
+
+                $index = $last + 1
+                continue
+            }
+        }
+
+        $index++
+    }
+
+    # Repeats: aaaa, abcabc.
+    foreach ($repeat in [regex]::Matches($Text, '(.+?)\1+')) {
+
+        if ($repeat.Length -lt 3) { continue }
+
+        $chunk = $repeat.Groups[1].Value
+        $times = [int] ($repeat.Length / $chunk.Length)
+        $what  = if ($chunk.Length -eq 1) { 'the same character' } else { 'the same {0} characters' -f $chunk.Length }
+
+        & $add $repeat.Index $repeat.Length 'Repeat' ($chunk.Length * $charLog10 + [math]::Log10($times)) ('{0} repeated {1} times' -f $what, $times)
+    }
+
+    # Runs of neighbouring keys, on QWERTY, AZERTY and QWERTZ, either way.
+    $rows = @('qwertyuiop', 'asdfghjkl', 'zxcvbnm', 'azertyuiop', 'qsdfghjklm', 'wxcvbn', 'qwertzuiop', 'yxcvbnm', '1234567890')
+    $rows = @($rows) + @($rows | ForEach-Object { -join $_.ToCharArray()[($_.Length - 1)..0] })
+
+    $keyStart = 0
+
+    while ($keyStart -lt $length - 3) {
+
+        $run = 0
+
+        for ($size = [math]::Min(12, $length - $keyStart); $size -ge 4 -and $run -eq 0; $size--) {
+
+            $slice = $lower.Substring($keyStart, $size)
+
+            foreach ($row in $rows) {
+                if ($row.Contains($slice)) { $run = $size; break }
+            }
+        }
+
+        if ($run -gt 0) {
+            & $add $keyStart $run 'Keyboard' ([math]::Log10(10 * $run * 2)) ('a run of {0} neighbouring keys' -f $run)
+            $keyStart += $run
+        }
+        else {
+            $keyStart++
+        }
+    }
+
+    # Years and dates.
+    foreach ($year in [regex]::Matches($Text, '(?<!\d)(19\d\d|20\d\d)(?!\d)')) {
+        $space = [math]::Max([math]::Abs([int] $year.Value - $Now.Year), 20)
+        & $add $year.Index 4 'Year' ([math]::Log10($space)) 'a year'
+    }
+
+    foreach ($date in [regex]::Matches($Text, '(?<!\d)(0?[1-9]|[12]\d|3[01])([/.\-]?)(0?[1-9]|1[0-2])\2((19|20)?\d\d)(?!\d)')) {
+        $log10 = [math]::Log10(365 * 20) + $(if ($date.Groups[2].Value) { [math]::Log10(4) } else { 0 })
+        & $add $date.Index $date.Length 'Date' $log10 'a date'
+    }
+
+    # --- Cheapest way to guess the whole password ------------------------------
+    $byEnd = @{}
+
+    foreach ($piece in $found) {
+        if (-not $byEnd.ContainsKey($piece.End)) { $byEnd[$piece.End] = New-Object System.Collections.Generic.List[object] }
+        $byEnd[$piece.End].Add($piece)
+    }
+
+    $best = New-Object 'double[]' ($length + 1)
+    $via  = New-Object 'object[]' ($length + 1)
+
+    for ($position = 1; $position -le $length; $position++) {
+
+        $best[$position] = $best[$position - 1] + $charLog10
+
+        if ($byEnd.ContainsKey($position)) {
+
+            foreach ($piece in $byEnd[$position]) {
+
+                $cost = $best[$piece.Start] + $piece.Log10
+
+                if ($cost -lt $best[$position]) {
+                    $best[$position] = $cost
+                    $via[$position]  = $piece
+                }
+            }
+        }
+    }
+
+    $used     = New-Object System.Collections.Generic.List[object]
+    $segments = 0
+    $inRandom = $false
+    $position = $length
+
+    while ($position -gt 0) {
+
+        $piece = $via[$position]
+
+        if ($piece) {
+            $used.Insert(0, $piece)
+            $segments++
+            $inRandom = $false
+            $position = $piece.Start
+        }
+        else {
+            if (-not $inRandom) { $segments++; $inRandom = $true }
+            $position--
+        }
+    }
+
+    # The attacker does not know in which order the pieces come.
+    $orderLog10 = 0
+
+    for ($piecesCount = 2; $piecesCount -le $segments; $piecesCount++) {
+        $orderLog10 += [math]::Log10($piecesCount)
+    }
+
+    $guessLog10    = [math]::Min($best[$length] + $orderLog10, $bruteLog10)
+    $estimateLabel = 'Guessing patterns first'
+
+    if ($KnownEntropyBits -gt 0) {
+        $guessLog10    = $KnownEntropyBits * [math]::Log10(2)
+        $estimateLabel = 'Knowing how it was generated'
+        $used.Clear()
+    }
+
+    $bits  = [math]::Round($guessLog10 / [math]::Log10(2), 1)
+    $score = if ($bits -lt 40) { 0 } elseif ($bits -lt 60) { 1 } elseif ($bits -lt 80) { 2 } elseif ($bits -lt 128) { 3 } else { 4 }
+
+    # --- Durations -----------------------------------------------------------
+    $attacks = @(
+        [pscustomobject] @{ Scenario = 'Online, throttled (100 guesses an hour)';                         Log10Rate = [math]::Log10(100 / 3600) }
+        [pscustomobject] @{ Scenario = 'Online, not throttled (10 guesses a second)';                     Log10Rate = 1 }
+        [pscustomobject] @{ Scenario = 'Offline, slow hash such as bcrypt (10 thousand a second)';        Log10Rate = 4 }
+        [pscustomobject] @{ Scenario = 'Offline, fast hash such as NTLM, one GPU (100 billion a second)'; Log10Rate = 11 }
+    )
+
+    $times = foreach ($attack in $attacks) {
+        [pscustomobject] @{
+            Scenario   = $attack.Scenario
+            BruteForce = Format-TkCrackDuration -Log10Seconds ($bruteLog10 - $attack.Log10Rate)
+            Estimated  = Format-TkCrackDuration -Log10Seconds ($guessLog10 - $attack.Log10Rate)
+        }
+    }
+
+    $advice = @()
+
+    if ($KnownEntropyBits -le 0 -and $length -gt 0) {
+
+        if ($used.Count -gt 0) {
+            $advice += 'Leave out words, names, keyboard runs, sequences, years and dates: cracking tools try them before anything else, whatever the capitals and symbols around them.'
+        }
+
+        if ($length -lt 14) {
+            $advice += 'Make it longer: every character multiplies the work. 14 random characters, or a passphrase of five random words, hold against a stolen fast hash.'
+        }
+    }
+
+    return [pscustomobject] @{
+        Length          = $length
+        CharacterPool   = $pool
+        BruteForceLog10 = [math]::Round($bruteLog10, 2)
+        GuessesLog10    = [math]::Round($guessLog10, 2)
+        Bits            = $bits
+        Score           = $score
+        Rating          = Get-TkEntropyRating -Bits $bits
+        EstimateLabel   = $estimateLabel
+        Weaknesses      = @($used | ForEach-Object { [pscustomobject] @{ Kind = $_.Kind; Note = $_.Note } })
+        CrackTimes      = @($times)
+        Advice          = @($advice)
+    }
+}
+
+<#
+.SYNOPSIS
     Checks a password against the Have I Been Pwned breach corpus.
 
 .DESCRIPTION
