@@ -149,6 +149,11 @@ function Initialize-TkSecurityPage {
     }
 
     Update-TkVirusTotalKeyStatus
+
+    # --- Calculators ------------------------------------------------------
+    # The Ports, chmod, Regex, Timestamps and Encoding tabs share the Tools
+    # page with the tabs above.
+    Initialize-TkToolsPage
 }
 
 # ---------------------------------------------------------------------------

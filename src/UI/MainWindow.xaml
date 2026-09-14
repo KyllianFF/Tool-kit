@@ -2745,9 +2745,9 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Margin="0,0,0,4">
-                        <TextBlock Text="Security tools" Style="{StaticResource Heading}" />
-                        <TextBlock Style="{StaticResource Muted}"
-                                   Text="Generate SSH keys, check a download against the hash its vendor publishes, and create or test passwords. Nothing here inspects or changes the machine." />
+                        <TextBlock Text="Tools" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                   Text="Generate SSH keys, passwords and ports, check a download against its published hash, and work out permissions, patterns, timestamps and encodings. Nothing here changes the machine." />
                     </StackPanel>
 
                     <TabControl Grid.Row="1" x:Name="SecurityToolsTabs" Background="Transparent" BorderThickness="0">
@@ -2859,6 +2859,225 @@
                                     <TextBox x:Name="CredentialOutput" Style="{StaticResource Mono}"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Ports">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Random ports" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel>
+                                            <TextBlock Text="Range" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="PortRange" Width="250" Margin="0,0,16,8" />
+                                            <TextBlock Text="From" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="PortFrom" Width="80" Text="20000" Margin="0,0,12,8" />
+                                            <TextBlock Text="To" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="PortTo" Width="80" Text="29999" Margin="0,0,16,8" />
+                                            <TextBlock Text="How many" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="PortCount" Width="60" Text="5" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <CheckBox x:Name="PortSkipInUse" Content="Leave out ports in use or reserved here" IsChecked="True" VerticalAlignment="Center" Margin="0,0,16,0" />
+                                            <CheckBox x:Name="PortSkipKnown" Content="Leave out known service ports" IsChecked="True" VerticalAlignment="Center" Margin="0,0,16,0" />
+                                            <Button x:Name="BtnGeneratePorts" Content="Generate" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" />
+                                            <Button x:Name="BtnCopyPorts" Content="Copy" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Text="Drawn with the cryptographic random generator. The dynamic range is the one IANA and Windows leave to private and temporary use. Ports reserved by Hyper-V, WSL or Docker are read from Windows and left out: a service cannot listen on them. A port free here can still be taken on another machine." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="PortOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="chmod">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Unix permissions" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <Grid Margin="0,0,0,8" HorizontalAlignment="Left">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="110" />
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="90" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Read (4)" Style="{StaticResource Muted}" />
+                                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Write (2)" Style="{StaticResource Muted}" />
+                                            <TextBlock Grid.Row="0" Grid.Column="3" Text="Execute (1)" Style="{StaticResource Muted}" />
+
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Owner (u)" VerticalAlignment="Center" Margin="0,6,0,0" />
+                                            <CheckBox  Grid.Row="1" Grid.Column="1" x:Name="ChmodOwnerRead" Margin="0,6,0,0" />
+                                            <CheckBox  Grid.Row="1" Grid.Column="2" x:Name="ChmodOwnerWrite" Margin="0,6,0,0" />
+                                            <CheckBox  Grid.Row="1" Grid.Column="3" x:Name="ChmodOwnerExecute" Margin="0,6,0,0" />
+
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Group (g)" VerticalAlignment="Center" Margin="0,6,0,0" />
+                                            <CheckBox  Grid.Row="2" Grid.Column="1" x:Name="ChmodGroupRead" Margin="0,6,0,0" />
+                                            <CheckBox  Grid.Row="2" Grid.Column="2" x:Name="ChmodGroupWrite" Margin="0,6,0,0" />
+                                            <CheckBox  Grid.Row="2" Grid.Column="3" x:Name="ChmodGroupExecute" Margin="0,6,0,0" />
+
+                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Others (o)" VerticalAlignment="Center" Margin="0,6,0,0" />
+                                            <CheckBox  Grid.Row="3" Grid.Column="1" x:Name="ChmodOthersRead" Margin="0,6,0,0" />
+                                            <CheckBox  Grid.Row="3" Grid.Column="2" x:Name="ChmodOthersWrite" Margin="0,6,0,0" />
+                                            <CheckBox  Grid.Row="3" Grid.Column="3" x:Name="ChmodOthersExecute" Margin="0,6,0,0" />
+                                        </Grid>
+                                        <WrapPanel Margin="0,0,0,8">
+                                            <CheckBox x:Name="ChmodSetUid" Content="setuid (4000)" Margin="0,0,16,0" />
+                                            <CheckBox x:Name="ChmodSetGid" Content="setgid (2000)" Margin="0,0,16,0" />
+                                            <CheckBox x:Name="ChmodSticky" Content="sticky (1000)" Margin="0,0,16,0" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBlock Text="Octal" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="ChmodOctal" Width="80" Margin="0,0,16,0" />
+                                            <TextBlock Text="Symbolic" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="ChmodSymbolic" Width="140" Margin="0,0,16,0" />
+                                            <Button x:Name="BtnCopyChmod" Content="Copy" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Text="Tick the boxes or type either form, and the others follow. The symbolic form is the one ls -l prints: s or t in place of x for a special bit with execute, S or T without." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="ChmodOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Regex">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Regular expression tester" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Pattern" VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <TextBox   Grid.Row="0" Grid.Column="1" x:Name="RegexPattern" Margin="0,0,0,8"
+                                                       FontFamily="Cascadia Mono, Consolas, Courier New" Tag="For example (?&lt;user&gt;[\w.]+)@(?&lt;domain&gt;[\w.]+)" />
+
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Replace with" VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <TextBox   Grid.Row="1" Grid.Column="1" x:Name="RegexReplacement" Margin="0,0,0,8"
+                                                       FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Optional: $1 or ${name} for a group" />
+
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Text" VerticalAlignment="Top" Margin="0,8,12,8" />
+                                            <TextBox   Grid.Row="2" Grid.Column="1" x:Name="RegexText" Height="110" Margin="0,0,0,8"
+                                                       AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                       FontFamily="Cascadia Mono, Consolas, Courier New" Tag="The text to search" />
+                                        </Grid>
+                                        <WrapPanel>
+                                            <CheckBox x:Name="RegexIgnoreCase" Content="Ignore case" Margin="0,0,16,0" />
+                                            <CheckBox x:Name="RegexMultiline" Content="^ and $ match at each line" Margin="0,0,16,0" />
+                                            <CheckBox x:Name="RegexSingleline" Content="The dot matches new lines" Margin="0,0,16,0" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Text="Tested as you type, with the .NET flavour that -match and -replace use: named groups, lookbehind, \d and \w matching Unicode. A test stops after 2 seconds, so a pattern that backtracks without end cannot freeze the window." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="RegexOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Timestamps">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Timestamps and dates" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel>
+                                            <TextBlock Text="Value" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="TimestampInput" Width="380" Margin="0,0,10,0"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Unix, FILETIME, Active Directory, or a date" />
+                                            <Button x:Name="BtnTimestampNow" Content="Now" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Text="Unix seconds or milliseconds, a Windows FILETIME such as the lastLogonTimestamp, pwdLastSet or accountExpires of an Active Directory account, or a date. The kind of number is worked out from the date it gives, and the other readings are listed." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="TimestampOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Encoding">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Encode and decode text" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,8">
+                                            <ComboBox x:Name="EncodingOperation" Width="200" Margin="0,0,10,0" />
+                                            <Button x:Name="BtnConvertText" Content="Convert" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" />
+                                            <Button x:Name="BtnSwapText" Content="Use the result as input" />
+                                        </WrapPanel>
+                                        <TextBox x:Name="EncodingInput" Height="110"
+                                                 AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Text, Base64, a URL, hexadecimal or a JWT" />
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Text="UTF-8 throughout. A JWT is only decoded: its signature is not checked, so anyone could have written what it says." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="EncodingOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>
                         </TabItem>
