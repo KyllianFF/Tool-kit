@@ -241,6 +241,25 @@
       ]
     },
     {
+      "id": "delivery-optimization-no-peers",
+      "name": "Download updates from Microsoft only, not from other PCs",
+      "category": "privacy",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Sets Delivery Optimization to HTTP only: updates and Store apps come from Microsoft or the configured source, and this machine neither downloads from nor uploads to other computers. Useful on a metered link, or where peer traffic between machines is not wanted.",
+      "registry": [
+        {
+          "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization",
+          "name": "DODownloadMode",
+          "type": "DWord",
+          "value": 0,
+          "default": 1,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
       "id": "show-file-extensions",
       "name": "Show file extensions",
       "category": "interface",
@@ -393,6 +412,156 @@
       ]
     },
     {
+      "id": "numlock-at-startup",
+      "name": "Turn Num Lock on at start up",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Starts with the numeric keypad on, at the sign-in screen and in the session of this user, so a PIN or a password with digits types what it should. Fast start-up restores the keyboard state of the last session instead: if Num Lock still starts off, disable fast start-up too.",
+      "registry": [
+        {
+          "path": "Registry::HKEY_USERS\\.DEFAULT\\Control Panel\\Keyboard",
+          "name": "InitialKeyboardIndicators",
+          "type": "String",
+          "value": "2147483650",
+          "default": "2147483648"
+        },
+        {
+          "path": "HKCU:\\Control Panel\\Keyboard",
+          "name": "InitialKeyboardIndicators",
+          "type": "String",
+          "value": "2",
+          "default": "0"
+        }
+      ]
+    },
+    {
+      "id": "disable-accessibility-shortcuts",
+      "name": "Disable the Sticky Keys, Filter Keys and Toggle Keys shortcuts",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": true,
+      "description": "Stops pressing Shift five times, or holding the right Shift key, from turning on an accessibility feature in the middle of a game or a typing session. The features stay available from Settings. Takes effect at the next sign-in.",
+      "registry": [
+        {
+          "path": "HKCU:\\Control Panel\\Accessibility\\StickyKeys",
+          "name": "Flags",
+          "type": "String",
+          "value": "506",
+          "default": "510"
+        },
+        {
+          "path": "HKCU:\\Control Panel\\Accessibility\\Keyboard Response",
+          "name": "Flags",
+          "type": "String",
+          "value": "122",
+          "default": "126"
+        },
+        {
+          "path": "HKCU:\\Control Panel\\Accessibility\\ToggleKeys",
+          "name": "Flags",
+          "type": "String",
+          "value": "58",
+          "default": "62"
+        }
+      ]
+    },
+    {
+      "id": "explorer-open-this-pc",
+      "name": "Open Explorer on This PC",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Opens File Explorer on the drives rather than on Home and its recent files, which is also where a support call wants to start.",
+      "registry": [
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+          "name": "LaunchTo",
+          "type": "DWord",
+          "value": 1,
+          "default": 2,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "taskbar-end-task",
+      "name": "Add End task to the taskbar menu (Windows 11)",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Adds End task to the right click menu of a taskbar button, which closes a frozen application without opening Task Manager. The same switch as Settings, System, For developers.",
+      "registry": [
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\TaskbarDeveloperSettings",
+          "name": "TaskbarEndTask",
+          "type": "DWord",
+          "value": 1,
+          "default": 0,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "enable-clipboard-history",
+      "name": "Enable clipboard history",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Keeps the last copied items, opened with Windows+V. Passwords copied from a manager are kept there too until cleared, so leave it off on a shared machine.",
+      "registry": [
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Clipboard",
+          "name": "EnableClipboardHistory",
+          "type": "DWord",
+          "value": 1,
+          "default": 0,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "show-full-path-in-title",
+      "name": "Show the full path in the Explorer title bar",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Shows C:\\Users\\name\\Documents rather than Documents, so the folder open is never ambiguous in a screenshot or on a shared screen.",
+      "registry": [
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CabinetState",
+          "name": "FullPath",
+          "type": "DWord",
+          "value": 1,
+          "default": 0
+        }
+      ]
+    },
+    {
+      "id": "hide-task-view-button",
+      "name": "Hide the Task View button",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Removes the Task View button from the taskbar. Windows+Tab still opens it.",
+      "registry": [
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+          "name": "ShowTaskViewButton",
+          "type": "DWord",
+          "value": 0,
+          "default": 1
+        }
+      ]
+    },
+    {
       "id": "disable-fast-startup",
       "name": "Disable fast start-up",
       "category": "performance",
@@ -470,11 +639,29 @@
       "impact": "Medium",
       "requiresElevation": true,
       "requiresRestart": true,
-      "description": "Reclaims a hiberfil.sys the size of installed memory. Do not apply on a laptop that relies on hibernate for battery preservation.",
+      "description": "Reclaims a hiberfil.sys the size of installed memory: Windows removes the file at the next restart. Fast start-up relies on hibernation, so it stops too. Do not apply on a laptop that relies on hibernate for battery preservation.",
       "registry": [
         {
           "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Power",
           "name": "HibernateEnabled",
+          "type": "DWord",
+          "value": 0,
+          "default": 1
+        }
+      ]
+    },
+    {
+      "id": "disable-transparency",
+      "name": "Disable transparency effects",
+      "category": "performance",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Turns off the blur behind the Start menu, the taskbar and windows. It saves graphics work on a low end machine or in a remote session, and makes text easier to read.",
+      "registry": [
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+          "name": "EnableTransparency",
           "type": "DWord",
           "value": 0,
           "default": 1
@@ -546,6 +733,38 @@
           "type": "DWord",
           "value": 0,
           "default": 1
+        }
+      ]
+    },
+    {
+      "id": "disable-mouse-acceleration",
+      "name": "Disable mouse acceleration (Enhance pointer precision)",
+      "category": "gaming",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": true,
+      "description": "Makes the pointer move the same distance for the same hand movement, whatever the speed, which is what aiming and precise drawing need. Takes effect at the next sign-in.",
+      "registry": [
+        {
+          "path": "HKCU:\\Control Panel\\Mouse",
+          "name": "MouseSpeed",
+          "type": "String",
+          "value": "0",
+          "default": "1"
+        },
+        {
+          "path": "HKCU:\\Control Panel\\Mouse",
+          "name": "MouseThreshold1",
+          "type": "String",
+          "value": "0",
+          "default": "6"
+        },
+        {
+          "path": "HKCU:\\Control Panel\\Mouse",
+          "name": "MouseThreshold2",
+          "type": "String",
+          "value": "0",
+          "default": "10"
         }
       ]
     },
@@ -767,6 +986,62 @@
           "type": "DWord",
           "value": 1,
           "default": 0
+        }
+      ]
+    },
+    {
+      "id": "stay-on-blue-screen",
+      "name": "Stay on the blue screen instead of restarting",
+      "category": "advanced",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Keeps a crash on screen until someone reads the stop code and the driver named, instead of restarting at once. Only for a machine being troubleshot with someone in front of it: a server or an unattended PC would stay down.",
+      "registry": [
+        {
+          "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CrashControl",
+          "name": "AutoReboot",
+          "type": "DWord",
+          "value": 0,
+          "default": 1
+        }
+      ]
+    },
+    {
+      "id": "exclude-drivers-from-updates",
+      "name": "Do not install drivers through Windows Update",
+      "category": "advanced",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Stops Windows Update from replacing drivers, for a machine whose drivers come from the manufacturer or are pinned for a reason, such as a graphics or storage driver a generic one breaks. Driver updates then have to be installed by hand.",
+      "registry": [
+        {
+          "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate",
+          "name": "ExcludeWUDriversInQualityUpdate",
+          "type": "DWord",
+          "value": 1,
+          "default": 0,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "no-update-restart-while-signed-in",
+      "name": "Do not restart for updates while someone is signed in",
+      "category": "advanced",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Keeps Windows Update from restarting the machine on its own while a user is signed in, so an overnight job or an open document is not lost. Updates wait for a restart someone chooses, so check the pending reboot report now and then.",
+      "registry": [
+        {
+          "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU",
+          "name": "NoAutoRebootWithLoggedOnUsers",
+          "type": "DWord",
+          "value": 1,
+          "default": 0,
+          "defaultAction": "delete"
         }
       ]
     }

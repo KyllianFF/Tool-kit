@@ -1376,6 +1376,49 @@ Describe 'Catalog integrity, extended' {
             }
         }
     }
+
+    It 'writes a text value as text, so its applied state can be read back' {
+
+        # Test-TkTweakApplied compares as text; a String value declared as a
+        # JSON number would still match, but would be written as a number.
+        foreach ($tweak in (Import-TkCatalog -Name 'tweaks').tweaks) {
+
+            foreach ($entry in @(ConvertTo-TkArray $tweak.registry | Where-Object { $_.type -eq 'String' })) {
+                $entry.value   | Should -BeOfType [string] -Because ('{0} {1}' -f $tweak.id, $entry.name)
+                $entry.default | Should -BeOfType [string] -Because ('{0} {1}' -f $tweak.id, $entry.name)
+            }
+        }
+    }
+
+    It 'reaches every hive through a path the registry provider reads, and elevates outside the user hive' {
+
+        foreach ($tweak in (Import-TkCatalog -Name 'tweaks').tweaks) {
+
+            # Read from the lists themselves: an absent list must add nothing,
+            # not an empty entry.
+            $paths = @(@($tweak.registry) + @($tweak.registryKeys) | Where-Object { $_ -and $_.path } | ForEach-Object { [string] $_.path })
+
+            foreach ($path in $paths) {
+                $path | Should -Match '^(HKLM:\\|HKCU:\\|Registry::HKEY_(USERS|LOCAL_MACHINE|CURRENT_USER)\\)' -Because $tweak.id
+            }
+
+            # Writing to the machine or to another user's hive needs rights the
+            # interface has to ask for before it tries.
+            $services = @(@($tweak.services) | Where-Object { $_ })
+
+            if (@($paths | Where-Object { $_ -notmatch '^HKCU:\\|^Registry::HKEY_CURRENT_USER\\' }).Count -gt 0 -or $services.Count -gt 0) {
+                $tweak.requiresElevation | Should -BeTrue -Because $tweak.id
+            }
+        }
+    }
+
+    It 'turns Num Lock on at the sign-in screen as well as in the session' {
+
+        $tweak = (Import-TkCatalog -Name 'tweaks').tweaks | Where-Object { $_.id -eq 'numlock-at-startup' }
+
+        @($tweak.registry | ForEach-Object { $_.path }) | Should -Contain 'Registry::HKEY_USERS\.DEFAULT\Control Panel\Keyboard'
+        @($tweak.registry | ForEach-Object { $_.path }) | Should -Contain 'HKCU:\Control Panel\Keyboard'
+    }
 }
 
 Describe 'Vendor command catalog' {
