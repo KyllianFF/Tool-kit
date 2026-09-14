@@ -498,6 +498,97 @@ function Test-TkRegularExpression {
     return $result
 }
 
+<#
+.SYNOPSIS
+    Lists the regular expression tokens shown beside the tester.
+
+.DESCRIPTION
+    The .NET flavour, the one -match, -replace, Select-String and the tester
+    use. Insert is what a double-click puts into the pattern, or into the
+    replacement when Target says so. Ready-made patterns carry an Example they
+    match whole, which the tests check.
+
+.OUTPUTS
+    PSCustomObject[] with Section, Token, Insert, Target, Description and Example.
+#>
+function Get-TkRegexCheatSheet {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    $entry = {
+        param($section, $token, $description, $insert, $example, $target)
+
+        [pscustomobject] @{
+            Section     = $section
+            Token       = $token
+            Insert      = $(if ($insert) { $insert } else { $token })
+            Target      = $(if ($target) { $target } else { 'Pattern' })
+            Description = $description
+            Example     = $example
+        }
+    }
+
+    $characters = 'Characters'
+    $anchors    = 'Anchors'
+    $repeats    = 'Repeats'
+    $groups     = 'Groups and alternatives'
+    $around     = 'Lookaround'
+    $options    = 'Inline options'
+    $replace    = 'Replacement'
+    $ready      = 'Ready-made patterns'
+
+    return @(
+        (& $entry $characters '.'       'Any character but a new line')
+        (& $entry $characters '\d'      'A digit; \D anything but a digit')
+        (& $entry $characters '\w'      'A letter, digit or underscore; \W the opposite')
+        (& $entry $characters '\s'      'A space, tab or new line; \S the opposite')
+        (& $entry $characters '[abc]'   'One of the characters listed')
+        (& $entry $characters '[^abc]'  'Any character but those listed')
+        (& $entry $characters '[a-z0-9]' 'One character in the ranges')
+        (& $entry $characters '\.'      'A dot itself: escape . * + ? ( ) [ ] { } | ^ $ \ this way')
+        (& $entry $characters '\t \n'   'A tab, a new line; \r a carriage return' '\n')
+        (& $entry $characters '\p{L}'   'A letter in any language, accents included')
+        (& $entry $anchors    '^'       'The start of the text, or of each line with the option')
+        (& $entry $anchors    '$'       'The end of the text, or of each line with the option')
+        (& $entry $anchors    '\b'      'A word boundary: \bcat\b finds cat, not category')
+        (& $entry $anchors    '\A \z'   'The very start and end of the text, whatever the options' '\A')
+        (& $entry $repeats    '*'       'Zero or more times')
+        (& $entry $repeats    '+'       'One or more times')
+        (& $entry $repeats    '?'       'Zero or one time: optional')
+        (& $entry $repeats    '{3}'     'Exactly 3 times')
+        (& $entry $repeats    '{2,5}'   'From 2 to 5 times; {2,} at least 2')
+        (& $entry $repeats    '+?'      'As few times as possible: *? and ?? work the same way')
+        (& $entry $groups     '(...)'   'A group, numbered from 1 in the results' '()')
+        (& $entry $groups     '(?<name>...)' 'A named group' '(?<name>)')
+        (& $entry $groups     '(?:...)' 'Groups without capturing' '(?:)')
+        (& $entry $groups     'a|b'     'Either side' '|')
+        (& $entry $groups     '\1'      'The same text as group 1 again; \k<name> for a named group')
+        (& $entry $around     '(?=...)'  'Followed by, without taking it' '(?=)')
+        (& $entry $around     '(?!...)'  'Not followed by' '(?!)')
+        (& $entry $around     '(?<=...)' 'Preceded by, without taking it' '(?<=)')
+        (& $entry $around     '(?<!...)' 'Not preceded by' '(?<!)')
+        (& $entry $options    '(?i)'    'Ignore case from here on')
+        (& $entry $options    '(?m)'    '^ and $ match at each line')
+        (& $entry $options    '(?s)'    'The dot matches new lines')
+        (& $entry $options    '(?x)'    'Spaces ignored and # starts a comment, for a long pattern')
+        (& $entry $replace    '$1'      'Group 1 in the replacement' '$1' $null 'Replacement')
+        (& $entry $replace    '${name}' 'A named group in the replacement' '${name}' $null 'Replacement')
+        (& $entry $replace    '$0'      'The whole match' '$0' $null 'Replacement')
+        (& $entry $replace    '$$'      'A dollar sign itself' '$$' $null 'Replacement')
+        (& $entry $ready      'IPv4 address' 'Four numbers from 0 to 255' '\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b' '192.168.1.254')
+        (& $entry $ready      'MAC address'  'Six pairs separated by : or -' '\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\b' '00:1A:2B:3C:4D:5E')
+        (& $entry $ready      'E-mail address' 'A practical match, not every address RFC 5322 allows' '\b[\w.%+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b' 'jane.doe@example.com')
+        (& $entry $ready      'Host name'    'A fully qualified name, labels of up to 63 characters' '\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}\b' 'srv01.corp.example.com')
+        (& $entry $ready      'URL'          'An http or https link up to a space or a quote' 'https?://[^\s"''<>]+' 'https://example.com/path?id=42')
+        (& $entry $ready      'ISO date'     'A year, month and day: 2026-09-14' '\b\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])\b' '2026-09-14')
+        (& $entry $ready      'GUID'         'Braces are left out, add \{ and \} around it for them' '\b[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}\b' '3f2504e0-4f89-41d3-9a0c-0305e82c3301')
+        (& $entry $ready      'Windows SID'  'A security identifier' '\bS-1-\d+(?:-\d+)+\b' 'S-1-5-21-3623811015-3361044348-30300820-1013')
+        (& $entry $ready      'Windows path' 'A drive letter path' '[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*' 'C:\Windows\System32\drivers\etc\hosts')
+        (& $entry $ready      'Log severity' 'The lines worth reading first in a log' '\b(?:ERROR|WARN(?:ING)?|FATAL|CRITICAL)\b' 'WARNING')
+    )
+}
+
 # ---------------------------------------------------------------------------
 # Timestamps
 # ---------------------------------------------------------------------------

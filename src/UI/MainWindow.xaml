@@ -1185,7 +1185,7 @@
 
                             <TextBlock Text="REFERENCE" Style="{StaticResource NavSection}" />
                             <Button x:Name="NavKnowledge"      Content="Knowledge base"  Style="{StaticResource NavButton}" Tag="&#xE82D;" />
-                            <Button x:Name="NavVendorCommands" Content="Vendor commands" Style="{StaticResource NavButton}" Tag="&#xE756;" />
+                            <Button x:Name="NavVendorCommands" Content="Commands"        Style="{StaticResource NavButton}" Tag="&#xE756;" />
                         </StackPanel>
                     </ScrollViewer>
 
@@ -3163,11 +3163,33 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
-                                    <TextBox x:Name="RegexOutput" Style="{StaticResource Mono}" IsReadOnly="True"
-                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             AcceptsReturn="True" />
-                                </Border>
+                                <Grid Grid.Row="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="340" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0">
+                                        <TextBox x:Name="RegexOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                                 AcceptsReturn="True" />
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource Card}" Margin="0">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" Text="Cheat sheet, double-click to insert" Style="{StaticResource SubHeading}" Margin="0,0,0,6" />
+                                            <ListBox Grid.Row="1" x:Name="RegexCheatSheet" Background="Transparent" BorderThickness="0"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" FontSize="12"
+                                                     Foreground="{DynamicResource TextPrimary}" />
+                                        </Grid>
+                                    </Border>
+                                </Grid>
                             </Grid>
 
                             <Grid x:Name="ToolTimestamps" Visibility="Collapsed">
@@ -3706,9 +3728,9 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Margin="0,0,0,14">
-                        <TextBlock Text="Vendor commands" Style="{StaticResource Heading}" />
-                        <TextBlock Style="{StaticResource Muted}"
-                                   Text="Commands for network equipment, grouped by task for each manufacturer. Pick a vendor, or search across all of them at once." />
+                        <TextBlock Text="Commands" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                   Text="Cheat sheets for Git, PowerShell, Bash and Linux administration, and the commands of network equipment grouped by task for each manufacturer. Pick one, or search all of them at once." />
                     </StackPanel>
 
                     <Grid Grid.Row="1">
@@ -3722,8 +3744,8 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,10,10">
-                            <ComboBox x:Name="VendorSelect" Margin="0,0,0,8" />
-                            <TextBox  x:Name="VendorSearch" Tag="Search commands across all vendors" />
+                            <ComboBox x:Name="VendorSelect" MinHeight="40" Margin="0,0,0,8" />
+                            <TextBox  x:Name="VendorSearch" Tag="Search every cheat sheet and platform" />
                         </StackPanel>
 
                         <ListBox Grid.Row="1" Grid.Column="0" x:Name="VendorSectionList" Margin="0,0,10,0"
