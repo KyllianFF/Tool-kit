@@ -107,6 +107,7 @@ function Initialize-TkNetworkPage {
     }
 
     Initialize-TkKnowledgeBase
+    Initialize-TkWindowsReference
     Initialize-TkVendorCommands
 
     Update-TkAdapterList

@@ -2873,35 +2873,67 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                    <StackPanel Grid.Row="0" Margin="0,0,0,4">
                         <TextBlock Text="Knowledge base" Style="{StaticResource Heading}" />
-                        <TextBlock Style="{StaticResource Muted}"
-                                   Text="Network and Windows topics looked up during a support call: what a port, a protocol or a setting is for, and how to check it. Search across every topic." />
+                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                   Text="Network and Windows topics looked up during a support call, and what a Windows error code or event ID means: its cause and what to try." />
                     </StackPanel>
 
-                    <Grid Grid.Row="1">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="280" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
+                    <TabControl Grid.Row="1" x:Name="KnowledgeTabs">
 
-                        <TextBox Grid.Row="0" Grid.Column="0" x:Name="KnowledgeSearch" Tag="Search every topic" Margin="0,0,10,10" />
-                        <ListBox Grid.Row="1" Grid.Column="0" x:Name="KnowledgeList" Margin="0,0,10,0"
-                                 />
+                        <TabItem Header="Topics">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="280" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
 
-                        <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
-                            <RichTextBox x:Name="KnowledgeContent" IsReadOnly="True"
-                                         BorderThickness="0" Background="Transparent"
-                                         Foreground="{DynamicResource TextPrimary}"
-                                         VerticalScrollBarVisibility="Auto"
-                                         HorizontalScrollBarVisibility="Disabled"
-                                         IsDocumentEnabled="True" />
-                        </Border>
-                    </Grid>
+                                <TextBox Grid.Row="0" Grid.Column="0" x:Name="KnowledgeSearch" Tag="Search every topic" Margin="0,0,10,10" />
+                                <ListBox Grid.Row="1" Grid.Column="0" x:Name="KnowledgeList" Margin="0,0,10,0"
+                                         />
+
+                                <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="KnowledgeContent" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 IsDocumentEnabled="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Windows codes">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="320" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBox Grid.Row="0" Grid.Column="0" x:Name="ReferenceSearch" Margin="0,0,10,10"
+                                         Tag="Error code, event ID or words" />
+                                <ListBox Grid.Row="1" Grid.Column="0" x:Name="ReferenceList" Margin="0,0,10,0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+
+                                <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="ReferenceContent" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 IsDocumentEnabled="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
                 </Grid>
 
                 <!-- ==================== VENDOR COMMANDS ===================== -->
