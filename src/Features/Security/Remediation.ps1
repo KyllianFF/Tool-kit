@@ -149,6 +149,15 @@ function Get-TkRemediationTable {
             Elevated    = $false
         }
 
+        'open-core-isolation' = @{
+            Kind        = 'Open'
+            Name        = 'Open Windows Security, Core isolation'
+            Button      = 'Open core isolation'
+            Explanation = 'Shows memory integrity and the Microsoft Vulnerable Driver Blocklist, and names the drivers that stop memory integrity from being turned on. Both take effect after a restart. Nothing is changed from here: a driver the blocklist refuses stops the tool that installed it from working.'
+            Target      = 'windowsdefender://coreisolation'
+            Elevated    = $false
+        }
+
         'open-laps-guide' = @{
             Kind        = 'Open'
             Name        = 'Open the Windows LAPS deployment guide'
@@ -389,6 +398,36 @@ function Get-TkRemediationTable {
             Action      = 'Repair-TkSpooler'
             Elevated    = $true
             Reversible  = 'Stop the service and set it to Disabled again.'
+        }
+
+        'disable-spooler' = @{
+            Kind        = 'Fix'
+            Name        = 'Stop and disable the print spooler'
+            Explanation = 'Stops the Spooler service and sets it to Disabled. Nothing prints until it is started again, Print to PDF included.'
+            Command     = 'Stop-Service Spooler -Force; Set-Service Spooler -StartupType Disabled'
+            Action      = 'Disable-TkSpooler'
+            Elevated    = $true
+            Reversible  = 'Start the print spooler from the Printing report, or set the service back to Automatic and start it.'
+        }
+
+        'require-ntlmv2-session' = @{
+            Kind        = 'Fix'
+            Name        = 'Require NTLMv2 session security and 128-bit encryption'
+            Explanation = 'Sets NtlmMinClientSec and NtlmMinServerSec to 537395200, as the Microsoft and CIS baselines do. A device that only speaks NTLMv1, such as a very old NAS, stops authenticating with this machine.'
+            Command     = 'Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" NtlmMinClientSec 537395200; Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" NtlmMinServerSec 537395200'
+            Action      = 'Repair-TkNtlmSessionSecurity'
+            Elevated    = $true
+            Reversible  = 'Set both values back to 536870912, the Windows default.'
+        }
+
+        'set-cached-logons' = @{
+            Kind        = 'Fix'
+            Name        = 'Cache 4 domain sign-ins instead of 10'
+            Explanation = 'Sets CachedLogonsCount to 4, as the CIS baseline asks. The usual users of a laptop can still sign in away from the office; fewer password verifiers are left to extract.'
+            Command     = 'Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" CachedLogonsCount 4'
+            Action      = 'Repair-TkCachedLogon'
+            Elevated    = $true
+            Reversible  = 'Set the value back to 10, the Windows default.'
         }
 
         'clear-temp' = @{
@@ -1278,6 +1317,84 @@ function Repair-TkSpooler {
 
         return $false
     }
+}
+
+<#
+.SYNOPSIS
+    Stops the print spooler and sets it to Disabled.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Disable-TkSpooler {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Stop and disable the print spooler')) {
+        return $false
+    }
+
+    try {
+        Stop-Service -Name 'Spooler' -Force -ErrorAction Stop
+        Set-Service -Name 'Spooler' -StartupType Disabled -ErrorAction Stop
+
+        Write-TkLog -Level Information -Category 'Remediation' -Message 'Print spooler stopped and disabled.'
+
+        return $true
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Remediation' -Message (
+            'The spooler could not be disabled: {0}' -f $_.Exception.Message
+        )
+
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Requires NTLMv2 session security and 128-bit encryption, client and server.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Repair-TkNtlmSessionSecurity {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess('NTLM session security', 'Apply the correction')) {
+        return $false
+    }
+
+    $path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0'
+
+    $client = Set-TkRegistryValue -Path $path -Name 'NtlmMinClientSec' -Value 537395200 -Type DWord -Confirm:$false
+    $server = Set-TkRegistryValue -Path $path -Name 'NtlmMinServerSec' -Value 537395200 -Type DWord -Confirm:$false
+
+    return ($client -and $server)
+}
+
+<#
+.SYNOPSIS
+    Lowers the number of cached domain sign-ins to 4.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Repair-TkCachedLogon {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess('Cached domain sign-ins', 'Apply the correction')) {
+        return $false
+    }
+
+    # Winlogon stores the count as text.
+    return (Set-TkRegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' `
+                                -Name 'CachedLogonsCount' -Value '4' -Type String -Confirm:$false)
 }
 
 <#
