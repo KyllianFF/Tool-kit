@@ -55,6 +55,8 @@ src/Features/Reporting/Comparison.ps1
 src/Features/Reference/WindowsReference.ps1
 src/Features/Tools/Calculators.ps1
 src/Features/Tools/TextTools.ps1
+src/Features/Tools/DevOpsTools.ps1
+src/Features/Tools/HtmlDocument.ps1
 
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1
