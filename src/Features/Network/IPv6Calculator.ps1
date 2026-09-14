@@ -100,6 +100,75 @@ function Expand-TkIPv6Address {
 
 <#
 .SYNOPSIS
+    Generates a unique local IPv6 prefix, as RFC 4193 describes.
+
+.DESCRIPTION
+    fd00::/8 followed by a 40 bit global ID drawn at random, which makes a
+    /48 for a site. Random is the point: two networks built with their own
+    ULA prefixes can be joined later, by a merger or a VPN, without
+    renumbering. The subnets listed are the first /64s of the prefix, one
+    per link or VLAN.
+
+.PARAMETER SubnetCount
+    How many /64 subnets to list.
+
+.PARAMETER GlobalId
+    Five bytes to use instead of random ones, for a test or to list more
+    subnets of a prefix already in use.
+
+.OUTPUTS
+    PSCustomObject with GlobalId, Prefix and Subnets.
+#>
+function New-TkIPv6UniqueLocalPrefix {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()]
+        [ValidateRange(1, 256)]
+        [int] $SubnetCount = 4,
+
+        [Parameter()]
+        [byte[]] $GlobalId = @()
+    )
+
+    if ($GlobalId.Count -eq 0) {
+
+        $GlobalId = New-Object byte[] 5
+        $random   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+
+        try {
+            $random.GetBytes($GlobalId)
+        }
+        finally {
+            $random.Dispose()
+        }
+    }
+    elseif ($GlobalId.Count -ne 5) {
+        throw 'A unique local global ID is 40 bits, five bytes.'
+    }
+
+    $bytes    = New-Object byte[] 16
+    $bytes[0] = 0xFD
+
+    [Array]::Copy($GlobalId, 0, $bytes, 1, 5)
+
+    $prefix = '{0}/48' -f (ConvertFrom-TkIPv6Bytes -Bytes $bytes)
+
+    $subnets = for ($index = 0; $index -lt $SubnetCount; $index++) {
+        $bytes[6] = [byte] (($index -shr 8) -band 0xFF)
+        $bytes[7] = [byte] ($index -band 0xFF)
+        '{0}/64' -f (ConvertFrom-TkIPv6Bytes -Bytes $bytes)
+    }
+
+    return [pscustomobject] @{
+        GlobalId = (@($GlobalId | ForEach-Object { $_.ToString('x2') }) -join '')
+        Prefix   = $prefix
+        Subnets  = @($subnets)
+    }
+}
+
+<#
+.SYNOPSIS
     Applies a prefix length to a 16 byte address.
 
 .PARAMETER FillHostBits

@@ -800,11 +800,11 @@ function Get-TkTlsCertificate {
     Names the manufacturer that owns a MAC address prefix.
 
 .DESCRIPTION
-    Resolves the first three octets, the organisationally unique identifier,
-    against a table of the vendors met on a corporate network. It is a
-    deliberately small table, not the full IEEE registry: it answers "is that
-    unknown device a printer, an access point or a virtual machine" without
-    shipping a megabyte of data or calling out to a web service.
+    A short table of the vendors met on a corporate network is read first,
+    because its names say more than the registry's: "Microsoft Hyper-V"
+    rather than "Microsoft Corporation", "Docker container" for an address
+    the registry does not hold. Anything else is looked up in the IEEE
+    registry built into the toolkit, offline.
 
 .PARAMETER MacAddress
     MAC address in any common separator style.
@@ -844,11 +844,156 @@ function Get-TkMacVendor {
         return $table[$oui]
     }
 
+    $record = Find-TkMacVendorRecord -Hex $clean
+
+    if ($record) {
+        return $record.Vendor
+    }
+
     if (($firstOctet -band 0x02) -eq 0x02) {
         return 'Locally administered (randomised or assigned by software)'
     }
 
     return 'Unknown vendor'
+}
+
+<#
+.SYNOPSIS
+    Finds the IEEE block a MAC address belongs to.
+
+.DESCRIPTION
+    The registry is sorted text, one "prefix<TAB>vendor" per line. The
+    longest blocks are tried first: a 36 bit MA-S block sits inside a 24 bit
+    MA-L block the IEEE registration authority holds, and names the real
+    owner where the MA-L names only the authority.
+
+.PARAMETER Hex
+    The address as upper case hexadecimal digits, at least six.
+
+.OUTPUTS
+    PSCustomObject with Prefix, Bits, Registry and Vendor, or $null.
+#>
+function Find-TkMacVendorRecord {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Hex
+    )
+
+    $registry = Get-TkDataResource -Name 'mac-vendors.tsv'
+
+    if (-not $registry) {
+        return $null
+    }
+
+    foreach ($digits in @(9, 7, 6)) {
+
+        if ($Hex.Length -lt $digits) {
+            continue
+        }
+
+        $key      = "`n{0}`t" -f $Hex.Substring(0, $digits)
+        $position = $registry.IndexOf($key, [StringComparison]::Ordinal)
+
+        if ($position -lt 0) {
+            continue
+        }
+
+        $start = $position + $key.Length
+        $end   = $registry.IndexOf("`n", $start)
+
+        if ($end -lt 0) {
+            $end = $registry.Length
+        }
+
+        return [pscustomobject] @{
+            Prefix   = $Hex.Substring(0, $digits)
+            Bits     = $digits * 4
+            Registry = $(switch ($digits) { 6 { 'MA-L' } 7 { 'MA-M' } default { 'MA-S' } })
+            Vendor   = $registry.Substring($start, $end - $start).TrimEnd("`r")
+        }
+    }
+
+    return $null
+}
+
+<#
+.SYNOPSIS
+    Says what a MAC address is and who made it.
+
+.DESCRIPTION
+    The vendor from the IEEE registry, and the kind of address, which often
+    matters more: a locally administered address is a phone hiding its real
+    one or a virtual machine, a multicast address is a group rather than a
+    device, and a VRRP or HSRP address is a gateway shared by routers.
+
+.PARAMETER MacAddress
+    The address in any usual form, or only its first six digits.
+
+.OUTPUTS
+    PSCustomObject with Valid, Address, Prefix, Registry, Vendor, Hint, Kind,
+    Multicast, LocallyAdministered, Retrieved and Note.
+#>
+function Get-TkMacAddressInfo {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $MacAddress
+    )
+
+    $clean = ($MacAddress.Trim() -replace '[\s:.\-]', '').ToUpperInvariant()
+
+    if ($clean -notmatch '^[0-9A-F]{6,12}$') {
+        return [pscustomobject] @{
+            Valid = $false
+            Note  = 'A MAC address is 12 hexadecimal digits, written 00:1A:2B:3C:4D:5E, 00-1A-2B-3C-4D-5E or 001a.2b3c.4d5e. The first 6 are enough to find the vendor.'
+        }
+    }
+
+    $first = [Convert]::ToByte($clean.Substring(0, 2), 16)
+    $pairs = ($clean -split '(..)' | Where-Object { $_ }) -join ':'
+
+    $kind = if ($clean -eq 'FFFFFFFFFFFF') { 'Broadcast: every device on the link' }
+            elseif ($clean.StartsWith('01005E')) { 'IPv4 multicast (01:00:5E): a group of receivers, not a device' }
+            elseif ($clean.StartsWith('3333')) { 'IPv6 multicast (33:33): a group of receivers, not a device' }
+            elseif ($clean.StartsWith('0180C2')) { 'Reserved for bridge protocols such as spanning tree and LLDP (01:80:C2)' }
+            elseif ($clean.StartsWith('00005E0001')) { 'VRRP virtual router (00:00:5E:00:01): a gateway shared by several routers' }
+            elseif ($clean.StartsWith('00005E0002')) { 'VRRP virtual router for IPv6 (00:00:5E:00:02): a gateway shared by several routers' }
+            elseif ($clean.StartsWith('00000C07AC') -or $clean.StartsWith('00000C9F')) { 'HSRP virtual router: a Cisco gateway shared by several routers' }
+            elseif ($first -band 1) { 'Multicast: a group of receivers, not a device' }
+            elseif ($first -band 2) { 'Locally administered: set by software, such as a phone or a laptop randomising its address for privacy, a virtual machine or a container, so it names no manufacturer' }
+            else { 'Universally administered: burned in by the manufacturer' }
+
+    $record  = if (($first -band 3) -eq 0) { Find-TkMacVendorRecord -Hex $clean } else { $null }
+    $curated = (Get-TkOuiTable)[$clean.Substring(0, 6)]
+
+    $registry  = Get-TkDataResource -Name 'mac-vendors.tsv'
+    $retrieved = if ($registry) { [regex]::Match($registry, '# Retrieved (\d{4}-\d{2}-\d{2})').Groups[1].Value } else { '' }
+
+    $note = if ($record) { '' }
+            elseif (($first -band 3) -ne 0) { '' }
+            elseif (-not $registry) { 'The vendor registry could not be read.' }
+            else { 'No IEEE block holds this prefix in the registry retrieved {0}: it may be newer, or not a real address.' -f $retrieved }
+
+    return [pscustomobject] @{
+        Valid               = $true
+        Address             = $pairs
+        Prefix              = $(if ($record) { ($record.Prefix -split '(..)' | Where-Object { $_ }) -join ':' } else { ($clean.Substring(0, 6) -split '(..)' | Where-Object { $_ }) -join ':' })
+        Registry            = $(if ($record) { '{0}, a {1} bit block' -f $record.Registry, $record.Bits } else { '' })
+        Vendor              = $(if ($record) { $record.Vendor } else { '' })
+        # The short table only adds something when it says more than the
+        # registry: "Microsoft Hyper-V" beside "Microsoft", not "Raspberry Pi"
+        # beside "Raspberry Pi Foundation".
+        Hint                = $(if ($curated -and (-not $record -or $record.Vendor.IndexOf([string] $curated, [StringComparison]::OrdinalIgnoreCase) -lt 0)) { [string] $curated } else { '' })
+        Kind                = $kind
+        Multicast           = [bool] ($first -band 1)
+        LocallyAdministered = [bool] ($first -band 2)
+        Retrieved           = $retrieved
+        Note                = $note
+    }
 }
 
 <#

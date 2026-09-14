@@ -1460,12 +1460,100 @@ Describe 'Get-TkMacVendor' {
         Get-TkMacVendor -MacAddress '02:11:22:33:44:55' | Should -Match 'Locally administered'
     }
 
-    It 'says so plainly for an unknown prefix' {
-        Get-TkMacVendor -MacAddress '00:11:22:33:44:55' | Should -Be 'Unknown vendor'
+    It 'says so plainly for a prefix no IEEE block holds' {
+
+        # Found in the registry rather than written down, so a block the IEEE
+        # assigns later cannot turn this test red.
+        $candidate = 0xA80000
+
+        while (Find-TkMacVendorRecord -Hex ('{0:X6}' -f $candidate)) {
+            $candidate++
+        }
+
+        Get-TkMacVendor -MacAddress (('{0:X6}000001' -f $candidate)) | Should -Be 'Unknown vendor'
+    }
+
+    It 'finds vendors beyond the short table, in the IEEE registry' {
+        Get-TkMacVendor -MacAddress '00:11:22:33:44:55' | Should -Not -Be 'Unknown vendor'
     }
 
     It 'returns nothing for empty input' {
         Get-TkMacVendor -MacAddress '' | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'MAC address lookup' {
+
+    It 'reads the IEEE registry built into the toolkit, all three block sizes' {
+
+        $registry = Get-TkDataResource -Name 'mac-vendors.tsv'
+
+        $registry | Should -Match '^# MAC address vendors from the IEEE'
+        $registry | Should -Match '# Retrieved \d{4}-\d{2}-\d{2}'
+        ([regex]::Matches($registry, "`n[0-9A-F]{6}`t")).Count | Should -BeGreaterThan 30000
+        ([regex]::Matches($registry, "`n[0-9A-F]{7}`t")).Count | Should -BeGreaterThan 3000
+        ([regex]::Matches($registry, "`n[0-9A-F]{9}`t")).Count | Should -BeGreaterThan 3000
+    }
+
+    It 'prefers the smallest block that holds the address' {
+
+        (Find-TkMacVendorRecord -Hex '286FB9123456').Registry | Should -Be 'MA-L'
+        (Find-TkMacVendorRecord -Hex '286FB9123456').Vendor   | Should -BeLike 'Nokia Shanghai Bell*'
+
+        $medium = Find-TkMacVendorRecord -Hex 'C85CE2712345'
+        $medium.Registry | Should -Be 'MA-M'
+        $medium.Bits     | Should -Be 28
+        $medium.Vendor   | Should -Be 'SYNERGY SYSTEMS AND SOLUTIONS'
+
+        $small = Find-TkMacVendorRecord -Hex '8C1F64AFA012'
+        $small.Registry | Should -Be 'MA-S'
+        $small.Vendor   | Should -BeLike 'DATA ELECTRONIC DEVICES*'
+    }
+
+    It 'says what kind of address <Mac> is' -TestCases @(
+        @{ Mac = 'FF:FF:FF:FF:FF:FF'; Kind = 'Broadcast*' }
+        @{ Mac = '01:00:5E:00:00:FB'; Kind = 'IPv4 multicast*' }
+        @{ Mac = '33:33:00:00:00:01'; Kind = 'IPv6 multicast*' }
+        @{ Mac = '00:00:5E:00:01:0A'; Kind = 'VRRP*' }
+        @{ Mac = '00:00:0C:07:AC:01'; Kind = 'HSRP*' }
+        @{ Mac = 'DA:A1:19:12:34:56'; Kind = 'Locally administered*' }
+        @{ Mac = '28-6F-B9-12-34-56'; Kind = 'Universally administered*' }
+    ) {
+        param($Mac, $Kind)
+
+        (Get-TkMacAddressInfo -MacAddress $Mac).Kind | Should -BeLike $Kind
+    }
+
+    It 'reads the usual ways of writing an address, and refuses what is not one' {
+
+        (Get-TkMacAddressInfo -MacAddress '286f.b912.3456').Address | Should -Be '28:6F:B9:12:34:56'
+        (Get-TkMacAddressInfo -MacAddress '00:15:5D').Hint           | Should -Be 'Microsoft Hyper-V'
+        (Get-TkMacAddressInfo -MacAddress 'DA:A1:19:12:34:56').Vendor | Should -BeNullOrEmpty
+        (Get-TkMacAddressInfo -MacAddress 'not a mac').Valid         | Should -BeFalse
+    }
+}
+
+Describe 'IPv6 unique local prefix' {
+
+    It 'builds the prefix and its subnets from the global ID' {
+
+        $ula = New-TkIPv6UniqueLocalPrefix -SubnetCount 3 -GlobalId ([byte[]] @(0x12, 0x34, 0x56, 0x78, 0x9a))
+
+        $ula.Prefix   | Should -Be 'fd12:3456:789a::/48'
+        $ula.GlobalId | Should -Be '123456789a'
+        $ula.Subnets -join ',' | Should -Be 'fd12:3456:789a::/64,fd12:3456:789a:1::/64,fd12:3456:789a:2::/64'
+    }
+
+    It 'draws a different random global ID each time, inside fd00::/8' {
+
+        $first  = New-TkIPv6UniqueLocalPrefix
+        $second = New-TkIPv6UniqueLocalPrefix
+
+        $first.Prefix         | Should -Match '^fd[0-9a-f]{2}:[0-9a-f]{1,4}:[0-9a-f]{1,4}::/48$'
+        $first.GlobalId       | Should -Not -Be $second.GlobalId
+        @($first.Subnets).Count | Should -Be 4
+
+        { New-TkIPv6UniqueLocalPrefix -GlobalId ([byte[]] @(1, 2, 3)) } | Should -Throw
     }
 }
 
