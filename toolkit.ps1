@@ -29,7 +29,17 @@ param(
     [switch] $NoGui,
 
     [Parameter()]
-    [switch] $Elevated
+    [switch] $Elevated,
+
+    [Parameter()]
+    [string[]] $Report,
+
+    [Parameter()]
+    [string] $OutFile,
+
+    [Parameter()]
+    [ValidateSet('Essential', 'Full')]
+    [string] $AuditLevel = 'Essential'
 )
 
 # Strict mode is deliberately not enabled. The catalogs are JSON documents in
@@ -83,7 +93,10 @@ if ($Elevated -and -not (Test-TkIsElevated)) {
 }
 
 # --- Start -----------------------------------------------------------------
-if ($NoGui) {
+if ($Report) {
+    Start-Toolkit -Report $Report -OutFile $OutFile -AuditLevel $AuditLevel
+}
+elseif ($NoGui) {
     Start-Toolkit -NoGui
 }
 else {

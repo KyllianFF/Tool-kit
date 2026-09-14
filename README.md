@@ -21,6 +21,29 @@ feature needs administrator rights, **Restart as administrator** in the header
 opens an elevated instance, downloaded again from the same address: no file is
 left on disk to re-run.
 
+**Without a window.** For a script, a remote session or an RMM agent, the same
+reports come out as JSON. `irm | iex` cannot take a parameter; running the
+download as a script block can, and still writes nothing to disk but the
+report you ask for:
+
+```powershell
+$toolkit = [scriptblock]::Create((irm https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1))
+
+& $toolkit -Report List                                   # the reports, and which need administrator rights
+& $toolkit -Report Storage, Reboot, Wifi                  # JSON on the output
+& $toolkit -Report All -AuditLevel Full -OutFile "C:\Temp\$env:COMPUTERNAME.json"
+```
+
+The reports are Dashboard, Inventory, Network, Reboot, Storage, Performance,
+Devices, Crashes, Wifi, Proxy, Identity, Updates, Printing, Profiles and Audit.
+Each one carries a status (`Ok`, `Skipped` with the reason, or `Failed` with
+the error), its duration and the worst judgement found in it, and
+`Summary.Worst` is the worst of all for a monitoring rule to read. Audit needs
+an elevated console and is skipped otherwise, never elevated behind your back.
+Dates are ISO 8601, and Windows PowerShell 5.1 and PowerShell 7 write the same
+data; only the indentation differs. The same parameters work on `toolkit.ps1` from a clone and on
+`dist\toolkit.ps1`.
+
 ---
 
 ## Navigation

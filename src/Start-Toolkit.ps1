@@ -29,11 +29,24 @@
     Loads everything and returns without showing a window. Used by the tests
     and by anyone wanting the functions in a plain console session.
 
+.PARAMETER Report
+    Collects these reports without a window and returns them as JSON: report
+    names, All, or List for the available ones.
+
+.PARAMETER OutFile
+    With Report, writes the JSON to this file and returns its path.
+
+.PARAMETER AuditLevel
+    With Report, the depth of the Audit report: Essential or Full.
+
 .EXAMPLE
     Start-Toolkit
 
 .EXAMPLE
     Start-Toolkit -NoGui
+
+.EXAMPLE
+    Start-Toolkit -Report Storage, Reboot -OutFile .\report.json
 #>
 function Start-Toolkit {
     [CmdletBinding()]
@@ -42,8 +55,22 @@ function Start-Toolkit {
         [string] $SourceUri,
 
         [Parameter()]
-        [switch] $NoGui
+        [switch] $NoGui,
+
+        [Parameter()]
+        [string[]] $Report,
+
+        [Parameter()]
+        [string] $OutFile,
+
+        [Parameter()]
+        [ValidateSet('Essential', 'Full')]
+        [string] $AuditLevel = 'Essential'
     )
+
+    # Set on every start, so a headless run does not leave a later start
+    # without its progress lines.
+    $script:TkQuietConsole = [bool] $Report
 
     # --- 1. Context and logging ------------------------------------------
     $ctx = Initialize-TkContext
@@ -75,6 +102,11 @@ function Start-Toolkit {
 
     # --- 3. Data ----------------------------------------------------------
     Import-TkAllCatalogs
+
+    # A headless run needs no window, no single threaded apartment and no WPF.
+    if ($Report) {
+        return Invoke-TkHeadlessReport -Report $Report -OutFile $OutFile -AuditLevel $AuditLevel
+    }
 
     if ($NoGui) {
 
