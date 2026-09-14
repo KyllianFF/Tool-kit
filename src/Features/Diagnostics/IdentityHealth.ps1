@@ -332,6 +332,50 @@ function Get-TkDomainController {
 
 <#
 .SYNOPSIS
+    Says whether the domain publishes Microsoft Entra hybrid join settings.
+
+.DESCRIPTION
+    A device finds its tenant either in the registry, for a targeted rollout,
+    or in the service connection point of the configuration partition, which
+    any domain user can read. Without either, hybrid join is simply not in
+    use and its failed discovery in dsregcmd is expected.
+
+.OUTPUTS
+    $true when the settings exist, $false when the domain has none, $null
+    when the directory could not be read.
+#>
+function Get-TkHybridJoinConfiguration {
+    [CmdletBinding()]
+    param()
+
+    if (Get-TkRegistryValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CDJ\AAD' -Name 'TenantId') {
+        return $true
+    }
+
+    try {
+        Add-Type -AssemblyName System.DirectoryServices -ErrorAction SilentlyContinue
+
+        $root          = New-Object System.DirectoryServices.DirectoryEntry('LDAP://RootDSE')
+        $configuration = [string] $root.Properties['configurationNamingContext'].Value
+
+        if (-not $configuration) {
+            return $null
+        }
+
+        # The fixed name Microsoft gives the device registration service
+        # connection point.
+        $path = 'LDAP://CN=62a0ff2e-97b9-4513-943f-0d221bd30080,CN=Device Registration Configuration,CN=Services,{0}' -f $configuration
+
+        return [System.DirectoryServices.DirectoryEntry]::Exists($path)
+    }
+    catch {
+        Write-TkLog -Level Debug -Category 'Identity' -Message ('Hybrid join settings could not be read: {0}' -f $_.Exception.Message)
+        return $null
+    }
+}
+
+<#
+.SYNOPSIS
     Measures the clock of this computer against another one.
 
 .PARAMETER Computer
@@ -414,6 +458,11 @@ function New-TkIdentityRow {
 .PARAMETER MdmErrors
     Output of Get-TkMdmSyncError.
 
+.PARAMETER HybridConfigured
+    Output of Get-TkHybridJoinConfiguration: $true when the domain publishes
+    Microsoft Entra hybrid join settings, $false when it does not, $null when
+    that could not be read.
+
 .PARAMETER Now
     The current time in UTC, a parameter so tests do not depend on the clock.
 
@@ -432,6 +481,7 @@ function ConvertTo-TkIdentityHealth {
         [Parameter()] $ClockOffset,
         [Parameter()] [AllowEmptyCollection()] [object[]] $Enrollment = @(),
         [Parameter()] $MdmErrors,
+        [Parameter()] $HybridConfigured,
         [Parameter()] [datetime] $Now = [datetime]::UtcNow
     )
 
@@ -500,11 +550,34 @@ function ConvertTo-TkIdentityHealth {
     }
 
     # --- Hybrid join failing ------------------------------------------------
+    # Every domain member runs the automatic device join task, so dsregcmd
+    # records a failed discovery on a domain that never set up Microsoft
+    # Entra hybrid join. That is the normal state of an on-premises domain,
+    # not a fault: no work or school account is expected there. Only a domain
+    # that publishes the join settings, or a failure past discovery, is
+    # worth a warning.
     if ($DomainJoined -and -not $entra -and (& $field 'Error Phase')) {
 
-        $rows += New-TkIdentityRow -Severity 'Warning' -Kind 'Hybrid join' -Value ('Failing at the {0} phase' -f (& $field 'Error Phase')) `
-                                   -Detail ('Client error {0}. {1} Microsoft lists the codes at https://aka.ms/aadjerrors.' -f
-                                            (& $field 'Client ErrorCode'), (& $field 'Server Message')).Trim()
+        $phase = & $field 'Error Phase'
+        $code  = & $field 'Client ErrorCode'
+
+        $notSetUp = $HybridConfigured -ne $true -and (
+                        $HybridConfigured -eq $false -or
+                        $code -match '0x801c001d' -or
+                        (& $field 'AD Configuration Test') -match '^FAIL' -or
+                        ($phase -match '^discover' -and -not (& $field 'TenantName') -and -not (& $field 'TenantId'))
+                    )
+
+        if ($notSetUp) {
+            $rows += New-TkIdentityRow -Severity 'Info' -Kind 'Hybrid join' -Value 'Not set up for this domain' `
+                                       -Detail ('Windows looked for Microsoft Entra hybrid join settings in the domain and found none{0}. That is expected for a domain that does not use Microsoft Entra ID: nothing to fix, and no work or school account is needed.' -f
+                                                $(if ($code) { ' (client error {0})' -f $code } else { '' }))
+        }
+        else {
+            $rows += New-TkIdentityRow -Severity 'Warning' -Kind 'Hybrid join' -Value ('Failing at the {0} phase' -f $phase) `
+                                       -Detail ('The domain is set up for Microsoft Entra hybrid join, but this device did not join. Client error {0}. {1} Microsoft lists the codes at https://aka.ms/aadjerrors.' -f
+                                                $code, (& $field 'Server Message')).Trim()
+        }
     }
 
     # --- Domain -------------------------------------------------------------
@@ -600,6 +673,7 @@ function Get-TkIdentityHealth {
     $domain  = $null
     $channel = $null
     $offset  = $null
+    $hybrid  = $null
 
     if ($domainJoined) {
 
@@ -614,6 +688,7 @@ function Get-TkIdentityHealth {
 
         if ($domain.Reachable) {
             $offset = Get-TkClockOffset -Computer $domain.Name
+            $hybrid = Get-TkHybridJoinConfiguration
         }
     }
 
@@ -628,5 +703,6 @@ function Get-TkIdentityHealth {
 
     return @(ConvertTo-TkIdentityHealth -Status $status -DomainJoined $domainJoined -Domain $domain `
                                         -SecureChannel $channel -TimeService $time -ClockOffset $offset `
-                                        -Enrollment @(Get-TkMdmEnrollment) -MdmErrors (Get-TkMdmSyncError -Days 7))
+                                        -Enrollment @(Get-TkMdmEnrollment) -MdmErrors (Get-TkMdmSyncError -Days 7) `
+                                        -HybridConfigured $hybrid)
 }

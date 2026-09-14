@@ -2816,6 +2816,48 @@ Describe 'Sign-in and management' {
         ($rows | Where-Object { $_.Kind -eq 'Secure channel' }).Severity    | Should -Be 'Fail'
     }
 
+    It 'does not warn a domain member of a domain that never set up hybrid join' {
+
+        # What dsregcmd records on every member of an on-premises domain: the
+        # automatic device join task found no join settings to discover.
+        $status = ConvertFrom-TkDsregStatus -Line @(
+            'AzureAdJoined : NO', 'DomainJoined : YES', 'DomainName : CORP', 'WorkplaceJoined : NO',
+            'AzureAdPrt : NO', 'AD Connectivity Test : PASS', 'AD Configuration Test : FAIL [0x801c001d]',
+            'Error Phase : discover', 'Client ErrorCode : 0x801c001d'
+        )
+        $domain = [pscustomobject] @{ Domain = 'corp.contoso.com'; Name = 'DC01.corp.contoso.com'; Site = 'Paris'; Reachable = $true; Error = '' }
+
+        $rows = @(ConvertTo-TkIdentityHealth -Status $status -DomainJoined $true -Domain $domain -SecureChannel $true `
+                                             -TimeService $script:Running -ClockOffset 0.2 -Now $script:Now)
+
+        $hybrid = $rows | Where-Object { $_.Kind -eq 'Hybrid join' }
+
+        $hybrid.Severity | Should -Be 'Info'
+        $hybrid.Value    | Should -Be 'Not set up for this domain'
+        @($rows | Where-Object { $_.Severity -in @('Fail', 'Warning') }).Count | Should -Be 0
+        @($rows | Where-Object { $_.RemediationId -eq 'open-work-access' }).Count | Should -Be 0
+    }
+
+    It 'still warns when the domain publishes hybrid join settings and the device did not join' {
+
+        $status = ConvertFrom-TkDsregStatus -Line @(
+            'AzureAdJoined : NO', 'DomainJoined : YES', 'Error Phase : join', 'Client ErrorCode : 0x801c03f2',
+            'Server Message : The device object by the given id is not found.'
+        )
+
+        $configured = ConvertTo-TkIdentityHealth -Status $status -DomainJoined $true -HybridConfigured $true -Now $script:Now |
+                      Where-Object { $_.Kind -eq 'Hybrid join' }
+        $unknown    = ConvertTo-TkIdentityHealth -Status $status -DomainJoined $true -Now $script:Now |
+                      Where-Object { $_.Kind -eq 'Hybrid join' }
+        $absent     = ConvertTo-TkIdentityHealth -Status $status -DomainJoined $true -HybridConfigured $false -Now $script:Now |
+                      Where-Object { $_.Kind -eq 'Hybrid join' }
+
+        $configured.Severity | Should -Be 'Warning'
+        $configured.Detail   | Should -Match '0x801c03f2'
+        $unknown.Severity    | Should -Be 'Warning'
+        $absent.Severity     | Should -Be 'Info'
+    }
+
     It 'offers only corrections the allow list knows' {
 
         $table  = Get-TkRemediationTable
