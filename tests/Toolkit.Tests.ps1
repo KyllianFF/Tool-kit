@@ -4602,6 +4602,90 @@ Describe 'HTML documents' {
     }
 }
 
+Describe 'QR codes' {
+
+    BeforeAll {
+        Initialize-TkQrCodeType
+    }
+
+    It 'holds exactly the data capacity of the standard, for every version and level' {
+
+        # Data codewords from ISO/IEC 18004 table 7, written down separately
+        # from the block tables the encoder computes them from.
+        $capacity = @{
+            0 = @(19, 34, 55, 80, 108, 136, 156, 194, 232, 274, 324, 370, 428, 461, 523, 589, 647, 721, 795, 861, 932, 1006, 1094, 1174, 1276, 1370, 1468, 1531, 1631, 1735, 1843, 1955, 2071, 2191, 2306, 2434, 2566, 2702, 2812, 2956)
+            1 = @(16, 28, 44, 64, 86, 108, 124, 154, 182, 216, 254, 290, 334, 365, 415, 453, 507, 563, 627, 669, 714, 782, 860, 914, 1000, 1062, 1128, 1193, 1267, 1373, 1455, 1541, 1631, 1725, 1812, 1914, 1992, 2102, 2216, 2334)
+            2 = @(13, 22, 34, 48, 62, 76, 88, 110, 132, 154, 180, 206, 244, 261, 295, 325, 367, 397, 445, 485, 512, 568, 614, 664, 718, 754, 808, 871, 911, 985, 1033, 1115, 1171, 1231, 1286, 1354, 1426, 1502, 1582, 1666)
+            3 = @(9, 16, 26, 36, 46, 60, 66, 86, 100, 122, 140, 158, 180, 197, 223, 253, 283, 313, 341, 385, 406, 442, 464, 514, 538, 596, 628, 661, 701, 745, 793, 845, 901, 961, 986, 1054, 1096, 1142, 1222, 1276)
+        }
+
+        foreach ($level in 0..3) {
+            for ($version = 1; $version -le 40; $version++) {
+                [TkQrCode]::GetDataCodewords($version, $level) | Should -Be $capacity[$level][$version - 1] -Because ('version {0}, level {1}' -f $version, $level)
+            }
+        }
+    }
+
+    It 'computes the Reed-Solomon codewords of the standard example' {
+
+        # HELLO WORLD at version 1-M, the worked example of the standard's tutorials.
+        $data = [byte[]] @(32, 91, 11, 120, 209, 114, 220, 77, 67, 64, 236, 17, 236, 17, 236, 17)
+
+        ([TkQrCode]::ReedSolomonRemainder($data, [TkQrCode]::ReedSolomonDivisor(10))) -join ',' | Should -Be '196,35,39,119,235,215,231,226,93,23'
+    }
+
+    It 'writes the format and version bits of the standard' {
+
+        [Convert]::ToString([TkQrCode]::GetFormatBits(0, 0), 2).PadLeft(15, '0') | Should -Be '111011111000100'
+        [Convert]::ToString([TkQrCode]::GetFormatBits(0, 7), 2).PadLeft(15, '0') | Should -Be '110100101110110'
+        [Convert]::ToString([TkQrCode]::GetFormatBits(1, 5), 2).PadLeft(15, '0') | Should -Be '100000011001110'
+        [Convert]::ToString([TkQrCode]::GetFormatBits(2, 0), 2).PadLeft(15, '0') | Should -Be '011010101011111'
+        [Convert]::ToString([TkQrCode]::GetFormatBits(3, 0), 2).PadLeft(15, '0') | Should -Be '001011010001001'
+
+        [Convert]::ToString([TkQrCode]::GetVersionBits(7), 2).PadLeft(18, '0') | Should -Be '000111110010010100'
+        [Convert]::ToString([TkQrCode]::GetVersionBits(8), 2).PadLeft(18, '0') | Should -Be '001000010110111100'
+    }
+
+    It 'picks the smallest version and draws the fixed patterns' {
+
+        $code = New-TkQrCode -Text 'https://github.com/KyllianFF/Tool-kit' -ErrorCorrection M
+
+        $code.Version | Should -Be 3
+        $code.Size    | Should -Be 29
+
+        $modules = $code.Modules
+
+        # Finder corners: dark outer ring, light ring, dark core.
+        foreach ($corner in @(@(0, 0), @(0, 22), @(22, 0))) {
+            $modules[($corner[0]), ($corner[1])]         | Should -BeTrue
+            $modules[($corner[0] + 1), ($corner[1] + 1)] | Should -BeFalse
+            $modules[($corner[0] + 3), ($corner[1] + 3)] | Should -BeTrue
+        }
+
+        # Timing pattern and the dark module beside the bottom left finder.
+        for ($index = 8; $index -lt 21; $index++) {
+            $modules[6, $index] | Should -Be ($index % 2 -eq 0)
+        }
+
+        $modules[21, 8] | Should -BeTrue
+
+        (New-TkQrCode -Text ('x' * 2953) -ErrorCorrection L).Version | Should -Be 40
+        { New-TkQrCode -Text ('x' * 2954) -ErrorCorrection L } | Should -Throw
+        { New-TkQrCode -Text '' } | Should -Throw
+    }
+
+    It 'writes a Wi-Fi code phones read, and refuses a key the network would not take' {
+
+        ConvertTo-TkWifiQrText -Ssid 'Cafe;Guest' -Key 'p@ss:word"1' -Security WPA | Should -BeExactly 'WIFI:T:WPA;S:Cafe\;Guest;P:p@ss\:word\"1;;'
+        ConvertTo-TkWifiQrText -Ssid 'Lobby' -Security nopass -Hidden          | Should -BeExactly 'WIFI:T:nopass;S:Lobby;H:true;;'
+        ConvertTo-TkWifiQrText -Ssid 'Lab' -Key 'DEADBEEF' -Security SAE       | Should -BeExactly 'WIFI:T:SAE;S:Lab;P:"DEADBEEF";;'
+
+        { ConvertTo-TkWifiQrText -Ssid 'Office' -Key 'short' -Security WPA }   | Should -Throw
+        { ConvertTo-TkWifiQrText -Ssid 'Office' -Key 'secret' -Security nopass } | Should -Throw
+        { ConvertTo-TkWifiQrText -Ssid '' -Key 'longenough' }                  | Should -Throw
+    }
+}
+
 Describe 'Password strength' {
 
     It 'rates <Text> as very weak, whatever its disguise' -TestCases @(
