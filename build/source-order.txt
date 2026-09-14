@@ -54,6 +54,7 @@ src/Features/Reporting/Headless.ps1
 src/Features/Reporting/Comparison.ps1
 src/Features/Reference/WindowsReference.ps1
 src/Features/Tools/Calculators.ps1
+src/Features/Tools/TextTools.ps1
 
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1
