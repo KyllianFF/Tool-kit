@@ -18,6 +18,9 @@ $script:TkLogLevels = @{
 # Anything below this level is discarded. Raised to Debug by -Verbose runs.
 $script:TkMinimumLogLevel = 'Information'
 
+# Set by a headless run: the console then shows warnings and errors only.
+$script:TkQuietConsole = $false
+
 <#
 .SYNOPSIS
     Writes a structured entry to the toolkit log.
@@ -85,6 +88,13 @@ function Write-TkLog {
     # the line either way.
     if ($script:TkWorker) {
         Write-TkUiConsole -Line $line -Level $Level
+        return
+    }
+
+    # A headless run keeps the console for its warnings and errors. The
+    # progress lines stay in the file, where they are not mixed into output a
+    # script is about to read.
+    if ($script:TkQuietConsole -and $Level -in @('Debug', 'Information')) {
         return
     }
 

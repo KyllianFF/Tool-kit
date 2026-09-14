@@ -75,6 +75,169 @@ Describe 'Launch from the one liner' {
     }
 }
 
+Describe 'Headless reports' {
+
+    BeforeAll {
+        # Journaled to a temporary folder, never to the account that runs the tests.
+        $script:HeadlessDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:HeadlessDataRoot
+        $script:TkQuietConsole   = $false
+    }
+
+    It 'lists each report once, with collectors whose commands exist' {
+
+        $table = @(Get-TkHeadlessReport)
+
+        $table.Count | Should -BeGreaterThan 10
+        @($table | ForEach-Object { $_.Name } | Sort-Object -Unique).Count | Should -Be $table.Count
+
+        foreach ($entry in $table) {
+
+            $entry.Description | Should -Not -BeNullOrEmpty -Because $entry.Name
+
+            $commands = @($entry.Collect.Ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) |
+                          ForEach-Object { $_.GetCommandName() } | Where-Object { $_ -like '*-Tk*' })
+
+            $commands.Count | Should -BeGreaterThan 0 -Because $entry.Name
+
+            foreach ($command in $commands) {
+                Get-Command -Name $command -ErrorAction SilentlyContinue |
+                    Should -Not -BeNullOrEmpty -Because ('{0} calls {1}' -f $entry.Name, $command)
+            }
+        }
+
+        # Only the audit reads what a standard user cannot see.
+        (@($table | Where-Object { $_.Elevated } | ForEach-Object { $_.Name })) -join ',' | Should -Be 'Audit'
+    }
+
+    It 'expands All, splits a comma separated list in any case, and refuses an unknown name' {
+
+        @(Resolve-TkHeadlessReportName -Name 'All').Count                     | Should -Be @(Get-TkHeadlessReport).Count
+        (Resolve-TkHeadlessReportName -Name 'storage,Reboot') -join ','       | Should -Be 'Storage,Reboot'
+        (Resolve-TkHeadlessReportName -Name @('Wifi', 'wifi', 'Proxy')) -join ',' | Should -Be 'Wifi,Proxy'
+
+        { Resolve-TkHeadlessReportName -Name 'Nope' } | Should -Throw '*Available*'
+    }
+
+    It 'writes dates, time spans, enumerations and single row arrays the same way on 5.1 and 7' {
+
+        $data = ConvertTo-TkPlainData -InputObject ([pscustomobject] @{
+            When    = [datetime]::new(2026, 9, 14, 7, 30, 0)
+            Uptime  = [timespan]::new(1, 2, 3, 4)
+            Day     = [System.DayOfWeek]::Monday
+            Id      = [guid] '835099d0-542e-48d4-bade-8b3bdec58d94'
+            Rows    = @([pscustomobject] @{ Name = 'only row' })
+            Table   = @{ Key = 'value' }
+            Ratio   = [double]::NaN
+            Rounded = [math]::Round(12.04, 1)
+            Whole   = [math]::Round(42.3)
+            Missing = $null
+            Script  = { 'never run' }
+        })
+
+        $data.When      | Should -Be '2026-09-14T07:30:00.0000000'
+        $data.Uptime    | Should -Be '1.02:03:04'
+        $data.Day       | Should -Be 'Monday'
+        $data.Id        | Should -Be '835099d0-542e-48d4-bade-8b3bdec58d94'
+        $data.Table.Key | Should -Be 'value'
+        $data.Ratio     | Should -BeNullOrEmpty
+        $data.Script    | Should -BeNullOrEmpty
+
+        # Whole numbers as integers, so neither version writes 12.0.
+        $data.Rounded   | Should -BeOfType [long]
+        $data.Whole     | Should -Be 42
+
+        ($data.Rows -is [array]) | Should -BeTrue
+        $data.Rows.Count         | Should -Be 1
+
+        $json = ConvertTo-Json -InputObject $data -Depth 10
+
+        $json | Should -Match '"Rows":\s*\['
+        $json | Should -Match '"When":\s*"2026-09-14T07:30:00\.0000000"'
+    }
+
+    It 'names the worst judgement anywhere in a report' {
+
+        $mixed = ConvertTo-TkPlainData -InputObject @(
+            [pscustomobject] @{ Severity = 'Pass' }
+            [pscustomobject] @{ Nested = @([pscustomobject] @{ Status = 'Warning' }, [pscustomobject] @{ Status = 'Fail' }) }
+        )
+
+        Get-TkWorstSeverity -Data $mixed | Should -Be 'Fail'
+
+        Get-TkWorstSeverity -Data (ConvertTo-TkPlainData -InputObject @([pscustomobject] @{ Severity = 'Info' }, [pscustomobject] @{ Status = 'Pass' })) |
+            Should -Be 'Pass'
+
+        # A service state is not a judgement.
+        Get-TkWorstSeverity -Data (ConvertTo-TkPlainData -InputObject ([pscustomobject] @{ Status = 'Running' })) | Should -Be ''
+    }
+
+    It 'skips a report that needs administrator rights, records one that fails, and keeps a single row as an array' {
+
+        $needsAdmin = [pscustomobject] @{ Name = 'Needs admin'; Elevated = $true; Description = 'x'; Collect = { param($Options) $null = $Options; 'never' } }
+        $skipped    = Invoke-TkHeadlessCollector -Entry $needsAdmin -Elevated $false
+
+        $skipped.Status | Should -Be 'Skipped'
+        $skipped.Reason | Should -BeLike '*administrator*'
+        $skipped.Data   | Should -BeNullOrEmpty
+
+        $broken = [pscustomobject] @{ Name = 'Broken'; Elevated = $false; Description = 'x'; Collect = { param($Options) $null = $Options; throw 'the provider is gone' } }
+        $failed = Invoke-TkHeadlessCollector -Entry $broken
+
+        $failed.Status | Should -Be 'Failed'
+        $failed.Reason | Should -Be 'the provider is gone'
+
+        $one = [pscustomobject] @{ Name = 'One row'; Elevated = $false; Description = 'x'; Collect = { param($Options) , @([pscustomobject] @{ Severity = 'Warning'; Level = $Options.AuditLevel }) } }
+        $ok  = Invoke-TkHeadlessCollector -Entry $one -Options @{ AuditLevel = 'Full' }
+
+        $ok.Status          | Should -Be 'Ok'
+        $ok.Worst           | Should -Be 'Warning'
+        ($ok.Data -is [array]) | Should -BeTrue
+        $ok.Data[0].Level   | Should -Be 'Full'
+    }
+
+    It 'collects a real report into a JSON file without a byte order mark' {
+
+        $path = Invoke-TkHeadlessReport -Report 'Reboot' -OutFile (Join-Path $TestDrive 'report.json')
+
+        [System.IO.File]::ReadAllBytes($path)[0] | Should -Be 0x7B
+
+        $document = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+
+        $document.Computer              | Should -Be $env:COMPUTERNAME
+        $document.Reports.Reboot.Status | Should -Be 'Ok'
+        $document.Reports.Reboot.Data   | Should -Not -BeNullOrEmpty
+    }
+
+    It 'lists the reports it knows, and which need administrator rights' {
+
+        $list  = Invoke-TkHeadlessReport -Report 'List' | ConvertFrom-Json
+        $items = @($list | ForEach-Object { $_ })
+
+        $items.Count                                           | Should -Be @(Get-TkHeadlessReport).Count
+        ($items | Where-Object { $_.Name -eq 'Audit' }).Elevated | Should -BeTrue
+    }
+
+    It 'takes the headless parameters at every entry point' {
+
+        foreach ($name in @('Report', 'OutFile', 'AuditLevel')) {
+            (Get-Command -Name 'Start-Toolkit').Parameters.Keys                                   | Should -Contain $name
+            (Get-Command -Name (Join-Path $script:RepositoryRoot 'toolkit.ps1')).Parameters.Keys  | Should -Contain $name
+        }
+
+        # The compiled build is generated, so its entry point is read in the
+        # template that writes it.
+        $build = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'build\Build-Toolkit.ps1') -Raw
+
+        $build | Should -Match '\[string\[\]\] `\$Report'
+        $build | Should -Match 'Start-Toolkit -Report `\$Report -OutFile `\$OutFile -AuditLevel `\$AuditLevel'
+    }
+}
+
 Describe 'IPv4 conversion' {
 
     It 'converts <Address> to <Expected> and back' -TestCases @(
