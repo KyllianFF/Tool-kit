@@ -80,6 +80,13 @@ function Initialize-TkSecurityPage {
     Register-TkClick -Name 'BtnGeneratePassword'   -Action { New-TkPasswordFromUi }
     Register-TkClick -Name 'BtnGeneratePassphrase' -Action { New-TkPassphraseFromUi }
     Register-TkClick -Name 'BtnCheckBreach'        -Action { Invoke-TkBreachCheck }
+    Register-TkClick -Name 'BtnAnalysePassword'    -Action { Invoke-TkPasswordStrengthFromUi }
+
+    $typed = Get-TkControl -Name 'BreachPassword'
+
+    if ($typed) {
+        $typed.Add_PasswordChanged({ Update-TkPasswordStrengthMeter })
+    }
 
     Register-TkClick -Name 'BtnCopyPassword' -Action {
 
@@ -471,13 +478,16 @@ function New-TkPasswordFromUi {
 
     $script:TkLastGeneratedSecret = $result.Password
 
+    $strength = Measure-TkPasswordStrength -Text $result.Password -KnownEntropyBits $result.EntropyBits
+
     $lines = @(
         $result.Password
         ''
         'Length        {0}' -f $result.Length
         'Alphabet      {0} characters' -f $result.AlphabetSize
-        'Entropy       {0} bits' -f $result.EntropyBits
-        'Assessment    {0}' -f $result.Strength
+        'Entropy       {0} bits' -f [string] $result.EntropyBits
+        ''
+        (Format-TkPasswordStrengthText -Strength $strength)
         ''
         'Generated with the cryptographic random number generator, using rejection'
         'sampling so no character is more likely than another.'
@@ -498,18 +508,129 @@ function New-TkPassphraseFromUi {
 
     $script:TkLastGeneratedSecret = $result.Passphrase
 
+    $strength = Measure-TkPasswordStrength -Text $result.Passphrase -KnownEntropyBits $result.EntropyBits
+
     $lines = @(
         $result.Passphrase
         ''
         'Words         {0} from a list of {1}' -f $result.WordCount, $result.ListSize
-        'Entropy       {0} bits' -f $result.EntropyBits
-        'Assessment    {0}' -f $result.Strength
+        'Entropy       {0} bits' -f [string] $result.EntropyBits
+        ''
+        (Format-TkPasswordStrengthText -Strength $strength)
         ''
         'A passphrase is the better choice wherever the credential has to be typed'
         'by hand: a server console, a phone, or dictated over the telephone.'
     )
 
     Set-TkOutput -ControlName 'CredentialOutput' -Text ($lines -join [Environment]::NewLine)
+}
+
+<#
+.SYNOPSIS
+    Writes a strength estimate as the lines of the output box.
+
+.PARAMETER Strength
+    What Measure-TkPasswordStrength returns.
+
+.OUTPUTS
+    System.String
+#>
+function Format-TkPasswordStrengthText {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject] $Strength
+    )
+
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    $lines.Add(('Strength      {0}, about {1} bits to guess' -f $Strength.Rating, [string] $Strength.Bits))
+    $lines.Add('')
+    $lines.Add('Time to crack')
+
+    # One block per attack rather than a table: the durations are long words,
+    # and a table of them does not fit beside the tool list.
+    foreach ($row in $Strength.CrackTimes) {
+        $lines.Add('')
+        $lines.Add(('  {0}' -f $row.Scenario))
+        $lines.Add(('    {0,-32} {1}' -f 'Brute force, every combination', $row.BruteForce))
+        $lines.Add(('    {0,-32} {1}' -f $Strength.EstimateLabel, $row.Estimated))
+    }
+
+    if (@($Strength.Weaknesses).Count -gt 0) {
+
+        $lines.Add('')
+        $lines.Add('Weaknesses')
+
+        foreach ($weakness in $Strength.Weaknesses) {
+            $lines.Add(('  - It contains {0}.' -f $weakness.Note))
+        }
+    }
+
+    foreach ($tip in @($Strength.Advice)) {
+        $lines.Add('')
+        $lines.Add($tip)
+    }
+
+    return ($lines -join [Environment]::NewLine)
+}
+
+<#
+.SYNOPSIS
+    Analyses the password typed in the check box.
+#>
+function Invoke-TkPasswordStrengthFromUi {
+    [CmdletBinding()]
+    param()
+
+    $box = Get-TkControl -Name 'BreachPassword'
+
+    if ($box.SecurePassword.Length -eq 0) {
+        Set-TkStatus -Text 'Type the password to analyse.'
+        return
+    }
+
+    # Reading the characters is the only way to look for patterns in them.
+    # They stay in this function: the output names what was found, never the
+    # password or a piece of it.
+    $strength = Measure-TkPasswordStrength -Text $box.Password
+
+    $lines = @(
+        'Password typed, {0} characters, not shown.' -f $strength.Length
+        ''
+        (Format-TkPasswordStrengthText -Strength $strength)
+        ''
+        'Brute force tries every combination of the same length and character types. Guessing starts with common passwords, words, keyboard runs, sequences, years and dates, the way cracking tools do, so it is the estimate to believe for a password a person chose.'
+    )
+
+    Set-TkOutput -ControlName 'CredentialOutput' -Text ($lines -join [Environment]::NewLine)
+}
+
+<#
+.SYNOPSIS
+    Follows the password being typed with a one line estimate.
+#>
+function Update-TkPasswordStrengthMeter {
+    [CmdletBinding()]
+    param()
+
+    $box   = Get-TkControl -Name 'BreachPassword'
+    $meter = Get-TkControl -Name 'PasswordStrengthMeter'
+
+    if (-not $box -or -not $meter) {
+        return
+    }
+
+    if ($box.SecurePassword.Length -eq 0) {
+        $meter.Text = 'Type a password to see how strong it is.'
+        return
+    }
+
+    $strength = Measure-TkPasswordStrength -Text $box.Password
+    $times    = @($strength.CrackTimes)
+
+    $meter.Text = '{0}. From a stolen fast hash: {1}. Through a throttled login: {2}.' -f $strength.Rating, $times[-1].Estimated, $times[0].Estimated
 }
 
 <#

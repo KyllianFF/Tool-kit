@@ -18,6 +18,24 @@ function Initialize-TkToolsPage {
     [CmdletBinding()]
     param()
 
+    # --- Chooser ----------------------------------------------------------
+    # Found by title in Get-TkToolEntry, like the Diagnostics reports, so a
+    # tool inserted in the list cannot shift the others onto the wrong panel.
+    $choices = Get-TkControl -Name 'ToolChoices'
+
+    if ($choices) {
+
+        $choices.Add_SelectionChanged({
+            $title = Get-TkItemTitle -Item (Get-TkControl -Name 'ToolChoices').SelectedItem
+
+            if ($title) {
+                Show-TkTool -Title $title
+            }
+        })
+
+        [void] (Select-TkListChoice -ListName 'ToolChoices' -Title (@(Get-TkToolEntry)[0].Title))
+    }
+
     # --- Ports ------------------------------------------------------------
     $range = Get-TkControl -Name 'PortRange'
 
@@ -109,6 +127,70 @@ function Initialize-TkToolsPage {
 
     Register-TkClick -Name 'BtnSwapText' -Action {
         (Get-TkControl -Name 'EncodingInput').Text = (Get-TkControl -Name 'EncodingOutput').Text
+    }
+}
+
+<#
+.SYNOPSIS
+    Lists the tools of the Tools page, by category, in the order of the list.
+
+.DESCRIPTION
+    Title is the text of the entry in ToolChoices, Panel the name of the grid
+    that holds the tool. The markup lists the same tools under the same
+    categories in the same order, which a test checks.
+
+.OUTPUTS
+    PSCustomObject[] with Category, Title and Panel.
+#>
+function Get-TkToolEntry {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    $tool = {
+        param($category, $title, $panel)
+        [pscustomobject] @{ Category = $category; Title = $title; Panel = $panel }
+    }
+
+    return @(
+        (& $tool 'Security'         'Passwords'      'ToolPasswords')
+        (& $tool 'Security'         'SSH keys'       'ToolSshKeys')
+        (& $tool 'Security'         'File integrity' 'ToolFileIntegrity')
+        (& $tool 'Generators'       'Ports'          'ToolPorts')
+        (& $tool 'Text and data'    'Encoding'       'ToolEncoding')
+        (& $tool 'Text and data'    'Regex'          'ToolRegex')
+        (& $tool 'Text and data'    'Timestamps'     'ToolTimestamps')
+        (& $tool 'Linux and DevOps' 'chmod'          'ToolChmod')
+    )
+}
+
+<#
+.SYNOPSIS
+    Shows one tool and hides the others.
+
+.PARAMETER Title
+    The title of the tool in Get-TkToolEntry.
+#>
+function Show-TkTool {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Title
+    )
+
+    $chosen = @(Get-TkToolEntry) | Where-Object { $_.Title -eq $Title } | Select-Object -First 1
+
+    if (-not $chosen) {
+        return
+    }
+
+    foreach ($entry in @(Get-TkToolEntry)) {
+
+        $panel = Get-TkControl -Name $entry.Panel
+
+        if ($panel) {
+            $panel.Visibility = if ($entry.Panel -eq $chosen.Panel) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+        }
     }
 }
 
