@@ -283,8 +283,68 @@ function Initialize-TkToolsPage {
     Update-TkUrlFromUi
     Update-TkNatoFromUi
     Update-TkPhoneFromUi
+    # --- QR codes ---------------------------------------------------------
+    foreach ($listName in @('QrErrorCorrection')) {
+
+        $levels = Get-TkControl -Name $listName
+
+        if ($levels) {
+
+            foreach ($choice in @(Get-TkQrErrorCorrectionChoice)) {
+                [void] $levels.Items.Add($choice.Label)
+            }
+
+            $levels.SelectedIndex = 0
+            $levels.Add_SelectionChanged({ Update-TkQrFromUi })
+        }
+    }
+
+    $qrInput = Get-TkControl -Name 'QrInput'
+
+    if ($qrInput) {
+        $qrInput.Add_TextChanged({ Update-TkQrFromUi })
+    }
+
+    $security = Get-TkControl -Name 'WifiQrSecurity'
+
+    if ($security) {
+
+        foreach ($choice in @(Get-TkWifiQrSecurityChoice)) {
+            [void] $security.Items.Add($choice.Label)
+        }
+
+        $security.SelectedIndex = 0
+        $security.Add_SelectionChanged({ Update-TkWifiQrFromUi })
+    }
+
+    $ssid = Get-TkControl -Name 'WifiQrSsid'
+
+    if ($ssid) {
+        $ssid.Add_TextChanged({ Update-TkWifiQrFromUi })
+    }
+
+    $key = Get-TkControl -Name 'WifiQrPassword'
+
+    if ($key) {
+        $key.Add_PasswordChanged({ Update-TkWifiQrFromUi })
+    }
+
+    $hidden = Get-TkControl -Name 'WifiQrHidden'
+
+    if ($hidden) {
+        $hidden.Add_Click({ Update-TkWifiQrFromUi })
+    }
+
+    Register-TkClick -Name 'BtnSaveQr'        -Action { Save-TkQrPicture -ImageName 'QrImage' -FileName 'qr-code' }
+    Register-TkClick -Name 'BtnCopyQr'        -Action { Copy-TkQrPicture -ImageName 'QrImage' }
+    Register-TkClick -Name 'BtnSaveWifiQr'    -Action { Save-TkQrPicture -ImageName 'WifiQrImage' -FileName ('wifi-{0}' -f ([string] (Get-TkControl -Name 'WifiQrSsid').Text -replace '[^A-Za-z0-9_-]', '-')) }
+    Register-TkClick -Name 'BtnCopyWifiQr'    -Action { Copy-TkQrPicture -ImageName 'WifiQrImage' }
+    Register-TkClick -Name 'BtnWifiQrCurrent' -Action { Invoke-TkWifiQrCurrentNetwork }
+
     Update-TkCronFromUi
     Update-TkHtmlSourceFromUi
+    Update-TkQrFromUi
+    Update-TkWifiQrFromUi
 }
 
 # ---------------------------------------------------------------------------
@@ -1133,6 +1193,282 @@ function Import-TkHtmlIntoEditor {
     Set-TkStatus -Text 'HTML loaded into the editor, without what the editor does not keep.'
 }
 
+# ---------------------------------------------------------------------------
+# QR codes
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Draws a QR code as a picture.
+
+.PARAMETER Code
+    What New-TkQrCode returns.
+
+.PARAMETER Scale
+    Pixels per module.
+
+.OUTPUTS
+    System.Windows.Media.Imaging.BitmapSource, frozen, with the four module
+    quiet zone the standard asks for.
+#>
+function New-TkQrPicture {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [pscustomobject] $Code,
+        [Parameter()] [ValidateRange(1, 40)] [int] $Scale = 8
+    )
+
+    $width  = 0
+    $pixels = [TkQrCode]::ToGray8($Code.Modules, $Scale, 4, [ref] $width)
+
+    $picture = [System.Windows.Media.Imaging.BitmapSource]::Create($width, $width, 96, 96,
+        [System.Windows.Media.PixelFormats]::Gray8, $null, $pixels, $width)
+
+    $picture.Freeze()
+
+    return $picture
+}
+
+<#
+.SYNOPSIS
+    Shows a QR code, or why there is none, in an image and its caption.
+#>
+function Set-TkQrPicture {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $ImageName,
+        [Parameter(Mandatory)] [string] $InfoName,
+        [Parameter()] [AllowNull()] $Code,
+        [Parameter()] [AllowEmptyString()] [string] $Message = ''
+    )
+
+    $image = Get-TkControl -Name $ImageName
+    $info  = Get-TkControl -Name $InfoName
+
+    if (-not $image -or -not $info) {
+        return
+    }
+
+    if ($null -eq $Code) {
+        $image.Source = $null
+        $info.Text    = $Message
+        return
+    }
+
+    $image.Source = New-TkQrPicture -Code $Code
+
+    $levels = @{ L = 'low, 7%'; M = 'medium, 15%'; Q = 'quartile, 25%'; H = 'high, 30%' }
+
+    $info.Text = (@(
+        ('Version        {0}' -f $Code.Version)
+        ('Size           {0} x {0} modules' -f $Code.Size)
+        ('Correction     {0}' -f $levels[$Code.ErrorCorrection])
+        ('Content        {0} bytes of UTF-8' -f $Code.Bytes)
+        ('Mask           {0}' -f $Code.Mask)
+        ''
+        $Message
+    ) | Where-Object { $null -ne $_ }) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Encodes the text on the page, as it is typed.
+#>
+function Update-TkQrFromUi {
+    [CmdletBinding()]
+    param()
+
+    $box = Get-TkControl -Name 'QrInput'
+
+    if (-not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    if (-not $text) {
+        Set-TkQrPicture -ImageName 'QrImage' -InfoName 'QrInfo' -Code $null -Message 'Type the link or the text to encode.'
+        return
+    }
+
+    $choice = @(Get-TkQrErrorCorrectionChoice) | Where-Object { $_.Label -eq [string] (Get-TkControl -Name 'QrErrorCorrection').SelectedItem } | Select-Object -First 1
+    $level  = if ($choice) { $choice.Level } else { 'M' }
+
+    try {
+        $code = New-TkQrCode -Text $text -ErrorCorrection $level
+        Set-TkQrPicture -ImageName 'QrImage' -InfoName 'QrInfo' -Code $code
+    }
+    catch {
+        Set-TkQrPicture -ImageName 'QrImage' -InfoName 'QrInfo' -Code $null -Message $_.Exception.Message
+    }
+}
+
+<#
+.SYNOPSIS
+    Encodes the Wi-Fi network described on the page, as it is typed.
+#>
+function Update-TkWifiQrFromUi {
+    [CmdletBinding()]
+    param()
+
+    $ssid = Get-TkControl -Name 'WifiQrSsid'
+    $key  = Get-TkControl -Name 'WifiQrPassword'
+
+    if (-not $ssid -or -not $key) {
+        return
+    }
+
+    if (-not $ssid.Text) {
+        Set-TkQrPicture -ImageName 'WifiQrImage' -InfoName 'WifiQrInfo' -Code $null -Message 'Type the name of the network and its password, or use the connected network.'
+        return
+    }
+
+    $choice   = @(Get-TkWifiQrSecurityChoice) | Where-Object { $_.Label -eq [string] (Get-TkControl -Name 'WifiQrSecurity').SelectedItem } | Select-Object -First 1
+    $security = if ($choice) { $choice.Security } else { 'WPA' }
+
+    try {
+        # The key is read from the password box only to be written into the
+        # code, which is its purpose, and is not kept anywhere else.
+        $text = ConvertTo-TkWifiQrText -Ssid ([string] $ssid.Text) -Key $key.Password -Security $security `
+                                       -Hidden:([bool] (Get-TkControl -Name 'WifiQrHidden').IsChecked)
+
+        Set-TkQrPicture -ImageName 'WifiQrImage' -InfoName 'WifiQrInfo' -Code (New-TkQrCode -Text $text -ErrorCorrection 'M') `
+            -Message ('Joins {0} ({1}).' -f $ssid.Text, $(if ($choice) { $choice.Label } else { $security }))
+    }
+    catch {
+        Set-TkQrPicture -ImageName 'WifiQrImage' -InfoName 'WifiQrInfo' -Code $null -Message $_.Exception.Message
+    }
+}
+
+<#
+.SYNOPSIS
+    Fills in the name and security of the network this machine is connected to.
+
+.DESCRIPTION
+    Read in the background from the Wi-Fi API. The saved password is not
+    read: Windows gives it only to an administrator, and a code made from a
+    guessed security type would not join anyway.
+#>
+function Invoke-TkWifiQrCurrentNetwork {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the connected Wi-Fi network...' `
+        -ScriptBlock { Get-TkWifiStatus -Days 1 } `
+        -OnComplete {
+            param($result)
+
+            $status     = @($result.Output) | Select-Object -First 1
+            $connection = if ($status) { @($status.Interfaces | Where-Object { $_.Connection } | ForEach-Object { $_.Connection }) | Select-Object -First 1 }
+
+            if (-not $connection -or -not $connection.Ssid) {
+                Set-TkStatus -Text 'No Wi-Fi network is connected on this machine.'
+                return
+            }
+
+            $authentication = [string] $connection.Authentication
+
+            if ($authentication -match 'Enterprise|802\.1X|EAP') {
+                Set-TkStatus -Text ('{0} signs in with an account ({1}): a Wi-Fi QR code cannot carry that.' -f $connection.Ssid, $authentication)
+                return
+            }
+
+            $security = if ($authentication -match 'WPA3' -and $authentication -notmatch 'WPA2') { 'SAE' }
+                        elseif ($authentication -match 'Open|None') { 'nopass' }
+                        elseif ($authentication -match 'WEP|Shared') { 'WEP' }
+                        else { 'WPA' }
+
+            $choice = @(Get-TkWifiQrSecurityChoice) | Where-Object { $_.Security -eq $security } | Select-Object -First 1
+
+            (Get-TkControl -Name 'WifiQrSsid').Text             = [string] $connection.Ssid
+            (Get-TkControl -Name 'WifiQrSecurity').SelectedItem = $choice.Label
+
+            Set-TkStatus -Text ('{0} filled in ({1}). Type its password: Windows gives saved passwords only to an administrator.' -f $connection.Ssid, $authentication)
+        }
+}
+
+<#
+.SYNOPSIS
+    Saves the QR code shown in an image as a PNG file.
+
+.PARAMETER ImageName
+    The image control.
+
+.PARAMETER FileName
+    The suggested file name, without extension.
+#>
+function Save-TkQrPicture {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $ImageName,
+        [Parameter(Mandatory)] [string] $FileName
+    )
+
+    $picture = (Get-TkControl -Name $ImageName).Source
+
+    if (-not $picture) {
+        Set-TkStatus -Text 'There is no QR code to save yet.'
+        return
+    }
+
+    $dialog          = New-Object Microsoft.Win32.SaveFileDialog
+    $dialog.Title    = 'Save the QR code'
+    $dialog.Filter   = 'PNG picture (*.png)|*.png'
+    $dialog.FileName = '{0}.png' -f $FileName
+
+    if (-not $dialog.ShowDialog()) {
+        return
+    }
+
+    $stream = $null
+
+    try {
+        $encoder = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
+        $encoder.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($picture))
+
+        $stream = [System.IO.File]::Create($dialog.FileName)
+        $encoder.Save($stream)
+
+        Set-TkStatus -Text ('QR code saved to {0}.' -f $dialog.FileName)
+    }
+    catch {
+        Set-TkStatus -Text ('The QR code could not be saved: {0}' -f $_.Exception.Message)
+    }
+    finally {
+        if ($stream) { $stream.Dispose() }
+    }
+}
+
+<#
+.SYNOPSIS
+    Copies the QR code shown in an image to the clipboard.
+
+.PARAMETER ImageName
+    The image control.
+#>
+function Copy-TkQrPicture {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ImageName
+    )
+
+    $picture = (Get-TkControl -Name $ImageName).Source
+
+    if (-not $picture) {
+        Set-TkStatus -Text 'There is no QR code to copy yet.'
+        return
+    }
+
+    try {
+        [System.Windows.Clipboard]::SetImage($picture)
+        Set-TkStatus -Text 'QR code copied to the clipboard as a picture.'
+    }
+    catch {
+        Set-TkStatus -Text ('The clipboard is busy: {0}' -f $_.Exception.Message)
+    }
+}
+
 <#
 .SYNOPSIS
     Lists the tools of the Tools page, by category, in the order of the list.
@@ -1162,6 +1498,8 @@ function Get-TkToolEntry {
         (& $tool 'Security'         'Safe Links'     'ToolSafeLinks')
         (& $tool 'Generators'       'Ports'          'ToolPorts')
         (& $tool 'Generators'       'UUIDs'          'ToolUuids')
+        (& $tool 'Generators'       'QR code'        'ToolQrCode')
+        (& $tool 'Generators'       'Wi-Fi QR code'  'ToolWifiQr')
         (& $tool 'Text and data'    'Encoding'       'ToolEncoding')
         (& $tool 'Text and data'    'Regex'          'ToolRegex')
         (& $tool 'Text and data'    'Timestamps'     'ToolTimestamps')
