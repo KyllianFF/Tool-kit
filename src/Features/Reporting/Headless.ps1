@@ -499,6 +499,10 @@ function Invoke-TkHeadlessCollector {
 .PARAMETER Report
     Report names, All, or List for the available reports.
 
+.PARAMETER CompareWith
+    A report document saved earlier. Its reports are collected again when
+    Report is not given, and what changed since is added to the output.
+
 .PARAMETER OutFile
     Where to write the JSON. Without it the JSON is returned.
 
@@ -512,8 +516,13 @@ function Invoke-TkHeadlessReport {
     [CmdletBinding()]
     [OutputType([string])]
     param(
-        [Parameter(Mandatory)]
-        [string[]] $Report,
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [string[]] $Report = @(),
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $CompareWith = '',
 
         [Parameter()]
         [AllowEmptyString()]
@@ -524,13 +533,29 @@ function Invoke-TkHeadlessReport {
         [string] $AuditLevel = 'Essential'
     )
 
-    $table = @(Get-TkHeadlessReport)
+    $table     = @(Get-TkHeadlessReport)
+    $reference = $null
 
     if (@($Report | ForEach-Object { [string] $_ -split '[,;\s]+' } | Where-Object { $_ -eq 'List' }).Count -gt 0) {
 
         $document = ConvertTo-TkPlainData -InputObject @($table | Select-Object -Property Name, Elevated, Description)
     }
     else {
+
+        # Read before anything is collected, so a wrong file fails at once
+        # rather than after half a minute of collection.
+        if ($CompareWith) {
+
+            $reference = Read-TkReportDocument -Path $CompareWith
+
+            if (@($Report | Where-Object { $_ }).Count -eq 0) {
+                $Report = @($reference.Reports.Keys)
+            }
+        }
+
+        if (@($Report | Where-Object { $_ }).Count -eq 0) {
+            throw 'Name the reports to collect with -Report, or give -CompareWith a report document to collect again.'
+        }
 
         $names    = @(Resolve-TkHeadlessReportName -Name $Report)
         $elevated = [bool] (Test-TkIsElevated)
@@ -568,6 +593,10 @@ function Invoke-TkHeadlessReport {
 
         Stop-TkOperation -Name ('Headless report: {0}' -f ($names -join ', ')) -Stopwatch $stopwatch -Category 'Headless' `
                          -Success (@($reports.Values | Where-Object { $_.Status -eq 'Failed' }).Count -eq 0)
+
+        if ($reference) {
+            $document['Comparison'] = ConvertTo-TkPlainData -InputObject (Compare-TkReportDocument -Reference $reference -Difference $document)
+        }
     }
 
     $json = ConvertTo-Json -InputObject $document -Depth 40

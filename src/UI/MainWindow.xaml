@@ -3000,16 +3000,37 @@
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
 
-                            <DockPanel Grid.Row="0" Margin="0,0,0,10" LastChildFill="False">
-                                <TextBlock Text="Journal" Style="{StaticResource SubHeading}" VerticalAlignment="Center" />
-                                <ComboBox x:Name="JournalPeriod" Width="150" Margin="16,0,0,0" />
-                                <Button x:Name="BtnJournalRefresh" Content="Refresh" Style="{StaticResource GlyphButton}"
-                                        Tag="&#xE72C;" Margin="8,0,0,0" />
-                                <Button x:Name="BtnInterventionReport" DockPanel.Dock="Right" Content="Create the intervention report"
-                                        Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE8A5;" Margin="0"
-                                        ToolTip="One HTML file with the machine, its health, the latest audit, what was done and the notes, to attach to the ticket." />
-                                <Button x:Name="BtnJournalFolder" DockPanel.Dock="Right" Content="Open journal folder" Margin="0,0,8,0" />
-                            </DockPanel>
+                            <!--
+                                The actions wrap under the period rather than off the edge: four
+                                buttons beside the period no longer fit a window narrower than
+                                about 1300 pixels.
+                            -->
+                            <Grid Grid.Row="0" Margin="0,0,0,7">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,3,16,3">
+                                    <TextBlock Text="Journal" Style="{StaticResource SubHeading}" VerticalAlignment="Center" />
+                                    <ComboBox x:Name="JournalPeriod" Width="150" Margin="16,0,0,0" />
+                                    <Button x:Name="BtnJournalRefresh" Content="Refresh" Style="{StaticResource GlyphButton}"
+                                            Tag="&#xE72C;" Margin="8,0,0,0" />
+                                </StackPanel>
+
+                                <WrapPanel Grid.Column="1" HorizontalAlignment="Right">
+                                    <Button x:Name="BtnTakeSnapshot" Content="Snapshot" Margin="8,3,0,3"
+                                            Style="{StaticResource GlyphButton}" Tag="&#xE722;"
+                                            ToolTip="Saves the state of the machine now, to compare with at the end of the visit. It takes about half a minute and changes nothing." />
+                                    <Button x:Name="BtnCompareSnapshot" Content="Compare" Margin="8,3,0,3"
+                                            Style="{StaticResource GlyphButton}" Tag="&#xE8F1;"
+                                            ToolTip="Collects the same reports again and shows what changed since a snapshot: judgements that got worse or better, devices and findings that appeared or went, new crashes and updates, and facts such as the Windows build, the BIOS version or the audit score." />
+                                    <Button x:Name="BtnJournalFolder" Content="Open journal folder" Margin="8,3,0,3" />
+                                    <Button x:Name="BtnInterventionReport" Content="Create the intervention report"
+                                            Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE8A5;" Margin="8,3,0,3"
+                                            ToolTip="One HTML file with the machine, its health, the latest audit, what was done and the notes, to attach to the ticket." />
+                                </WrapPanel>
+                            </Grid>
 
                             <RichTextBox Grid.Row="1" x:Name="JournalOutput" IsReadOnly="True"
                                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"

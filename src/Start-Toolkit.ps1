@@ -33,8 +33,13 @@
     Collects these reports without a window and returns them as JSON: report
     names, All, or List for the available ones.
 
+.PARAMETER CompareWith
+    Collects again the reports of this earlier document, without a window,
+    and adds what changed since.
+
 .PARAMETER OutFile
-    With Report, writes the JSON to this file and returns its path.
+    With Report or CompareWith, writes the JSON to this file and returns its
+    path.
 
 .PARAMETER AuditLevel
     With Report, the depth of the Audit report: Essential or Full.
@@ -47,6 +52,9 @@
 
 .EXAMPLE
     Start-Toolkit -Report Storage, Reboot -OutFile .\report.json
+
+.EXAMPLE
+    Start-Toolkit -CompareWith .\before.json -OutFile .\after.json
 #>
 function Start-Toolkit {
     [CmdletBinding()]
@@ -61,6 +69,9 @@ function Start-Toolkit {
         [string[]] $Report,
 
         [Parameter()]
+        [string] $CompareWith,
+
+        [Parameter()]
         [string] $OutFile,
 
         [Parameter()]
@@ -70,7 +81,7 @@ function Start-Toolkit {
 
     # Set on every start, so a headless run does not leave a later start
     # without its progress lines.
-    $script:TkQuietConsole = [bool] $Report
+    $script:TkQuietConsole = [bool] ($Report -or $CompareWith)
 
     # --- 1. Context and logging ------------------------------------------
     $ctx = Initialize-TkContext
@@ -104,8 +115,9 @@ function Start-Toolkit {
     Import-TkAllCatalogs
 
     # A headless run needs no window, no single threaded apartment and no WPF.
-    if ($Report) {
-        return Invoke-TkHeadlessReport -Report $Report -OutFile $OutFile -AuditLevel $AuditLevel
+    if ($Report -or $CompareWith) {
+        return Invoke-TkHeadlessReport -Report @($Report | Where-Object { $_ }) -CompareWith ([string] $CompareWith) `
+                                       -OutFile ([string] $OutFile) -AuditLevel $AuditLevel
     }
 
     if ($NoGui) {
