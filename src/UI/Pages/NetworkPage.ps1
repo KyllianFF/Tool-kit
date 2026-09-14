@@ -20,6 +20,7 @@ function Initialize-TkNetworkPage {
     Register-TkClick -Name 'BtnCalculateSubnet' -Action { Invoke-TkSubnetCalculation }
     Register-TkClick -Name 'BtnSplitSubnet'     -Action { Invoke-TkSubnetSplit }
     Register-TkClick -Name 'BtnPrefixForHosts'  -Action { Invoke-TkPrefixForHosts }
+    Register-TkClick -Name 'BtnGenerateUla'     -Action { Invoke-TkUniqueLocalPrefixFromUi }
 
     $subnetInput = Get-TkControl -Name 'SubnetInput'
 
@@ -308,6 +309,43 @@ function Invoke-TkPrefixForHosts {
     )
 
     Set-TkOutput -ControlName 'SubnetOutput' -Text ($lines -join [Environment]::NewLine)
+}
+
+<#
+.SYNOPSIS
+    Generates a unique local IPv6 prefix and lists its first subnets.
+#>
+function Invoke-TkUniqueLocalPrefixFromUi {
+    [CmdletBinding()]
+    param()
+
+    $count = 0
+
+    if (-not [int]::TryParse(([string] (Get-TkControl -Name 'UlaSubnetCount').Text).Trim(), [ref] $count) -or $count -lt 1 -or $count -gt 256) {
+        Set-TkOutput -ControlName 'SubnetOutput' -Text 'List between 1 and 256 subnets.'
+        return
+    }
+
+    $ula = New-TkIPv6UniqueLocalPrefix -SubnetCount $count
+
+    $lines = @(
+        ('Unique local prefix   {0}' -f $ula.Prefix)
+        ('Global ID             {0}' -f $ula.GlobalId)
+        ''
+        ('The first {0} /64 subnet(s), one per link or VLAN:' -f $count)
+    )
+
+    $lines += @($ula.Subnets | ForEach-Object { '  {0}' -f $_ })
+
+    $lines += @(
+        ''
+        'The prefix holds 65536 /64 subnets. Write it down: generating again gives another one.'
+        'Keep it off the internet, and give hosts their provider prefix as well: they use the'
+        'global address to reach the internet and the unique local one inside.'
+    )
+
+    Set-TkOutput -ControlName 'SubnetOutput' -Text ($lines -join [Environment]::NewLine)
+    Set-TkStatus -Text ('Unique local prefix {0} generated.' -f $ula.Prefix)
 }
 
 # ---------------------------------------------------------------------------

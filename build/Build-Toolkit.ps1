@@ -228,6 +228,20 @@ foreach ($catalog in (Get-ChildItem -LiteralPath $dataFolder -Filter '*.json' -F
 
 Write-Host ('  Catalogs   : {0} embedded' -f $catalogLines.Count)
 
+# Compressed resources are embedded as the base64 of their gzip bytes and
+# decompressed on first use: the MAC vendor registry is a megabyte and a half
+# of text that only the Network page ever reads.
+$resourceLines = @()
+
+foreach ($resource in (Get-ChildItem -LiteralPath $dataFolder -Filter '*.gz' -File)) {
+
+    $name = [IO.Path]::GetFileNameWithoutExtension($resource.Name)
+
+    $resourceLines += "    '{0}' = '{1}'" -f $name, [Convert]::ToBase64String([IO.File]::ReadAllBytes($resource.FullName))
+}
+
+Write-Host ('  Resources  : {0} embedded' -f $resourceLines.Count)
+
 # ---------------------------------------------------------------------------
 # 5. Assemble
 # ---------------------------------------------------------------------------
@@ -316,6 +330,12 @@ foreach (`$catalogName in `$script:TkEmbeddedCatalogsRaw.Keys) {
     `$script:TkEmbeddedCatalogs[`$catalogName] = [System.Text.Encoding]::UTF8.GetString(
         [Convert]::FromBase64String(`$script:TkEmbeddedCatalogsRaw[`$catalogName])
     )
+}
+
+# Compressed data resources, keyed by name: base64 of their gzip bytes,
+# decompressed by Get-TkDataResource the first time they are read.
+`$script:TkEmbeddedResources = @{
+$($resourceLines -join "`r`n")
 }
 
 # ==========================================================================

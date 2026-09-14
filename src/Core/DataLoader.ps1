@@ -17,6 +17,13 @@
 # Filled by build/Build-Toolkit.ps1. Key = catalog name, value = JSON text.
 $script:TkEmbeddedCatalogs = @{}
 
+# Filled by build/Build-Toolkit.ps1. Key = resource name, such as
+# mac-vendors.tsv, value = base64 of the gzip compressed file.
+$script:TkEmbeddedResources = @{}
+
+# Decompressed resources, so each is inflated once per session.
+$script:TkDataResourceCache = @{}
+
 <#
 .SYNOPSIS
     Loads one catalog by name.
@@ -106,6 +113,10 @@ function Import-TkCatalog {
 .SYNOPSIS
     Resolves a catalog file path in the development tree.
 
+.PARAMETER Extension
+    The extension of the file: .json for a catalog, .gz for a compressed
+    resource.
+
 .OUTPUTS
     System.String, or $null when nothing matched.
 #>
@@ -114,10 +125,13 @@ function Get-TkCatalogPath {
     [OutputType([string])]
     param(
         [Parameter(Mandatory)]
-        [string] $Name
+        [string] $Name,
+
+        [Parameter()]
+        [string] $Extension = '.json'
     )
 
-    $fileName = '{0}.json' -f $Name
+    $fileName = '{0}{1}' -f $Name, $Extension
 
     # $PSScriptRoot is empty when the code was pasted or piped into a shell,
     # which is exactly the case a released build covers with embedding.
@@ -141,6 +155,80 @@ function Get-TkCatalogPath {
     }
 
     return $null
+}
+
+<#
+.SYNOPSIS
+    Reads a compressed data resource as text.
+
+.DESCRIPTION
+    A resource is a gzip file in the data folder, embedded as bytes in a
+    compiled build: data too large to ship as JSON, such as the MAC vendor
+    registry. It is decompressed on the first read and kept for the session.
+
+.PARAMETER Name
+    The file name without .gz, for example mac-vendors.tsv.
+
+.OUTPUTS
+    System.String, or $null when the resource cannot be read.
+#>
+function Get-TkDataResource {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    # A background worker has the embedded resources but not the cache.
+    if ($null -eq $script:TkDataResourceCache) {
+        $script:TkDataResourceCache = @{}
+    }
+
+    if ($script:TkDataResourceCache.ContainsKey($Name)) {
+        return $script:TkDataResourceCache[$Name]
+    }
+
+    $bytes = $null
+
+    if ($script:TkEmbeddedResources -and $script:TkEmbeddedResources.ContainsKey($Name)) {
+        $bytes = [Convert]::FromBase64String($script:TkEmbeddedResources[$Name])
+    }
+    else {
+        $path = Get-TkCatalogPath -Name $Name -Extension '.gz'
+
+        if ($path) {
+            $bytes = [IO.File]::ReadAllBytes($path)
+        }
+    }
+
+    if ($null -eq $bytes) {
+        Write-TkLog -Level Warning -Category 'Data' -Message ('Resource "{0}" was not found.' -f $Name)
+        return $null
+    }
+
+    $memory = New-Object System.IO.MemoryStream(, $bytes)
+    $gzip   = $null
+    $reader = $null
+
+    try {
+        $gzip   = New-Object System.IO.Compression.GZipStream($memory, [System.IO.Compression.CompressionMode]::Decompress)
+        $reader = New-Object System.IO.StreamReader($gzip, (New-Object System.Text.UTF8Encoding($false)))
+        $text   = $reader.ReadToEnd()
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Data' -Message ('Resource "{0}" could not be decompressed: {1}' -f $Name, $_.Exception.Message)
+        return $null
+    }
+    finally {
+        if ($reader) { $reader.Dispose() }
+        if ($gzip) { $gzip.Dispose() }
+        $memory.Dispose()
+    }
+
+    $script:TkDataResourceCache[$Name] = $text
+
+    return $text
 }
 
 <#

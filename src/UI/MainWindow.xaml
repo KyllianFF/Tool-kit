@@ -1851,6 +1851,19 @@
                                     </Border>
 
                                     <Border Style="{StaticResource Card}">
+                                        <StackPanel>
+                                            <TextBlock Text="IPv6 unique local prefix" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                            <WrapPanel>
+                                                <TextBlock Text="Subnets to list" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                                <TextBox x:Name="UlaSubnetCount" Width="70" Text="4" Margin="0,0,10,8" />
+                                                <Button x:Name="BtnGenerateUla" Content="Generate a ULA prefix" Style="{StaticResource PrimaryButton}" Margin="0,0,0,8" />
+                                            </WrapPanel>
+                                            <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                       Text="A random /48 in fd00::/8, as RFC 4193 asks, for a lab, a site to site VPN or internal services that must keep their addresses when the provider prefix changes. Random is the point: two networks that are joined later do not collide. Unique local addresses are not routed on the internet." />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Style="{StaticResource Card}">
                                         <TextBox x:Name="SubnetOutput" Style="{StaticResource Mono}" Height="380"
                                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                                  AcceptsReturn="True" />
@@ -2077,7 +2090,7 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
 
-                                            <TextBlock Grid.Column="0" Text="Wake" Style="{StaticResource FormLabel}" />
+                                            <TextBlock Grid.Column="0" Text="MAC" Style="{StaticResource FormLabel}" />
 
                                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                                 <TextBox x:Name="WolMac" Tag="MAC 00:1A:2B:3C:4D:5E" Width="260" />
@@ -2088,8 +2101,12 @@
 
                                             <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
                                                 <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnMacVendor" Content="Look up vendor"
+                                                            Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Who made the network card with this MAC address, from the IEEE registry built into the toolkit, and what kind of address it is: burned in, randomised, multicast or a virtual router." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
                                                     <Button x:Name="BtnWakeOnLan" Content="Send magic packet"
-                                                            Style="{StaticResource GroupedPrimaryButton}" />
+                                                            Style="{StaticResource GroupedButton}" />
                                                     <Rectangle Style="{StaticResource GroupDivider}" />
                                                     <Button x:Name="BtnNeighbours" Content="Neighbour table"
                                                             Style="{StaticResource GroupedButton}"

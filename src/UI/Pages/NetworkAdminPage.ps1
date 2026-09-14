@@ -24,6 +24,7 @@ function Initialize-TkNetworkAdminPage {
     Register-TkClick -Name 'BtnTraceRoute'     -Action { Invoke-TkTraceRouteFromUi }
     Register-TkClick -Name 'BtnTlsCertificate' -Action { Invoke-TkTlsInspectionFromUi }
     Register-TkClick -Name 'BtnWakeOnLan'      -Action { Invoke-TkWakeOnLanFromUi }
+    Register-TkClick -Name 'BtnMacVendor'      -Action { Invoke-TkMacVendorFromUi }
     Register-TkClick -Name 'BtnNeighbours'     -Action { Invoke-TkNeighbourTableFromUi }
     Register-TkClick -Name 'BtnSwitchPort'     -Action { Invoke-TkSwitchPortFromUi }
 
@@ -369,13 +370,54 @@ function Invoke-TkNeighbourTableFromUi {
             $rows = @($result.Output)
 
             Set-TkOutput -ControlName 'AdminOutput' -Text (
-                ('Neighbour cache, {0} entries. The vendor comes from a built in table of the' -f $rows.Count) +
+                ('Neighbour cache, {0} entries. Vendors come from the IEEE registry built into the toolkit;' -f $rows.Count) +
                 [Environment]::NewLine +
-                'hardware usually met on a corporate LAN, so an unknown prefix is not unusual.' +
+                'a locally administered address, as phones and virtual machines use, names no vendor.' +
                 [Environment]::NewLine + [Environment]::NewLine +
                 (Format-TkTableText -InputObject $rows)
             )
         }
+}
+
+<#
+.SYNOPSIS
+    Says who made the network card with the MAC address typed on the tab.
+#>
+function Invoke-TkMacVendorFromUi {
+    [CmdletBinding()]
+    param()
+
+    $info = Get-TkMacAddressInfo -MacAddress ([string] (Get-TkControl -Name 'WolMac').Text)
+
+    if (-not $info.Valid) {
+        Set-TkOutput -ControlName 'AdminOutput' -Text $info.Note
+        return
+    }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    $lines.Add(('Address     {0}' -f $info.Address))
+    $lines.Add(('Vendor      {0}' -f $(if ($info.Vendor) { $info.Vendor } elseif ($info.LocallyAdministered -or $info.Multicast) { 'none, see the kind below' } else { 'unknown' })))
+
+    if ($info.Registry) {
+        $lines.Add(('Block       {0}, {1}' -f $info.Prefix, $info.Registry))
+    }
+
+    if ($info.Hint) {
+        $lines.Add(('Usually     {0}' -f $info.Hint))
+    }
+
+    $lines.Add(('Kind        {0}' -f $info.Kind))
+
+    if ($info.Note) {
+        $lines.Add('')
+        $lines.Add($info.Note)
+    }
+
+    $lines.Add('')
+    $lines.Add(('Looked up offline in the IEEE MA-L, MA-M and MA-S registries retrieved {0}. Nothing was sent.' -f $info.Retrieved))
+
+    Set-TkOutput -ControlName 'AdminOutput' -Text ($lines -join [Environment]::NewLine)
 }
 
 <#

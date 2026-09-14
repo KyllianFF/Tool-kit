@@ -84,7 +84,7 @@ function Initialize-TkRunspacePool {
         'TkAppName', 'TkAppVersion', 'TkAppCommit', 'TkRepository',
         'TkLogLevels', 'TkMinimumLogLevel',
         'TkVirusTotalBaseUri',
-        'TkEmbeddedCatalogs',
+        'TkEmbeddedCatalogs', 'TkEmbeddedResources',
 
         # Background operations write to the intervention journal, under the
         # session of the window that started them.
