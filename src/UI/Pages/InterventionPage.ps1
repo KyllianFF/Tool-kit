@@ -44,8 +44,181 @@ function Initialize-TkInterventionPage {
     Register-TkClick -Name 'BtnJournalRefresh'     -Action { Update-TkJournalView }
     Register-TkClick -Name 'BtnJournalFolder'      -Action { Start-Process -FilePath 'explorer.exe' -ArgumentList (Get-TkJournalFolder) }
     Register-TkClick -Name 'BtnInterventionReport' -Action { New-TkInterventionReportFromUi }
+    Register-TkClick -Name 'BtnTakeSnapshot'       -Action { Invoke-TkSnapshotFromUi }
+    Register-TkClick -Name 'BtnCompareSnapshot'    -Action { Invoke-TkSnapshotComparisonFromUi }
 
     Register-TkFirstShow -PageName 'Intervention' -Action { Update-TkJournalView }
+}
+
+<#
+.SYNOPSIS
+    Saves a snapshot of the machine, to compare with at the end of the visit.
+
+.DESCRIPTION
+    The same JSON document a headless run writes, collected in the background
+    and kept in the snapshots folder beside the journal.
+#>
+function Invoke-TkSnapshotFromUi {
+    [CmdletBinding()]
+    param()
+
+    $path = Join-Path -Path (Get-TkSnapshotFolder) -ChildPath ('{0}-{1}.json' -f $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+
+    Invoke-TkBackgroundAction -StatusText 'Taking a snapshot of the machine, this takes about half a minute...' `
+        -ParameterList @{ Path = $path; Names = @(Get-TkSnapshotReportName) } `
+        -ScriptBlock {
+            param($Path, $Names)
+
+            try {
+                Invoke-TkHeadlessReport -Report $Names -OutFile $Path
+            }
+            catch {
+                Write-TkLog -Level Error -Category 'Snapshot' -Message ('The snapshot could not be taken: {0}' -f $_.Exception.Message)
+            }
+        } `
+        -OnComplete {
+            param($result)
+
+            $written = @($result.Output) | Where-Object { $_ -is [string] } | Select-Object -Last 1
+
+            if (-not $written -or -not (Test-Path -LiteralPath $written)) {
+                Set-TkStatus -Text 'The snapshot could not be taken. See the output panel.'
+                return
+            }
+
+            Set-TkStatus -Text ('Snapshot saved to {0}' -f $written)
+            Update-TkJournalView
+        }
+}
+
+<#
+.SYNOPSIS
+    Collects the reports of a snapshot again and shows what changed.
+#>
+function Invoke-TkSnapshotComparisonFromUi {
+    [CmdletBinding()]
+    param()
+
+    $dialog = New-Object Microsoft.Win32.OpenFileDialog
+    $dialog.Title            = 'Compare the machine now with a snapshot'
+    $dialog.Filter           = 'Toolkit report (*.json)|*.json'
+    $dialog.InitialDirectory = Get-TkSnapshotFolder
+
+    if (-not $dialog.ShowDialog()) {
+        return
+    }
+
+    Invoke-TkBackgroundAction -StatusText 'Collecting the same reports again to compare, this takes about half a minute...' `
+        -ParameterList @{ Path = $dialog.FileName } `
+        -ScriptBlock {
+            param($Path)
+
+            try {
+                Invoke-TkHeadlessReport -CompareWith $Path
+            }
+            catch {
+                Write-TkLog -Level Error -Category 'Snapshot' -Message ('The comparison could not be made: {0}' -f $_.Exception.Message)
+            }
+        } `
+        -OnComplete {
+            param($result)
+
+            $json = @($result.Output) | Where-Object { $_ -is [string] } | Select-Object -Last 1
+
+            if (-not $json) {
+                Set-TkStatus -Text 'The comparison could not be made. See the output panel.'
+                return
+            }
+
+            $document = Read-TkReportDocument -Json $json
+
+            Show-TkComparison -Comparison $document.Comparison
+            Set-TkStatus -Text 'Comparison ready. Refresh shows the journal again.'
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows a comparison in the journal area.
+
+.PARAMETER Comparison
+    The Comparison section of a report document, or the output of
+    Compare-TkReportDocument.
+#>
+function Show-TkComparison {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        $Comparison
+    )
+
+    $when = {
+        param($text)
+        $parsed = [datetime]::MinValue
+        if ([datetime]::TryParse([string] $text, [ref] $parsed)) { $parsed.ToString('yyyy-MM-dd HH:mm') } else { [string] $text }
+    }
+
+    $document = New-TkFlowDocument
+
+    Add-TkHeading   -Document $document -Text 'What changed since the snapshot' -Level 1
+    Add-TkParagraph -Document $document -Muted -Text (
+        'The snapshot of {0} taken {1}, compared with the machine now. Values that move on their own, such as free space or processor use, are left out: what is compared is each judgement, the devices, drives and findings that appeared or went, the crashes and updates that are new, and the facts below.' -f
+            $Comparison.Reference.Computer, (& $when $Comparison.Reference.GeneratedAt)
+    )
+
+    if (-not $Comparison.SameComputer) {
+        Add-TkSeverityLine -Document $document -Severity 'Warning' `
+            -Heading ('The snapshot comes from {0}, not from this computer' -f $Comparison.Reference.Computer) `
+            -Note 'Every difference below may only be a difference between two machines.'
+    }
+
+    Add-TkParagraph -Document $document -Text (
+        '{0} change(s) for the worse, {1} for the better, {2} other.' -f $Comparison.Counts.Worse, $Comparison.Counts.Better, $Comparison.Counts.Neutral
+    )
+
+    $order   = { switch ([string] $_.Direction) { 'Worse' { 0 } 'Better' { 1 } default { 2 } } }
+    $changes = @($Comparison.Changes | Where-Object { $null -ne $_ } | Sort-Object -Property @{ Expression = $order }, 'Section', 'Item')
+
+    if ($changes.Count -eq 0) {
+        Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No judgement changed'
+    }
+
+    foreach ($change in $changes) {
+
+        $severity = switch ([string] $change.Direction) {
+            'Worse'  { if ([string] $change.After -eq 'Fail') { 'Fail' } else { 'Warning' } }
+            'Better' { 'Pass' }
+            default  { 'Info' }
+        }
+
+        $detail = switch ([string] $change.Change) {
+            'Appeared' { if ($change.After) { 'Appeared, {0}' -f $change.After } else { 'Appeared' } }
+            'New'      { if ($change.After) { 'New, {0}' -f $change.After } else { 'New' } }
+            'Gone'     { if ($change.Before) { 'Gone, was {0}' -f $change.Before } else { 'Gone' } }
+            default    { 'Was {0}, now {1}' -f $change.Before, $change.After }
+        }
+
+        Add-TkSeverityLine -Document $document -Severity $severity -Heading ('{0}: {1}' -f $change.Section, $change.Item) -Detail $detail
+    }
+
+    $facts = @($Comparison.Facts | Where-Object { $null -ne $_ })
+
+    if ($facts.Count -gt 0) {
+
+        Add-TkHeading -Document $document -Text 'Facts that changed' -Level 2
+
+        Add-TkTable -Document $document -Column @('Fact', 'In the snapshot', 'Now') -Weight @(1.0, 1.6, 1.6) `
+            -Row @($facts | ForEach-Object { , @([string] $_.Fact, [string] $_.Before, [string] $_.After) })
+    }
+
+    Add-TkHeading -Document $document -Text 'Reports' -Level 2
+
+    Add-TkTable -Document $document -Column @('Report', 'In the snapshot', 'Now') -Weight @(1.0, 1.0, 1.0) `
+        -Row @(@($Comparison.Reports | Where-Object { $null -ne $_ }) | ForEach-Object {
+            , @([string] $_.Report, [string] $_.Before, $(if ($_.Compared) { [string] $_.After } else { '{0} (not compared)' -f $_.After }))
+        })
+
+    Set-TkDocument -ControlName 'JournalOutput' -Document $document
 }
 
 <#

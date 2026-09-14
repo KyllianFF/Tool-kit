@@ -35,6 +35,9 @@ param(
     [string[]] $Report,
 
     [Parameter()]
+    [string] $CompareWith,
+
+    [Parameter()]
     [string] $OutFile,
 
     [Parameter()]
@@ -93,8 +96,8 @@ if ($Elevated -and -not (Test-TkIsElevated)) {
 }
 
 # --- Start -----------------------------------------------------------------
-if ($Report) {
-    Start-Toolkit -Report $Report -OutFile $OutFile -AuditLevel $AuditLevel
+if ($Report -or $CompareWith) {
+    Start-Toolkit -Report $Report -CompareWith $CompareWith -OutFile $OutFile -AuditLevel $AuditLevel
 }
 elseif ($NoGui) {
     Start-Toolkit -NoGui

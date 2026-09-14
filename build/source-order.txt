@@ -50,6 +50,7 @@ src/Features/Diagnostics/HardwareTests.ps1
 src/Features/Diagnostics/SupportBundle.ps1
 src/Features/Intervention/Journal.ps1
 src/Features/Reporting/Headless.ps1
+src/Features/Reporting/Comparison.ps1
 
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1

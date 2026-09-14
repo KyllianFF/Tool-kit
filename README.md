@@ -41,8 +41,27 @@ the error), its duration and the worst judgement found in it, and
 `Summary.Worst` is the worst of all for a monitoring rule to read. Audit needs
 an elevated console and is skipped otherwise, never elevated behind your back.
 Dates are ISO 8601, and Windows PowerShell 5.1 and PowerShell 7 write the same
-data; only the indentation differs. The same parameters work on `toolkit.ps1` from a clone and on
+data; only the indentation differs. The file is UTF-8 without a byte order
+mark, as JSON asks: read it back in Windows PowerShell 5.1 with
+`Get-Content -Raw -Encoding UTF8`, which otherwise assumes the ANSI code page
+and garbles accented names. The same parameters work on `toolkit.ps1` from a clone and on
 `dist\toolkit.ps1`.
+
+**Before and after.** `-CompareWith` collects the reports of an earlier
+document again and adds what changed: judgements that got worse or better,
+devices, drives and findings that appeared or went, crashes and updates that
+are new, and facts such as the Windows build, the BIOS version or the audit
+score. Values that move on their own, such as free space or processor use, are
+left out.
+
+```powershell
+& $toolkit -Report All -OutFile .\before.json
+# ... the intervention ...
+& $toolkit -CompareWith .\before.json -OutFile .\after.json
+```
+
+On the Intervention page, **Snapshot** and **Compare** do the same without a
+command line, with the snapshots kept beside the journal.
 
 ---
 

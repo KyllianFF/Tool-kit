@@ -247,6 +247,7 @@ $builder = New-Object System.Text.StringBuilder
 
         & ([scriptblock]::Create((irm <url of this file>))) -Report List
         & ([scriptblock]::Create((irm <url of this file>))) -Report All -OutFile .\report.json
+        & ([scriptblock]::Create((irm <url of this file>))) -CompareWith .\report.json
 #>
 
 [CmdletBinding()]
@@ -259,6 +260,9 @@ param(
 
     [Parameter()]
     [string[]] `$Report,
+
+    [Parameter()]
+    [string] `$CompareWith,
 
     [Parameter()]
     [string] `$OutFile,
@@ -323,8 +327,8 @@ foreach (`$catalogName in `$script:TkEmbeddedCatalogsRaw.Keys) {
 # replayed instead.
 `$script:TkEntryScript = `$PSCommandPath
 
-if (`$Report) {
-    Start-Toolkit -Report `$Report -OutFile `$OutFile -AuditLevel `$AuditLevel -SourceUri `$SourceUri
+if (`$Report -or `$CompareWith) {
+    Start-Toolkit -Report `$Report -CompareWith `$CompareWith -OutFile `$OutFile -AuditLevel `$AuditLevel -SourceUri `$SourceUri
 }
 elseif (`$NoGui) {
     Start-Toolkit -NoGui -SourceUri `$SourceUri

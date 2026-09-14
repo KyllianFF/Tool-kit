@@ -224,7 +224,7 @@ Describe 'Headless reports' {
 
     It 'takes the headless parameters at every entry point' {
 
-        foreach ($name in @('Report', 'OutFile', 'AuditLevel')) {
+        foreach ($name in @('Report', 'CompareWith', 'OutFile', 'AuditLevel')) {
             (Get-Command -Name 'Start-Toolkit').Parameters.Keys                                   | Should -Contain $name
             (Get-Command -Name (Join-Path $script:RepositoryRoot 'toolkit.ps1')).Parameters.Keys  | Should -Contain $name
         }
@@ -234,7 +234,211 @@ Describe 'Headless reports' {
         $build = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'build\Build-Toolkit.ps1') -Raw
 
         $build | Should -Match '\[string\[\]\] `\$Report'
-        $build | Should -Match 'Start-Toolkit -Report `\$Report -OutFile `\$OutFile -AuditLevel `\$AuditLevel'
+        $build | Should -Match '\[string\] `\$CompareWith'
+        $build | Should -Match 'Start-Toolkit -Report `\$Report -CompareWith `\$CompareWith -OutFile `\$OutFile -AuditLevel `\$AuditLevel'
+    }
+}
+
+Describe 'Report comparison' {
+
+    BeforeAll {
+        # Written to a temporary folder, never to the account that runs the tests.
+        $script:ComparisonDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+
+        # A report document reduced to what the comparison reads.
+        function New-ComparisonTestDocument {
+            param([string] $Computer = 'PC-01', [hashtable] $Data = @{}, [hashtable] $Status = @{})
+
+            $reports = [ordered] @{}
+
+            foreach ($name in $Data.Keys) {
+
+                $plain = ConvertTo-TkPlainData -InputObject $Data[$name]
+
+                $reports[$name] = [ordered] @{
+                    Status     = $(if ($Status.ContainsKey($name)) { $Status[$name] } else { 'Ok' })
+                    Reason     = ''
+                    DurationMs = 1
+                    Worst      = (Get-TkWorstSeverity -Data $plain)
+                    Data       = $plain
+                }
+            }
+
+            [ordered] @{ Computer = $Computer; GeneratedAt = '2026-09-14T08:00:00.0000000'; Reports = $reports }
+        }
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:ComparisonDataRoot
+        $script:TkQuietConsole   = $false
+    }
+
+    It 'follows a drive that got worse, a device problem that went away, and one that appeared' {
+
+        $before = New-ComparisonTestDocument -Data @{
+            Storage = @([pscustomobject] @{ Kind = 'Disk'; Name = 'Samsung SSD'; Severity = 'Pass'; Health = 'Healthy' })
+            Devices = @([pscustomobject] @{ DeviceId = 'USB\VID_0000&PID_0002'; Name = 'Unknown USB device'; Code = 43; Severity = 'Fail' })
+        }
+
+        $after = New-ComparisonTestDocument -Data @{
+            Storage = @([pscustomobject] @{ Kind = 'Disk'; Name = 'Samsung SSD'; Severity = 'Warning'; Health = 'Warning' })
+            Devices = @([pscustomobject] @{ DeviceId = 'PCI\VEN_8086&DEV_2725'; Name = 'Wi-Fi adapter'; Code = 10; Severity = 'Warning' })
+        }
+
+        $comparison = Compare-TkReportDocument -Reference $before -Difference $after
+
+        $disk = $comparison.Changes | Where-Object { $_.Change -eq 'Judgement' }
+
+        $disk.Item      | Should -Be 'Disk - Samsung SSD'
+        $disk.Direction | Should -Be 'Worse'
+        $disk.Before    | Should -Be 'Pass'
+        $disk.After     | Should -Be 'Warning'
+
+        ($comparison.Changes | Where-Object { $_.Change -eq 'Gone' }).Direction   | Should -Be 'Better'
+        ($comparison.Changes | Where-Object { $_.Change -eq 'Appeared' }).Item    | Should -Be 'Wi-Fi adapter'
+
+        $comparison.Counts.Worse  | Should -Be 2
+        $comparison.Counts.Better | Should -Be 1
+
+        ($comparison.Reports | Where-Object { $_.Report -eq 'Storage' }).Direction | Should -Be 'Worse'
+    }
+
+    It 'matches a finding whose heading carries a measurement' {
+
+        $before = New-ComparisonTestDocument -Data @{ Wifi = [pscustomobject] @{ Findings = @([pscustomobject] @{ Heading = 'Signal -55 dBm on "Office"'; Severity = 'Pass' }) } }
+        $after  = New-ComparisonTestDocument -Data @{ Wifi = [pscustomobject] @{ Findings = @([pscustomobject] @{ Heading = 'Signal -83 dBm on "Office"'; Severity = 'Fail' }) } }
+
+        $changes = @((Compare-TkReportDocument -Reference $before -Difference $after).Changes)
+
+        $changes.Count        | Should -Be 1
+        $changes[0].Change    | Should -Be 'Judgement'
+        $changes[0].Direction | Should -Be 'Worse'
+        $changes[0].Item      | Should -Be 'Signal -83 dBm on "Office"'
+    }
+
+    It 'counts the crashes that are new, not the ones that aged out of the period' {
+
+        $old = [pscustomobject] @{ When = '2026-08-01T10:00:00'; Kind = 'Blue screen'; Code = 247; Severity = 'Fail'; Info = [pscustomobject] @{ Name = 'DRIVER_OVERRAN_STACK_BUFFER' } }
+        $new = [pscustomobject] @{ When = '2026-09-13T21:00:00'; Kind = 'Blue screen'; Code = 426; Severity = 'Fail'; Info = [pscustomobject] @{ Name = 'WIN32K_POWER_WATCHDOG_TIMEOUT' } }
+
+        $before = New-ComparisonTestDocument -Data @{ Crashes = [pscustomobject] @{ Crashes = @($old); Stability = @() } }
+        $after  = New-ComparisonTestDocument -Data @{ Crashes = [pscustomobject] @{ Crashes = @($new); Stability = @() } }
+
+        $changes = @((Compare-TkReportDocument -Reference $before -Difference $after).Changes)
+
+        $changes.Count        | Should -Be 1
+        $changes[0].Change    | Should -Be 'New'
+        $changes[0].Direction | Should -Be 'Worse'
+        $changes[0].Item      | Should -Be 'Blue screen - WIN32K_POWER_WATCHDOG_TIMEOUT'
+    }
+
+    It 'follows the audit by control, names a changed measurement, and reads the score as a fact' {
+
+        $before = New-ComparisonTestDocument -Data @{ Audit = [pscustomobject] @{
+            Score    = [pscustomobject] @{ Score = 72 }
+            Findings = @(
+                [pscustomobject] @{ Id = 'AV-003'; Name = 'Antivirus exclusions'; Status = 'Fail'; Measured = '2 of 3 too broad' }
+                [pscustomobject] @{ Id = 'UPD-002'; Name = 'Windows Update pause'; Status = 'Pass'; Measured = 'Not paused' }
+            )
+        } }
+
+        $after = New-ComparisonTestDocument -Data @{ Audit = [pscustomobject] @{
+            Score    = [pscustomobject] @{ Score = 88 }
+            Findings = @(
+                [pscustomobject] @{ Id = 'AV-003'; Name = 'Antivirus exclusions'; Status = 'Pass'; Measured = 'None' }
+                [pscustomobject] @{ Id = 'UPD-002'; Name = 'Windows Update pause'; Status = 'Pass'; Measured = 'Pause expired' }
+            )
+        } }
+
+        $comparison = Compare-TkReportDocument -Reference $before -Difference $after
+
+        $fixed = $comparison.Changes | Where-Object { $_.Change -eq 'Judgement' }
+        $fixed.Item      | Should -Be 'AV-003 - Antivirus exclusions'
+        $fixed.Direction | Should -Be 'Better'
+
+        ($comparison.Changes | Where-Object { $_.Change -eq 'Value' }).After | Should -Be 'Measured: Pause expired'
+
+        $score = $comparison.Facts | Where-Object { $_.Fact -eq 'Audit score' }
+        $score.Before | Should -Be '72'
+        $score.After  | Should -Be '88'
+    }
+
+    It 'reads facts from the inventory, or from the dashboard when the inventory was not collected' {
+
+        $before = New-ComparisonTestDocument -Data @{ Dashboard = [pscustomobject] @{
+            OS       = [pscustomobject] @{ Build = '26100.4061'; DisplayVersion = '24H2' }
+            Identity = [pscustomobject] @{ BiosVersion = '0502' }
+        } }
+
+        $after = New-ComparisonTestDocument -Data @{ Inventory = [pscustomobject] @{
+            System   = [pscustomobject] @{ Build = '26200.9445'; DisplayVersion = '25H2' }
+            Identity = [pscustomobject] @{ BiosVersion = '0801' }
+        } }
+
+        $facts = @((Compare-TkReportDocument -Reference $before -Difference $after).Facts)
+
+        ($facts | Where-Object { $_.Fact -eq 'Windows build' }).After  | Should -Be '26200.9445'
+        ($facts | Where-Object { $_.Fact -eq 'BIOS version' }).Before  | Should -Be '0502'
+        ($facts | Where-Object { $_.Fact -eq 'Memory' })               | Should -BeNullOrEmpty
+    }
+
+    It 'leaves out a report skipped on one side, and says when the documents come from two computers' {
+
+        $before = New-ComparisonTestDocument -Data @{ Audit = [pscustomobject] @{ Findings = @([pscustomobject] @{ Id = 'AV-003'; Name = 'x'; Status = 'Fail' }) } }
+        $after  = New-ComparisonTestDocument -Computer 'PC-02' -Data @{ Audit = $null } -Status @{ Audit = 'Skipped' }
+
+        $comparison = Compare-TkReportDocument -Reference $before -Difference $after
+
+        $comparison.SameComputer | Should -BeFalse
+
+        $audit = $comparison.Reports | Where-Object { $_.Report -eq 'Audit' }
+        $audit.Compared | Should -BeFalse
+        $audit.After    | Should -Be 'Skipped'
+
+        @($comparison.Changes).Count | Should -Be 0
+    }
+
+    It 'names only reports the headless run knows, in its rules, its facts and its snapshot' {
+
+        $known = @(Get-TkHeadlessReport | ForEach-Object { $_.Name })
+
+        foreach ($rule in (Get-TkComparisonRule)) {
+            $known     | Should -Contain $rule.Report
+            $rule.Mode | Should -BeIn @('State', 'Event')
+        }
+
+        foreach ($fact in (Get-TkComparisonFact)) {
+            foreach ($path in $fact.Path) {
+                $known | Should -Contain ($path -split '\.')[0]
+            }
+        }
+
+        foreach ($name in (Get-TkSnapshotReportName)) {
+            $known | Should -Contain $name
+        }
+    }
+
+    It 'collects the reports of a saved document again and compares them' {
+
+        $path = Invoke-TkHeadlessReport -Report 'Reboot' -OutFile (Join-Path $TestDrive 'before.json')
+
+        $document = Read-TkReportDocument -Json (Invoke-TkHeadlessReport -CompareWith $path)
+
+        (@($document.Reports.Keys)) -join ',' | Should -Be 'Reboot'
+        $document.Comparison.SameComputer     | Should -BeTrue
+
+        ($document.Comparison.Reports | Where-Object { $_.Report -eq 'Reboot' }).Compared | Should -BeTrue
+    }
+
+    It 'refuses a file that is not a report' {
+
+        $path = Join-Path $TestDrive 'other.json'
+        Set-Content -LiteralPath $path -Value '{ "name": "not a report" }'
+
+        { Read-TkReportDocument -Path $path }                                  | Should -Throw '*not a toolkit report*'
+        { Read-TkReportDocument -Path (Join-Path $TestDrive 'missing.json') }  | Should -Throw '*does not exist*'
+        { Invoke-TkHeadlessReport }                                             | Should -Throw '*-Report*'
     }
 }
 
