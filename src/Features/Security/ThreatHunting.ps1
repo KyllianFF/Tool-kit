@@ -86,6 +86,25 @@ function Get-TkSecurityEventSummary {
 
         $detail = ($byAccount | ForEach-Object { '{0} ({1})' -f $_.Name, $_.Count }) -join ', '
 
+        # Why they failed, from the sub status (field 9) or the status (field
+        # 7): a wrong password, an unknown user and a locked account are three
+        # different stories.
+        $byReason = $failed |
+            ForEach-Object { Get-TkLogonFailureCode -Status $_.Properties[7].Value -SubStatus $_.Properties[9].Value } |
+            Where-Object { $_ } |
+            Group-Object |
+            Sort-Object -Property Count -Descending |
+            Select-Object -First 3
+
+        $reasons = ($byReason | ForEach-Object {
+            $info = Get-TkErrorCodeInfo -Code $_.Name
+            '{0} ({1})' -f $(if ($info -and $info.Name) { $info.Name } else { $_.Name }), $_.Count
+        }) -join ', '
+
+        if ($reasons) {
+            $detail = '{0}. Reasons: {1}' -f $detail, $reasons
+        }
+
         $assessment = 'Normal background level for a workstation.'
 
         if ($failed.Count -gt 100 -and $byAccount.Count -eq 1) {

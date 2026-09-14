@@ -179,8 +179,32 @@ function Get-TkCatalogSearchEntry {
 
     foreach ($topic in @($knowledge.topics)) {
         $entries += New-TkSearchEntry -Title $topic.title -Kind 'Topic' -Detail ([string] $topic.summary) `
-                                      -Page 'Knowledge' -SearchBox 'KnowledgeSearch' -SearchText '' `
+                                      -Page 'Knowledge' -TabControl 'KnowledgeTabs' -Tab 'Topics' `
+                                      -SearchBox 'KnowledgeSearch' -SearchText '' `
                                       -List 'KnowledgeList' -Choice $topic.title
+    }
+
+    # A code or an event opens the Windows codes tab searched on it, on the row
+    # of the list that names it.
+    $errorCodes = Import-TkCatalog -Name 'windows-errors'
+
+    foreach ($code in @($errorCodes.codes)) {
+        $entries += New-TkSearchEntry -Title ([string] $code.code) -Kind 'Error code' `
+                                      -Detail ((@([string] $code.name, [string] $code.meaning) | Where-Object { $_ }) -join ': ') `
+                                      -Page 'Knowledge' -TabControl 'KnowledgeTabs' -Tab 'Windows codes' `
+                                      -SearchBox 'ReferenceSearch' -SearchText ([string] $code.code) `
+                                      -List 'ReferenceList' -Choice (Get-TkErrorCodeTitle -Hex ([string] $code.code) -Name ([string] $code.name) -Meaning ([string] $code.meaning))
+    }
+
+    $windowsEvents = Import-TkCatalog -Name 'windows-events'
+
+    # Not $event: that name is an automatic variable of PowerShell.
+    foreach ($windowsEvent in @($windowsEvents.events)) {
+        $entries += New-TkSearchEntry -Title ('Event {0}, {1}' -f $windowsEvent.id, $windowsEvent.source) -Kind 'Event' `
+                                      -Detail ('{0}: {1}' -f $windowsEvent.name, $windowsEvent.meaning) `
+                                      -Page 'Knowledge' -TabControl 'KnowledgeTabs' -Tab 'Windows codes' `
+                                      -SearchBox 'ReferenceSearch' -SearchText ([string] $windowsEvent.id) `
+                                      -List 'ReferenceList' -Choice (Get-TkEventTitle -Entry $windowsEvent)
     }
 
     $vendors = Import-TkCatalog -Name 'vendor-commands'

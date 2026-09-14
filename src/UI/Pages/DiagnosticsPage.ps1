@@ -683,9 +683,17 @@ function Show-TkUpdateHistory {
 
             foreach ($row in $failures) {
 
+                # The code explained from the reference, and where to read what
+                # to try for it.
+                $note = @(
+                    ('{0} on {1}.' -f $row.Code, ([datetime] $row.When).ToString('yyyy-MM-dd'))
+                    $(if ($row.PSObject.Properties['Meaning'] -and $row.Meaning) { $row.Meaning })
+                    'Knowledge base, Windows codes says what to try for this code.'
+                ) | Where-Object { $_ }
+
                 Add-TkSeverityLine -Document $document -Severity $row.Severity `
                     -Heading $row.Title -Detail $row.Outcome `
-                    -Note ('{0} on {1}' -f $row.Code, ([datetime] $row.When).ToString('yyyy-MM-dd'))
+                    -Note ($note -join ' ')
             }
 
             if ($failures.Count -eq 0) {

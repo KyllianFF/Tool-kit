@@ -51,6 +51,7 @@ src/Features/Diagnostics/SupportBundle.ps1
 src/Features/Intervention/Journal.ps1
 src/Features/Reporting/Headless.ps1
 src/Features/Reporting/Comparison.ps1
+src/Features/Reference/WindowsReference.ps1
 
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1
@@ -69,6 +70,7 @@ src/UI/Pages/ThreatHuntingPage.ps1
 src/UI/Pages/DiagnosticsPage.ps1
 src/UI/Pages/HardwarePage.ps1
 src/UI/Pages/InterventionPage.ps1
+src/UI/Pages/ReferencePage.ps1
 
 # --- Entry point -----------------------------------------------------------
 src/Start-Toolkit.ps1

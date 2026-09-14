@@ -392,6 +392,7 @@ function Get-TkUpdateHistory {
                 Title    = $entry.Title
                 Outcome  = $outcome
                 Code     = '0x{0:X8}' -f $entry.HResult
+                Meaning  = $(if ($entry.HResult -ne 0) { Get-TkErrorCodeSummary -Code $entry.HResult } else { '' })
             }
         }
     }

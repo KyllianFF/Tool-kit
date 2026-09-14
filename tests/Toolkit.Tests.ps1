@@ -820,6 +820,8 @@ Describe 'Catalog integrity' {
         @{ Name = 'bug-checks' }
         @{ Name = 'bug-check-names' }
         @{ Name = 'device-problems' }
+        @{ Name = 'windows-errors' }
+        @{ Name = 'windows-events' }
     ) {
         param($Name)
         Import-TkCatalog -Name $Name | Should -Not -BeNullOrEmpty
@@ -901,6 +903,166 @@ Describe 'Catalog integrity' {
                     $url | Should -Match '^https://'
                 }
             }
+        }
+    }
+}
+
+Describe 'Windows reference' {
+
+    It 'reads <Text> as <Hex>' -TestCases @(
+        @{ Text = '0x80070005';   Hex = '0x80070005'; Win32 = 5 }
+        @{ Text = '80070005';     Hex = '0x80070005'; Win32 = 5 }
+        @{ Text = '-2147024891';  Hex = '0x80070005'; Win32 = 5 }
+        @{ Text = '2147942405';   Hex = '0x80070005'; Win32 = 5 }
+        @{ Text = '5';            Hex = '0x80070005'; Win32 = 5 }
+        @{ Text = '0xc000006a';   Hex = '0xC000006A'; Win32 = $null }
+        @{ Text = 'C1900101';     Hex = '0xC1900101'; Win32 = $null }
+        @{ Text = ' 0x800F081F '; Hex = '0x800F081F'; Win32 = $null }
+    ) {
+        param($Text, $Hex, $Win32)
+
+        $code = ConvertTo-TkErrorCode -Text $Text
+
+        $code.Hex   | Should -Be $Hex
+        $code.Win32 | Should -Be $Win32
+    }
+
+    It 'refuses what is not a code' {
+
+        ConvertTo-TkErrorCode -Text 'proxy'       | Should -BeNullOrEmpty
+        ConvertTo-TkErrorCode -Text ''            | Should -BeNullOrEmpty
+        ConvertTo-TkErrorCode -Text '99999999999' | Should -BeNullOrEmpty
+    }
+
+    It 'splits an HRESULT and an NTSTATUS into their parts' {
+
+        $update = Get-TkErrorCodePart -Value ([Convert]::ToUInt32('8024402C', 16))
+
+        $update.Kind         | Should -Be 'HRESULT error'
+        $update.Facility     | Should -Be 36
+        $update.FacilityName | Should -Be 'Windows Update'
+        $update.Code         | Should -Be 0x402C
+
+        $setup = Get-TkErrorCodePart -Value ([Convert]::ToUInt32('C1900101', 16))
+
+        $setup.Kind     | Should -Be 'NTSTATUS'
+        $setup.Facility | Should -Be 0x190
+    }
+
+    It 'explains a code from the catalog, with the steps of its family' {
+
+        $info = Get-TkErrorCodeInfo -Code '0x800F081F'
+
+        $info.Known     | Should -BeTrue
+        $info.Name      | Should -Be 'CBS_E_SOURCE_MISSING'
+        $info.GroupName | Should -Be 'The component store is damaged'
+        $info.Steps[0]  | Should -BeLike '*RestoreHealth*'
+        $info.Action    | Should -BeLike '*/Source*'
+    }
+
+    It 'decodes a Win32 code the catalog does not hold, without inventing a name' {
+
+        $info = Get-TkErrorCodeInfo -Code 1223
+
+        $info.Known         | Should -BeFalse
+        $info.Name          | Should -Be ''
+        $info.Hex           | Should -Be '0x800704C7'
+        $info.Win32         | Should -Be 1223
+        $info.FacilityName  | Should -Be 'Win32'
+        $info.SystemMessage | Should -Not -BeNullOrEmpty
+    }
+
+    It 'summarizes a failed update the way the update history returns its code' {
+
+        Get-TkErrorCodeSummary -Code (-2145124322) | Should -BeLike 'WU_E_SERVICE_STOP: *'
+        Get-TkErrorCodeSummary -Code 'not a code'  | Should -Be ''
+    }
+
+    It 'reads the reason of a failed sign-in from its sub status, or its status when there is none' {
+
+        Get-TkLogonFailureCode -Status ([uint32] 3221225581) -SubStatus ([uint32] 3221225578) | Should -Be '0xC000006A'
+        Get-TkLogonFailureCode -Status ([uint32] 3221226036) -SubStatus ([uint32] 0)          | Should -Be '0xC0000234'
+        Get-TkLogonFailureCode -Status 0 -SubStatus 0                                          | Should -Be ''
+    }
+
+    It 'finds an event by its ID, and tells one ID from two sources apart' {
+
+        @(Get-TkEventReference -Id 41)[0].source                                       | Should -Be 'Kernel-Power'
+        @(Get-TkEventReference -Id 1001).Count                                          | Should -BeGreaterOrEqual 2
+        (Get-TkEventReference -Id 1001 -Source 'BugCheck').severity                     | Should -Be 'Fail'
+        (Get-TkEventReference -Id 1001 -Source 'Microsoft-Windows-WER-SystemErrorReporting').source | Should -Be 'BugCheck'
+        (Get-TkEventReference -Id 129 -Source 'stornvme').name                          | Should -BeLike '*reset*'
+    }
+
+    It 'searches by code, by event ID and by words' {
+
+        (Find-TkWindowsReference -Query '0x80070005')[0].Title | Should -Be '0x80070005  E_ACCESSDENIED'
+
+        # A short number is read as an event ID first, then as a Win32 code.
+        $byNumber = @(Find-TkWindowsReference -Query '41')
+
+        $byNumber[0].Kind         | Should -Be 'Event'
+        $byNumber[0].Entry.source | Should -Be 'Kernel-Power'
+        $byNumber[-1].Kind        | Should -Be 'Error code'
+
+        # A system message that is only a template with inserts says nothing.
+        (Get-TkErrorCodeInfo -Code 4625).SystemMessage | Should -Not -Match '%\d'
+
+        @(Find-TkWindowsReference -Query 'kernel-power restarted' | Where-Object { $_.Kind -eq 'Event' }).Count | Should -BeGreaterThan 0
+
+        $lockout = @(Find-TkWindowsReference -Query 'locked out')
+
+        @($lockout | Where-Object { $_.Key -eq '0xC0000234' }).Count | Should -Be 1
+        @($lockout | Where-Object { $_.Key -eq '4740' }).Count      | Should -Be 1
+
+        Find-TkWindowsReference -Query '' | Should -BeNullOrEmpty
+    }
+
+    It 'keeps the catalogs well formed' {
+
+        $errors = Import-TkCatalog -Name 'windows-errors'
+        $groups = @($errors.groups | ForEach-Object { $_.id })
+
+        foreach ($code in $errors.codes) {
+            [string] $code.code | Should -MatchExactly '^0x[0-9A-F]{8}$'
+            $code.meaning       | Should -Not -BeNullOrEmpty -Because $code.code
+
+            if ($code.group) {
+                $groups | Should -Contain $code.group -Because $code.code
+            }
+        }
+
+        @($errors.codes | Group-Object -Property code | Where-Object { $_.Count -gt 1 }).Count | Should -Be 0
+
+        $events = Import-TkCatalog -Name 'windows-events'
+
+        foreach ($windowsEvent in $events.events) {
+            $windowsEvent.severity | Should -BeIn @('Fail', 'Warning', 'Info')
+            $windowsEvent.name     | Should -Not -BeNullOrEmpty
+            $windowsEvent.log      | Should -Not -BeNullOrEmpty
+        }
+
+        @($events.events | Group-Object -Property { '{0}|{1}|{2}' -f $_.log, $_.source, $_.id } | Where-Object { $_.Count -gt 1 }).Count | Should -Be 0
+    }
+
+    It 'opens a code or an event from the search on the Windows codes tab, on the row it names' {
+
+        $markup = Get-TkMainWindowXaml
+
+        $markup | Should -Match '<TabItem Header="Windows codes">'
+        $markup | Should -Match 'x:Name="ReferenceList"'
+
+        $entries = @(Get-TkCatalogSearchEntry | Where-Object { $_.Kind -in @('Error code', 'Event') })
+
+        $entries.Count | Should -BeGreaterThan 300
+
+        # Every tenth entry: each one runs a search of its own.
+        for ($index = 0; $index -lt $entries.Count; $index += 10) {
+
+            $entry  = $entries[$index]
+            $titles = @(Find-TkWindowsReference -Query $entry.SearchText | ForEach-Object { $_.Title })
+
+            $titles | Should -Contain $entry.Choice -Because $entry.Title
         }
     }
 }
