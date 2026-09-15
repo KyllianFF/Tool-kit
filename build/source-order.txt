@@ -58,6 +58,8 @@ src/Features/Tools/TextTools.ps1
 src/Features/Tools/DevOpsTools.ps1
 src/Features/Tools/HtmlDocument.ps1
 src/Features/Tools/QrCode.ps1
+src/Features/Tools/MailTools.ps1
+src/Features/Tools/CertificateTools.ps1
 
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1

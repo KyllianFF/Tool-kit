@@ -162,16 +162,37 @@ function Initialize-TkToolsPage {
     # --- Safe Links, URL parser, NATO alphabet, phone numbers -------------
     # Worked out as the text changes: each is a few milliseconds.
     foreach ($binding in @(
-        @{ Name = 'SafeLinkInput'; Update = { Update-TkSafeLinkFromUi } }
-        @{ Name = 'UrlInput';      Update = { Update-TkUrlFromUi } }
-        @{ Name = 'NatoInput';     Update = { Update-TkNatoFromUi } }
-        @{ Name = 'PhoneInput';    Update = { Update-TkPhoneFromUi } }
+        @{ Name = 'SafeLinkInput';    Update = { Update-TkSafeLinkFromUi } }
+        @{ Name = 'UrlInput';         Update = { Update-TkUrlFromUi } }
+        @{ Name = 'NatoInput';        Update = { Update-TkNatoFromUi } }
+        @{ Name = 'PhoneInput';       Update = { Update-TkPhoneFromUi } }
+        @{ Name = 'MailHeaderInput';  Update = { Update-TkMailHeaderFromUi } }
+        @{ Name = 'CertificateInput'; Update = { Update-TkCertificateFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
         if ($box) {
             $box.Add_TextChanged($binding.Update)
         }
+    }
+
+    # --- Mail records and certificates ------------------------------------
+    # The mail check goes out on the network, so it waits for the button, or
+    # Enter in the domain box.
+    Register-TkClick -Name 'BtnCheckMailDns'    -Action { Invoke-TkMailDnsFromUi }
+    Register-TkClick -Name 'BtnOpenCertificate' -Action { Open-TkCertificateFileFromUi }
+
+    $mailDomain = Get-TkControl -Name 'MailDnsDomain'
+
+    if ($mailDomain) {
+        $mailDomain.Add_KeyDown({
+            param($eventSource, $routedArgs)
+
+            if ($routedArgs.Key -eq [System.Windows.Input.Key]::Return) {
+                Invoke-TkMailDnsFromUi
+                $routedArgs.Handled = $true
+            }
+        })
     }
 
     $markCase = Get-TkControl -Name 'NatoMarkCase'
@@ -554,6 +575,150 @@ function Update-TkUrlFromUi {
     }
 
     $output.Text = $lines -join [Environment]::NewLine
+}
+
+# ---------------------------------------------------------------------------
+# E-mail headers, mail records and certificates
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Analyses the e-mail headers pasted on the page, as they are pasted.
+#>
+function Update-TkMailHeaderFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'MailHeaderOutput'
+    $box    = Get-TkControl -Name 'MailHeaderInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    if (-not $text.Trim()) {
+        $output.Text = 'Paste the headers of a message. In classic Outlook: File, Properties, Internet headers; in the new Outlook and Outlook on the web: View, View message details; in Gmail: Show original.'
+        return
+    }
+
+    $report = Get-TkMailHeaderReport -Text $text
+
+    if ($report.HeaderCount -eq 0) {
+        $output.Text = 'No header was recognised. Headers are lines such as Received: from ... or From: ..., pasted as the mail client shows them.'
+        return
+    }
+
+    $output.Text = (Format-TkMailHeaderReport -Report $report) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Checks the mail DNS records of the domain typed on the page.
+
+.DESCRIPTION
+    Runs in the background: a domain with many SPF includes takes a few
+    seconds of lookups, which must not freeze the window.
+#>
+function Invoke-TkMailDnsFromUi {
+    [CmdletBinding()]
+    param()
+
+    $domain    = ([string] (Get-TkControl -Name 'MailDnsDomain').Text).Trim()
+    $selectors = ([string] (Get-TkControl -Name 'MailDnsSelectors').Text).Trim()
+
+    if (-not $domain) {
+        Set-TkStatus -Text 'Type a domain to check, such as contoso.com.'
+        return
+    }
+
+    Set-TkOutput -ControlName 'MailDnsOutput' -Text ('Querying the mail records of {0}...' -f $domain)
+
+    Invoke-TkBackgroundAction -StatusText ('Checking the mail records of {0}...' -f $domain) `
+        -ArgumentList @($domain, $selectors) `
+        -ScriptBlock {
+            param($name, $selectorText)
+
+            $selectorNames = @($selectorText -split '[,;\s]+' | Where-Object { $_ })
+
+            Get-TkMailDnsReport -Domain $name -Selector $selectorNames
+        } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Select-Object -First 1
+
+            if (-not $report) {
+                Set-TkOutput -ControlName 'MailDnsOutput' -Text 'The check did not complete. See the output panel for the reason.'
+                return
+            }
+
+            Set-TkOutput -ControlName 'MailDnsOutput' -Text ((Format-TkMailDnsReport -Report $report) -join [Environment]::NewLine)
+            Set-TkStatus -Text ('Mail records of {0} checked.' -f $report.Domain)
+        }
+}
+
+<#
+.SYNOPSIS
+    Decodes the certificates pasted on the page, as they are pasted.
+#>
+function Update-TkCertificateFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'CertificateOutput'
+    $box    = Get-TkControl -Name 'CertificateInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    if (-not $text.Trim()) {
+        $output.Text = 'Paste a certificate, a chain or a certificate request with its -----BEGIN and -----END lines, or open a file.'
+        return
+    }
+
+    $items = @(Get-TkCertificateItem -Text $text)
+
+    if ($items.Count -eq 0) {
+        $output.Text = 'Nothing was recognised. Paste the whole block, -----BEGIN and -----END lines included, or open the file.'
+        return
+    }
+
+    $output.Text = (Format-TkCertificateItem -Item $items) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Decodes a certificate, chain or request file chosen in a dialog.
+#>
+function Open-TkCertificateFileFromUi {
+    [CmdletBinding()]
+    param()
+
+    $dialog = New-Object Microsoft.Win32.OpenFileDialog
+    $dialog.Title  = 'Open a certificate or a certificate request'
+    $dialog.Filter = 'Certificates and requests (*.cer;*.crt;*.pem;*.der;*.csr;*.req;*.p7b)|*.cer;*.crt;*.pem;*.der;*.csr;*.req;*.p7b|All files (*.*)|*.*'
+
+    if (-not $dialog.ShowDialog()) {
+        return
+    }
+
+    $file = Get-Item -LiteralPath $dialog.FileName
+
+    # A certificate file is a few kilobytes; a large file is not one.
+    if ($file.Length -gt 1MB) {
+        Set-TkOutput -ControlName 'CertificateOutput' -Text ('{0} is {1}: too large to be a certificate or a request.' -f $file.Name, (Format-TkBytes -Bytes $file.Length))
+        return
+    }
+
+    $items = @(Get-TkCertificateItem -Bytes ([System.IO.File]::ReadAllBytes($file.FullName)))
+    $lines = @(('File         {0}' -f $file.FullName), '') + @(Format-TkCertificateItem -Item $items)
+
+    Set-TkOutput -ControlName 'CertificateOutput' -Text ($lines -join [Environment]::NewLine)
 }
 
 # ---------------------------------------------------------------------------
@@ -1498,6 +1663,9 @@ function Get-TkToolEntry {
         (& $tool 'Security'         'SSH keys'       'ToolSshKeys')
         (& $tool 'Security'         'File integrity' 'ToolFileIntegrity')
         (& $tool 'Security'         'Safe Links'     'ToolSafeLinks')
+        (& $tool 'Security'         'E-mail headers' 'ToolMailHeaders')
+        (& $tool 'Security'         'Mail DNS records' 'ToolMailDns')
+        (& $tool 'Security'         'Certificates'   'ToolCertificates')
         (& $tool 'Generators'       'Ports'          'ToolPorts')
         (& $tool 'Generators'       'UUIDs'          'ToolUuids')
         (& $tool 'Generators'       'QR code'        'ToolQrCode')
