@@ -1021,6 +1021,26 @@ Describe 'Windows reference' {
         Find-TkWindowsReference -Query '' | Should -BeNullOrEmpty
     }
 
+    It 'explains <Code> with the <Group> steps' -TestCases @(
+        @{ Code = '0xC0000005'; Group = 'An application crashed' }
+        @{ Code = '0xE0434352'; Group = 'An application crashed' }
+        @{ Code = '0xC004F074'; Group = 'Volume activation (KMS and MAK)' }
+        @{ Code = '0x80180014'; Group = 'Device enrolment in Intune' }
+    ) {
+        param($Code, $Group)
+
+        $info = Get-TkErrorCodeInfo -Code $Code
+
+        $info.Known     | Should -BeTrue
+        $info.GroupName | Should -Be $Group
+        @($info.Steps).Count | Should -BeGreaterThan 0
+    }
+
+    It 'reads an application crash code as an NTSTATUS' {
+        (Get-TkErrorCodeInfo -Code '0xC0000409').Kind | Should -Be 'NTSTATUS'
+        (Get-TkErrorCodeInfo -Code '-1073740791').Name | Should -Be 'STATUS_STACK_BUFFER_OVERRUN'
+    }
+
     It 'keeps the catalogs well formed' {
 
         $errors = Import-TkCatalog -Name 'windows-errors'
@@ -1977,6 +1997,18 @@ Describe 'Vendor command catalog' {
             $sections | Should -Match $expected
         }
     }
+
+    It 'carries the administration cheat sheets after the scripting ones' {
+
+        $ids = @($script:Vendors | ForEach-Object { $_.id })
+
+        foreach ($expected in @('active-directory', 'windows-cmd', 'intune-mdm', 'microsoft-graph-exchange',
+                                'openssl', 'packet-capture', 'docker', 'kubernetes', 'virtualization')) {
+
+            $ids | Should -Contain $expected
+            [array]::IndexOf($ids, $expected) | Should -BeLessThan ([array]::IndexOf($ids, 'aruba-cx')) -Because $expected
+        }
+    }
 }
 
 Describe 'Knowledge base coverage' {
@@ -2014,9 +2046,27 @@ Describe 'Knowledge base coverage' {
         $titles = (@($script:Topics | ForEach-Object { $_.title }) -join ' ')
 
         foreach ($subject in @('OSI', '802.1X', 'Power over Ethernet', 'Quality of service',
-                               'BGP', 'IPv6', 'Certificates', 'DNS', 'VLAN', 'Wi-Fi')) {
+                               'BGP', 'IPv6', 'Certificates', 'DNS', 'VLAN', 'Wi-Fi',
+                               'Group Policy', 'Kerberos', 'Entra', 'recovery', 'WSUS',
+                               'ransomware', 'incident', 'DMARC', 'MFA', 'SIDs',
+                               'HTTP status', 'SMTP')) {
 
             $titles | Should -Match $subject
+        }
+    }
+
+    It 'keeps every table rectangular, each row as long as its columns' {
+
+        foreach ($topic in $script:Topics) {
+
+            foreach ($table in (ConvertTo-TkArray $topic.tables)) {
+
+                $width = @($table.columns).Count
+
+                foreach ($row in @($table.rows)) {
+                    @($row).Count | Should -Be $width -Because ('{0}: {1}' -f $topic.id, $table.title)
+                }
+            }
         }
     }
 }

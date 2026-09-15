@@ -3730,7 +3730,7 @@
                     <StackPanel Grid.Row="0" Margin="0,0,0,14">
                         <TextBlock Text="Commands" Style="{StaticResource Heading}" />
                         <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
-                                   Text="Cheat sheets for Git, PowerShell, Bash and Linux administration, and the commands of network equipment grouped by task for each manufacturer. Pick one, or search all of them at once." />
+                                   Text="Cheat sheets for Git, PowerShell, Bash, Linux, Active Directory, the Windows command line, Intune, Microsoft Graph and Exchange Online, OpenSSL, packet capture, Docker, Kubernetes and hypervisors, then the commands of network equipment by manufacturer. Pick one, or search all of them at once." />
                     </StackPanel>
 
                     <Grid Grid.Row="1">
