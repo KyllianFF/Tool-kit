@@ -87,13 +87,52 @@ function Get-TkThemePalette {
 
 <#
 .SYNOPSIS
+    Derives the faint severity fills from a palette.
+
+.DESCRIPTION
+    Finding cards, dashboard tiles and diff lines are filled with a severity
+    colour at low alpha. The fills are window resources like the palette
+    colours and are recomputed with them, so what was drawn before a theme
+    change follows it. Get-TkSeverityTintKey names them.
+
+.PARAMETER Palette
+    The table from Get-TkThemePalette.
+
+.OUTPUTS
+    System.Collections.Hashtable of resource key to #AARRGGBB colour.
+#>
+function Get-TkThemeTint {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $Palette
+    )
+
+    $tints = @{}
+
+    foreach ($key in @('Danger', 'Warning', 'Success', 'TextMuted')) {
+        foreach ($alpha in @(38, 60)) {
+            $tints[('{0}Tint{1}' -f $key, $alpha)] = '#{0:X2}{1}' -f $alpha, $Palette[$key].TrimStart('#')
+        }
+    }
+
+    return $tints
+}
+
+<#
+.SYNOPSIS
     Applies a theme to the open window.
 
 .DESCRIPTION
-    Replaces the brush behind every palette key. Also fixes up the primary
-    button style, whose foreground has to stay legible on the accent fill in
-    both themes. The navigation highlight needs nothing: Show-TkPage gives it
-    the Selection brush by resource reference.
+    Replaces the brush behind every palette key and every tint derived from
+    it. Also fixes up the primary button style, whose foreground has to stay
+    legible on the accent fill in both themes. The navigation highlight needs
+    nothing: Show-TkPage gives it the Selection brush by resource reference.
+
+    Only what refers to a key follows: an element given the brush object
+    itself keeps the old colour. Documents and generated controls use
+    Set-TkResourceBrush for that reason.
 
 .PARAMETER Name
     Dark or Light.
@@ -123,12 +162,17 @@ function Set-TkTheme {
     }
 
     $palette   = Get-TkThemePalette -Name $Name
+    $colours   = $palette.Clone()
     $converter = New-Object System.Windows.Media.BrushConverter
 
-    foreach ($key in $palette.Keys) {
+    foreach ($tint in (Get-TkThemeTint -Palette $palette).GetEnumerator()) {
+        $colours[$tint.Key] = $tint.Value
+    }
+
+    foreach ($key in $colours.Keys) {
 
         try {
-            $brush = $converter.ConvertFromString($palette[$key])
+            $brush = $converter.ConvertFromString($colours[$key])
             $brush.Freeze()
 
             $ctx.Window.Resources[$key] = $brush
