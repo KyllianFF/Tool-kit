@@ -40,6 +40,17 @@ function Get-TkFixDispatchTable {
         'RestartExplorer'        = 'Restart-TkExplorer'
         'FlushDnsCache'          = 'Clear-TkDnsCache'
         'ResetWindowsFirewall'   = 'Reset-TkWindowsFirewall'
+        'ResetProxySettings'     = 'Reset-TkProxySetting'
+        'PurgeKerberosTickets'   = 'Clear-TkKerberosTicket'
+        'ResyncTime'             = 'Sync-TkTime'
+        'ResetSecureChannel'     = 'Reset-TkSecureChannel'
+        'RepairWmiRepository'    = 'Repair-TkWmiRepository'
+        'ResetOneDrive'          = 'Reset-TkOneDrive'
+        'ClearTeamsCache'        = 'Clear-TkTeamsCache'
+        'RestartAudioServices'   = 'Restart-TkAudioService'
+        'RestartBluetoothService' = 'Restart-TkBluetoothService'
+        'RestartStartMenu'       = 'Restart-TkStartMenu'
+        'ResetDefenderSignatures' = 'Reset-TkDefenderSignature'
     }
 }
 
@@ -605,6 +616,702 @@ function Reset-TkSearchIndex {
     Write-TkLog -Level Information -Category 'Fixes' -Message (
         'Search index rebuild started. Full indexing runs in the background.'
     )
+
+    return $true
+}
+
+# ---------------------------------------------------------------------------
+# Network and domain
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Puts the proxy settings back to their defaults.
+
+.DESCRIPTION
+    Resets both proxies Windows keeps: the one Windows Update, BITS and the
+    agents read (WinHTTP), and the one applications read, for the account the
+    toolkit runs as, or for the whole machine when ProxySettingsPerUser says
+    so. The binary values the Settings page keeps the real state in are
+    removed too, or the old proxy would come back from them.
+
+    The settings in force are written to the log first, so they can be put
+    back by hand. Environment variables are left alone: a command line tool
+    may rely on them on purpose.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Reset-TkProxySetting {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not (Assert-TkElevated -Operation 'Reset the proxy settings')) {
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Reset the WinHTTP and application proxy settings')) {
+        return $false
+    }
+
+    try {
+        Write-TkLog -Level Information -Category 'Fixes' -Message (
+            'Proxy settings before the reset: {0}' -f (Get-TkProxySetting | ConvertTo-Json -Depth 4 -Compress)
+        )
+    }
+    catch {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message (
+            'The proxy settings could not be recorded before the reset: {0}' -f $_.Exception.Message
+        )
+    }
+
+    $failures = 0
+    $result   = Invoke-TkProcess -FilePath 'netsh' -ArgumentList @('winhttp', 'reset', 'proxy') -TimeoutSeconds 60
+
+    if ($result.ExitCode -ne 0) {
+        $failures++
+        Write-TkLog -Level Warning -Category 'Fixes' -Message ('netsh winhttp reset proxy returned {0}.' -f $result.ExitCode)
+    }
+
+    $settingsPath = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings'
+    $perUser      = Get-TkRegistryValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings' -Name 'ProxySettingsPerUser'
+    $root         = if ($null -ne $perUser -and [int] $perUser -eq 0) { 'HKLM:' } else { 'HKCU:' }
+
+    if (-not (Set-TkRegistryValue -Path "$root\$settingsPath" -Name 'ProxyEnable' -Value 0 -Type DWord -Confirm:$false)) {
+        $failures++
+    }
+
+    foreach ($name in @('ProxyServer', 'ProxyOverride', 'AutoConfigURL')) {
+        Remove-TkRegistryValue -Path "$root\$settingsPath" -Name $name -Confirm:$false | Out-Null
+    }
+
+    # Without these two, Windows starts again from automatic detection.
+    foreach ($name in @('DefaultConnectionSettings', 'SavedLegacySettings')) {
+        Remove-TkRegistryValue -Path "$root\$settingsPath\Connections" -Name $name -Confirm:$false | Out-Null
+    }
+
+    Write-TkLog -Level Information -Category 'Fixes' -Message (
+        'Proxy settings reset under {0}. A proxy set by group policy or Intune comes back at the next refresh.' -f $root
+    )
+
+    return ($failures -eq 0)
+}
+
+<#
+.SYNOPSIS
+    Purges cached Kerberos tickets and applies Group Policy again.
+
+.DESCRIPTION
+    Tickets carry the group memberships of the moment they were issued, so a
+    new membership only counts once they are requested again. The computer
+    tickets (logon session 0x3e7) and those of the session the toolkit runs in
+    are purged. An elevated toolkit runs in a session of its own: a user's
+    desktop session keeps its tickets until the user signs out.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Clear-TkKerberosTicket {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not (Assert-TkElevated -Operation 'Purge the Kerberos tickets')) {
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Purge Kerberos tickets and refresh Group Policy')) {
+        return $false
+    }
+
+    $steps = @(
+        @{ File = 'klist.exe';    Args = @('-li', '0x3e7', 'purge'); Timeout = 60 },
+        @{ File = 'klist.exe';    Args = @('purge');                 Timeout = 60 },
+        @{ File = 'gpupdate.exe'; Args = @('/force');                Timeout = 300 }
+    )
+
+    $failures = 0
+
+    foreach ($step in $steps) {
+
+        $result = Invoke-TkProcess -FilePath $step.File -ArgumentList $step.Args -TimeoutSeconds $step.Timeout
+
+        if ($result.ExitCode -ne 0) {
+            $failures++
+
+            Write-TkLog -Level Warning -Category 'Fixes' -Message (
+                '{0} {1} returned {2}.' -f $step.File, ($step.Args -join ' '), $result.ExitCode
+            )
+        }
+    }
+
+    Write-TkLog -Level Information -Category 'Fixes' -Message 'Kerberos tickets purged and Group Policy applied again.'
+
+    return ($failures -eq 0)
+}
+
+<#
+.SYNOPSIS
+    Resynchronises the clock with its time source.
+
+.DESCRIPTION
+    Starts the Windows Time service when it is stopped but allowed to run. A
+    disabled service is left disabled and reported: someone chose that, or a
+    policy did.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Sync-TkTime {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not (Assert-TkElevated -Operation 'Resynchronise the clock')) {
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Resynchronise the clock')) {
+        return $false
+    }
+
+    $service = Get-Service -Name 'W32Time' -ErrorAction SilentlyContinue
+
+    if (-not $service) {
+        Write-TkLog -Level Error -Category 'Fixes' -Message 'The Windows Time service is not installed.'
+        return $false
+    }
+
+    if ($service.Status -ne 'Running') {
+
+        if ([string] $service.StartType -eq 'Disabled') {
+            Write-TkLog -Level Warning -Category 'Fixes' -Message 'The Windows Time service is disabled, and was left so.'
+            return $false
+        }
+
+        Start-Service -Name 'W32Time' -ErrorAction SilentlyContinue
+    }
+
+    $result = Invoke-TkProcess -FilePath 'w32tm.exe' -ArgumentList @('/resync') -TimeoutSeconds 60
+
+    if ($result.ExitCode -ne 0) {
+
+        # Usually a source not reached yet: have the service find its sources
+        # again, then synchronise.
+        $result = Invoke-TkProcess -FilePath 'w32tm.exe' -ArgumentList @('/resync', '/rediscover') -TimeoutSeconds 90
+    }
+
+    if ($result.ExitCode -eq 0) {
+        Write-TkLog -Level Information -Category 'Fixes' -Message 'Clock resynchronised.'
+    }
+    else {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message (
+            'The clock could not be resynchronised (exit code {0}). Check the source with w32tm /query /status.' -f $result.ExitCode
+        )
+    }
+
+    return ($result.ExitCode -eq 0)
+}
+
+<#
+.SYNOPSIS
+    Resets the secure channel between this computer and its domain.
+
+.DESCRIPTION
+    nltest /sc_reset rebuilds the channel with the machine account password
+    the computer already holds. It cannot help when that password no longer
+    matches Active Directory, typically after a restored snapshot: the repair
+    then needs a domain credential, which a background fix must not ask for,
+    so the log says how to do it.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Reset-TkSecureChannel {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not (Assert-TkElevated -Operation 'Reset the domain secure channel')) {
+        return $false
+    }
+
+    $system = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+
+    if (-not $system -or -not $system.PartOfDomain) {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message 'This computer is not joined to an Active Directory domain.'
+        return $false
+    }
+
+    $domain = [string] $system.Domain
+
+    if ($domain -notmatch '^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$') {
+        Write-TkLog -Level Error -Category 'Fixes' -Message ('Refused: "{0}" is not a domain name.' -f $domain)
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($domain, 'Reset the secure channel')) {
+        return $false
+    }
+
+    $result = Invoke-TkProcess -FilePath 'nltest.exe' -ArgumentList @(('/sc_reset:{0}' -f $domain)) -TimeoutSeconds 120
+
+    if ($result.ExitCode -eq 0) {
+        Write-TkLog -Level Information -Category 'Fixes' -Message ('Secure channel with {0} reset.' -f $domain)
+        return $true
+    }
+
+    Write-TkLog -Level Warning -Category 'Fixes' -Message (
+        ('The secure channel with {0} could not be reset (exit code {1}). If the machine account password no longer matches, ' +
+         'run Test-ComputerSecureChannel -Repair -Credential (Get-Credential) in an elevated Windows PowerShell 5.1 with a domain account, then restart.') -f $domain, $result.ExitCode
+    )
+
+    return $false
+}
+
+# ---------------------------------------------------------------------------
+# Servicing: WMI and Defender
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Verifies the WMI repository and salvages it only when it is damaged.
+
+.DESCRIPTION
+    Never /resetrepository: Microsoft warns against throwing the repository
+    away as a first step, because the classes applications registered in it
+    are not all rebuilt.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Repair-TkWmiRepository {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not (Assert-TkElevated -Operation 'Repair the WMI repository')) {
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Verify and, if needed, salvage the WMI repository')) {
+        return $false
+    }
+
+    $verify = Invoke-TkProcess -FilePath 'winmgmt.exe' -ArgumentList @('/verifyrepository') -TimeoutSeconds 300
+
+    if ($verify.ExitCode -eq 0) {
+        Write-TkLog -Level Information -Category 'Fixes' -Message 'The WMI repository is consistent: nothing to salvage.'
+        return $true
+    }
+
+    Write-TkLog -Level Warning -Category 'Fixes' -Message (
+        'The WMI repository is not consistent (exit code {0}); salvaging it.' -f $verify.ExitCode
+    )
+
+    $salvage = Invoke-TkProcess -FilePath 'winmgmt.exe' -ArgumentList @('/salvagerepository') -TimeoutSeconds 900
+
+    if ($salvage.ExitCode -ne 0) {
+        Write-TkLog -Level Error -Category 'Fixes' -Message (
+            'The WMI repository could not be salvaged (exit code {0}).' -f $salvage.ExitCode
+        )
+    }
+
+    return ($salvage.ExitCode -eq 0)
+}
+
+<#
+.SYNOPSIS
+    Finds the newest copy of the Defender command line tool.
+
+.DESCRIPTION
+    Platform updates install into a versioned folder under ProgramData, and
+    the copy in Program Files is the one Windows shipped with. Folders are
+    compared as versions, where 4.18.9999 would otherwise sort after
+    4.18.25080.
+
+.PARAMETER PlatformRoot
+    The Windows Defender Platform folder under ProgramData.
+
+.PARAMETER ProgramFiles
+    The Program Files folder.
+
+.OUTPUTS
+    System.String, or null when neither holds the tool.
+#>
+function Get-TkMpCmdRunPath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $PlatformRoot,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $ProgramFiles
+    )
+
+    if ($PlatformRoot -and (Test-Path -LiteralPath $PlatformRoot)) {
+
+        $newest = Get-ChildItem -LiteralPath $PlatformRoot -Directory -ErrorAction SilentlyContinue |
+                  Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'MpCmdRun.exe') } |
+                  Sort-Object -Descending -Property {
+                      $version = $null
+                      if ([version]::TryParse(($_.Name -replace '-.*$', ''), [ref] $version)) { $version } else { [version] '0.0' }
+                  } |
+                  Select-Object -First 1
+
+        if ($newest) {
+            return (Join-Path $newest.FullName 'MpCmdRun.exe')
+        }
+    }
+
+    if ($ProgramFiles) {
+
+        $shipped = Join-Path $ProgramFiles 'Windows Defender\MpCmdRun.exe'
+
+        if (Test-Path -LiteralPath $shipped) {
+            return $shipped
+        }
+    }
+
+    return $null
+}
+
+<#
+.SYNOPSIS
+    Removes the dynamically downloaded Defender signatures and updates again.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Reset-TkDefenderSignature {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not (Assert-TkElevated -Operation 'Reload the Defender signatures')) {
+        return $false
+    }
+
+    $tool = Get-TkMpCmdRunPath -PlatformRoot ([string] (Join-Path $env:ProgramData 'Microsoft\Windows Defender\Platform')) `
+                               -ProgramFiles ([string] $env:ProgramFiles)
+
+    if (-not $tool) {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message 'The Microsoft Defender command line tool was not found on this machine.'
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Remove dynamic Defender signatures and update them')) {
+        return $false
+    }
+
+    $remove = Invoke-TkProcess -FilePath $tool -ArgumentList @('-RemoveDefinitions', '-DynamicSignatures') -TimeoutSeconds 300
+
+    if ($remove.ExitCode -ne 0) {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message (
+            'Removing the dynamic signatures returned {0}; updating anyway.' -f $remove.ExitCode
+        )
+    }
+
+    $update = Invoke-TkProcess -FilePath $tool -ArgumentList @('-SignatureUpdate') -TimeoutSeconds 900
+
+    if ($update.ExitCode -eq 0) {
+        Write-TkLog -Level Information -Category 'Fixes' -Message 'Defender security intelligence updated.'
+    }
+    else {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message (
+            'The signature update returned {0}. Check the connection to Windows Update or the configured update source.' -f $update.ExitCode
+        )
+    }
+
+    return ($update.ExitCode -eq 0)
+}
+
+# ---------------------------------------------------------------------------
+# Applications
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Returns the first OneDrive executable that exists.
+
+.PARAMETER Candidate
+    Paths in order of preference: per user first, then per machine.
+
+.OUTPUTS
+    System.String, or null.
+#>
+function Get-TkOneDriveExecutable {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]] $Candidate
+    )
+
+    foreach ($path in $Candidate) {
+
+        if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path -PathType Leaf)) {
+            return $path
+        }
+    }
+
+    return $null
+}
+
+<#
+.SYNOPSIS
+    Resets the OneDrive sync app for the account the toolkit runs as.
+
+.DESCRIPTION
+    OneDrive refuses to run with administrator rights, so an elevated toolkit
+    resets it and leaves the start to the user; otherwise OneDrive is started
+    again when the reset has not done it already.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Reset-TkOneDrive {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    $executable = Get-TkOneDriveExecutable -Candidate @(
+        ('{0}\Microsoft\OneDrive\OneDrive.exe' -f $env:LOCALAPPDATA)
+        ('{0}\Microsoft OneDrive\OneDrive.exe' -f $env:ProgramFiles)
+        ('{0}\Microsoft OneDrive\OneDrive.exe' -f ${env:ProgramFiles(x86)})
+    )
+
+    if (-not $executable) {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message 'OneDrive is not installed for this account.'
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($executable, 'Reset OneDrive')) {
+        return $false
+    }
+
+    Start-Process -FilePath $executable -ArgumentList '/reset'
+
+    if (Test-TkIsElevated) {
+        Write-TkLog -Level Information -Category 'Fixes' -Message (
+            'OneDrive reset. Start it again from the Start menu: it does not run with administrator rights.'
+        )
+
+        return $true
+    }
+
+    # The reset closes OneDrive and normally starts it again by itself.
+    Start-Sleep -Seconds 15
+
+    if (-not (Get-Process -Name 'OneDrive' -ErrorAction SilentlyContinue)) {
+        Start-Process -FilePath $executable
+    }
+
+    Write-TkLog -Level Information -Category 'Fixes' -Message 'OneDrive reset; it syncs every file again.'
+
+    return $true
+}
+
+<#
+.SYNOPSIS
+    Returns where new and classic Teams keep their cache.
+
+.PARAMETER LocalAppData
+    The local application data folder of the account.
+
+.PARAMETER AppData
+    The roaming application data folder of the account.
+
+.OUTPUTS
+    PSCustomObject[] with Name, Path and Process.
+#>
+function Get-TkTeamsCacheFolder {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $LocalAppData,
+
+        [Parameter(Mandatory)]
+        [string] $AppData
+    )
+
+    return @(
+        [pscustomobject] @{ Name = 'New Teams';     Path = (Join-Path $LocalAppData 'Packages\MSTeams_8wekyb3d8bbwe\LocalCache\Microsoft\MSTeams'); Process = 'ms-teams' }
+        [pscustomobject] @{ Name = 'Classic Teams'; Path = (Join-Path $AppData 'Microsoft\Teams');                                              Process = 'Teams' }
+    )
+}
+
+<#
+.SYNOPSIS
+    Closes Teams and empties its cache for the account the toolkit runs as.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Clear-TkTeamsCache {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    $folders = @(Get-TkTeamsCacheFolder -LocalAppData $env:LOCALAPPDATA -AppData $env:APPDATA |
+                 Where-Object { Test-Path -LiteralPath $_.Path })
+
+    if ($folders.Count -eq 0) {
+        Write-TkLog -Level Information -Category 'Fixes' -Message 'No Teams cache was found for this account.'
+        return $true
+    }
+
+    if (-not $PSCmdlet.ShouldProcess(($folders.Name -join ', '), 'Close Teams and clear its cache')) {
+        return $false
+    }
+
+    foreach ($folder in $folders) {
+        Get-Process -Name $folder.Process -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+
+    # Let the processes release their files.
+    Start-Sleep -Seconds 3
+
+    $freedBytes = 0
+
+    foreach ($folder in $folders) {
+
+        foreach ($item in @(Get-ChildItem -LiteralPath $folder.Path -Force -ErrorAction SilentlyContinue)) {
+
+            $size = (Get-ChildItem -LiteralPath $item.FullName -Force -Recurse -File -ErrorAction SilentlyContinue |
+                     Measure-Object -Property Length -Sum).Sum
+
+            if (-not $item.PSIsContainer) {
+                $size = $item.Length
+            }
+
+            Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+
+            if (-not (Test-Path -LiteralPath $item.FullName)) {
+                $freedBytes += [double] $size
+            }
+        }
+    }
+
+    Write-TkLog -Level Information -Category 'Fixes' -Message (
+        'Teams cache cleared ({0}), {1} reclaimed. Teams rebuilds it at its next start.' -f ($folders.Name -join ', '), (Format-TkBytes -Bytes $freedBytes)
+    )
+
+    return $true
+}
+
+# ---------------------------------------------------------------------------
+# Devices and shell
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Restarts the Windows audio services.
+
+.DESCRIPTION
+    Restarting the endpoint builder stops Windows Audio, which depends on it,
+    without starting it again, hence the second step.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Restart-TkAudioService {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not (Assert-TkElevated -Operation 'Restart the audio services')) {
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Restart AudioEndpointBuilder and Audiosrv')) {
+        return $false
+    }
+
+    try {
+        Restart-Service -Name 'AudioEndpointBuilder' -Force -ErrorAction Stop
+        Start-Service -Name 'Audiosrv' -ErrorAction Stop
+
+        Write-TkLog -Level Information -Category 'Fixes' -Message 'Audio services restarted.'
+
+        return $true
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Fixes' -Message ('The audio services could not be restarted: {0}' -f $_.Exception.Message)
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Restarts the Bluetooth Support Service.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Restart-TkBluetoothService {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not (Assert-TkElevated -Operation 'Restart the Bluetooth support service')) {
+        return $false
+    }
+
+    if (-not (Get-Service -Name 'bthserv' -ErrorAction SilentlyContinue)) {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message 'This machine has no Bluetooth Support Service.'
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Restart bthserv')) {
+        return $false
+    }
+
+    try {
+        Restart-Service -Name 'bthserv' -Force -ErrorAction Stop
+
+        Write-TkLog -Level Information -Category 'Fixes' -Message 'Bluetooth Support Service restarted.'
+
+        return $true
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Fixes' -Message ('The Bluetooth service could not be restarted: {0}' -f $_.Exception.Message)
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Ends the processes behind Start, search and the notification area.
+
+.DESCRIPTION
+    Windows starts each of them again the next time it is opened, so nothing
+    has to be started here.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Restart-TkStartMenu {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Restart the Start menu, search and shell experience hosts')) {
+        return $false
+    }
+
+    foreach ($name in @('StartMenuExperienceHost', 'SearchHost', 'ShellExperienceHost')) {
+        Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-TkLog -Level Information -Category 'Fixes' -Message 'Start menu and search restarted; they come back when opened.'
 
     return $true
 }
