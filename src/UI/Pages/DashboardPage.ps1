@@ -258,14 +258,7 @@ function New-TkHealthTile {
 
     $border.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, $severityKey)
 
-    $tint = Get-TkSeverityTintBrush -Severity $Tile.Severity
-
-    if ($tint) {
-        $border.Background = $tint
-    }
-    else {
-        $border.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'SurfaceRaised')
-    }
+    Set-TkResourceBrush -Element $border -Property Background -Key (Get-TkSeverityTintKey -Severity $Tile.Severity)
 
     $stack = New-Object System.Windows.Controls.StackPanel
 

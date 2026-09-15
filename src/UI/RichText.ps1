@@ -11,37 +11,59 @@
     FlowDocument renders each of those as what it is, and it is also the only
     control here that can highlight a search term inside the text.
 
-    Every colour is read from the window resources at build time, so a
-    document follows the current theme. A document is rebuilt on a theme
-    change rather than repainted, which is why Set-TkTheme re-renders the
-    selected topic.
+    Every colour is a reference to a window resource, set with
+    Set-TkResourceBrush, so a document already on screen follows a theme
+    change like the rest of the window. Copying the brush a key held when the
+    document was built is what left dark theme headings on a light page.
 #>
 
 <#
 .SYNOPSIS
-    Returns a theme brush by resource key.
+    Paints a property of an element with a theme brush that follows the theme.
 
 .DESCRIPTION
-    Falls back to a readable grey when the window is not up, so the rendering
-    functions stay callable from a console session and from the tests.
+    Binds the property to the resource key rather than copying the brush the
+    key holds now. Set-TkTheme puts a new brush behind every key, so a copied
+    brush keeps the colour of the theme it was taken from. A reference is
+    looked up through the element's parents up to the window, and repaints by
+    itself when the brush behind the key changes.
 
-.OUTPUTS
-    System.Windows.Media.Brush
+    Works without a window too: the reference simply resolves once the
+    element is placed where the key is defined.
+
+.PARAMETER Element
+    A FrameworkElement, or a FrameworkContentElement such as a Paragraph or a Run.
+
+.PARAMETER Property
+    The property to paint.
+
+.PARAMETER Key
+    A palette key, or a tint key from Get-TkSeverityTintKey.
 #>
-function Get-TkBrush {
+function Set-TkResourceBrush {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
+        [System.Windows.DependencyObject] $Element,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('Foreground', 'Background', 'BorderBrush')]
+        [string] $Property,
+
         [Parameter(Mandatory)]
         [string] $Key
     )
 
-    $ctx = Get-TkContext
+    # Paragraph inherits ForegroundProperty from TextElement and BorderBrushProperty
+    # from Block, hence the flattened lookup.
+    $flags = [System.Reflection.BindingFlags] 'Public, Static, FlattenHierarchy'
+    $field = $Element.GetType().GetField(('{0}Property' -f $Property), $flags)
 
-    if ($ctx.Window -and $ctx.Window.Resources[$Key]) {
-        return $ctx.Window.Resources[$Key]
+    if ($null -eq $field) {
+        throw ('A {0} has no {1} property.' -f $Element.GetType().Name, $Property)
     }
 
-    return [System.Windows.Media.Brushes]::Gray
+    $Element.SetResourceReference($field.GetValue($null), $Key)
 }
 
 <#
@@ -119,7 +141,7 @@ function New-TkTextRuns {
         }
 
         $match = New-Object System.Windows.Documents.Run($Text.Substring($found, $Highlight.Length))
-        $match.Background = Get-TkBrush -Key 'Warning'
+        Set-TkResourceBrush -Element $match -Property Background -Key 'Warning'
         $match.Foreground = [System.Windows.Media.Brushes]::Black
         $match.FontWeight = [System.Windows.FontWeights]::SemiBold
 
@@ -164,8 +186,9 @@ function Add-TkHeading {
 
     $paragraph.FontSize   = @(20, 15, 13)[$Level - 1]
     $paragraph.FontWeight = [System.Windows.FontWeights]::SemiBold
-    $paragraph.Foreground = Get-TkBrush -Key $(if ($Level -eq 1) { 'TextPrimary' } else { 'Accent' })
     $paragraph.Margin     = New-Object System.Windows.Thickness(0, $(if ($Level -eq 1) { 0 } else { 18 }), 0, 6)
+
+    Set-TkResourceBrush -Element $paragraph -Property Foreground -Key $(if ($Level -eq 1) { 'TextPrimary' } else { 'Accent' })
 
     foreach ($run in (New-TkTextRuns -Text $Text -Highlight $Highlight)) {
         $paragraph.Inlines.Add($run)
@@ -205,8 +228,8 @@ function Add-TkParagraph {
     $paragraph.LineHeight = 19
 
     if ($Muted) {
-        $paragraph.Foreground = Get-TkBrush -Key 'TextMuted'
-        $paragraph.FontSize   = 12
+        Set-TkResourceBrush -Element $paragraph -Property Foreground -Key 'TextMuted'
+        $paragraph.FontSize = 12
     }
 
     foreach ($run in (New-TkTextRuns -Text $Text -Highlight $Highlight)) {
@@ -695,12 +718,13 @@ function Add-TkCodeBlock {
 
     $paragraph.FontFamily      = New-Object System.Windows.Media.FontFamily('Cascadia Mono, Consolas, Courier New')
     $paragraph.FontSize        = 12.5
-    $paragraph.Background      = Get-TkBrush -Key 'InputBackground'
     $paragraph.Padding         = New-Object System.Windows.Thickness(10, 8, 10, 8)
     $paragraph.Margin          = New-Object System.Windows.Thickness(0, 0, 0, 4)
-    $paragraph.BorderBrush     = Get-TkBrush -Key 'BorderSubtle'
     $paragraph.BorderThickness = New-Object System.Windows.Thickness(1)
     $paragraph.LineHeight      = 17
+
+    Set-TkResourceBrush -Element $paragraph -Property Background  -Key 'InputBackground'
+    Set-TkResourceBrush -Element $paragraph -Property BorderBrush -Key 'BorderSubtle'
 
     foreach ($run in (New-TkTextRuns -Text $Text -Highlight $Highlight)) {
         $paragraph.Inlines.Add($run)
@@ -776,46 +800,35 @@ function Get-TkSeverityGlyph {
 
 <#
 .SYNOPSIS
-    Returns a faint fill in the severity colour, for a whole card.
+    Returns the resource key of a faint fill in the severity colour.
 
 .DESCRIPTION
-    Built from the palette's own colour at low alpha rather than from a fixed
-    pair of light and dark tints, so it stays right through a theme change and
-    there is still only one place where Danger is defined.
+    Set-TkTheme derives these fills from the palette's own colours at low
+    alpha (Get-TkThemeTint), so there is still one place where Danger is
+    defined, and a tinted card, tile or line follows a theme change like any
+    other surface. Paint with Set-TkResourceBrush.
 
-    A new brush every time: tinting the palette's shared brush would repaint
-    every surface in the window.
+.PARAMETER Alpha
+    38 for a card or a tile; 60 for a line of a diff, which has to stand out
+    from the unchanged lines around it.
 
 .OUTPUTS
-    System.Windows.Media.SolidColorBrush, or null when there is no window.
+    System.String
 #>
-function Get-TkSeverityTintBrush {
+function Get-TkSeverityTintKey {
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory)]
         [AllowEmptyString()]
         [string] $Severity,
 
         [Parameter()]
-        [byte] $Alpha = 38
+        [ValidateSet(38, 60)]
+        [int] $Alpha = 38
     )
 
-    $ctx = Get-TkContext
-
-    if ($null -eq $ctx.Window) {
-        return $null
-    }
-
-    $source = $ctx.Window.Resources[(Get-TkSeverityBrushKey -Severity $Severity)]
-
-    if ($null -eq $source) {
-        return $null
-    }
-
-    $colour = [System.Windows.Media.Color]::FromArgb(
-        $Alpha, $source.Color.R, $source.Color.G, $source.Color.B)
-
-    return New-Object System.Windows.Media.SolidColorBrush($colour)
+    return '{0}Tint{1}' -f (Get-TkSeverityBrushKey -Severity $Severity), $Alpha
 }
 
 <#
@@ -1045,14 +1058,7 @@ function Add-TkFindingCard {
         $card.BorderThickness = New-Object System.Windows.Thickness(4, 1, 1, 1)
         $card.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, $severityKey)
 
-        $tint = Get-TkSeverityTintBrush -Severity $Severity
-
-        if ($tint) {
-            $card.Background = $tint
-        }
-        else {
-            $card.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Surface')
-        }
+        Set-TkResourceBrush -Element $card -Property Background -Key (Get-TkSeverityTintKey -Severity $Severity)
     }
     else {
         $card.BorderThickness = New-Object System.Windows.Thickness(1)

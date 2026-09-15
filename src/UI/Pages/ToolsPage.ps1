@@ -695,8 +695,8 @@ function Invoke-TkTextDiffFromUi {
             $paragraph.Padding    = New-Object System.Windows.Thickness(6, 1, 6, 1)
 
             switch ($row.Kind) {
-                'Removed' { $paragraph.Background = Get-TkSeverityTintBrush -Severity 'Fail' -Alpha 60 }
-                'Added'   { $paragraph.Background = Get-TkSeverityTintBrush -Severity 'Pass' -Alpha 60 }
+                'Removed' { Set-TkResourceBrush -Element $paragraph -Property Background -Key (Get-TkSeverityTintKey -Severity 'Fail' -Alpha 60) }
+                'Added'   { Set-TkResourceBrush -Element $paragraph -Property Background -Key (Get-TkSeverityTintKey -Severity 'Pass' -Alpha 60) }
                 'Gap'     { $paragraph.SetResourceReference([System.Windows.Documents.TextElement]::ForegroundProperty, 'TextMuted') }
             }
 

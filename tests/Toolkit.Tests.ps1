@@ -1893,6 +1893,29 @@ Describe 'Theme palettes' {
         ($dark.Keys  | Sort-Object) -join ',' | Should -Be (($light.Keys | Sort-Object) -join ',')
     }
 
+    It 'derives a faint fill for every severity and alpha from the palette, in both themes' {
+
+        foreach ($theme in @('Dark', 'Light')) {
+
+            $palette = Get-TkThemePalette -Name $theme
+            $tints   = Get-TkThemeTint -Palette $palette
+
+            foreach ($severity in @('Fail', 'Warning', 'Pass', 'Info', '')) {
+                foreach ($alpha in @(38, 60)) {
+
+                    $key    = Get-TkSeverityTintKey -Severity $severity -Alpha $alpha
+                    $source = $palette[(Get-TkSeverityBrushKey -Severity $severity)]
+
+                    $tints.ContainsKey($key) | Should -BeTrue -Because $key
+                    $tints[$key] | Should -Be ('#{0:X2}{1}' -f $alpha, $source.TrimStart('#'))
+                }
+            }
+
+            # A tint must never take the place of a palette colour.
+            @($tints.Keys | Where-Object { $palette.ContainsKey($_) }).Count | Should -Be 0
+        }
+    }
+
     It 'gives every colour in <Theme> a valid hex value' -TestCases @(
         @{ Theme = 'Dark' }
         @{ Theme = 'Light' }
@@ -2074,6 +2097,28 @@ Describe 'Interface rendering' {
 
             # The header carries one, and one of the two data rows.
             $banded.Count | Should -BeGreaterThan 1
+        }
+
+        It 'binds document colours to their key, so a document on screen follows a theme change' {
+
+            $document = New-TkFlowDocument
+            $document.Resources['Accent']          = [System.Windows.Media.Brushes]::Red
+            $document.Resources['InputBackground'] = [System.Windows.Media.Brushes]::Red
+
+            Add-TkHeading   -Document $document -Text 'Section' -Level 2
+            Add-TkCodeBlock -Document $document -Text 'git status'
+
+            $heading = @($document.Blocks)[0]
+            $code    = @($document.Blocks)[1]
+
+            $heading.Foreground.Color | Should -Be ([System.Windows.Media.Colors]::Red)
+
+            # What Set-TkTheme does: a new brush behind the same key.
+            $document.Resources['Accent']          = [System.Windows.Media.Brushes]::Blue
+            $document.Resources['InputBackground'] = [System.Windows.Media.Brushes]::Blue
+
+            $heading.Foreground.Color | Should -Be ([System.Windows.Media.Colors]::Blue)
+            $code.Background.Color    | Should -Be ([System.Windows.Media.Colors]::Blue)
         }
 
         It 'converts objects into one row each' {
