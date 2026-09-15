@@ -1044,6 +1044,373 @@
           "defaultAction": "delete"
         }
       ]
+    },
+    {
+      "id": "disable-wdigest",
+      "name": "Never keep WDigest sign-in passwords in memory",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Makes sure Windows never keeps sign-in passwords in clear text in memory for the WDigest protocol. It is already the behaviour of Windows 8.1 and later while the value is absent; the security baselines ask for it explicitly, and the Security audit flags a 1, the first thing credential theft tools set. Applies to sign-ins from then on.",
+      "registry": [
+        {
+          "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest",
+          "name": "UseLogonCredential",
+          "type": "DWord",
+          "value": 0,
+          "default": 1,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "disable-smb1",
+      "name": "Remove SMBv1",
+      "category": "hardening",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Removes the SMBv1 client and server, the protocol WannaCry and NotPetya spread over. New installations of Windows 10 1709 and later leave it out already; only a very old NAS, printer or scanner still needs it, and it stops reaching this machine.",
+      "optionalFeatures": [
+        {
+          "name": "SMB1Protocol",
+          "state": "Disabled",
+          "default": "Enabled"
+        }
+      ]
+    },
+    {
+      "id": "remove-powershell-v2",
+      "name": "Remove the PowerShell 2.0 engine",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Removes the Windows PowerShell 2.0 engine, which has neither script block logging nor AMSI, and is what an attacker asks for with powershell -version 2 to run unseen. Recent builds of Windows 11 no longer include it, and the tweak then shows as applied.",
+      "optionalFeatures": [
+        {
+          "name": "MicrosoftWindowsPowerShellV2Root",
+          "state": "Disabled",
+          "default": "Enabled"
+        }
+      ]
+    },
+    {
+      "id": "netbt-point-to-point",
+      "name": "Stop resolving NetBIOS names by broadcast",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Sets NetBIOS over TCP/IP to point-to-point (P-node), so another machine on the network cannot answer for a name it does not own and collect the sign-in hashes sent to it, the attack Responder automates. Names still resolve through DNS, and through WINS where there is one. Recommended by the Microsoft security baseline and CIS.",
+      "registry": [
+        {
+          "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NetBT\\Parameters",
+          "name": "NodeType",
+          "type": "DWord",
+          "value": 2,
+          "default": 1,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "disable-windows-script-host",
+      "name": "Block .vbs and .js scripts (Windows Script Host)",
+      "category": "hardening",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Stops wscript and cscript running .vbs and .js files, the format most malicious e-mail attachments and downloaded droppers use. Logon scripts and old tools written in VBScript stop too: check what a domain pushes before applying it on a managed machine.",
+      "registry": [
+        {
+          "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows Script Host\\Settings",
+          "name": "Enabled",
+          "type": "DWord",
+          "value": 0,
+          "default": 1,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "defender-block-pua",
+      "name": "Block potentially unwanted applications (Defender)",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Has Microsoft Defender Antivirus block potentially unwanted applications: bundled adware, browser hijackers, cryptocurrency miners and the installers that add them. No effect while another antivirus is the active one.",
+      "registry": [
+        {
+          "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender",
+          "name": "PUAProtection",
+          "type": "DWord",
+          "value": 1,
+          "default": 0,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "audit-process-creation",
+      "name": "Record every program started, with its command line",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Turns on process creation auditing and adds the command line to it, as event 4688 in the Security log: what an investigation needs to see what ran. Anyone allowed to read the Security log can read those command lines, including a password someone typed on one.",
+      "registry": [
+        {
+          "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\Audit",
+          "name": "ProcessCreationIncludeCmdLine_Enabled",
+          "type": "DWord",
+          "value": 1,
+          "default": 0,
+          "defaultAction": "delete"
+        }
+      ],
+      "auditPolicy": [
+        {
+          "subcategory": "{0CCE922B-69AE-11D9-BED3-505054503030}",
+          "name": "Process Creation",
+          "success": "enable",
+          "failure": "disable",
+          "defaultSuccess": "disable",
+          "defaultFailure": "disable"
+        }
+      ]
+    },
+    {
+      "id": "security-log-1gb",
+      "name": "Keep 1 GB of Security log",
+      "category": "hardening",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Raises the Security log from its 20 MB default to 1 GB, so the sign-ins and program starts of the last days are still there when an incident is noticed. The security baselines ask for at least 196,608 KB.",
+      "registry": [
+        {
+          "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\EventLog\\Security",
+          "name": "MaxSize",
+          "type": "DWord",
+          "value": 1048576,
+          "default": 20480,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "keep-memory-dumps",
+      "name": "Keep blue screen memory dumps when disk space is low",
+      "category": "advanced",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Keeps the memory dump written after a blue screen even when free disk space is low, where Windows otherwise removes it to reclaim space, so the crash can still be analysed. The small dumps in the Minidump folder are kept either way.",
+      "registry": [
+        {
+          "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CrashControl",
+          "name": "AlwaysKeepMemoryDump",
+          "type": "DWord",
+          "value": 1,
+          "default": 0,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "enable-windows-sandbox",
+      "name": "Add Windows Sandbox",
+      "category": "advanced",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Adds Windows Sandbox: a disposable, isolated desktop to open a suspicious file or try an installer in, wiped when it is closed. Pro, Enterprise and Education only, with virtualisation turned on in the firmware.",
+      "optionalFeatures": [
+        {
+          "name": "Containers-DisposableClientVM",
+          "state": "Enabled",
+          "default": "Disabled"
+        }
+      ]
+    },
+    {
+      "id": "enable-wsl",
+      "name": "Turn on the Windows Subsystem for Linux",
+      "category": "advanced",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": true,
+      "description": "Turns on the Windows Subsystem for Linux and the virtual machine platform it runs on. After the restart, wsl --install -d Ubuntu installs a distribution. Reverting turns the virtual machine platform off as well, which Docker Desktop and other tools may also use.",
+      "optionalFeatures": [
+        {
+          "name": "Microsoft-Windows-Subsystem-Linux",
+          "state": "Enabled",
+          "default": "Disabled"
+        },
+        {
+          "name": "VirtualMachinePlatform",
+          "state": "Enabled",
+          "default": "Disabled"
+        }
+      ]
+    },
+    {
+      "id": "enable-openssh-server",
+      "name": "Install the OpenSSH server",
+      "category": "advanced",
+      "impact": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Installs the OpenSSH server from Windows Update and sets it to start with Windows, so the machine can be reached with ssh and scp. Installation opens port 22 in the firewall: restrict that rule to the networks it should answer on.",
+      "capabilities": [
+        {
+          "name": "OpenSSH.Server~~~~0.0.1.0",
+          "state": "Installed",
+          "default": "NotPresent",
+          "installedPath": "%SystemRoot%\\System32\\OpenSSH\\sshd.exe"
+        }
+      ],
+      "services": [
+        {
+          "name": "sshd",
+          "startup": "Automatic",
+          "default": "Manual"
+        }
+      ]
+    },
+    {
+      "id": "enable-telnet-client",
+      "name": "Add the telnet client",
+      "category": "advanced",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Adds the telnet client, still the quickest way to see whether a TCP port answers, or to talk to a switch console or an SMTP server by hand.",
+      "optionalFeatures": [
+        {
+          "name": "TelnetClient",
+          "state": "Enabled",
+          "default": "Disabled"
+        }
+      ]
+    },
+    {
+      "id": "start-hide-recommendations",
+      "name": "Hide recommendations and recent files in Start (Windows 11)",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Turns off the recommended tips, shortcuts and new apps in the Windows 11 Start menu, and the recently opened files it lists, which also appear in jump lists and File Explorer.",
+      "registry": [
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+          "name": "Start_IrisRecommendations",
+          "type": "DWord",
+          "value": 0,
+          "default": 1
+        },
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+          "name": "Start_TrackDocs",
+          "type": "DWord",
+          "value": 0,
+          "default": 1
+        }
+      ]
+    },
+    {
+      "id": "lock-screen-no-tips",
+      "name": "Remove tips and promotions from the lock screen",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Removes the fun facts, tips and promotions drawn over the lock screen picture.",
+      "registry": [
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager",
+          "name": "RotatingLockScreenOverlayEnabled",
+          "type": "DWord",
+          "value": 0,
+          "default": 1
+        },
+        {
+          "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager",
+          "name": "SubscribedContent-338387Enabled",
+          "type": "DWord",
+          "value": 0,
+          "default": 1
+        }
+      ]
+    },
+    {
+      "id": "explorer-hide-gallery",
+      "name": "Hide Gallery in File Explorer (Windows 11)",
+      "category": "interface",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Removes Gallery from the File Explorer navigation pane. Takes effect in the next File Explorer window.",
+      "registry": [
+        {
+          "path": "HKCU:\\Software\\Classes\\CLSID\\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}",
+          "name": "System.IsPinnedToNameSpaceTree",
+          "type": "DWord",
+          "value": 0,
+          "default": 1,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "edge-no-background",
+      "name": "Stop Microsoft Edge running in the background",
+      "category": "performance",
+      "impact": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Stops Microsoft Edge starting processes at sign-in (startup boost) and running on after its last window is closed. Edge opens a little slower the first time, and edge://settings shows the settings as managed by your organization.",
+      "registry": [
+        {
+          "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge",
+          "name": "StartupBoostEnabled",
+          "type": "DWord",
+          "value": 0,
+          "default": 1,
+          "defaultAction": "delete"
+        },
+        {
+          "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge",
+          "name": "BackgroundModeEnabled",
+          "type": "DWord",
+          "value": 0,
+          "default": 1,
+          "defaultAction": "delete"
+        }
+      ]
+    },
+    {
+      "id": "office-no-diagnostic-data",
+      "name": "Send no Microsoft 365 Apps diagnostic data",
+      "category": "privacy",
+      "impact": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Sets the diagnostic data level of Word, Excel, Outlook and the other Microsoft 365 Apps to Neither, for this account. The required service data the connected features need is still sent, as Microsoft documents. Version 1904 and later.",
+      "registry": [
+        {
+          "path": "HKCU:\\Software\\Policies\\Microsoft\\Office\\Common\\ClientTelemetry",
+          "name": "SendTelemetry",
+          "type": "DWord",
+          "value": 3,
+          "default": 1,
+          "defaultAction": "delete"
+        }
+      ]
     }
   ]
 }

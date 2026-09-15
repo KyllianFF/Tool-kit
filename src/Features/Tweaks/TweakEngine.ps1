@@ -2,8 +2,9 @@
     Toolkit - Features / Tweak engine
 
     A tweak is a declarative object, never a script. It describes registry
-    values, service start-up types and scheduled tasks, plus the original
-    state to restore. The engine below is the only code that applies them.
+    values and keys, optional Windows features, capabilities, service start-up
+    types, scheduled tasks and audit subcategories, plus the original state to
+    restore. The engine below is the only code that applies them.
 
     Why declarative:
 
@@ -54,13 +55,27 @@ function Get-TkTweak {
     Reads whether a tweak is currently applied.
 
 .DESCRIPTION
-    A tweak counts as applied when every registry value it declares already
-    holds the target data. Services and scheduled tasks are not used for the
-    decision: they are frequently changed by other tooling and would make the
-    state flap.
+    A tweak counts as applied when every registry value, key, optional
+    feature, capability and audit subcategory it declares is already in its
+    target state. Services and scheduled tasks are not used for the decision:
+    they are frequently changed by other tooling and would make the state
+    flap.
+
+    The audit policy is only readable elevated. Without rights it is left out
+    of the decision, and a tweak with nothing else to check reads as not
+    applied rather than guessed.
 
 .PARAMETER Tweak
     Tweak object from the catalog.
+
+.PARAMETER FeatureStates
+    Install states from Get-TkOptionalFeatureStateTable, for a caller testing
+    many tweaks with one query. Read here when omitted; null when they could
+    not be read, which makes a feature tweak read as not applied.
+
+.PARAMETER AuditSettings
+    Settings from Read-TkAuditPolicyBackup, or null when the policy is not
+    readable. Read here when omitted.
 
 .OUTPUTS
     System.Boolean
@@ -70,13 +85,27 @@ function Test-TkTweakApplied {
     [OutputType([bool])]
     param(
         [Parameter(Mandatory)]
-        $Tweak
+        $Tweak,
+
+        [Parameter()]
+        [AllowNull()]
+        [hashtable] $FeatureStates,
+
+        [Parameter()]
+        [AllowNull()]
+        [hashtable] $AuditSettings
     )
 
-    $values = ConvertTo-TkArray $Tweak.registry
-    $keys   = ConvertTo-TkArray $Tweak.registryKeys
+    $values       = ConvertTo-TkArray $Tweak.registry
+    $keys         = ConvertTo-TkArray $Tweak.registryKeys
+    $features     = ConvertTo-TkArray $Tweak.optionalFeatures
+    $capabilities = ConvertTo-TkArray $Tweak.capabilities
+    $audits       = ConvertTo-TkArray $Tweak.auditPolicy
 
-    if ($values.Count -eq 0 -and $keys.Count -eq 0) {
+    # What could actually be compared. The audit part only counts once read.
+    $checked = $values.Count + $keys.Count + $features.Count + $capabilities.Count
+
+    if (($checked + $audits.Count) -eq 0) {
         return $false
     }
 
@@ -105,7 +134,60 @@ function Test-TkTweakApplied {
         }
     }
 
-    return $true
+    if ($features.Count -gt 0) {
+
+        if (-not $PSBoundParameters.ContainsKey('FeatureStates')) {
+            $FeatureStates = Get-TkOptionalFeatureStateTable
+        }
+
+        if ($null -eq $FeatureStates) {
+            return $false
+        }
+
+        foreach ($feature in $features) {
+
+            $state = if ($FeatureStates.ContainsKey([string] $feature.name)) { $FeatureStates[[string] $feature.name] } else { $null }
+
+            if (-not (Test-TkOptionalFeatureState -InstallState $state -Target $feature.state)) {
+                return $false
+            }
+        }
+    }
+
+    foreach ($capability in $capabilities) {
+
+        # A file the capability installs is read back without rights, where
+        # Get-WindowsCapability needs an administrator.
+        $installed = Test-Path -LiteralPath ([Environment]::ExpandEnvironmentVariables([string] $capability.installedPath))
+
+        if ($installed -ne ($capability.state -eq 'Installed')) {
+            return $false
+        }
+    }
+
+    if ($audits.Count -gt 0) {
+
+        if (-not $PSBoundParameters.ContainsKey('AuditSettings')) {
+            $AuditSettings = Read-TkAuditPolicyBackup
+        }
+
+        if ($null -ne $AuditSettings) {
+
+            foreach ($audit in $audits) {
+
+                $guid    = ([string] $audit.subcategory).ToUpperInvariant()
+                $setting = if ($AuditSettings.ContainsKey($guid)) { [int] $AuditSettings[$guid] } else { 0 }
+
+                if (-not (Test-TkAuditSettingState -Setting $setting -Success $audit.success -Failure $audit.failure)) {
+                    return $false
+                }
+
+                $checked++
+            }
+        }
+    }
+
+    return ($checked -gt 0)
 }
 
 <#
@@ -113,9 +195,10 @@ function Test-TkTweakApplied {
     Applies or reverts a tweak.
 
 .DESCRIPTION
-    Walks the three sections of a tweak object in a fixed order: registry,
-    then services, then scheduled tasks. Failures are collected rather than
-    thrown so one unavailable service cannot abandon a tweak half applied.
+    Walks the sections of a tweak object in a fixed order: registry values and
+    keys, optional features and capabilities, services, scheduled tasks, then
+    the audit policy. Failures are collected rather than thrown so one
+    unavailable service cannot abandon a tweak half applied.
 
 .PARAMETER Tweak
     Tweak object from the catalog.
@@ -201,6 +284,29 @@ function Invoke-TkTweak {
         }
     }
 
+    # --- Optional features and capabilities -------------------------------
+    # Before services: a capability can install the very service the next
+    # section sets the start-up type of, as the OpenSSH server does.
+    foreach ($feature in (ConvertTo-TkArray $Tweak.optionalFeatures)) {
+
+        $target = if ($Action -eq 'Apply') { $feature.state } else { $feature.default }
+
+        if (-not (Set-TkOptionalFeatureState -Name $feature.name -State $target -Confirm:$false)) {
+            $failures++
+            $messages += ('Optional feature step failed: {0}' -f $feature.name)
+        }
+    }
+
+    foreach ($capability in (ConvertTo-TkArray $Tweak.capabilities)) {
+
+        $target = if ($Action -eq 'Apply') { $capability.state } else { $capability.default }
+
+        if (-not (Set-TkCapabilityState -Name $capability.name -State $target -Confirm:$false)) {
+            $failures++
+            $messages += ('Capability step failed: {0}' -f $capability.name)
+        }
+    }
+
     # --- Services ---------------------------------------------------------
     foreach ($service in (ConvertTo-TkArray $Tweak.services)) {
 
@@ -220,6 +326,18 @@ function Invoke-TkTweak {
         if (-not (Set-TkScheduledTaskState -FullName $taskPath -Enabled $enable)) {
             $failures++
             $messages += ('Scheduled task step failed: {0}' -f $taskPath)
+        }
+    }
+
+    # --- Audit policy -----------------------------------------------------
+    foreach ($audit in (ConvertTo-TkArray $Tweak.auditPolicy)) {
+
+        $recordSuccess = if ($Action -eq 'Apply') { $audit.success } else { $audit.defaultSuccess }
+        $recordFailure = if ($Action -eq 'Apply') { $audit.failure } else { $audit.defaultFailure }
+
+        if (-not (Set-TkAuditSubcategory -Subcategory $audit.subcategory -Success $recordSuccess -Failure $recordFailure -Confirm:$false)) {
+            $failures++
+            $messages += ('Audit policy step failed: {0}' -f $audit.name)
         }
     }
 
@@ -554,4 +672,361 @@ function Invoke-TkTweakBatch {
         Failed          = $failed
         RequiresRestart = $requiresRestart
     }
+}
+
+# ---------------------------------------------------------------------------
+# Optional features, capabilities and audit policy
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Tells whether a name is safe to hand to the servicing commands.
+
+.DESCRIPTION
+    Feature and capability names come from the catalog, and the catalog is
+    data: letters, digits, dots, dashes, underscores and the tildes of a
+    capability name, nothing a command line could read as an option or a
+    second command.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Test-TkServicingName {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Name
+    )
+
+    return ($Name -match '^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$')
+}
+
+<#
+.SYNOPSIS
+    Reads the install state of every optional Windows feature at once.
+
+.DESCRIPTION
+    One Win32_OptionalFeature query, which a standard user may run, where
+    Get-WindowsOptionalFeature needs an administrator and takes one call per
+    feature.
+
+.OUTPUTS
+    Hashtable of feature name to InstallState (1 enabled, 2 disabled, 3
+    absent), or null when the query fails.
+#>
+function Get-TkOptionalFeatureStateTable {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param()
+
+    try {
+        $table = @{}
+
+        foreach ($feature in @(Get-CimInstance -ClassName Win32_OptionalFeature -ErrorAction Stop)) {
+            $table[[string] $feature.Name] = [int] $feature.InstallState
+        }
+
+        return $table
+    }
+    catch {
+        Write-TkLog -Level Warning -Category 'Tweaks' -Message (
+            'The optional features could not be read: {0}' -f $_.Exception.Message
+        )
+
+        return $null
+    }
+}
+
+<#
+.SYNOPSIS
+    Compares an optional feature install state with the one a tweak wants.
+
+.PARAMETER InstallState
+    From Win32_OptionalFeature, or null for a feature this build does not
+    list. A feature that is not there is as disabled as one can be: nothing is
+    left to remove.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Test-TkOptionalFeatureState {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $InstallState,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('Enabled', 'Disabled')]
+        [string] $Target
+    )
+
+    $enabled = ($null -ne $InstallState -and [int] $InstallState -eq 1)
+
+    return $(if ($Target -eq 'Enabled') { $enabled } else { -not $enabled })
+}
+
+<#
+.SYNOPSIS
+    Compares an audit subcategory setting with what a tweak asks for.
+
+.DESCRIPTION
+    Only what the tweak turns on is required. Recording more, failures as well
+    as successes for instance, still counts as applied: a stricter policy set
+    by a domain is not a tweak half applied.
+
+.PARAMETER Setting
+    From an auditpol backup: 1 successes, 2 failures, 3 both, 0 nothing.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Test-TkAuditSettingState {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [int] $Setting,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('enable', 'disable')]
+        [string] $Success,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('enable', 'disable')]
+        [string] $Failure
+    )
+
+    if ($Success -eq 'enable' -and ($Setting -band 1) -eq 0) {
+        return $false
+    }
+
+    if ($Failure -eq 'enable' -and ($Setting -band 2) -eq 0) {
+        return $false
+    }
+
+    return $true
+}
+
+<#
+.SYNOPSIS
+    Enables or disables an optional Windows feature without restarting.
+
+.DESCRIPTION
+    Disabling a feature this build does not have succeeds: it is already
+    gone, as PowerShell 2.0 is from recent Windows 11. Enabling one it does
+    not have fails, and says the edition or build is the reason.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Set-TkOptionalFeatureState {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('Enabled', 'Disabled')]
+        [string] $State
+    )
+
+    if (-not (Test-TkServicingName -Name $Name)) {
+        Write-TkLog -Level Error -Category 'Tweaks' -Message ('Refused: "{0}" is not a valid feature name.' -f $Name)
+        return $false
+    }
+
+    if (-not (Assert-TkElevated -Operation ('Change the optional feature {0}' -f $Name))) {
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($Name, ('Set the optional feature to {0}' -f $State))) {
+        return $false
+    }
+
+    try {
+        $feature = Get-WindowsOptionalFeature -Online -FeatureName $Name -ErrorAction Stop
+    }
+    catch {
+        $feature = $null
+    }
+
+    if ($null -eq $feature) {
+
+        if ($State -eq 'Disabled') {
+            Write-TkLog -Level Information -Category 'Tweaks' -Message ('{0} is not part of this build: nothing to remove.' -f $Name)
+            return $true
+        }
+
+        Write-TkLog -Level Warning -Category 'Tweaks' -Message (
+            '{0} is not available on this edition or build of Windows.' -f $Name
+        )
+
+        return $false
+    }
+
+    $enabled = ([string] $feature.State) -in @('Enabled', 'EnablePending')
+
+    if ($enabled -eq ($State -eq 'Enabled')) {
+        Write-TkLog -Level Information -Category 'Tweaks' -Message ('{0} is already {1}.' -f $Name, $State.ToLowerInvariant())
+        return $true
+    }
+
+    try {
+        if ($State -eq 'Enabled') {
+            Enable-WindowsOptionalFeature -Online -FeatureName $Name -All -NoRestart -ErrorAction Stop | Out-Null
+        }
+        else {
+            Disable-WindowsOptionalFeature -Online -FeatureName $Name -NoRestart -ErrorAction Stop | Out-Null
+        }
+
+        Write-TkLog -Level Information -Category 'Tweaks' -Message (
+            '{0} {1}. A restart completes it.' -f $Name, $State.ToLowerInvariant()
+        )
+
+        return $true
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Tweaks' -Message (
+            '{0} could not be {1}: {2}' -f $Name, $State.ToLowerInvariant(), $_.Exception.Message
+        )
+
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Installs or removes a Windows capability, a feature on demand.
+
+.DESCRIPTION
+    Installing downloads the capability from Windows Update, or from the
+    source a WSUS policy names, which can take a few minutes.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Set-TkCapabilityState {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('Installed', 'NotPresent')]
+        [string] $State
+    )
+
+    if (-not (Test-TkServicingName -Name $Name)) {
+        Write-TkLog -Level Error -Category 'Tweaks' -Message ('Refused: "{0}" is not a valid capability name.' -f $Name)
+        return $false
+    }
+
+    if (-not (Assert-TkElevated -Operation ('Change the capability {0}' -f $Name))) {
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($Name, ('Set the capability to {0}' -f $State))) {
+        return $false
+    }
+
+    try {
+        $capability = Get-WindowsCapability -Online -Name $Name -ErrorAction Stop | Select-Object -First 1
+
+        if ($null -eq $capability) {
+
+            if ($State -eq 'NotPresent') {
+                return $true
+            }
+
+            Write-TkLog -Level Warning -Category 'Tweaks' -Message ('{0} is not offered for this build of Windows.' -f $Name)
+            return $false
+        }
+
+        $installed = ([string] $capability.State -eq 'Installed')
+
+        if ($installed -eq ($State -eq 'Installed')) {
+            Write-TkLog -Level Information -Category 'Tweaks' -Message ('{0} is already {1}.' -f $Name, $State)
+            return $true
+        }
+
+        if ($State -eq 'Installed') {
+            Add-WindowsCapability -Online -Name $capability.Name -ErrorAction Stop | Out-Null
+        }
+        else {
+            Remove-WindowsCapability -Online -Name $capability.Name -ErrorAction Stop | Out-Null
+        }
+
+        Write-TkLog -Level Information -Category 'Tweaks' -Message ('{0} set to {1}.' -f $Name, $State)
+
+        return $true
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Tweaks' -Message (
+            '{0} could not be set to {1}: {2}' -f $Name, $State, $_.Exception.Message
+        )
+
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Sets what one audit subcategory records.
+
+.DESCRIPTION
+    By GUID, never by name: auditpol only accepts subcategory names in the
+    language of the machine.
+
+.PARAMETER Subcategory
+    The subcategory GUID, in braces.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Set-TkAuditSubcategory {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Subcategory,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('enable', 'disable')]
+        [string] $Success,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('enable', 'disable')]
+        [string] $Failure
+    )
+
+    if ($Subcategory -notmatch '^\{[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}\}$') {
+        Write-TkLog -Level Error -Category 'Tweaks' -Message ('Refused: "{0}" is not an audit subcategory GUID.' -f $Subcategory)
+        return $false
+    }
+
+    if (-not (Assert-TkElevated -Operation ('Change the audit subcategory {0}' -f $Subcategory))) {
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($Subcategory, ('Audit successes: {0}, failures: {1}' -f $Success, $Failure))) {
+        return $false
+    }
+
+    $result = Invoke-TkProcess -FilePath 'auditpol.exe' `
+                               -ArgumentList @('/set', ('/subcategory:{0}' -f $Subcategory), ('/success:{0}' -f $Success), ('/failure:{0}' -f $Failure)) `
+                               -TimeoutSeconds 30
+
+    if ($result.ExitCode -ne 0) {
+        Write-TkLog -Level Error -Category 'Tweaks' -Message (
+            'auditpol could not set {0} (exit code {1}).' -f $Subcategory, $result.ExitCode
+        )
+    }
+
+    return ($result.ExitCode -eq 0)
 }

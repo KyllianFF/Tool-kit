@@ -342,6 +342,507 @@
       ]
     },
     {
+      "id": "active-directory",
+      "name": "Active Directory",
+      "description": "Cheat sheet. Users, groups and computers with the ActiveDirectory PowerShell module (RSAT, or a domain controller), then the domain controller, replication and Group Policy commands. Examples use the contoso.com domain.",
+      "sections": [
+        {
+          "name": "Users and groups",
+          "commands": [
+            { "command": "Get-ADUser jdoe -Properties *", "description": "Every attribute of a user, LastLogonDate, pwdLastSet, lockoutTime and memberOf included." },
+            { "command": "Get-ADUser -Filter 'Enabled -eq $true' -Properties LastLogonDate | Where-Object LastLogonDate -lt (Get-Date).AddDays(-90)", "description": "Enabled accounts unused for 90 days. LastLogonDate replicates with up to 14 days of delay, which is fine at that scale." },
+            { "command": "Search-ADAccount -LockedOut | Select-Object Name, LastLogonDate", "description": "Locked-out accounts; pipe to Unlock-ADAccount to unlock them." },
+            { "command": "Unlock-ADAccount -Identity jdoe", "description": "Unlocks an account. If it locks again, something is retrying an old password: the security event triage names the source." },
+            { "command": "Set-ADAccountPassword jdoe -Reset -NewPassword (Read-Host -AsSecureString 'New password'); Set-ADUser jdoe -ChangePasswordAtLogon $true", "description": "Resets a password and makes the user choose a new one at next sign-in." },
+            { "command": "Get-ADPrincipalGroupMembership jdoe | Select-Object Name", "description": "The groups a user is a direct member of." },
+            { "command": "Get-ADGroupMember 'Domain Admins' -Recursive | Select-Object Name, objectClass", "description": "Every member of a group, through nested groups." },
+            { "command": "Add-ADGroupMember -Identity 'VPN Users' -Members jdoe", "description": "Adds a member. It counts from the user's next sign-in, or once their tickets are renewed." },
+            { "command": "New-ADUser -Name 'Jane Doe' -SamAccountName jdoe -UserPrincipalName jdoe@contoso.com -Path 'OU=Users,OU=Paris,DC=contoso,DC=com' -AccountPassword (Read-Host -AsSecureString) -Enabled $true", "description": "Creates an enabled user in an OU." },
+            { "command": "Get-ADDefaultDomainPasswordPolicy", "description": "Minimum length, history, maximum age and lockout settings of the domain password policy." },
+            { "command": "Get-ADFineGrainedPasswordPolicy -Filter *", "description": "Password policies that override the domain one for specific groups." }
+          ]
+        },
+        {
+          "name": "Computers",
+          "commands": [
+            { "command": "Get-ADComputer -Filter * -Properties OperatingSystem, OperatingSystemVersion, LastLogonDate | Sort-Object LastLogonDate", "description": "Every computer with its Windows version and its last contact with the domain." },
+            { "command": "Test-ComputerSecureChannel -Verbose", "description": "Whether this computer's trust with the domain works. Windows PowerShell 5.1." },
+            { "command": "Test-ComputerSecureChannel -Repair -Credential (Get-Credential)", "description": "Repairs a broken trust with a domain account, without leaving and joining the domain again. Restart afterwards." },
+            { "command": "Get-ADComputer PC01 | Move-ADObject -TargetPath 'OU=Workstations,DC=contoso,DC=com'", "description": "Moves a computer to another OU, and so under other GPOs." },
+            { "command": "Get-ADComputer -Filter 'Enabled -eq $true' -Properties LastLogonDate | Where-Object LastLogonDate -lt (Get-Date).AddDays(-90) | Disable-ADAccount -WhatIf", "description": "Computers silent for 90 days, ready to disable: remove -WhatIf once the list is checked." }
+          ]
+        },
+        {
+          "name": "Domain controllers and replication",
+          "commands": [
+            { "command": "nltest /dsgetdc:contoso.com", "description": "The domain controller this machine finds, its site and what it offers (GC, KDC, time)." },
+            { "command": "nltest /dclist:contoso.com", "description": "Every domain controller of the domain." },
+            { "command": "netdom query fsmo", "description": "The domain controllers holding the five FSMO roles." },
+            { "command": "repadmin /replsummary", "description": "Replication health of every domain controller: largest delta, failures and their error." },
+            { "command": "repadmin /showrepl dc01", "description": "The replication partners of one domain controller and the last result for each partition." },
+            { "command": "repadmin /syncall /AdeP", "description": "Forces replication of every partition, across sites, pushing from this domain controller." },
+            { "command": "dcdiag /q", "description": "Runs the domain controller tests and prints only what fails." },
+            { "command": "dcdiag /test:dns /v", "description": "The DNS tests of a domain controller: registration, forwarders and delegation." },
+            { "command": "Resolve-DnsName _ldap._tcp.dc._msdcs.contoso.com -Type SRV", "description": "The SRV records clients use to find a domain controller." },
+            { "command": "w32tm /monitor /domain:contoso.com", "description": "The time offset of every domain controller; the PDC emulator should follow a reliable source." }
+          ]
+        },
+        {
+          "name": "Group Policy",
+          "commands": [
+            { "command": "gpresult /r", "description": "The GPOs applied and filtered out, for this computer and the signed-in user." },
+            { "command": "gpresult /h C:\\Temp\\gpresult.html", "description": "The full report, with the winning GPO for every setting." },
+            { "command": "gpupdate /force", "description": "Applies computer and user policies again, now." },
+            { "command": "Get-GPO -All | Sort-Object ModificationTime -Descending | Select-Object -First 10 DisplayName, ModificationTime", "description": "The ten GPOs changed last: the first place to look after 'it worked yesterday'." },
+            { "command": "Get-GPOReport -Name 'Default Domain Policy' -ReportType Html -Path C:\\Temp\\ddp.html", "description": "Every setting of one GPO, as a report." },
+            { "command": "Backup-GPO -All -Path D:\\GPOBackup", "description": "Backs up every GPO before a change; Restore-GPO puts one back." }
+          ]
+        },
+        {
+          "name": "Recycle bin and cleanup",
+          "commands": [
+            { "command": "Get-ADObject -Filter 'isDeleted -eq $true' -IncludeDeletedObjects -Properties samAccountName, whenChanged", "description": "Deleted objects still in the Active Directory recycle bin." },
+            { "command": "Get-ADObject -Filter 'samAccountName -eq \"jdoe\"' -IncludeDeletedObjects | Restore-ADObject", "description": "Restores a deleted user with its attributes and group memberships, when the recycle bin is enabled." },
+            { "command": "dsquery user -inactive 12", "description": "Users inactive for 12 weeks, where the PowerShell module is not installed." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "windows-cmd",
+      "name": "Windows command line (CMD)",
+      "description": "Cheat sheet. The classic Windows commands that work in any prompt, recovery environment included: copies and permissions, services and tasks, disks and start-up, logs and certificates. Run them from an elevated prompt when they change the system.",
+      "sections": [
+        {
+          "name": "Copies and permissions",
+          "commands": [
+            { "command": "robocopy D:\\Data \\\\nas01\\backup\\Data /MIR /COPY:DAT /R:2 /W:5 /MT:16 /LOG:C:\\Temp\\robocopy.log", "description": "Mirrors a folder: copies what changed and deletes at the destination what is gone at the source. /MIR deletes, so check the destination twice." },
+            { "command": "robocopy D:\\Data E:\\Data /E /L", "description": "/L lists what would be copied without copying anything: run it before the real copy." },
+            { "command": "robocopy D:\\Data E:\\Data /E /COPYALL /DCOPY:DAT /B", "description": "Copies with owners, permissions and audit settings, in backup mode to pass files the account cannot read. Needs an elevated prompt." },
+            { "command": "icacls D:\\Share /grant \"CONTOSO\\Accounting:(OI)(CI)M\"", "description": "Grants Modify to a group, inherited by subfolders (CI) and files (OI)." },
+            { "command": "icacls D:\\Share /save C:\\Temp\\acl.txt /t", "description": "Saves the permissions of a whole tree; icacls D:\\ /restore C:\\Temp\\acl.txt puts them back." },
+            { "command": "takeown /f D:\\Locked /r /d y", "description": "Takes ownership of a folder tree, answering yes for folders the account cannot list." },
+            { "command": "forfiles /p D:\\Logs /s /m *.log /d -30 /c \"cmd /c del @path\"", "description": "Deletes the .log files older than 30 days, subfolders included." }
+          ]
+        },
+        {
+          "name": "Services, processes and tasks",
+          "commands": [
+            { "command": "sc queryex spooler", "description": "The state and process ID of a service." },
+            { "command": "sc config wuauserv start= demand", "description": "Sets the start type: auto, demand or disabled. The space after start= is required." },
+            { "command": "sc qc spooler", "description": "The configuration of a service: binary path, start type, account and dependencies." },
+            { "command": "tasklist /svc", "description": "Every process with the services it hosts." },
+            { "command": "taskkill /f /im notepad.exe", "description": "Ends every process with that name; /pid 1234 ends one process." },
+            { "command": "schtasks /query /fo LIST /v /tn \"\\Microsoft\\Windows\\Defrag\\ScheduledDefrag\"", "description": "Every detail of a scheduled task, its last result included." },
+            { "command": "schtasks /create /tn \"Nightly backup\" /tr \"C:\\Scripts\\backup.cmd\" /sc daily /st 02:00 /ru SYSTEM", "description": "Creates a task running every night at 2:00 as SYSTEM." },
+            { "command": "schtasks /run /tn \"Nightly backup\"", "description": "Runs a task now." }
+          ]
+        },
+        {
+          "name": "Disks and start-up",
+          "commands": [
+            { "command": "diskpart", "description": "Opens the disk partitioning prompt; the commands below are typed inside it." },
+            { "command": "list disk", "description": "In diskpart: the disks with their number, size and free space." },
+            { "command": "select disk 1", "description": "In diskpart: chooses the disk the next commands act on. Check the number against list disk." },
+            { "command": "clean", "description": "In diskpart: erases the partition table of the selected disk. Everything on it is lost." },
+            { "command": "create partition primary", "description": "In diskpart: one partition using the whole disk." },
+            { "command": "format fs=ntfs quick label=Data", "description": "In diskpart: formats the new partition." },
+            { "command": "assign letter=E", "description": "In diskpart: gives the volume a drive letter." },
+            { "command": "chkdsk C: /scan", "description": "Checks an NTFS volume online, without taking it offline; chkdsk D: /f repairs, and needs the volume unused." },
+            { "command": "bcdedit /enum", "description": "The start-up entries and their settings." },
+            { "command": "bcdboot C:\\Windows /f UEFI", "description": "Rebuilds the start-up files on the EFI system partition from the Windows installation, typically from WinRE." },
+            { "command": "reagentc /info", "description": "Whether the Windows Recovery Environment is enabled, and where it lives." },
+            { "command": "manage-bde -status", "description": "BitLocker state of every volume: protection, encryption method and protectors." }
+          ]
+        },
+        {
+          "name": "Network",
+          "commands": [
+            { "command": "netstat -ano | findstr :443", "description": "The connections and listeners on port 443, with the process ID of each." },
+            { "command": "netsh advfirewall firewall add rule name=\"App 8443\" dir=in action=allow protocol=TCP localport=8443", "description": "Opens a TCP port inbound in the Windows Firewall." },
+            { "command": "netsh wlan show profile name=\"Office\" key=clear", "description": "A saved Wi-Fi profile, its password included, from an elevated prompt." },
+            { "command": "netsh winhttp show proxy", "description": "The proxy Windows Update, BITS and the agents use, not the browser one." }
+          ]
+        },
+        {
+          "name": "Logs, certificates and system",
+          "commands": [
+            { "command": "wevtutil qe System /c:20 /rd:true /f:text /q:\"*[System[(Level=1 or Level=2)]]\"", "description": "The last 20 critical and error events of the System log." },
+            { "command": "wevtutil epl Security C:\\Temp\\security.evtx", "description": "Exports a whole log, to read on another machine or keep as evidence." },
+            { "command": "certutil -hashfile C:\\Temp\\setup.exe SHA256", "description": "The SHA-256 of a file, to compare with the one the vendor publishes." },
+            { "command": "certutil -verify -urlfetch C:\\Temp\\server.cer", "description": "Builds the chain of a certificate and checks revocation (CRL and OCSP)." },
+            { "command": "certutil -store My", "description": "The certificates in the computer's personal store." },
+            { "command": "whoami /all", "description": "The account, its SID, groups and privileges in this session: elevated or not shows here." },
+            { "command": "shutdown /r /t 0", "description": "Restarts now; shutdown /a cancels a shutdown that is counting down." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "intune-mdm",
+      "name": "Intune and Entra device management",
+      "description": "Cheat sheet. Join state, enrolment, synchronisation, Win32 apps and BitLocker keys on a Windows device managed with Microsoft Entra ID and Intune, read from the device itself.",
+      "sections": [
+        {
+          "name": "Join and registration",
+          "commands": [
+            { "command": "dsregcmd /status", "description": "Join type (AzureAdJoined, DomainJoined, WorkplaceJoined), tenant, Primary Refresh Token, and the last registration error." },
+            { "command": "dsregcmd /refreshprt", "description": "Asks for a new Primary Refresh Token for the signed-in user, after a password change or a Conditional Access fix." },
+            { "command": "dsregcmd /leave", "description": "Removes the Entra hybrid join or registration of the device. Run elevated, then restart; the device joins again at the next sync if still in scope." },
+            { "command": "Get-WinEvent -LogName 'Microsoft-Windows-User Device Registration/Admin' -MaxEvents 30", "description": "The registration attempts and their errors." }
+          ]
+        },
+        {
+          "name": "Enrolment and synchronisation",
+          "commands": [
+            { "command": "Get-WinEvent -LogName 'Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin' -MaxEvents 50", "description": "MDM events: 75 is a successful automatic enrolment, 76 a failed one with its error." },
+            { "command": "Get-ScheduledTask -TaskPath '\\Microsoft\\Windows\\EnterpriseMgmt\\*'", "description": "The enrolment tasks, in one folder per enrolment ID." },
+            { "command": "Get-ScheduledTask -TaskPath '\\Microsoft\\Windows\\EnterpriseMgmt\\*' -TaskName 'PushLaunch' | Start-ScheduledTask", "description": "Starts an Intune check-in now, as Sync does in Settings, Accounts, Access work or school." },
+            { "command": "mdmdiagnosticstool.exe -area Autopilot;DeviceEnrollment;DeviceProvisioning;TPM -cab C:\\Temp\\mdmdiag.cab", "description": "Collects the MDM, Autopilot and TPM logs into one cab for support." },
+            { "command": "mdmdiagnosticstool.exe -out C:\\Temp\\MDMReport", "description": "Writes MDMDiagReport.html: the policies and settings the device received and their state." }
+          ]
+        },
+        {
+          "name": "Apps and scripts (Intune Management Extension)",
+          "commands": [
+            { "command": "Get-Content \"$env:ProgramData\\Microsoft\\IntuneManagementExtension\\Logs\\IntuneManagementExtension.log\" -Tail 100 -Wait", "description": "Follows the extension that installs Win32 apps and runs scripts and remediations." },
+            { "command": "Get-ChildItem \"$env:ProgramData\\Microsoft\\IntuneManagementExtension\\Logs\"", "description": "The other logs: AppWorkload.log for app installs, AgentExecutor.log for scripts." },
+            { "command": "Restart-Service -Name IntuneManagementExtension", "description": "Makes the extension check again for assigned Win32 apps and scripts." },
+            { "command": "Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\IntuneManagementExtension\\Win32Apps'", "description": "Install state of Win32 apps, per user and app ID." }
+          ]
+        },
+        {
+          "name": "Autopilot, BitLocker and TPM",
+          "commands": [
+            { "command": "Shift+F10", "description": "At the out-of-box experience, opens a command prompt: the place to collect the hardware hash or read logs." },
+            { "command": "Install-Script Get-WindowsAutopilotInfo; Get-WindowsAutopilotInfo -OutputFile C:\\Temp\\autopilot.csv", "description": "Exports the hardware hash to import the device into Autopilot." },
+            { "command": "(Get-BitLockerVolume -MountPoint C:).KeyProtector", "description": "The protectors of the system drive, with the recovery password ID to find the key in Entra ID or Intune." },
+            { "command": "BackupToAAD-BitLockerKeyProtector -MountPoint C: -KeyProtectorId $id", "description": "Sends the recovery password with that ID to Microsoft Entra ID, for a key that was never escrowed." },
+            { "command": "Get-Tpm", "description": "Whether the TPM is present, ready and owned, as Autopilot and BitLocker need it." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "microsoft-graph-exchange",
+      "name": "Microsoft Graph and Exchange Online PowerShell",
+      "description": "Cheat sheet. Users, licences, sessions and groups with the Microsoft Graph PowerShell SDK, and mailboxes, permissions and mail flow with the Exchange Online module. Both sign in interactively and act with the rights of the account used.",
+      "sections": [
+        {
+          "name": "Connect",
+          "commands": [
+            { "command": "Install-Module Microsoft.Graph -Scope CurrentUser", "description": "Installs the Microsoft Graph PowerShell SDK for the current user." },
+            { "command": "Connect-MgGraph -Scopes 'User.ReadWrite.All','Group.ReadWrite.All','AuditLog.Read.All'", "description": "Signs in and asks for the permissions named; an administrator may have to consent the first time." },
+            { "command": "Get-MgContext", "description": "The account, tenant and permissions of the current Graph session." },
+            { "command": "Install-Module ExchangeOnlineManagement -Scope CurrentUser", "description": "Installs the Exchange Online PowerShell module." },
+            { "command": "Connect-ExchangeOnline -UserPrincipalName admin@contoso.com", "description": "Signs in to Exchange Online; Disconnect-ExchangeOnline -Confirm:$false ends the session." }
+          ]
+        },
+        {
+          "name": "Users, licences and sessions",
+          "commands": [
+            { "command": "Get-MgUser -UserId jane.doe@contoso.com -Property DisplayName, AccountEnabled, LastPasswordChangeDateTime | Format-List DisplayName, AccountEnabled, LastPasswordChangeDateTime", "description": "The properties asked for: Graph returns only a few unless -Property names them." },
+            { "command": "Get-MgUser -All -Filter 'accountEnabled eq false'", "description": "Every disabled account." },
+            { "command": "Get-MgUserLicenseDetail -UserId jane.doe@contoso.com", "description": "The licences of a user." },
+            { "command": "Get-MgSubscribedSku | Select-Object SkuPartNumber, ConsumedUnits, @{ Name = 'Available'; Expression = { $_.PrepaidUnits.Enabled } }", "description": "Licences bought and used in the tenant." },
+            { "command": "Update-MgUser -UserId jane.doe@contoso.com -AccountEnabled:$false", "description": "Blocks sign-in for a user." },
+            { "command": "Revoke-MgUserSignInSession -UserId jane.doe@contoso.com", "description": "Invalidates the user's refresh tokens: every app must sign in again, within about an hour for access tokens already issued." },
+            { "command": "Get-MgUserAuthenticationMethod -UserId jane.doe@contoso.com", "description": "The MFA methods registered, to spot one an attacker added." },
+            { "command": "Get-MgAuditLogSignIn -Filter \"userPrincipalName eq 'jane.doe@contoso.com'\" -Top 20", "description": "The latest sign-ins of a user with their result, application and location. Needs Entra ID P1." }
+          ]
+        },
+        {
+          "name": "Groups",
+          "commands": [
+            { "command": "Get-MgGroup -Filter \"displayName eq 'Sales'\"", "description": "A group by its name, with its ID." },
+            { "command": "Get-MgGroupMember -GroupId $groupId -All", "description": "The members of a group." },
+            { "command": "New-MgGroupMember -GroupId $groupId -DirectoryObjectId $userId", "description": "Adds a user to a group, by their IDs." }
+          ]
+        },
+        {
+          "name": "Mailboxes and permissions",
+          "commands": [
+            { "command": "Get-EXOMailboxStatistics -Identity jane.doe@contoso.com | Select-Object DisplayName, TotalItemSize, ItemCount", "description": "Size and item count of a mailbox." },
+            { "command": "Add-MailboxPermission -Identity shared@contoso.com -User jane.doe@contoso.com -AccessRights FullAccess -AutoMapping $true", "description": "Full access to a shared mailbox, added to Outlook automatically." },
+            { "command": "Add-RecipientPermission -Identity shared@contoso.com -Trustee jane.doe@contoso.com -AccessRights SendAs -Confirm:$false", "description": "Lets a user send as the shared mailbox." },
+            { "command": "Get-InboxRule -Mailbox jane.doe@contoso.com | Select-Object Name, Enabled, MoveToFolder, DeleteMessage, ForwardTo", "description": "Inbox rules: one hiding or forwarding mail from the bank or IT is a classic sign of a compromised mailbox." },
+            { "command": "Set-Mailbox -Identity jane.doe@contoso.com -ForwardingSmtpAddress $null -DeliverToMailboxAndForward $false", "description": "Removes forwarding to an external address." },
+            { "command": "Set-MailboxAutoReplyConfiguration -Identity jane.doe@contoso.com -AutoReplyState Enabled -InternalMessage 'Away until Monday.' -ExternalMessage 'Away until Monday.'", "description": "Turns on the out of office message for someone who forgot." }
+          ]
+        },
+        {
+          "name": "Mail flow",
+          "commands": [
+            { "command": "Get-MessageTraceV2 -RecipientAddress jane.doe@contoso.com -StartDate (Get-Date).AddDays(-2) -EndDate (Get-Date)", "description": "What happened to messages sent to a user over two days: delivered, quarantined, failed. Older module versions use Get-MessageTrace." },
+            { "command": "Get-QuarantineMessage -RecipientAddress jane.doe@contoso.com", "description": "Messages held in quarantine for a user." },
+            { "command": "Release-QuarantineMessage -Identity $messageId -ReleaseToAll", "description": "Releases a quarantined message to its recipients." },
+            { "command": "Get-DkimSigningConfig", "description": "DKIM signing state of each domain, and the selector records to publish." },
+            { "command": "Get-TransportRule | Select-Object Name, State, Priority", "description": "The mail flow rules, in the order they apply." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "openssl",
+      "name": "OpenSSL and certificates",
+      "description": "Cheat sheet. Reading, creating and converting certificates and keys with OpenSSL, as on Linux, macOS or Git for Windows, with the Windows equivalents. Private keys stay private: never paste one into a website.",
+      "sections": [
+        {
+          "name": "Read",
+          "commands": [
+            { "command": "openssl x509 -in cert.pem -noout -subject -issuer -dates -ext subjectAltName", "description": "Who a certificate is for, who issued it, its validity dates and the names it covers." },
+            { "command": "openssl x509 -in cert.pem -noout -text", "description": "Every field of a certificate, key usage and extensions included." },
+            { "command": "openssl x509 -in cert.pem -noout -fingerprint -sha256", "description": "The SHA-256 fingerprint, as shown in browsers and Windows." },
+            { "command": "openssl req -in request.csr -noout -text -verify", "description": "The content of a certificate request, and whether its signature is valid." },
+            { "command": "openssl s_client -connect www.contoso.com:443 -servername www.contoso.com -showcerts", "description": "The chain a server really presents, and whether it verifies. -servername sends SNI, needed on shared hosting." },
+            { "command": "openssl s_client -connect mail.contoso.com:25 -starttls smtp", "description": "The certificate of a mail server after STARTTLS; imap, pop3 and ftp work the same way." },
+            { "command": "openssl verify -CAfile chain.pem cert.pem", "description": "Whether a certificate chains up to the given CA certificates." }
+          ]
+        },
+        {
+          "name": "Create",
+          "commands": [
+            { "command": "openssl req -new -newkey rsa:2048 -nodes -keyout server.key -out server.csr -subj \"/CN=www.contoso.com\" -addext \"subjectAltName=DNS:www.contoso.com,DNS:contoso.com\"", "description": "A private key and a certificate request with the names browsers check (subjectAltName)." },
+            { "command": "openssl req -x509 -newkey rsa:2048 -nodes -days 365 -keyout test.key -out test.crt -subj \"/CN=test.local\"", "description": "A self-signed certificate for a lab." },
+            { "command": "openssl ecparam -name prime256v1 -genkey -noout -out ec.key", "description": "An elliptic curve P-256 private key." },
+            { "command": "openssl rand -base64 32", "description": "32 random bytes in Base64, for a secret or a key." }
+          ]
+        },
+        {
+          "name": "Convert and match",
+          "commands": [
+            { "command": "openssl pkcs12 -export -out bundle.pfx -inkey server.key -in server.crt -certfile chain.crt", "description": "Bundles a key, its certificate and the chain into a PFX that Windows imports." },
+            { "command": "openssl pkcs12 -in bundle.pfx -nodes -out bundle.pem", "description": "Extracts everything from a PFX to PEM. OpenSSL 3 needs -legacy for PFX files made with old algorithms." },
+            { "command": "openssl x509 -in cert.der -inform der -out cert.pem", "description": "Converts a DER (.cer) certificate to PEM." },
+            { "command": "openssl x509 -in server.crt -noout -pubkey | openssl sha256", "description": "Hash of the certificate's public key: compare it with the next command to know the key matches the certificate." },
+            { "command": "openssl pkey -in server.key -pubout | openssl sha256", "description": "Hash of the public key derived from a private key." }
+          ]
+        },
+        {
+          "name": "Windows equivalents",
+          "commands": [
+            { "command": "certutil -dump C:\\Temp\\server.cer", "description": "Every field of a certificate file." },
+            { "command": "Get-ChildItem Cert:\\LocalMachine\\My | Where-Object NotAfter -lt (Get-Date).AddDays(30) | Select-Object Subject, NotAfter, Thumbprint", "description": "Computer certificates expiring within 30 days." },
+            { "command": "certreq -new request.inf request.csr", "description": "A certificate request from an .inf file, with the key kept in the Windows store." },
+            { "command": "Export-PfxCertificate -Cert Cert:\\LocalMachine\\My\\<thumbprint> -FilePath C:\\Temp\\server.pfx -Password (Read-Host -AsSecureString)", "description": "Exports a certificate with its private key, when the key was marked exportable." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "packet-capture",
+      "name": "tcpdump, Wireshark and Nmap",
+      "description": "Cheat sheet. Capturing traffic on Linux and Windows, the Wireshark display filters that find a problem in a capture, and Nmap. Capture and scan only networks you are allowed to: a scan counts as an intrusion attempt in most security policies.",
+      "sections": [
+        {
+          "name": "tcpdump",
+          "commands": [
+            { "command": "tcpdump -i eth0 -nn host 10.0.0.5 and port 443", "description": "Traffic between this machine and one host on one port, without name or port resolution." },
+            { "command": "tcpdump -i any -nn -w capture.pcap -C 100 -W 5", "description": "Writes to rotating files of 100 MB, five at most, to open in Wireshark." },
+            { "command": "tcpdump -nn -r capture.pcap 'tcp[tcpflags] & (tcp-syn|tcp-rst) != 0'", "description": "Only the connection attempts and resets of a saved capture." },
+            { "command": "tcpdump -i eth0 -nn -e vlan", "description": "Tagged frames with their link header, to see which VLAN reaches a trunk." },
+            { "command": "tcpdump -i eth0 -nn port 67 or port 68", "description": "DHCP: discover, offer, request and acknowledge." }
+          ]
+        },
+        {
+          "name": "Capture on Windows",
+          "commands": [
+            { "command": "pktmon start --capture --pkt-size 0 -f C:\\Temp\\capture.etl", "description": "Captures whole packets with the built-in Packet Monitor, from an elevated prompt." },
+            { "command": "pktmon stop", "description": "Stops the capture." },
+            { "command": "pktmon etl2pcap C:\\Temp\\capture.etl -o C:\\Temp\\capture.pcapng", "description": "Converts the capture for Wireshark." },
+            { "command": "netsh trace start capture=yes tracefile=C:\\Temp\\trace.etl maxsize=512", "description": "The older built-in capture, still useful on Windows 10 before 2004; netsh trace stop ends it." }
+          ]
+        },
+        {
+          "name": "Wireshark display filters",
+          "commands": [
+            { "command": "ip.addr == 10.0.0.5", "description": "Everything to or from one address." },
+            { "command": "tcp.port == 443", "description": "One TCP port, either direction." },
+            { "command": "tcp.analysis.retransmission", "description": "Retransmissions: loss, or a path dropping large packets." },
+            { "command": "tcp.flags.reset == 1", "description": "Resets: a refused connection or one torn down by a firewall." },
+            { "command": "dns.flags.rcode != 0", "description": "DNS answers that are errors, such as NXDOMAIN or SERVFAIL." },
+            { "command": "http.response.code >= 400", "description": "HTTP errors, in unencrypted traffic." },
+            { "command": "tls.handshake.extensions_server_name contains \"contoso\"", "description": "TLS connections to a site by the name the client asked for, without decrypting." },
+            { "command": "kerberos.error_code", "description": "Kerberos errors, with the same codes as the domain controller events." },
+            { "command": "dhcp", "description": "DHCP exchanges." },
+            { "command": "eth.addr == 00:11:22:33:44:55", "description": "Everything from or to one MAC address." }
+          ]
+        },
+        {
+          "name": "Nmap",
+          "commands": [
+            { "command": "nmap -sn 192.168.1.0/24", "description": "Which hosts answer on a subnet, without scanning ports." },
+            { "command": "nmap -sV -p 22,80,443,3389 10.0.0.5", "description": "Whether these ports are open, and the service and version behind each." },
+            { "command": "nmap -Pn -p- --min-rate 1000 10.0.0.5", "description": "Every TCP port of a host that does not answer ping." },
+            { "command": "nmap -sU -p 53,123,161 10.0.0.5", "description": "UDP ports: DNS, NTP and SNMP. Needs administrator rights, and is slow." },
+            { "command": "nmap --script ssl-enum-ciphers -p 443 www.contoso.com", "description": "The TLS versions and cipher suites a server accepts, graded." },
+            { "command": "nmap -O 10.0.0.5", "description": "Guesses the operating system from how the host answers." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "docker",
+      "name": "Docker and Docker Compose",
+      "description": "Cheat sheet. Running, reading and cleaning up containers, images, volumes and networks, and the Compose commands for a stack. The Docker Compose tool on the Tools page turns a docker run command into a Compose service.",
+      "sections": [
+        {
+          "name": "Containers",
+          "commands": [
+            { "command": "docker ps -a", "description": "Every container, stopped ones included, with its status and ports." },
+            { "command": "docker run -d --name web -p 8080:80 --restart unless-stopped nginx:1.27", "description": "Starts a container in the background, port 8080 of the host to 80 inside, restarted with Docker." },
+            { "command": "docker logs -f --tail 100 web", "description": "The last 100 lines of a container's output, then follows it." },
+            { "command": "docker exec -it web sh", "description": "A shell inside a running container; bash where the image has it." },
+            { "command": "docker stop web && docker rm web", "description": "Stops and removes a container. Its named volumes stay." },
+            { "command": "docker inspect web --format '{{.State.Status}} {{.RestartCount}}'", "description": "One field of the container's configuration or state." },
+            { "command": "docker stats --no-stream", "description": "Processor, memory and network use of each container, once." },
+            { "command": "docker cp web:/etc/nginx/nginx.conf ./nginx.conf", "description": "Copies a file out of a container; swap the arguments to copy one in." }
+          ]
+        },
+        {
+          "name": "Images",
+          "commands": [
+            { "command": "docker images", "description": "Local images with their tag and size." },
+            { "command": "docker pull nginx:1.27", "description": "Downloads an image; pin a tag rather than latest for anything that matters." },
+            { "command": "docker build -t app:1.0 .", "description": "Builds an image from the Dockerfile in this folder." },
+            { "command": "docker tag app:1.0 registry.contoso.com/app:1.0 && docker push registry.contoso.com/app:1.0", "description": "Names an image for a registry and pushes it." },
+            { "command": "docker image prune -a", "description": "Removes every image no container uses." }
+          ]
+        },
+        {
+          "name": "Volumes and networks",
+          "commands": [
+            { "command": "docker volume ls", "description": "Named volumes." },
+            { "command": "docker run --rm -v data:/data -v \"$PWD\":/backup alpine tar czf /backup/data.tgz -C /data .", "description": "Backs up a named volume into an archive in the current folder." },
+            { "command": "docker network ls", "description": "Networks: containers on the same user network reach each other by name." },
+            { "command": "docker network create proxy", "description": "A network shared by a reverse proxy and the containers behind it." }
+          ]
+        },
+        {
+          "name": "Compose",
+          "commands": [
+            { "command": "docker compose up -d", "description": "Creates and starts the stack of compose.yaml in the background." },
+            { "command": "docker compose ps", "description": "The services of the stack and their state." },
+            { "command": "docker compose logs -f web", "description": "Follows the output of one service." },
+            { "command": "docker compose pull && docker compose up -d", "description": "Updates the images and recreates only the services that changed." },
+            { "command": "docker compose config", "description": "The final configuration, variables substituted: a typo shows here." },
+            { "command": "docker compose down", "description": "Stops and removes the stack's containers and networks; -v also deletes its volumes, data included." }
+          ]
+        },
+        {
+          "name": "Disk space and state",
+          "commands": [
+            { "command": "docker system df", "description": "Space used by images, containers, volumes and build cache." },
+            { "command": "docker system prune", "description": "Removes stopped containers, unused networks, dangling images and build cache; add --volumes only when no data lives in unused volumes." },
+            { "command": "docker info", "description": "Engine version, storage driver, root folder and resources." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kubernetes",
+      "name": "Kubernetes (kubectl)",
+      "description": "Cheat sheet. Contexts, workloads, rollouts, services and the commands that explain why a pod does not run. -n names the namespace; the examples use web.",
+      "sections": [
+        {
+          "name": "Clusters and contexts",
+          "commands": [
+            { "command": "kubectl config get-contexts", "description": "The clusters and users kubectl knows; the current one is starred." },
+            { "command": "kubectl config use-context prod", "description": "Switches to another cluster context. Check it twice before deleting anything." },
+            { "command": "kubectl config set-context --current --namespace=web", "description": "Makes web the default namespace of the current context." },
+            { "command": "kubectl get nodes -o wide", "description": "Nodes with their state, version, addresses and container runtime." }
+          ]
+        },
+        {
+          "name": "Pods and logs",
+          "commands": [
+            { "command": "kubectl get pods -A", "description": "Every pod of every namespace with its status and restarts." },
+            { "command": "kubectl describe pod web-7d9f8c6b5-x2k4p -n web", "description": "A pod's detail; the Events at the bottom explain ImagePullBackOff, Pending and failed probes." },
+            { "command": "kubectl logs web-7d9f8c6b5-x2k4p -n web --previous", "description": "The output of the container before its last restart: the reason for a CrashLoopBackOff." },
+            { "command": "kubectl logs -f deploy/web -n web", "description": "Follows the logs of one pod of a deployment." },
+            { "command": "kubectl exec -it web-7d9f8c6b5-x2k4p -n web -- sh", "description": "A shell inside a container." },
+            { "command": "kubectl get events -n web --sort-by=.lastTimestamp", "description": "Recent events of the namespace, newest last." }
+          ]
+        },
+        {
+          "name": "Deployments",
+          "commands": [
+            { "command": "kubectl apply -f deployment.yaml", "description": "Creates or updates the objects described in a file." },
+            { "command": "kubectl rollout status deploy/web -n web", "description": "Waits for a rollout to finish, or says where it is stuck." },
+            { "command": "kubectl rollout undo deploy/web -n web", "description": "Rolls a deployment back to its previous version." },
+            { "command": "kubectl rollout restart deploy/web -n web", "description": "Replaces every pod of a deployment, one batch at a time." },
+            { "command": "kubectl scale deploy/web --replicas=3 -n web", "description": "Sets the number of pods." },
+            { "command": "kubectl set image deploy/web web=registry.contoso.com/app:1.1 -n web", "description": "Changes the image of a container and starts a rollout." }
+          ]
+        },
+        {
+          "name": "Services and reaching them",
+          "commands": [
+            { "command": "kubectl get svc,ingress -n web", "description": "Services and ingresses with their addresses and ports." },
+            { "command": "kubectl get endpoints web -n web", "description": "The pod addresses behind a service: empty means its selector matches no ready pod." },
+            { "command": "kubectl port-forward svc/web 8080:80 -n web", "description": "Reaches a service from this machine on localhost:8080, without exposing it." },
+            { "command": "kubectl run tmp --rm -it --image=busybox:1.36 --restart=Never -- nslookup web.web.svc.cluster.local", "description": "A throwaway pod to test cluster DNS from the inside." }
+          ]
+        },
+        {
+          "name": "Nodes and access",
+          "commands": [
+            { "command": "kubectl top pods -n web", "description": "Processor and memory use of each pod; needs metrics-server." },
+            { "command": "kubectl auth can-i create deployments -n web", "description": "Whether the current account is allowed an action." },
+            { "command": "kubectl drain node01 --ignore-daemonsets --delete-emptydir-data", "description": "Moves the pods off a node before maintenance." },
+            { "command": "kubectl uncordon node01", "description": "Lets pods be scheduled on the node again." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "virtualization",
+      "name": "Hyper-V, VMware ESXi and Proxmox VE",
+      "description": "Cheat sheet. The everyday commands of three hypervisors: list, start and stop virtual machines, snapshots, networking and storage. Hyper-V from an elevated PowerShell on the host, ESXi from its SSH shell, Proxmox from the node's shell.",
+      "sections": [
+        {
+          "name": "Hyper-V (PowerShell)",
+          "commands": [
+            { "command": "Get-VM | Select-Object Name, State, Uptime, MemoryAssigned, CPUUsage", "description": "Every virtual machine with its state and resources." },
+            { "command": "Stop-VM -Name srv01", "description": "Shuts a VM down through the guest; -TurnOff cuts the power, -Save saves its state." },
+            { "command": "Checkpoint-VM -Name srv01 -SnapshotName 'Before update'", "description": "Takes a checkpoint. It is not a backup: remove it once the change is validated." },
+            { "command": "Get-VMSnapshot -VMName srv01 | Remove-VMSnapshot", "description": "Deletes the checkpoints of a VM, merging their disks." },
+            { "command": "Get-VMNetworkAdapter -VMName srv01 | Select-Object VMName, SwitchName, IPAddresses, MacAddress", "description": "The network adapters of a VM, with the switch and the guest's addresses." },
+            { "command": "Set-VMProcessor -VMName srv01 -ExposeVirtualizationExtensions $true", "description": "Allows nested virtualisation, with the VM turned off." },
+            { "command": "Export-VM -Name srv01 -Path D:\\Export", "description": "Exports a VM with its disks and configuration." },
+            { "command": "Get-VMReplication", "description": "Replica state and health of each replicated VM." }
+          ]
+        },
+        {
+          "name": "VMware ESXi (SSH shell)",
+          "commands": [
+            { "command": "vim-cmd vmsvc/getallvms", "description": "Every VM with its ID, name and datastore path." },
+            { "command": "vim-cmd vmsvc/power.getstate 12", "description": "Whether VM 12 is on." },
+            { "command": "vim-cmd vmsvc/power.shutdown 12", "description": "Shuts VM 12 down through VMware Tools; power.off cuts the power." },
+            { "command": "esxcli network ip interface ipv4 get", "description": "The management addresses of the host." },
+            { "command": "esxcli storage filesystem list", "description": "Datastores with their size and free space." },
+            { "command": "esxcli system maintenanceMode set --enable true", "description": "Puts the host into maintenance mode before patching." },
+            { "command": "esxcli software vib list", "description": "Installed packages and drivers, with their versions." },
+            { "command": "esxtop", "description": "Live processor, memory, disk and network use per VM." }
+          ]
+        },
+        {
+          "name": "Proxmox VE",
+          "commands": [
+            { "command": "qm list", "description": "The virtual machines of this node with their ID and state." },
+            { "command": "qm shutdown 101", "description": "Shuts VM 101 down through ACPI or the guest agent; qm stop cuts the power." },
+            { "command": "qm snapshot 101 before-update", "description": "Takes a snapshot of VM 101; qm rollback 101 before-update returns to it." },
+            { "command": "qm config 101", "description": "The configuration of a VM: disks, network, CPU and memory." },
+            { "command": "qm unlock 101", "description": "Clears the lock a failed backup or migration left on a VM." },
+            { "command": "pct list", "description": "The LXC containers of this node; pct enter 200 opens a shell in one." },
+            { "command": "pvesm status", "description": "Storage of the node with its usage." },
+            { "command": "pvecm status", "description": "Cluster membership and quorum." },
+            { "command": "vzdump 101 --storage backup --mode snapshot", "description": "Backs up VM 101 to the storage named backup, without stopping it." }
+          ]
+        }
+      ]
+    },
+    {
       "id": "aruba-cx",
       "name": "Aruba AOS-CX",
       "description": "Current Aruba switch operating system. Configuration is committed as you type and saved with write memory.",

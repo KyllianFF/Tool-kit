@@ -33,9 +33,1081 @@
     {
       "id": "method",
       "name": "Method and tooling"
+    },
+    {
+      "id": "windows",
+      "name": "Windows administration"
+    },
+    {
+      "id": "identity",
+      "name": "Identity and access"
+    },
+    {
+      "id": "operations",
+      "name": "Security operations"
+    },
+    {
+      "id": "reference",
+      "name": "Reference tables"
     }
   ],
   "topics": [
+    {
+      "id": "group-policy",
+      "title": "Group Policy processing",
+      "category": "identity",
+      "summary": "The order policies apply in, what decides whether a GPO reaches a machine, and the commands that show what actually applied.",
+      "content": [
+        "A Group Policy Object is linked to a site, a domain or an organizational unit, and applies in that order after the local policy: local, site, domain, OU, then child OU. When two GPOs set the same setting the last one applied wins, so the GPO linked closest to the object wins, unless a link higher up is Enforced. Block Inheritance on an OU stops the links above it, except the Enforced ones.",
+        "Computer settings apply at start-up and user settings at sign-in, then both refresh in the background every 90 minutes, with a random offset of up to 30 minutes; domain controllers refresh every 5 minutes. Some settings only apply at start-up or sign-in whatever the refresh, software installation and folder redirection among them.",
+        "Whether a GPO applies to an object is decided by security filtering (the object, or a group it belongs to, needs Read and Apply group policy on the GPO, Authenticated Users by default), by a WMI filter when one is linked, and by whether the half of the GPO the object needs is enabled. Since MS16-072 user policies are read with the computer account, so a GPO filtered on a user group must still grant Read to Authenticated Users or Domain Computers.",
+        "Loopback processing makes user settings depend on the computer signed in to, for kiosks, terminal servers and classrooms. Replace applies only the user settings of the GPOs linked to the computer; Merge applies the user's own, then the computer's, which win."
+      ],
+      "keyPoints": [
+        "gpresult /r lists the GPOs applied and filtered out for the computer and the signed-in user; gpresult /h report.html gives the full report, with the winning GPO for every setting.",
+        "A GPO that does not apply is usually filtered out, not broken: gpresult gives the reason, such as Denied (Security), WMI filter or Empty.",
+        "Group Policy is read from SYSVOL over SMB and from Active Directory over LDAP: DNS pointing at a domain controller, and a working secure channel, come before anything else.",
+        "Preferences (drives, printers, registry items) can be targeted item by item and set to Create, Replace, Update or Delete; policies cannot.",
+        "Settings under a Policies key are removed when the GPO stops applying. Preferences and registry values written elsewhere stay behind, which is called tattooing."
+      ],
+      "troubleshooting": [
+        "gpupdate /force, and read its result: a failure names the extension and the GPO.",
+        "gpresult /r /scope computer, then /scope user: is the GPO applied, or filtered out, and why.",
+        "Event Viewer, Applications and Services Logs, Microsoft, Windows, GroupPolicy, Operational: every processing cycle with its duration, the domain controller used and each error.",
+        "Check that SYSVOL is reachable with dir \\\\contoso.com\\SYSVOL, and that nltest /dsgetdc:contoso.com returns a domain controller in the right site.",
+        "In the Group Policy Management Console, Group Policy Results runs the same analysis remotely, and Group Policy Modeling shows what would apply before a change."
+      ],
+      "tables": [
+        {
+          "title": "What decides whether a GPO applies",
+          "columns": [
+            "Check",
+            "Where to look",
+            "Usual cause"
+          ],
+          "rows": [
+            [
+              "Link and order",
+              "GPMC, Linked Group Policy Objects of the OU",
+              "Linked to the wrong OU, or overridden by a GPO applied later"
+            ],
+            [
+              "Enforced and Block Inheritance",
+              "GPMC, Group Policy Inheritance tab",
+              "An Enforced link above wins over the OU's own GPO"
+            ],
+            [
+              "Security filtering",
+              "GPO, Delegation tab, Advanced",
+              "Apply group policy not granted, or Read missing for computers (MS16-072)"
+            ],
+            [
+              "WMI filter",
+              "GPO, Scope tab",
+              "The query is false on this machine"
+            ],
+            [
+              "Enabled halves",
+              "GPO, Details tab, GPO Status",
+              "User configuration settings disabled"
+            ],
+            [
+              "Loopback",
+              "Computer policy, System, Group Policy",
+              "Replace mode hides the user's own settings"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kerberos-ntlm",
+      "title": "Kerberos and NTLM",
+      "category": "identity",
+      "summary": "How Windows authenticates in a domain, what each protocol needs to work, and what their failures look like.",
+      "content": [
+        "Kerberos is the default in a domain. The client authenticates once to the Key Distribution Center of a domain controller and receives a ticket-granting ticket (TGT), then asks for a service ticket for each service it reaches, named by its service principal name (SPN), such as HTTP/intranet.contoso.com or cifs/fs01.contoso.com. The service decrypts the ticket with its own key, without asking a domain controller.",
+        "NTLM is a challenge and response between the client and the server, which passes it on to a domain controller. It is used when Kerberos cannot be: a server reached by IP address, a name no SPN matches, a machine outside the domain, or no domain controller reachable. It has no mutual authentication and can be relayed, which is why security baselines restrict it.",
+        "Kerberos needs clocks within five minutes of each other by default, names that resolve to the right host, and each SPN registered once, on the account the service runs as. A duplicate SPN, or one on the wrong account, makes Kerberos fail, and often fall back to NTLM without a word.",
+        "Tickets carry the group memberships of the moment they were issued, and a TGT lives ten hours by default, renewable for seven days. That is why a new group membership needs a new sign-in or a klist purge."
+      ],
+      "keyPoints": [
+        "klist lists the tickets of the session: no cifs ticket after opening a share means NTLM was used.",
+        "setspn -Q HTTP/intranet.contoso.com finds the account that holds an SPN; setspn -X lists the duplicates.",
+        "On a domain controller, event 4768 is a TGT request, 4769 a service ticket request, 4771 a failed Kerberos pre-authentication and 4776 an NTLM credential validation.",
+        "Constrained delegation lets a service act for a user towards named services only; unconstrained delegation lets it act towards any service, a classic path to domain admin.",
+        "Members of Protected Users cannot use NTLM, DES or RC4, cannot be delegated, and get four hour TGTs."
+      ],
+      "troubleshooting": [
+        "Compare the clock with the domain controller: w32tm /stripchart /computer:dc01 /samples:3.",
+        "Resolve the name the client used, forward and reverse: a CNAME or a hosts entry pointing elsewhere makes the client ask for the wrong SPN.",
+        "klist get cifs/fs01.contoso.com requests the ticket and prints the error, instead of silently falling back.",
+        "setspn -Q the SPN: none found means NTLM fallback; two means KRB_AP_ERR_MODIFIED on the server.",
+        "On the domain controller, events 4768, 4769 and 4771 carry the failure code; the table above reads the common ones."
+      ],
+      "tables": [
+        {
+          "title": "Kerberos failure codes in events 4768, 4769 and 4771",
+          "columns": [
+            "Code",
+            "Meaning",
+            "First check"
+          ],
+          "rows": [
+            [
+              "0x6",
+              "Client not found in the Kerberos database",
+              "The account name, or the trust it comes through"
+            ],
+            [
+              "0x7",
+              "Server not found: no account holds this SPN",
+              "setspn -Q the SPN"
+            ],
+            [
+              "0x12",
+              "Account disabled, expired or locked out",
+              "The account in Active Directory"
+            ],
+            [
+              "0x17",
+              "Password expired",
+              "Change the password"
+            ],
+            [
+              "0x18",
+              "Pre-authentication failed: wrong password",
+              "A stale password saved in a service, a task or a mapped drive"
+            ],
+            [
+              "0x1F",
+              "Integrity check on a decrypted field failed",
+              "A password changed and not yet replicated, or a trust key mismatch"
+            ],
+            [
+              "0x25",
+              "Clock skew too great",
+              "w32tm on the client and on the domain controller"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "entra-intune",
+      "title": "Microsoft Entra join and Intune",
+      "category": "identity",
+      "summary": "The three ways a Windows device relates to Microsoft Entra ID, how Intune enrolment follows, and what dsregcmd /status says about each.",
+      "content": [
+        "Microsoft Entra join replaces the domain: the device signs in with Entra ID accounts and is managed by Intune. Microsoft Entra hybrid join keeps the Active Directory join and registers the same device in Entra ID, through Entra Connect or Cloud Sync, so both on-premises and cloud resources trust it. Microsoft Entra registration adds a work account to a personal or unmanaged device without joining it.",
+        "A hybrid device learns its tenant from a service connection point in Active Directory, or from a targeted registry setting, then waits for its computer object to be synchronised before registration completes. A new hybrid device can take a synchronisation cycle to show as joined.",
+        "Intune enrolment follows the join: automatic enrolment for Entra joined devices whose user is within the MDM user scope, Group Policy based enrolment for hybrid joined ones, or Windows Autopilot at first start-up. Enrolment restrictions, licences and the MDM user scope decide whether it is accepted.",
+        "Single sign-on to cloud resources rests on the Primary Refresh Token (PRT), obtained at Windows sign-in. With it, Edge, Office and Teams sign in silently, and Conditional Access can see a compliant or hybrid joined device."
+      ],
+      "keyPoints": [
+        "dsregcmd /status: AzureAdJoined, DomainJoined and WorkplaceJoined give the join type, and AzureAdPrt YES means single sign-on works.",
+        "Conditional Access that requires a compliant or hybrid joined device refuses a device that is neither, whatever the user's credentials.",
+        "0x80180014 means Windows MDM enrolment is blocked by a platform restriction, or an Autopilot device must be unblocked before reuse; 0x8018002B means a UPN with a non-routable suffix such as .local, or an MDM user scope of None.",
+        "Settings, Accounts, Access work or school, the account, Info, then Sync, makes an Intune check-in now.",
+        "The sign-in and management report on the Diagnostics page reads the same state, and explains a stalled hybrid join."
+      ],
+      "troubleshooting": [
+        "dsregcmd /status on the device: join state, tenant, PRT, and under Diagnostic Data the error of the last attempt.",
+        "Hybrid join: the service connection point, the computer's OU in the synchronisation scope, and enterpriseregistration.windows.net and login.microsoftonline.com reachable without TLS inspection.",
+        "Event Viewer, Microsoft, Windows, User Device Registration, Admin: each registration attempt and its error.",
+        "Event Viewer, Microsoft, Windows, DeviceManagement-Enterprise-Diagnostics-Provider, Admin: event 75 records a successful automatic enrolment, 76 a failed one.",
+        "In the Intune admin center, the device's enrolment failures and the user's licence; in Entra ID, whether the device object exists and is enabled."
+      ],
+      "tables": [
+        {
+          "title": "Reading dsregcmd /status",
+          "columns": [
+            "AzureAdJoined",
+            "DomainJoined",
+            "WorkplaceJoined",
+            "Means"
+          ],
+          "rows": [
+            [
+              "YES",
+              "NO",
+              "NO",
+              "Microsoft Entra joined"
+            ],
+            [
+              "YES",
+              "YES",
+              "NO",
+              "Microsoft Entra hybrid joined"
+            ],
+            [
+              "NO",
+              "YES",
+              "NO",
+              "Domain joined only: hybrid join not set up, or not finished"
+            ],
+            [
+              "NO",
+              "NO",
+              "YES",
+              "Registered: a work account on a personal device"
+            ],
+            [
+              "NO",
+              "NO",
+              "NO",
+              "Not joined to anything"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "passwords-mfa",
+      "title": "Passwords and MFA",
+      "category": "identity",
+      "summary": "What current guidance asks of passwords, which second factors resist phishing, and how to roll MFA out without locking anyone out.",
+      "content": [
+        "NIST SP 800-63B, in its 2025 revision, moved away from complexity rules and periodic changes. Length matters most: at least 15 characters when the password is the only factor, at least 8 behind MFA, and long passphrases accepted. Passwords are screened against lists of breached and common ones, and changed when there is evidence of compromise rather than on a schedule, since forced rotation produces Password1, Password2.",
+        "Multi-factor authentication stops most takeovers that rely on a stolen or guessed password. Factors are not equal: an SMS code can be intercepted or moved with the number, a push can be approved by a tired user, and codes and pushes alike are relayed by adversary in the middle phishing kits that proxy the real sign-in page.",
+        "Phishing-resistant methods bind the sign-in to the real site: FIDO2 security keys and passkeys, Windows Hello for Business, and certificate-based authentication. Number matching in Microsoft Authenticator stops blind approvals, but a proxied page still gets through.",
+        "Roll out with two emergency access accounts excluded from Conditional Access and watched, registration before enforcement, and legacy authentication blocked: POP, IMAP and SMTP with basic authentication never ask for a second factor."
+      ],
+      "keyPoints": [
+        "Length over complexity, breached password screening, no forced periodic change.",
+        "Phishing-resistant MFA for administrators first: FIDO2 keys or Windows Hello for Business.",
+        "Two emergency access accounts, excluded from MFA policies, with long passwords kept offline and an alert on any sign-in.",
+        "Block legacy authentication: it bypasses MFA entirely.",
+        "The Passwords tool on the Tools page estimates the time to crack a password and checks it against breaches with k-anonymity."
+      ],
+      "troubleshooting": [
+        "A user approves prompts they did not start: reset the password, revoke the sessions, and move them to number matching or a phishing-resistant method.",
+        "MFA is never asked for a mailbox: look in the sign-in logs for legacy authentication clients.",
+        "A sign-in from an unexpected country right after a successful MFA: suspect a token stolen by a proxy page, and revoke the sessions.",
+        "An administrator locked out by a policy: sign in with an emergency access account, then fix the Conditional Access policy."
+      ],
+      "tables": [
+        {
+          "title": "Second factors against phishing",
+          "columns": [
+            "Method",
+            "Phishing-resistant",
+            "Main weakness"
+          ],
+          "rows": [
+            [
+              "SMS or voice code",
+              "No",
+              "SIM swap, interception, relayed by proxy kits"
+            ],
+            [
+              "Authenticator app code (TOTP)",
+              "No",
+              "Typed into a fake page and relayed"
+            ],
+            [
+              "Push with number matching",
+              "No",
+              "Relayed by adversary in the middle kits"
+            ],
+            [
+              "FIDO2 security key or passkey",
+              "Yes",
+              "Needs a spare key and a recovery process"
+            ],
+            [
+              "Windows Hello for Business",
+              "Yes",
+              "Tied to one device"
+            ],
+            [
+              "Certificate-based authentication",
+              "Yes",
+              "Needs a PKI and certificate or smart card management"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "windows-boot-recovery",
+      "title": "Windows start-up and recovery",
+      "category": "windows",
+      "summary": "The start-up chain from firmware to sign-in, the recovery environment, and what to do when BitLocker asks for its key.",
+      "content": [
+        "On UEFI the firmware loads the Windows Boot Manager from the EFI system partition. It reads the boot configuration data (BCD) and starts the Windows loader, which starts the kernel and the boot drivers; the session manager then starts the services and the sign-in screen. With Secure Boot each stage checks the signature of the next.",
+        "The Windows Recovery Environment (WinRE) lives in a recovery partition. It starts by itself after two failed starts in a row, or from Settings, System, Recovery, Advanced start-up, or with Shift held on Restart. It offers Startup Repair, System Restore, uninstalling the latest quality or feature update, a command prompt and the UEFI firmware settings.",
+        "BitLocker releases the key from the TPM only when the measured start-up chain matches the one it was sealed to. A firmware update, a changed boot order, Secure Boot turned off, a docking station offering a boot device or a new motherboard make it ask for the 48-digit recovery key instead. Suspending protection before a firmware update avoids that.",
+        "Recovery keys are wherever the device was set to back them up: Active Directory, Microsoft Entra ID (the device in the Entra or Intune admin center), or the user's Microsoft account on a personal device. Without the key, the data is gone."
+      ],
+      "keyPoints": [
+        "reagentc /info shows whether WinRE is enabled and where it lives: a disabled WinRE is why the recovery options do not appear.",
+        "bcdedit /enum lists the start-up entries; bcdedit /set {default} safeboot minimal starts in safe mode next time, and bcdedit /deletevalue {default} safeboot undoes it.",
+        "manage-bde -status shows the protection of each volume; Suspend-BitLocker -MountPoint C: -RebootCount 1 suspends it for one restart.",
+        "manage-bde -protectors -get C: shows the recovery key ID the recovery screen displays, to find the right key.",
+        "Startup Repair writes its log to %windir%\\System32\\LogFiles\\Srt\\SrtTrail.txt."
+      ],
+      "troubleshooting": [
+        "Write down exactly what the screen shows: a stop code, a BitLocker recovery screen and its key ID, or no boot device.",
+        "No boot device: the firmware boot order, and whether the disk is detected at all, before touching the BCD.",
+        "BitLocker recovery after a firmware or hardware change: enter the key, then suspend and resume protection so the TPM seals to the new measurements.",
+        "Restart loop after an update: WinRE, Troubleshoot, Advanced options, Uninstall updates, the latest quality update first.",
+        "From the WinRE command prompt: chkdsk C: /f, sfc /scannow /offbootdir=C:\\ /offwindir=C:\\Windows, then bcdboot C:\\Windows to rebuild the start-up files."
+      ],
+      "tables": [
+        {
+          "title": "Where to start, by symptom",
+          "columns": [
+            "Symptom",
+            "Likely stage",
+            "First step"
+          ],
+          "rows": [
+            [
+              "No boot device, or back to the firmware",
+              "Firmware, disk or EFI partition",
+              "Boot order, disk detected, then bcdboot from WinRE"
+            ],
+            [
+              "BitLocker recovery screen",
+              "TPM measurements changed",
+              "The recovery key from AD, Entra ID or the Microsoft account"
+            ],
+            [
+              "Stop code before the logo spins",
+              "Boot drivers, storage controller",
+              "Safe mode, then the latest driver or update"
+            ],
+            [
+              "Automatic Repair loop",
+              "Services, drivers or system files",
+              "WinRE: uninstall the latest update, sfc offline"
+            ],
+            [
+              "Black screen after sign-in",
+              "Shell or graphics driver",
+              "Ctrl+Shift+Esc and run explorer.exe; safe mode for the driver"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "windows-update-servicing",
+      "title": "Windows Update and WSUS",
+      "category": "windows",
+      "summary": "What Windows installs each month, the channels that deliver it, and why a machine is not getting an update.",
+      "content": [
+        "Every month Windows receives one cumulative quality update on the second Tuesday, holding every fix since the release, and an optional non-security preview later in the month. The servicing stack, which installs the updates, now ships inside the cumulative update. Feature updates, a new version of Windows, come once a year.",
+        "Windows Update for Business is a set of policies over Windows Update: quality and feature update deferrals, a target version, deadlines and restart grace periods, set by Group Policy or by Intune update rings. Windows Autopatch automates it for enrolled devices. Devices still download from Microsoft, sharing between peers with Delivery Optimization.",
+        "WSUS keeps updates on a local server: an administrator approves them, and clients pointed at the server by policy only see what is approved. Configuration Manager builds on WSUS. A device pointed at a WSUS server that no longer synchronises stays on old updates without any error.",
+        "A device with both a WSUS server and deferral policies can scan Windows Update instead of WSUS, which is called dual scan. The policy Do not allow update deferral policies to cause scans against Windows Update prevents it."
+      ],
+      "keyPoints": [
+        "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate holds WUServer and WUStatusServer when WSUS is configured, and the Windows Update for Business policies.",
+        "Get-WindowsUpdateLog turns the update traces into a readable WindowsUpdate.log on the desktop.",
+        "The update history report on the Diagnostics page lists each installation with its error, and the Windows codes tab explains the code.",
+        "A pending restart blocks further updates: the pending reboot report shows it.",
+        "Feature updates need room: keep well over 20 GB free on the system drive."
+      ],
+      "troubleshooting": [
+        "Settings, Windows Update: note the error code, then look it up in the Windows codes tab.",
+        "Find the source the device uses: the WUServer policy value, and whether that server still synchronises.",
+        "A pending restart, the free space and the date of the last successful scan come before resetting anything.",
+        "Rebuild the Windows Update components from the Fixes page, then DISM /RestoreHealth and sfc when the error points at the component store.",
+        "For one stubborn update, download it from the Microsoft Update Catalog and install the .msu by hand to see the real error."
+      ],
+      "tables": [
+        {
+          "title": "Update channels",
+          "columns": [
+            "Channel",
+            "Who approves",
+            "Downloads from",
+            "Set by"
+          ],
+          "rows": [
+            [
+              "Windows Update",
+              "Microsoft, on release",
+              "Microsoft and peers",
+              "Nothing: the default"
+            ],
+            [
+              "Windows Update for Business",
+              "Rings: deferrals and deadlines",
+              "Microsoft and peers",
+              "Group Policy or Intune"
+            ],
+            [
+              "Windows Autopatch",
+              "Microsoft, in waves",
+              "Microsoft and peers",
+              "Intune, for enrolled tenants"
+            ],
+            [
+              "WSUS",
+              "An administrator, update by update",
+              "The WSUS server",
+              "Group Policy: WUServer"
+            ],
+            [
+              "Configuration Manager",
+              "An administrator, by deployment",
+              "Distribution points",
+              "The Configuration Manager client"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "backups-ransomware",
+      "title": "Backups that survive ransomware",
+      "category": "operations",
+      "summary": "The 3-2-1 rule and what it leaves out, keeping a copy the attacker cannot reach, and testing restores.",
+      "content": [
+        "The 3-2-1 rule: three copies of the data, on two different media, one of them off site. Ransomware adds what the rule did not say: at least one copy the attacker cannot delete or encrypt even with administrator rights, because it is offline or immutable for a retention period. Hence 3-2-1-1-0: one copy offline or immutable, and zero errors on the last restore test.",
+        "Attackers look for the backups before they encrypt. They delete the volume shadow copies, wipe the backup catalogue, and use the backup server's own administrators when it belongs to the same domain. A backup server outside the production domain, with its own accounts and MFA, removes that shortcut.",
+        "What counts is the restore: how old the last good copy may be (recovery point objective) and how long a full restore takes (recovery time objective), measured rather than assumed. A job that reports success on a copy nobody has ever restored is a hope, not a backup.",
+        "Cloud services are not backups by themselves: they keep deleted items for limited periods, and synchronise an encrypted file as faithfully as a good one. Restore your OneDrive rolls a whole OneDrive back to any point in the last 30 days."
+      ],
+      "keyPoints": [
+        "One copy offline or immutable, protected by credentials that are not in the production domain.",
+        "Scheduled restore tests, a whole machine and a single mailbox included, with the time each one took written down.",
+        "Snapshots on the same storage are not a backup: they go with the array or with the administrator account.",
+        "MFA on the backup console, and an alert when jobs or restore points are deleted.",
+        "Encrypted backups, with the key kept where a lost site does not take it along."
+      ],
+      "troubleshooting": [
+        "Before an incident: list what is backed up, where, how often, and who can delete it.",
+        "For each critical system, the date of the last successful job and of the last restore test.",
+        "Confirm that at least one copy is out of the domain's reach: another tenant, immutable storage or disconnected media.",
+        "During an incident: isolate the backup infrastructure first, and restore into a clean network.",
+        "Restore from before the intrusion began, not just before the encryption: attackers often spend days in the network first."
+      ],
+      "tables": [
+        {
+          "title": "Where a copy survives an attacker with administrator rights",
+          "columns": [
+            "Where the copy is",
+            "Survives",
+            "Why"
+          ],
+          "rows": [
+            [
+              "Snapshots on the same server or array",
+              "No",
+              "Deleted with the same rights"
+            ],
+            [
+              "NAS share reached with a domain account",
+              "No",
+              "Reached with the same credentials"
+            ],
+            [
+              "Backup server joined to the domain",
+              "Rarely",
+              "A domain administrator reaches it"
+            ],
+            [
+              "Immutable object storage with a retention lock",
+              "Yes",
+              "Cannot be deleted before the retention ends"
+            ],
+            [
+              "Tape or removable disk stored offline",
+              "Yes",
+              "Out of reach, but slow to restore"
+            ],
+            [
+              "Separate cloud tenant with its own accounts",
+              "Yes",
+              "Needs its own MFA and alerts"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "incident-first-hour",
+      "title": "The first hour of a security incident",
+      "category": "operations",
+      "summary": "What to do, and what not to, between the first alert and the arrival of the people who handle the incident.",
+      "content": [
+        "The first hour decides what can still be known. The priorities, in order: stop the spread, keep the evidence, tell the right people. Reinstalling a machine or deleting a suspicious file before anyone has looked destroys the answer to how the attacker got in, and whether they are still in.",
+        "Isolate rather than power off. Unplugging the network, or isolating the device from the EDR console, cuts the attacker off and stops the spread, while keeping memory, running processes and connections that a shutdown erases. Power off only when encryption is visibly running and isolation is impossible.",
+        "Write everything down as it happens, with the time: what was seen, on which machine, who did what. Investigators, insurers and, when personal data is involved, the data protection authority will ask for that timeline; in the European Union a personal data breach is notified within 72 hours of becoming aware of it.",
+        "Consider every account used on the machine compromised. Reset the passwords, revoke the sessions and tokens, and do it from a clean device: a keylogger on the infected one reads the new password as it is typed."
+      ],
+      "keyPoints": [
+        "Isolate; do not reboot, reinstall or run a cleanup tool first.",
+        "Keep the evidence: the EDR timeline, event logs, the ransom note, and a memory dump when the tools are at hand.",
+        "Call the incident contact, the cyber insurance line or a response provider before any deadline the attacker sets, never the attacker.",
+        "Change credentials from a clean device, administrators and the accounts seen on the machine first.",
+        "In France, cybermalveillance.gouv.fr and CERT-FR guide the response, and insurers ask for a complaint filed with the police or gendarmerie."
+      ],
+      "troubleshooting": [
+        "Isolate the machine from the network or from the EDR console, and note the time.",
+        "Photograph the screen, and keep the ransom note or the alert as it is.",
+        "Find the scope: which accounts, and which other machines show the same indicator (the EDR, the Threat hunting page, sign-ins of the account).",
+        "Disable or reset the accounts involved from a clean device, and revoke their sessions.",
+        "Escalate: incident lead, management, insurer, and the data protection officer when personal data may be concerned."
+      ],
+      "tables": [
+        {
+          "title": "Do and do not",
+          "columns": [
+            "Do",
+            "Do not"
+          ],
+          "rows": [
+            [
+              "Isolate from the network",
+              "Power off or reboot"
+            ],
+            [
+              "Keep the logs, your notes and the ransom note",
+              "Reinstall or run a cleanup tool first"
+            ],
+            [
+              "Reset credentials from a clean device",
+              "Type new passwords on the infected machine"
+            ],
+            [
+              "Check that the backups are out of reach",
+              "Restore into the same compromised network"
+            ],
+            [
+              "Report to the incident contact and the insurer",
+              "Contact or pay the attacker on your own"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mail-authentication",
+      "title": "SPF, DKIM and DMARC",
+      "category": "security",
+      "summary": "How a receiving server decides that a message really comes from your domain, and how to publish the three records without losing mail.",
+      "content": [
+        "SPF is a TXT record listing the servers allowed to send for a domain, such as v=spf1 include:spf.protection.outlook.com -all. It is checked against the envelope sender (Return-Path), not the From address the user sees, and it breaks when a message is forwarded. It allows at most ten DNS lookups; more is a permanent error.",
+        "DKIM signs each message with a private key held by the sending service, whose public key is published in DNS under selector._domainkey.domain. The signature survives forwarding as long as the signed headers and body are not changed, and the domain it names can differ from the From address.",
+        "DMARC ties both to the From address the user sees: a message passes when SPF or DKIM passes for a domain aligned with the From domain. The DMARC record, a TXT at _dmarc.domain, tells receivers what to do with the rest (p=none, quarantine or reject) and where to send aggregate reports (rua).",
+        "Deploy in order: SPF listing every sending service, DKIM enabled in each of them, DMARC at p=none with reports, then quarantine and reject once the reports show only legitimate, aligned mail. The newsletter tool or the copier sending as the domain is what usually fails."
+      ],
+      "keyPoints": [
+        "One SPF record per domain: two TXT records starting with v=spf1 are an error.",
+        "-all rejects what is not listed, ~all only marks it; once DMARC is enforced, ~all is enough.",
+        "Exchange Online returns 5.7.23 when the receiving system rejects a message on SPF, and 5.7.509 when a domain with a DMARC policy of reject fails DMARC.",
+        "Gmail and Yahoo have required SPF, DKIM and a DMARC record from bulk senders since 2024.",
+        "Resolve-DnsName -Type TXT contoso.com, and the same for _dmarc.contoso.com, shows the records as receivers see them."
+      ],
+      "troubleshooting": [
+        "Read the Authentication-Results header of a received message: spf=, dkim= and dmarc=, with the domains checked.",
+        "SPF fail: is the sending server's address in the record, directly or through an include, and does the record stay under ten lookups.",
+        "DKIM fail: is signing enabled for the domain in the sending service, and is the selector record published.",
+        "DMARC fail while SPF and DKIM pass: alignment, the domain they validated is not the From domain.",
+        "Read a few weeks of aggregate reports before moving to reject."
+      ],
+      "tables": [
+        {
+          "title": "The three records",
+          "columns": [
+            "Record",
+            "Published at",
+            "Example",
+            "Checks"
+          ],
+          "rows": [
+            [
+              "SPF",
+              "TXT at the domain",
+              "v=spf1 include:spf.protection.outlook.com -all",
+              "The server of the envelope sender"
+            ],
+            [
+              "DKIM",
+              "TXT, or CNAME to the sending service, at selector._domainkey",
+              "selector1._domainkey.contoso.com",
+              "The signature of the message"
+            ],
+            [
+              "DMARC",
+              "TXT at _dmarc",
+              "v=DMARC1; p=quarantine; rua=mailto:dmarc@contoso.com",
+              "Alignment with the From domain, and the policy for failures"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "well-known-sids",
+      "title": "Well-known SIDs and RIDs",
+      "category": "reference",
+      "summary": "The security identifiers that are the same on every Windows machine, to read an ACL, a group membership or an event without guessing.",
+      "content": [
+        "A SID reads S-R-X-Y1-...-Yn: revision, identifier authority, then subauthorities whose last value is the relative identifier (RID). Accounts of a domain or of a machine start with S-1-5-21 followed by the domain or machine identifier, then the RID: the first local accounts get RIDs from 1000 upwards.",
+        "Well-known SIDs and RIDs never change, whatever the language of Windows or the name an account was given: RID 500 is the built-in Administrator even when renamed, and S-1-5-32-544 is Administrators even when Windows calls it Administrateurs."
+      ],
+      "keyPoints": [
+        "whoami /user /groups prints the SIDs of the current session.",
+        "([System.Security.Principal.SecurityIdentifier] 'S-1-5-32-544').Translate([System.Security.Principal.NTAccount]) names a SID in the local language.",
+        "An ACL entry showing a bare S-1-5-21-... SID belongs to a deleted account or to a domain that cannot be reached.",
+        "A user moved between domains keeps its old SID in SIDHistory, which still grants access to what the old one had."
+      ],
+      "tables": [
+        {
+          "title": "Universal and NT Authority SIDs",
+          "columns": [
+            "SID",
+            "Name",
+            "Identifies"
+          ],
+          "rows": [
+            [
+              "S-1-0-0",
+              "Null SID",
+              "A group with no members, used when a SID is unknown"
+            ],
+            [
+              "S-1-1-0",
+              "Everyone (World)",
+              "Every user"
+            ],
+            [
+              "S-1-3-0",
+              "Creator Owner",
+              "Replaced by the creator of an object in inherited entries"
+            ],
+            [
+              "S-1-5-2",
+              "Network",
+              "Users signed in through the network"
+            ],
+            [
+              "S-1-5-4",
+              "Interactive",
+              "Users signed in interactively, remote desktop included"
+            ],
+            [
+              "S-1-5-6",
+              "Service",
+              "Principals signed in as a service"
+            ],
+            [
+              "S-1-5-7",
+              "Anonymous Logon",
+              "A connection without credentials"
+            ],
+            [
+              "S-1-5-9",
+              "Enterprise Domain Controllers",
+              "Every domain controller of the forest"
+            ],
+            [
+              "S-1-5-11",
+              "Authenticated Users",
+              "Every authenticated user and computer, Guest excluded"
+            ],
+            [
+              "S-1-5-18",
+              "SYSTEM (LocalSystem)",
+              "The operating system and services running as LocalSystem"
+            ],
+            [
+              "S-1-5-19",
+              "LOCAL SERVICE",
+              "Services with user rights locally and anonymous on the network"
+            ],
+            [
+              "S-1-5-20",
+              "NETWORK SERVICE",
+              "Services with user rights locally and the computer's identity on the network"
+            ],
+            [
+              "S-1-5-113",
+              "Local account",
+              "Any local account, to deny network sign-in"
+            ],
+            [
+              "S-1-5-114",
+              "Local account and member of Administrators",
+              "Local administrators, to deny network sign-in"
+            ]
+          ]
+        },
+        {
+          "title": "Built-in groups (S-1-5-32)",
+          "columns": [
+            "SID",
+            "Group"
+          ],
+          "rows": [
+            [
+              "S-1-5-32-544",
+              "Administrators"
+            ],
+            [
+              "S-1-5-32-545",
+              "Users"
+            ],
+            [
+              "S-1-5-32-546",
+              "Guests"
+            ],
+            [
+              "S-1-5-32-548",
+              "Account Operators (domain controllers)"
+            ],
+            [
+              "S-1-5-32-549",
+              "Server Operators (domain controllers)"
+            ],
+            [
+              "S-1-5-32-550",
+              "Print Operators (domain controllers)"
+            ],
+            [
+              "S-1-5-32-551",
+              "Backup Operators"
+            ],
+            [
+              "S-1-5-32-555",
+              "Remote Desktop Users"
+            ],
+            [
+              "S-1-5-32-556",
+              "Network Configuration Operators"
+            ],
+            [
+              "S-1-5-32-573",
+              "Event Log Readers"
+            ],
+            [
+              "S-1-5-32-578",
+              "Hyper-V Administrators"
+            ],
+            [
+              "S-1-5-32-580",
+              "Remote Management Users"
+            ]
+          ]
+        },
+        {
+          "title": "Domain RIDs (S-1-5-21-domain-RID)",
+          "columns": [
+            "RID",
+            "Account or group"
+          ],
+          "rows": [
+            [
+              "500",
+              "Administrator"
+            ],
+            [
+              "501",
+              "Guest"
+            ],
+            [
+              "502",
+              "krbtgt (domain controllers)"
+            ],
+            [
+              "512",
+              "Domain Admins"
+            ],
+            [
+              "513",
+              "Domain Users"
+            ],
+            [
+              "514",
+              "Domain Guests"
+            ],
+            [
+              "515",
+              "Domain Computers"
+            ],
+            [
+              "516",
+              "Domain Controllers"
+            ],
+            [
+              "517",
+              "Cert Publishers"
+            ],
+            [
+              "518",
+              "Schema Admins (forest root)"
+            ],
+            [
+              "519",
+              "Enterprise Admins (forest root)"
+            ],
+            [
+              "520",
+              "Group Policy Creator Owners"
+            ],
+            [
+              "521",
+              "Read-only Domain Controllers"
+            ],
+            [
+              "525",
+              "Protected Users"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "http-status-codes",
+      "title": "HTTP status codes",
+      "category": "reference",
+      "summary": "The status codes a browser, a proxy or an API returns, and what each one points at when a site or an application fails.",
+      "content": [
+        "The first digit gives the class: 2xx success, 3xx redirection, 4xx a problem with the request or the client's rights, 5xx a failure on the server or on a proxy between. A 4xx is rarely fixed on the server and a 5xx rarely on the client.",
+        "IIS adds a substatus after a dot, such as 401.1 or 403.14, visible in its logs and in detailed error pages: it names the exact reason the short code hides."
+      ],
+      "keyPoints": [
+        "curl -I https://site shows the status line and headers without downloading the page; Invoke-WebRequest -Method Head does the same in PowerShell.",
+        "A 407 comes from a proxy, not from the site: the proxy wants credentials.",
+        "A 502 or 504 names a gateway: a reverse proxy or load balancer could not get an answer from the server behind it.",
+        "A 429 carries a Retry-After header saying how long to wait."
+      ],
+      "tables": [
+        {
+          "title": "Common status codes",
+          "columns": [
+            "Code",
+            "Meaning",
+            "What to check"
+          ],
+          "rows": [
+            [
+              "200 OK",
+              "Success",
+              "Nothing, unless the content itself is wrong"
+            ],
+            [
+              "204 No Content",
+              "Success, nothing returned",
+              "Expected for many API calls"
+            ],
+            [
+              "301 / 308",
+              "Moved permanently",
+              "The new address in the Location header"
+            ],
+            [
+              "302 / 307",
+              "Moved temporarily",
+              "A sign-in redirect loop between two addresses"
+            ],
+            [
+              "304 Not Modified",
+              "The cached copy is still valid",
+              "Stale content: clear the cache"
+            ],
+            [
+              "400 Bad Request",
+              "Malformed request",
+              "Oversized cookies or headers, a broken client"
+            ],
+            [
+              "401 Unauthorized",
+              "Authentication needed or failed",
+              "Credentials, Kerberos versus NTLM, the site's authentication settings"
+            ],
+            [
+              "403 Forbidden",
+              "Authenticated, but not allowed",
+              "Permissions, an IP restriction, a WAF rule, a folder without a default page"
+            ],
+            [
+              "404 Not Found",
+              "Nothing at this address",
+              "The URL, the site binding, a missing file or route"
+            ],
+            [
+              "405 Method Not Allowed",
+              "Wrong HTTP method",
+              "POST sent where only GET is accepted, WebDAV module"
+            ],
+            [
+              "407 Proxy Authentication Required",
+              "The proxy wants credentials",
+              "Proxy settings and its authentication, the WinHTTP proxy for services"
+            ],
+            [
+              "408 Request Timeout",
+              "The client was too slow to send",
+              "Network latency, a stalled upload"
+            ],
+            [
+              "413 Content Too Large",
+              "Request body too large",
+              "Upload size limits on the server or the proxy"
+            ],
+            [
+              "429 Too Many Requests",
+              "Rate limited",
+              "Retry-After, a script calling too often"
+            ],
+            [
+              "500 Internal Server Error",
+              "The application failed",
+              "Application logs and event logs on the server"
+            ],
+            [
+              "502 Bad Gateway",
+              "Invalid answer from the upstream server",
+              "The application behind the proxy is down or crashed"
+            ],
+            [
+              "503 Service Unavailable",
+              "Server overloaded or stopped",
+              "A stopped IIS application pool, maintenance, overload"
+            ],
+            [
+              "504 Gateway Timeout",
+              "No answer in time from upstream",
+              "A slow backend, a firewall dropping the proxy's traffic"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "smtp-status-codes",
+      "title": "SMTP reply and status codes",
+      "category": "reference",
+      "summary": "The codes mail servers reply with and write into non-delivery reports, with the Exchange Online ones a helpdesk meets most.",
+      "content": [
+        "An SMTP reply starts with three digits: 2xx accepted, 4xx a temporary failure the sender retries on its own, 5xx a permanent failure that produces a non-delivery report. The enhanced status code that follows, such as 5.1.1, gives the reason: the second digit is the subject (1 address, 2 mailbox, 4 routing, 5 protocol, 7 security or policy).",
+        "The non-delivery report names the server that generated the error. When that server is outside the organisation, the fix is on the recipient's side, and the report is the evidence to send them."
+      ],
+      "keyPoints": [
+        "A 4.x.x only means delay: the message stays queued and is retried, usually for up to two days, before a report comes back.",
+        "5.7.x codes are policy: authentication, SPF, DKIM, DMARC, relay or a transport rule.",
+        "Test a server by hand with Test-NetConnection mail.contoso.com -Port 25, or openssl s_client -connect mail.contoso.com:25 -starttls smtp.",
+        "The message trace in the Exchange admin center shows what happened to a message inside Microsoft 365."
+      ],
+      "tables": [
+        {
+          "title": "Basic SMTP replies",
+          "columns": [
+            "Reply",
+            "Meaning"
+          ],
+          "rows": [
+            [
+              "220",
+              "Service ready, the greeting"
+            ],
+            [
+              "250",
+              "Requested action completed"
+            ],
+            [
+              "421",
+              "Service not available, closing the connection"
+            ],
+            [
+              "450 / 451 / 452",
+              "Temporary failure: mailbox busy, local error, insufficient storage"
+            ],
+            [
+              "530",
+              "Authentication required"
+            ],
+            [
+              "535",
+              "Authentication failed"
+            ],
+            [
+              "550",
+              "Mailbox unavailable, or rejected by policy"
+            ],
+            [
+              "552",
+              "Storage allocation exceeded"
+            ],
+            [
+              "553",
+              "Mailbox name not allowed"
+            ],
+            [
+              "554",
+              "Transaction failed"
+            ]
+          ]
+        },
+        {
+          "title": "Exchange Online status codes met most",
+          "columns": [
+            "Code",
+            "Description",
+            "Usual cause"
+          ],
+          "rows": [
+            [
+              "4.4.7",
+              "Message expired",
+              "The receiving server could not be reached before the message expired"
+            ],
+            [
+              "5.1.1",
+              "Bad destination mailbox address",
+              "A mistyped or deleted address, or a stale entry in the Outlook recipient cache"
+            ],
+            [
+              "5.1.8",
+              "Access denied, bad outbound sender",
+              "The account was blocked for sending spam, usually after a compromise"
+            ],
+            [
+              "5.1.10",
+              "Recipient not found",
+              "The SMTP address does not exist in the recipient's organisation"
+            ],
+            [
+              "5.2.2",
+              "Submission quota exceeded",
+              "The sender went over the recipient or message rate limits"
+            ],
+            [
+              "5.4.1",
+              "Relay Access Denied, or recipient address rejected",
+              "The receiving server does not accept mail for that domain, or the address does not exist"
+            ],
+            [
+              "5.7.1",
+              "Delivery not authorized, unable to relay, or client not authenticated",
+              "A restricted group or transport rule, a relay attempt, or missing authentication"
+            ],
+            [
+              "5.7.23",
+              "Rejected because of a Sender Policy Framework violation",
+              "The sending domain's SPF record does not list the server"
+            ],
+            [
+              "5.7.57",
+              "Client was not authenticated to send anonymous mail",
+              "A device or application relaying through smtp.office365.com without valid authentication"
+            ],
+            [
+              "5.7.509",
+              "Sending domain does not pass DMARC verification and has a DMARC policy of reject",
+              "SPF and DKIM do not align with the From domain"
+            ]
+          ]
+        }
+      ]
+    },
     {
       "id": "osi-model",
       "title": "The OSI model",

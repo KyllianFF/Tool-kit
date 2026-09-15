@@ -2830,6 +2830,18 @@
                                          ToolTip="Decode Microsoft Defender Safe Links in a link or a whole e-mail, to see where they lead without opening them.">
                                 <TextBlock Text="Safe Links" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Read the headers of a suspicious e-mail: its route and delays, the sender's addresses, and what SPF, DKIM and DMARC concluded.">
+                                <TextBlock Text="E-mail headers" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Check the MX, SPF, DKIM and DMARC records of a domain, and count the DNS lookups its SPF record needs.">
+                                <TextBlock Text="Mail DNS records" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Decode a certificate, a chain or a certificate request: names, validity, key, purposes and fingerprints.">
+                                <TextBlock Text="Certificates" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
 
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                 <TextBlock Text="GENERATORS" Style="{StaticResource ChoiceGroupTitle}" />
@@ -3271,6 +3283,89 @@
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="SafeLinkOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolMailHeaders" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="E-mail header analyser" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="MailHeaderInput" Height="140" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                                 VerticalContentAlignment="Top" FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste the headers: Outlook, File, Properties, Internet headers, or View message details; Gmail, Show original" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Read as you paste: the route of the message, oldest hop first, how long each server held it, the addresses of the sender, and what SPF, DKIM and DMARC concluded on arrival. Nothing is sent and no link is opened." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="MailHeaderOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolMailDns" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="SPF, DKIM and DMARC checker" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel>
+                                            <TextBlock Text="Domain" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="MailDnsDomain" Width="260" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="contoso.com" />
+                                            <TextBlock Text="DKIM selectors" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="MailDnsSelectors" Width="260" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Optional: the s= of a DKIM-Signature" />
+                                            <Button x:Name="BtnCheckMailDns" Content="Check" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Asks the DNS servers of this machine for the MX, SPF, DMARC and DKIM records of a domain, follows the SPF includes to count their lookups, and says what receivers make of them. The queries leave only when Check is pressed." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="MailDnsOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolCertificates" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Certificate and CSR decoder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="CertificateInput" Height="140" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                                 VerticalContentAlignment="Top" FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste a certificate, a chain or a certificate request, with its -----BEGIN and -----END lines" />
+                                        <WrapPanel>
+                                            <Button x:Name="BtnOpenCertificate" Content="Open a file" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Read as you paste: names, validity, key, purposes and fingerprints of each certificate, and what a request asks for. PEM, DER, .cer, .crt, .csr and .p7b files. A private key pasted by mistake is recognised and never decoded." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="CertificateOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
@@ -3730,7 +3825,7 @@
                     <StackPanel Grid.Row="0" Margin="0,0,0,14">
                         <TextBlock Text="Commands" Style="{StaticResource Heading}" />
                         <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
-                                   Text="Cheat sheets for Git, PowerShell, Bash and Linux administration, and the commands of network equipment grouped by task for each manufacturer. Pick one, or search all of them at once." />
+                                   Text="Cheat sheets for Git, PowerShell, Bash, Linux, Active Directory, the Windows command line, Intune, Microsoft Graph and Exchange Online, OpenSSL, packet capture, Docker, Kubernetes and hypervisors, then the commands of network equipment by manufacturer. Pick one, or search all of them at once." />
                     </StackPanel>
 
                     <Grid Grid.Row="1">
