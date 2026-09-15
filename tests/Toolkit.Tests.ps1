@@ -855,11 +855,14 @@ Describe 'Catalog integrity' {
 
         foreach ($tweak in (Import-TkCatalog -Name 'tweaks').tweaks) {
 
-            $values = ConvertTo-TkArray $tweak.registry
-            $keys   = ConvertTo-TkArray $tweak.registryKeys
-            $services = ConvertTo-TkArray $tweak.services
+            $values       = ConvertTo-TkArray $tweak.registry
+            $keys         = ConvertTo-TkArray $tweak.registryKeys
+            $services     = ConvertTo-TkArray $tweak.services
+            $features     = ConvertTo-TkArray $tweak.optionalFeatures
+            $capabilities = ConvertTo-TkArray $tweak.capabilities
+            $audits       = ConvertTo-TkArray $tweak.auditPolicy
 
-            ($values.Count + $keys.Count + $services.Count) |
+            ($values.Count + $keys.Count + $services.Count + $features.Count + $capabilities.Count + $audits.Count) |
                 Should -BeGreaterThan 0 -Because ('{0} must declare something to change' -f $tweak.id)
 
             foreach ($entry in $values) {
@@ -1016,6 +1019,26 @@ Describe 'Windows reference' {
         @($lockout | Where-Object { $_.Key -eq '4740' }).Count      | Should -Be 1
 
         Find-TkWindowsReference -Query '' | Should -BeNullOrEmpty
+    }
+
+    It 'explains <Code> with the <Group> steps' -TestCases @(
+        @{ Code = '0xC0000005'; Group = 'An application crashed' }
+        @{ Code = '0xE0434352'; Group = 'An application crashed' }
+        @{ Code = '0xC004F074'; Group = 'Volume activation (KMS and MAK)' }
+        @{ Code = '0x80180014'; Group = 'Device enrolment in Intune' }
+    ) {
+        param($Code, $Group)
+
+        $info = Get-TkErrorCodeInfo -Code $Code
+
+        $info.Known     | Should -BeTrue
+        $info.GroupName | Should -Be $Group
+        @($info.Steps).Count | Should -BeGreaterThan 0
+    }
+
+    It 'reads an application crash code as an NTSTATUS' {
+        (Get-TkErrorCodeInfo -Code '0xC0000409').Kind | Should -Be 'NTSTATUS'
+        (Get-TkErrorCodeInfo -Code '-1073740791').Name | Should -Be 'STATUS_STACK_BUFFER_OVERRUN'
     }
 
     It 'keeps the catalogs well formed' {
@@ -1770,6 +1793,144 @@ Describe 'Catalog integrity, extended' {
         @($tweak.registry | ForEach-Object { $_.path }) | Should -Contain 'Registry::HKEY_USERS\.DEFAULT\Control Panel\Keyboard'
         @($tweak.registry | ForEach-Object { $_.path }) | Should -Contain 'HKCU:\Control Panel\Keyboard'
     }
+
+    It 'names features, capabilities and audit subcategories in a form safe for a command line, with both states, and elevates for them' {
+
+        foreach ($tweak in (Import-TkCatalog -Name 'tweaks').tweaks) {
+
+            $features     = ConvertTo-TkArray $tweak.optionalFeatures
+            $capabilities = ConvertTo-TkArray $tweak.capabilities
+            $audits       = ConvertTo-TkArray $tweak.auditPolicy
+
+            foreach ($feature in $features) {
+                Test-TkServicingName -Name $feature.name | Should -BeTrue -Because $tweak.id
+                $feature.state   | Should -BeIn @('Enabled', 'Disabled') -Because $tweak.id
+                $feature.default | Should -BeIn @('Enabled', 'Disabled') -Because $tweak.id
+            }
+
+            foreach ($capability in $capabilities) {
+                Test-TkServicingName -Name $capability.name | Should -BeTrue -Because $tweak.id
+                $capability.state   | Should -BeIn @('Installed', 'NotPresent') -Because $tweak.id
+                $capability.default | Should -BeIn @('Installed', 'NotPresent') -Because $tweak.id
+
+                # Read back without rights, from a file the capability installs.
+                $capability.installedPath | Should -Match '^%SystemRoot%\\' -Because $tweak.id
+            }
+
+            foreach ($audit in $audits) {
+                $audit.subcategory | Should -Match '^\{[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}\}$' -Because $tweak.id
+
+                foreach ($field in @('success', 'failure', 'defaultSuccess', 'defaultFailure')) {
+                    $audit.$field | Should -BeIn @('enable', 'disable') -Because ('{0} {1}' -f $tweak.id, $field)
+                }
+            }
+
+            if (($features.Count + $capabilities.Count + $audits.Count) -gt 0) {
+                $tweak.requiresElevation | Should -BeTrue -Because $tweak.id
+            }
+        }
+    }
+}
+
+Describe 'Tweak engine: optional features, capabilities and audit policy' {
+
+    It 'refuses a servicing name a command line could read as something else' {
+
+        Test-TkServicingName -Name 'OpenSSH.Server~~~~0.0.1.0'         | Should -BeTrue
+        Test-TkServicingName -Name 'Microsoft-Windows-Subsystem-Linux' | Should -BeTrue
+        Test-TkServicingName -Name '-All'                              | Should -BeFalse
+        Test-TkServicingName -Name 'SMB1Protocol; Remove-Item C:\'     | Should -BeFalse
+        Test-TkServicingName -Name ''                                  | Should -BeFalse
+    }
+
+    It 'reads a feature as enabled only when Windows says so, and an absent one as removed' {
+
+        Test-TkOptionalFeatureState -InstallState 1     -Target 'Enabled'  | Should -BeTrue
+        Test-TkOptionalFeatureState -InstallState 2     -Target 'Enabled'  | Should -BeFalse
+        Test-TkOptionalFeatureState -InstallState 2     -Target 'Disabled' | Should -BeTrue
+
+        # Not part of the build, as PowerShell 2.0 is from recent Windows 11.
+        Test-TkOptionalFeatureState -InstallState 3     -Target 'Disabled' | Should -BeTrue
+        Test-TkOptionalFeatureState -InstallState $null -Target 'Disabled' | Should -BeTrue
+        Test-TkOptionalFeatureState -InstallState $null -Target 'Enabled'  | Should -BeFalse
+    }
+
+    It 'decides a feature tweak from the states it is given, and reads it as not applied when they could not be read' {
+
+        $tweak = [pscustomobject] @{
+            id               = 'example'
+            optionalFeatures = @([pscustomobject] @{ name = 'SMB1Protocol'; state = 'Disabled'; default = 'Enabled' })
+        }
+
+        Test-TkTweakApplied -Tweak $tweak -FeatureStates @{ SMB1Protocol = 2 } | Should -BeTrue
+        Test-TkTweakApplied -Tweak $tweak -FeatureStates @{ SMB1Protocol = 1 } | Should -BeFalse
+        Test-TkTweakApplied -Tweak $tweak -FeatureStates $null                | Should -BeFalse
+    }
+
+    It 'counts an audit subcategory as applied when it records at least what the tweak asks' {
+
+        Test-TkAuditSettingState -Setting 1 -Success enable -Failure disable | Should -BeTrue
+        Test-TkAuditSettingState -Setting 3 -Success enable -Failure disable | Should -BeTrue
+        Test-TkAuditSettingState -Setting 2 -Success enable -Failure disable | Should -BeFalse
+        Test-TkAuditSettingState -Setting 1 -Success enable -Failure enable  | Should -BeFalse
+    }
+
+    It 'decides an audit tweak from the policy it is given, and never guesses when the policy is not readable' {
+
+        $guid  = '{0CCE922B-69AE-11D9-BED3-505054503030}'
+        $tweak = [pscustomobject] @{
+            id          = 'example'
+            auditPolicy = @([pscustomobject] @{ subcategory = $guid; name = 'Process Creation'; success = 'enable'; failure = 'disable' })
+        }
+
+        Test-TkTweakApplied -Tweak $tweak -AuditSettings @{ $guid = 1 } | Should -BeTrue
+        Test-TkTweakApplied -Tweak $tweak -AuditSettings @{ $guid = 0 } | Should -BeFalse
+        Test-TkTweakApplied -Tweak $tweak -AuditSettings $null          | Should -BeFalse
+    }
+}
+
+Describe 'Fix helpers' {
+
+    It 'takes the newest Defender platform folder by version, then the copy in Program Files' {
+
+        $platform = Join-Path $TestDrive 'Platform'
+        $program  = Join-Path $TestDrive 'Program Files'
+
+        # As text 4.18.9999 sorts after 4.18.25080; as a version it is older.
+        foreach ($name in @('4.18.24090.11-0', '4.18.25080.5-0', '4.18.9999.1-0')) {
+            New-Item -ItemType File -Path (Join-Path (Join-Path $platform $name) 'MpCmdRun.exe') -Force | Out-Null
+        }
+
+        New-Item -ItemType Directory -Path (Join-Path $platform '4.18.26000.1-0') -Force | Out-Null
+
+        Get-TkMpCmdRunPath -PlatformRoot $platform -ProgramFiles $program |
+            Should -Be (Join-Path (Join-Path $platform '4.18.25080.5-0') 'MpCmdRun.exe')
+
+        $missing = Join-Path $TestDrive 'none'
+
+        Get-TkMpCmdRunPath -PlatformRoot $missing -ProgramFiles $program | Should -BeNullOrEmpty
+
+        New-Item -ItemType File -Path (Join-Path $program 'Windows Defender\MpCmdRun.exe') -Force | Out-Null
+
+        Get-TkMpCmdRunPath -PlatformRoot $missing -ProgramFiles $program | Should -Be (Join-Path $program 'Windows Defender\MpCmdRun.exe')
+    }
+
+    It 'looks for the cache of new and classic Teams in the account folders' {
+
+        $folders = @(Get-TkTeamsCacheFolder -LocalAppData 'C:\Users\jane\AppData\Local' -AppData 'C:\Users\jane\AppData\Roaming')
+
+        $folders.Path | Should -Contain 'C:\Users\jane\AppData\Local\Packages\MSTeams_8wekyb3d8bbwe\LocalCache\Microsoft\MSTeams'
+        $folders.Path | Should -Contain 'C:\Users\jane\AppData\Roaming\Microsoft\Teams'
+    }
+
+    It 'finds OneDrive where it is installed, per user before per machine' {
+
+        $perMachine = Join-Path $TestDrive 'Microsoft OneDrive\OneDrive.exe'
+        New-Item -ItemType File -Path $perMachine -Force | Out-Null
+
+        Get-TkOneDriveExecutable -Candidate @((Join-Path $TestDrive 'missing\OneDrive.exe'), '', $perMachine) | Should -Be $perMachine
+        Get-TkOneDriveExecutable -Candidate @((Join-Path $TestDrive 'missing\OneDrive.exe')) | Should -BeNullOrEmpty
+    }
 }
 
 Describe 'Vendor command catalog' {
@@ -1836,6 +1997,18 @@ Describe 'Vendor command catalog' {
             $sections | Should -Match $expected
         }
     }
+
+    It 'carries the administration cheat sheets after the scripting ones' {
+
+        $ids = @($script:Vendors | ForEach-Object { $_.id })
+
+        foreach ($expected in @('active-directory', 'windows-cmd', 'intune-mdm', 'microsoft-graph-exchange',
+                                'openssl', 'packet-capture', 'docker', 'kubernetes', 'virtualization')) {
+
+            $ids | Should -Contain $expected
+            [array]::IndexOf($ids, $expected) | Should -BeLessThan ([array]::IndexOf($ids, 'aruba-cx')) -Because $expected
+        }
+    }
 }
 
 Describe 'Knowledge base coverage' {
@@ -1873,9 +2046,27 @@ Describe 'Knowledge base coverage' {
         $titles = (@($script:Topics | ForEach-Object { $_.title }) -join ' ')
 
         foreach ($subject in @('OSI', '802.1X', 'Power over Ethernet', 'Quality of service',
-                               'BGP', 'IPv6', 'Certificates', 'DNS', 'VLAN', 'Wi-Fi')) {
+                               'BGP', 'IPv6', 'Certificates', 'DNS', 'VLAN', 'Wi-Fi',
+                               'Group Policy', 'Kerberos', 'Entra', 'recovery', 'WSUS',
+                               'ransomware', 'incident', 'DMARC', 'MFA', 'SIDs',
+                               'HTTP status', 'SMTP')) {
 
             $titles | Should -Match $subject
+        }
+    }
+
+    It 'keeps every table rectangular, each row as long as its columns' {
+
+        foreach ($topic in $script:Topics) {
+
+            foreach ($table in (ConvertTo-TkArray $topic.tables)) {
+
+                $width = @($table.columns).Count
+
+                foreach ($row in @($table.rows)) {
+                    @($row).Count | Should -Be $width -Because ('{0}: {1}' -f $topic.id, $table.title)
+                }
+            }
         }
     }
 }

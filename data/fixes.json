@@ -133,6 +133,127 @@
       "requiresRestart": false,
       "description": "Forces the indexer to rebuild from scratch. Full indexing then runs in the background for a while.",
       "whenToUse": "The Start menu or Outlook search returns nothing for content that clearly exists."
+    },
+    {
+      "id": "reset-proxy",
+      "name": "Reset the proxy settings",
+      "action": "ResetProxySettings",
+      "category": "Network",
+      "risk": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Resets the proxy Windows Update, BITS and the agents use (netsh winhttp reset proxy) and the one applications use, for the account the toolkit runs as, or for the whole machine when the proxy is set per machine. The settings in force are written to the log first. Environment variables are left alone.",
+      "whenToUse": "Pages or updates fail after the machine left a network with a proxy, or a removed security product left one behind. Read the proxy report first: a proxy set by group policy or Intune comes back at the next refresh."
+    },
+    {
+      "id": "purge-kerberos-tickets",
+      "name": "Purge Kerberos tickets and refresh Group Policy",
+      "action": "PurgeKerberosTickets",
+      "category": "Domain",
+      "risk": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Deletes the cached Kerberos tickets of the computer and of the session the toolkit runs in (klist purge), so new ones carry the current group memberships, then applies Group Policy again (gpupdate /force).",
+      "whenToUse": "The computer was just added to a group and still cannot reach a share, or a Group Policy change has not arrived, and a restart is not convenient. For a user added to a group, signing out and in again is still the sure way."
+    },
+    {
+      "id": "resync-time",
+      "name": "Resynchronise the clock",
+      "action": "ResyncTime",
+      "category": "Domain",
+      "risk": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Starts the Windows Time service if it is stopped, then has it resynchronise with its time source (w32tm /resync), rediscovering the sources when the first attempt fails.",
+      "whenToUse": "The clock is minutes off: Kerberos refuses sign-ins beyond five minutes of difference with the domain controller, and certificates look not yet valid or expired."
+    },
+    {
+      "id": "reset-secure-channel",
+      "name": "Reset the secure channel with the domain",
+      "action": "ResetSecureChannel",
+      "category": "Domain",
+      "risk": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Resets the connection this computer keeps with its domain (nltest /sc_reset) with the machine account password it already has. When that password no longer matches Active Directory, it says so: that repair needs a domain account, with Test-ComputerSecureChannel -Repair -Credential in Windows PowerShell 5.1, then a restart.",
+      "whenToUse": "\"The trust relationship between this workstation and the primary domain failed\", or the sign-in and management report shows a broken secure channel while a domain controller answers."
+    },
+    {
+      "id": "repair-wmi-repository",
+      "name": "Repair the WMI repository",
+      "action": "RepairWmiRepository",
+      "category": "Servicing",
+      "risk": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Checks the WMI repository (winmgmt /verifyrepository) and salvages it only when it is inconsistent, keeping what can still be read (winmgmt /salvagerepository). It never resets the repository to its installed state, which Microsoft warns can break installed applications.",
+      "whenToUse": "Inventory, System Information or a management agent reports WMI errors such as Invalid class or 0x80041010, or the reports here come back empty where they read WMI."
+    },
+    {
+      "id": "reset-onedrive",
+      "name": "Reset OneDrive",
+      "action": "ResetOneDrive",
+      "category": "Apps",
+      "risk": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Runs OneDrive's own reset (onedrive.exe /reset) for the account the toolkit runs as: its settings and sync state are rebuilt and every file is synced again, nothing is deleted online. OneDrive is started again when the toolkit is not elevated, since OneDrive refuses to run as administrator.",
+      "whenToUse": "OneDrive is stuck on signing in or on processing changes, or keeps a sync error that restarting it does not clear."
+    },
+    {
+      "id": "clear-teams-cache",
+      "name": "Clear the Microsoft Teams cache",
+      "action": "ClearTeamsCache",
+      "category": "Apps",
+      "risk": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Closes Teams and empties its cache for the account the toolkit runs as, for new and classic Teams. Teams rebuilds it at its next start, which then takes longer than usual.",
+      "whenToUse": "Teams does not start, opens on a blank window, or keeps showing an old account or picture. Not for missing messages, chats or channels: Microsoft notes that clearing the cache does not fix those and deletes the logs needed to find the cause."
+    },
+    {
+      "id": "restart-audio-services",
+      "name": "Restart the audio services",
+      "action": "RestartAudioServices",
+      "category": "Devices",
+      "risk": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Restarts the Windows Audio Endpoint Builder and Windows Audio services.",
+      "whenToUse": "No sound, or no output device listed, after sleep, a driver update or a headset change, while Device Manager shows the device working."
+    },
+    {
+      "id": "restart-bluetooth-service",
+      "name": "Restart the Bluetooth support service",
+      "action": "RestartBluetoothService",
+      "category": "Devices",
+      "risk": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Restarts the Bluetooth Support Service, which discovers and pairs devices.",
+      "whenToUse": "Paired devices no longer connect, or new ones are not found, after sleep or a docking station change."
+    },
+    {
+      "id": "restart-start-menu",
+      "name": "Restart the Start menu and search",
+      "action": "RestartStartMenu",
+      "category": "Shell",
+      "risk": "Low",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "Ends the processes behind Start, search and the notification area. Windows starts them again the next time they are opened.",
+      "whenToUse": "Start or search does not open, or ignores typing, while the rest of the taskbar works. When the whole taskbar is stuck, restart Explorer instead."
+    },
+    {
+      "id": "reset-defender-signatures",
+      "name": "Reload the Microsoft Defender signatures",
+      "action": "ResetDefenderSignatures",
+      "category": "Servicing",
+      "risk": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Removes the security intelligence Defender downloaded dynamically (MpCmdRun -RemoveDefinitions -DynamicSignatures), then downloads the current set again (-SignatureUpdate). The signatures of the last full update keep protecting the machine in between.",
+      "whenToUse": "Security intelligence updates keep failing, or Defender keeps flagging a file after a signature Microsoft has since corrected."
     }
   ]
 }
