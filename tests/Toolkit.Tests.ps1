@@ -4582,6 +4582,238 @@ Describe 'Software lifecycle' {
     }
 }
 
+Describe 'E-mail header analysis' {
+
+    BeforeAll {
+        $script:Headers = @'
+Received: from AM0PR01MB1234.eurprd01.prod.outlook.com (2603:10a6:208:1::10) by
+ AM9PR01MB5678.eurprd01.prod.outlook.com with HTTPS; Tue, 15 Sep 2026 10:05:40
+ +0000
+Authentication-Results: spf=softfail (sender IP is 198.51.100.23)
+ smtp.mailfrom=mailer.example.net; dkim=none (message not signed)
+ header.d=none;dmarc=fail action=quarantine header.from=contoso-bank.com;compauth=fail reason=000
+Received: from mail.example.net (198.51.100.23) by
+ AM0PR01MB1234.mail.protection.outlook.com (10.167.1.10) with Microsoft SMTP Server;
+ Tue, 15 Sep 2026 10:05:38 +0000
+Received: from [192.168.1.20] (unknown [203.0.113.77]) by mail.example.net
+ (Postfix) with ESMTPSA id 4F2; Tue, 15 Sep 2026 08:01:02 +0000 (UTC)
+From: "support@contoso-bank.com" <alerts@mailer.example.net>
+Reply-To: <verify@secure-login.example.org>
+Return-Path: bounce@mailer.example.net
+To: jane.doe@fabrikam.com
+Subject: Your account is locked
+Date: Tue, 15 Sep 2026 10:00:59 +0200
+Message-ID: <abc123@mailer.example.net>
+
+Dear customer, click here.
+'@
+    }
+
+    It 'unfolds continued lines and stops at the body' {
+
+        $fields = @(ConvertFrom-TkMailHeader -Text $script:Headers)
+
+        ($fields | Where-Object Name -eq 'Received').Count | Should -Be 3
+        ($fields | Where-Object Name -eq 'Authentication-Results').Value | Should -Match 'dmarc=fail action=quarantine'
+        @($fields | Where-Object { $_.Value -match 'click here' }).Count | Should -Be 0
+    }
+
+    It 'reads mail dates with their zone, comments and two digit years' {
+
+        $date = ConvertTo-TkMailDate -Text 'Mon, 14 Sep 2026 10:11:12 +0200 (CEST)'
+        $date.Offset.TotalHours | Should -Be 2
+        $date.UtcDateTime       | Should -Be ([datetime]::new(2026, 9, 14, 8, 11, 12))
+
+        (ConvertTo-TkMailDate -Text '1 Sep 26 08:00 GMT').UtcDateTime | Should -Be ([datetime]::new(2026, 9, 1, 8, 0, 0))
+        ConvertTo-TkMailDate -Text 'yesterday' | Should -BeNullOrEmpty
+    }
+
+    It 'orders the route from the oldest hop, with the delay each server added' {
+
+        $report = Get-TkMailHeaderReport -Text $script:Headers
+
+        @($report.Hops).Count     | Should -Be 3
+        $report.Hops[0].By        | Should -Be 'mail.example.net'
+        $report.Hops[0].FromIp    | Should -Be '203.0.113.77'
+        $report.Hops[1].Delay.TotalMinutes | Should -BeGreaterThan 120
+        $report.Hops[2].Delay.TotalSeconds | Should -Be 2
+        $report.OriginatingIp     | Should -Be '203.0.113.77'
+    }
+
+    It 'reads the verdict of the receiving system and names what looks like phishing' {
+
+        $report = Get-TkMailHeaderReport -Text $script:Headers
+
+        $report.Authentication.Spf      | Should -Be 'softfail'
+        $report.Authentication.Dmarc    | Should -Be 'fail'
+        $report.Authentication.MailFrom | Should -Be 'mailer.example.net'
+
+        $warnings = $report.Warnings -join ' | '
+
+        $warnings | Should -Match 'Replies go to verify@secure-login.example.org'
+        $warnings | Should -Match 'display name shows support@contoso-bank.com'
+        $warnings | Should -Match 'DMARC gave fail'
+        $warnings | Should -Match 'held the message 2 h'
+
+        (Format-TkMailHeaderReport -Report $report) -join "`n" | Should -Match 'Route, 3 hop\(s\), oldest first'
+    }
+}
+
+Describe 'Mail DNS records' {
+
+    BeforeAll {
+        $script:Zone = @{
+            'contoso.com|MX'                        = @('10 contoso-com.mail.protection.outlook.com')
+            'contoso.com|TXT'                       = @('MS=ms12345', 'v=spf1 include:spf.protection.outlook.com include:_spf.mailer.example ip4:203.0.113.10 ~all')
+            'spf.protection.outlook.com|TXT'        = @('v=spf1 include:spfa.protection.outlook.com -all')
+            'spfa.protection.outlook.com|TXT'       = @('v=spf1 ip4:40.92.0.0/15 -all')
+            '_spf.mailer.example|TXT'               = @('v=spf1 a mx include:_spf2.mailer.example ?all')
+            '_spf2.mailer.example|TXT'              = @('v=spf1 ip4:198.51.100.0/24 -all')
+            '_dmarc.contoso.com|TXT'                = @('v=DMARC1; p=none; rua=mailto:dmarc@contoso.com')
+            'selector1._domainkey.contoso.com|TXT'  = @(('v=DKIM1; k=rsa; p={0}' -f [Convert]::ToBase64String([byte[]]::new(294))))
+            'selector2._domainkey.contoso.com|TXT'  = @(('v=DKIM1; k=rsa; p={0}' -f [Convert]::ToBase64String([byte[]]::new(162))))
+        }
+
+        $script:FakeResolver = {
+            param($name, $type)
+            $key = '{0}|{1}' -f $name, $type
+            if ($script:Zone.ContainsKey($key)) { $script:Zone[$key] } else { @() }
+        }
+    }
+
+    It 'parses an SPF record and counts the lookups it costs by itself' {
+
+        $spf = ConvertFrom-TkSpfRecord -Text 'v=spf1 ip4:203.0.113.0/24 include:spf.protection.outlook.com mx a:web.contoso.com/24 redirect=_spf.contoso.com -all'
+
+        $spf.Valid        | Should -BeTrue
+        $spf.All          | Should -Be '-'
+        $spf.LocalLookups | Should -Be 4
+        (@($spf.Includes) -join ',') | Should -Be 'spf.protection.outlook.com'
+        $spf.Redirect     | Should -Be '_spf.contoso.com'
+    }
+
+    It 'counts lookups through nested includes, and flags a record over the limit' {
+
+        (Measure-TkSpfLookup -Domain 'contoso.com' -Resolver $script:FakeResolver).Lookups | Should -Be 6
+
+        $deep = @{}
+        foreach ($level in 0..11) { $deep[('l{0}.example|TXT' -f $level)] = @(('v=spf1 include:l{0}.example -all' -f ($level + 1))) }
+        $deepResolver = { param($name, $type) $key = '{0}|{1}' -f $name, $type; if ($deep.ContainsKey($key)) { $deep[$key] } else { @() } }.GetNewClosure()
+
+        (Measure-TkSpfLookup -Domain 'l0.example' -Resolver $deepResolver).Lookups | Should -BeGreaterThan 10
+    }
+
+    It 'reads DMARC policies and estimates DKIM key sizes' {
+
+        $dmarc = ConvertFrom-TkDmarcRecord -Text 'v=DMARC1; p=quarantine; sp=reject; pct=50; rua=mailto:r@contoso.com'
+
+        $dmarc.Valid           | Should -BeTrue
+        $dmarc.Policy          | Should -Be 'quarantine'
+        $dmarc.SubdomainPolicy | Should -Be 'reject'
+        $dmarc.Percent         | Should -Be 50
+
+        (ConvertFrom-TkDkimRecord -Text ('v=DKIM1; k=rsa; p={0}' -f [Convert]::ToBase64String([byte[]]::new(294)))).KeyBits | Should -Be 2048
+        (ConvertFrom-TkDkimRecord -Text 'v=DKIM1; p=').Revoked | Should -BeTrue
+    }
+
+    It 'judges the records of a domain' {
+
+        $report   = Get-TkMailDnsReport -Domain 'Contoso.com.' -Resolver $script:FakeResolver
+        $findings = ($report.Findings | ForEach-Object { '{0}: {1}' -f $_.Severity, $_.Text }) -join ' | '
+
+        $report.Domain     | Should -Be 'contoso.com'
+        $report.SpfLookups | Should -Be 6
+        @($report.Dkim).Count | Should -Be 2
+
+        $findings | Should -Match 'Pass: ~all'
+        $findings | Should -Match 'Warning: DMARC policy none'
+        $findings | Should -Match 'Warning: DKIM selector selector2 has a 1024-bit key'
+        $findings | Should -Match 'Pass: The SPF record needs 6 of the 10'
+
+        (Get-TkMailDnsReport -Domain 'not a domain' -Resolver $script:FakeResolver).Findings[0].Severity | Should -Be 'Fail'
+        (Format-TkMailDnsReport -Report $report) -join "`n" | Should -Match 'DKIM     selector1: RSA, about 2048 bits'
+    }
+}
+
+Describe 'Certificate decoding' {
+
+    BeforeAll {
+        $script:Now = [datetime]::new(2026, 9, 15, 12, 0, 0)
+
+        $key     = [System.Security.Cryptography.RSA]::Create(2048)
+        $request = New-Object System.Security.Cryptography.X509Certificates.CertificateRequest(
+            'CN=www.contoso.com, O=Contoso', $key,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+
+        $names = New-Object System.Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder
+        $names.AddDnsName('www.contoso.com')
+        $names.AddDnsName('contoso.com')
+        $request.CertificateExtensions.Add($names.Build())
+
+        $usages = New-Object System.Security.Cryptography.OidCollection
+        [void] $usages.Add((New-Object System.Security.Cryptography.Oid('1.3.6.1.5.5.7.3.1')))
+        $request.CertificateExtensions.Add((New-Object System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension($usages, $false)))
+
+        $script:CertificateDer = $request.CreateSelfSigned([datetimeoffset]::new(2026, 9, 1, 0, 0, 0, [timespan]::Zero), [datetimeoffset]::new(2026, 12, 1, 0, 0, 0, [timespan]::Zero)).RawData
+        $script:RequestDer     = $request.CreateSigningRequest()
+
+        $script:Pem = {
+            param($label, $bytes)
+            "-----BEGIN $label-----`n" + ([Convert]::ToBase64String($bytes) -replace '(.{64})', "`$1`n") + "`n-----END $label-----"
+        }
+    }
+
+    It 'finds every PEM block of a chain' {
+
+        $text   = (& $script:Pem 'CERTIFICATE' $script:CertificateDer) + "`n" + (& $script:Pem 'CERTIFICATE' $script:CertificateDer)
+        $blocks = @(Split-TkPemBlock -Text $text)
+
+        $blocks.Count    | Should -Be 2
+        $blocks[0].Label | Should -Be 'CERTIFICATE'
+        $blocks[0].Bytes.Length | Should -Be $script:CertificateDer.Length
+    }
+
+    It 'describes a certificate: names, key, purposes, validity and fingerprints' {
+
+        $info = @(Get-TkCertificateItem -Text (& $script:Pem 'CERTIFICATE' $script:CertificateDer) -Now $script:Now)[0]
+
+        $info.Kind             | Should -Be 'Certificate'
+        (@($info.SubjectAltNames) -join ',')  | Should -Be 'www.contoso.com,contoso.com'
+        $info.KeyAlgorithm     | Should -Be 'RSA'
+        $info.KeySize          | Should -Be 2048
+        (@($info.EnhancedKeyUsage) -join ',') | Should -Be 'Server authentication'
+        $info.DaysRemaining    | Should -Be 76
+        $info.Status           | Should -Be 'Valid'
+        $info.SelfSigned       | Should -BeTrue
+        $info.Sha256           | Should -Match '^[0-9A-F]{64}$'
+
+        (Get-TkCertificateItem -Text (& $script:Pem 'CERTIFICATE' $script:CertificateDer) -Now ([datetime]::new(2027, 1, 1)))[0].Status | Should -Be 'Expired'
+    }
+
+    It 'decodes a certificate request with the names it asks for' {
+
+        $info = @(Get-TkCertificateItem -Text (& $script:Pem 'CERTIFICATE REQUEST' $script:RequestDer))[0]
+
+        $info.Kind            | Should -Be 'Request'
+        $info.Subject         | Should -Match 'CN=www.contoso.com'
+        $info.KeySize         | Should -Be 2048
+        (@($info.SubjectAltNames) -join ',') | Should -Be 'www.contoso.com,contoso.com'
+    }
+
+    It 'reads a DER file, and never decodes a private key' {
+
+        @(Get-TkCertificateItem -Bytes $script:CertificateDer -Now $script:Now)[0].Kind | Should -Be 'Certificate'
+
+        $key = @(Get-TkCertificateItem -Text "-----BEGIN PRIVATE KEY-----`nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC`n-----END PRIVATE KEY-----")[0]
+
+        $key.Kind     | Should -Be 'PrivateKey'
+        $key.Warnings | Should -Match 'not decoded'
+
+        (Format-TkCertificateItem -Item @(Get-TkCertificateItem -Bytes $script:CertificateDer -Now $script:Now)) -join "`n" | Should -Match 'Names        www.contoso.com, contoso.com'
+    }
+}
+
 Describe 'Tools page' {
 
     BeforeAll {
