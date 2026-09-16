@@ -2365,6 +2365,10 @@
                                             <TextBlock Text="Storage health" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Where the space went: how full each drive is, the biggest folders and files on the system drive, and the caches safe to empty, each with its size. Nothing is deleted.">
+                                            <TextBlock Text="Disk space" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="What uses the processor, memory and disks right now, the programs that start with Windows, and how long start up takes and what slows it.">
                                             <TextBlock Text="Performance" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>

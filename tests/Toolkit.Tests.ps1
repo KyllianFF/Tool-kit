@@ -5020,6 +5020,54 @@ Describe 'Administration decoders' {
     }
 }
 
+Describe 'Disk space' {
+
+    BeforeAll {
+        $script:DiskRoot = Join-Path $TestDrive 'tree'
+        New-Item -ItemType Directory -Path (Join-Path $script:DiskRoot 'big\sub') -Force | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $script:DiskRoot 'small') -Force | Out-Null
+
+        [System.IO.File]::WriteAllBytes((Join-Path $script:DiskRoot 'big\huge.bin'),     (New-Object byte[] (300KB)))
+        [System.IO.File]::WriteAllBytes((Join-Path $script:DiskRoot 'big\sub\mid.bin'),  (New-Object byte[] (100KB)))
+        [System.IO.File]::WriteAllBytes((Join-Path $script:DiskRoot 'small\tiny.bin'),   (New-Object byte[] (20KB)))
+        [System.IO.File]::WriteAllBytes((Join-Path $script:DiskRoot 'loose.bin'),        (New-Object byte[] (10KB)))
+    }
+
+    It 'adds up a tree and returns zero for a missing path' {
+        Measure-TkPathSize -Path $script:DiskRoot | Should -BeGreaterThan (420KB - 1)
+        Measure-TkPathSize -Path (Join-Path $script:DiskRoot 'does-not-exist') | Should -Be 0
+    }
+
+    It 'finds the biggest folder and file, and attributes loose files to the root' {
+
+        $scan = Get-TkDiskUsageScan -Path $script:DiskRoot -TopFolders 5 -TopFiles 3
+
+        $scan.Folders[0].Name  | Should -Be 'big'
+        $scan.Folders[0].Bytes | Should -Be (400KB)
+        $scan.Files[0].Path    | Should -Match 'huge\.bin'
+        @($scan.Folders | Where-Object { $_.Name -eq '(files in the root)' }).Count | Should -Be 1
+        @($scan.Files).Count   | Should -Be 3
+    }
+
+    It 'lists cleanup candidates with their sizes, from injected base folders' {
+
+        $candidates = Get-TkCleanupCandidate -LocalAppData $script:DiskRoot -WindowsDir $script:DiskRoot `
+            -ProgramData $script:DiskRoot -SystemDrive $script:DiskRoot -Temp (Join-Path $script:DiskRoot 'big')
+
+        (@($candidates | Where-Object { $_.Name -eq 'Your temporary files' })[0]).Bytes  | Should -Be (400KB)
+        (@($candidates | Where-Object { $_.Name -eq 'Windows.old' })[0]).Exists           | Should -BeFalse
+    }
+
+    It 'reports the fixed drives with a total and a valid severity' {
+
+        $drives = @(Get-TkDriveSpace)
+
+        $drives.Count             | Should -BeGreaterThan 0
+        $drives[0].TotalBytes     | Should -BeGreaterThan 0
+        $drives[0].Severity       | Should -BeIn @('Pass', 'Warning', 'Fail')
+    }
+}
+
 Describe 'Tools page' {
 
     BeforeAll {

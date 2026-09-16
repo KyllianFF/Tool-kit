@@ -154,6 +154,7 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Full check';          Show = 'Invoke-TkDiagnosticOverview' }
         [pscustomobject] @{ Title = 'Pending reboot';      Show = 'Show-TkRebootStatus' }
         [pscustomobject] @{ Title = 'Storage health';      Show = 'Show-TkStorageHealth' }
+        [pscustomobject] @{ Title = 'Disk space';          Show = 'Show-TkDiskSpaceReport' }
         [pscustomobject] @{ Title = 'Performance';         Show = 'Show-TkPerformanceReport' }
         [pscustomobject] @{ Title = 'Devices';             Show = 'Show-TkDeviceReport' }
         [pscustomobject] @{ Title = 'Crashes';             Show = 'Show-TkStabilityReport' }
@@ -255,6 +256,100 @@ function Show-TkRebootStatus {
 
             foreach ($reason in $status.Reasons) {
                 Add-TkSeverityLine -Document $document -Severity 'Info' -Heading $reason
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows where the disk space went: drive fill, the biggest folders and files,
+    and the caches safe to empty.
+#>
+function Show-TkDiskSpaceReport {
+    [CmdletBinding()]
+    param()
+
+    # Overridable so a test or an off-screen render can point the scan at a
+    # small folder instead of the whole system drive.
+    $root = if ($script:TkDiskSpaceRoot) { $script:TkDiskSpaceRoot } else { '{0}\' -f $env:SystemDrive }
+
+    Invoke-TkBackgroundAction -StatusText ('Scanning {0} for the biggest folders and files, this can take a minute...' -f $root) `
+        -ArgumentList @($root) `
+        -ScriptBlock {
+            param($scanRoot)
+
+            [pscustomobject] @{
+                Drives  = @(Get-TkDriveSpace)
+                Usage   = Get-TkDiskUsageScan -Path $scanRoot -TopFolders 15 -TopFiles 20
+                Cleanup = @(Get-TkCleanupCandidate)
+            }
+        } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Usage'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'disk-space' -Data $report
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Disk space' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '"The disk is full" has an answer once it is split up: how full each drive is, which folders and files hold the most, and the caches that are safe to empty. The scan only reads sizes and follows no junctions; nothing here is deleted.'
+            )
+
+            # --- Drives -------------------------------------------------------
+            foreach ($drive in @($report.Drives)) {
+                Add-TkSeverityLine -Document $document -Severity $drive.Severity `
+                    -Heading ('Drive {0}{1}' -f $drive.Name, $(if ($drive.Label) { ' ({0})' -f $drive.Label } else { '' })) `
+                    -Detail ('{0} free of {1}' -f (Format-TkBytes -Bytes $drive.FreeBytes), (Format-TkBytes -Bytes $drive.TotalBytes)) `
+                    -Note ('{0}% free, {1} used.' -f $drive.FreePercent, (Format-TkBytes -Bytes $drive.UsedBytes))
+            }
+
+            # --- Biggest folders ---------------------------------------------
+            $folders = @($report.Usage.Folders)
+
+            if ($folders.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text ('Biggest folders on {0}' -f $report.Usage.Root) -Level 2
+
+                Add-TkTable -Document $document -Column @('Folder', 'Size') -Weight @(3.5, 1.0) `
+                    -Row @($folders | ForEach-Object { , @($_.Name, (Format-TkBytes -Bytes $_.Bytes)) })
+            }
+
+            # --- Biggest files -----------------------------------------------
+            $files = @($report.Usage.Files)
+
+            if ($files.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Biggest files' -Level 2
+
+                Add-TkTable -Document $document -Column @('File', 'Size') -Weight @(3.5, 1.0) `
+                    -Row @($files | ForEach-Object { , @($_.Path, (Format-TkBytes -Bytes $_.Bytes)) })
+            }
+
+            # --- Safe to clean up --------------------------------------------
+            $cleanup     = @($report.Cleanup | Where-Object { $_.Exists -and $_.Bytes -gt 0 } | Sort-Object -Property Bytes -Descending)
+            $reclaimable = ($cleanup | Measure-Object -Property Bytes -Sum).Sum
+
+            Add-TkHeading -Document $document -Text 'Safe to clean up' -Level 2
+
+            if ($cleanup.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'The usual caches are already empty or missing'
+            }
+            else {
+                Add-TkParagraph -Document $document -Muted -Text (
+                    'About {0} could be freed. Nothing was deleted: empty these with Storage Sense or Disk Cleanup, or by hand once you have checked them. Emptying a system location needs administrator rights.' -f (Format-TkBytes -Bytes $reclaimable)
+                )
+
+                Add-TkTable -Document $document -Column @('Location', 'Size', 'What it is') -Weight @(1.6, 0.7, 2.7) `
+                    -Row @($cleanup | ForEach-Object { , @($_.Name, (Format-TkBytes -Bytes $_.Bytes), (('{0} {1}' -f $(if ($_.Scope -eq 'System') { '(admin)' } else { '' }), $_.Note)).Trim()) })
             }
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
