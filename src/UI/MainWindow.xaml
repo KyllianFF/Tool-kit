@@ -2732,7 +2732,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Style="{StaticResource Muted}" Margin="0,0,0,12"
-                                           Text="Four read only investigations. Nothing here changes the machine, which is what makes them safe to run first on a system whose state you do not want to disturb. Event triage needs an elevated instance, because the Security log is not readable otherwise." />
+                                           Text="Eight read only investigations. Nothing here changes the machine, which is what makes them safe to run first on a system whose state you do not want to disturb. Some read what only an administrator can: event triage needs the Security log, USB times and incoming Remote Desktop need an elevated instance too." />
 
                                 <DockPanel Grid.Row="1" Grid.Column="0" Margin="0,0,16,0" LastChildFill="True">
                                     <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
@@ -2763,6 +2763,22 @@
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Machine and user stores: expiry, SHA-1, weak keys.">
                                             <TextBlock Text="Certificate inventory" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Every USB storage device ever connected, with its serial and, when elevated, when it was last plugged in.">
+                                            <TextBlock Text="USB history" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Who connected in with Remote Desktop and from which address, and the servers this account connected out to.">
+                                            <TextBlock Text="Remote Desktop history" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="The extensions in Chrome, Edge, Brave and Firefox, with the permissions that reach the most flagged.">
+                                            <TextBlock Text="Browser extensions" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="What Windows Defender has caught, with each threat named and what was done about it.">
+                                            <TextBlock Text="Defender detections" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                     </ListBox>
                                 </DockPanel>

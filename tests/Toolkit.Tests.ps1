@@ -5068,6 +5068,102 @@ Describe 'Disk space' {
     }
 }
 
+Describe 'Threat hunting history' {
+
+    Context 'USB and FILETIME' {
+
+        It 'reads the vendor, product and revision from a USBSTOR key name' {
+            $id = ConvertFrom-TkUsbStorId -KeyName 'Disk&Ven_SanDisk&Prod_Ultra_USB_3.0&Rev_1.00'
+            $id.Vendor   | Should -Be 'SanDisk'
+            $id.Product  | Should -Be 'Ultra USB 3.0'
+            $id.Revision | Should -Be '1.00'
+        }
+
+        It 'round-trips a FILETIME and rejects empty or zero bytes' {
+            $when  = [datetime]::new(2026, 9, 16, 12, 0, 0, [System.DateTimeKind]::Utc)
+            $bytes = [System.BitConverter]::GetBytes($when.ToFileTimeUtc())
+            (ConvertFrom-TkFileTimeBytes -Bytes $bytes) | Should -Be $when
+            ConvertFrom-TkFileTimeBytes -Bytes $null | Should -BeNullOrEmpty
+            ConvertFrom-TkFileTimeBytes -Bytes (New-Object byte[] 8) | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Remote Desktop' {
+
+        It 'reads user, domain and source address from a 1149 event' {
+            $event = [pscustomobject] @{
+                TimeCreated = [datetime]::new(2026, 9, 16, 14, 30, 0)
+                Properties  = @([pscustomobject] @{ Value = 'alice' }, [pscustomobject] @{ Value = 'CONTOSO' }, [pscustomobject] @{ Value = '203.0.113.5' })
+            }
+            $record = ConvertFrom-TkRdpLogonEvent -LogEvent $event
+            $record.User     | Should -Be 'alice'
+            $record.Domain   | Should -Be 'CONTOSO'
+            $record.SourceIp | Should -Be '203.0.113.5'
+        }
+    }
+
+    Context 'Browser extensions' {
+
+        It 'flags the far-reaching permissions and ignores the harmless ones' {
+            $risk = @(Get-TkExtensionPermissionRisk -Permissions @('storage', 'alarms', 'tabs', '<all_urls>', 'nativeMessaging'))
+            ($risk -join '|') | Should -Match 'reads the pages you open'
+            ($risk -join '|') | Should -Match 'every website'
+            ($risk -join '|') | Should -Match 'talks to a program'
+            @(Get-TkExtensionPermissionRisk -Permissions @('storage', 'alarms')).Count | Should -Be 0
+        }
+
+        It 'resolves a __MSG__ name and merges the permission lists of a Chrome manifest' {
+            $manifest = '{"name":"__MSG_appName__","version":"2.1","default_locale":"en","permissions":["tabs"],"host_permissions":["<all_urls>"]}' | ConvertFrom-Json
+            $messages = '{"appName":{"message":"Ad Blocker Pro"}}' | ConvertFrom-Json
+            $info = ConvertFrom-TkChromeExtensionManifest -Manifest $manifest -LocaleMessages $messages
+            $info.Name | Should -Be 'Ad Blocker Pro'
+            (@($info.Permissions) -join ',') | Should -Be 'tabs,<all_urls>'
+        }
+
+        It 'reads a Firefox add-on and skips a built-in one' {
+            $addon = '{"type":"extension","id":"e@x","version":"3.0","location":"app-profile","userDisabled":false,"defaultLocale":{"name":"Cookie Manager"},"userPermissions":{"permissions":["cookies"],"origins":["*://*/*"]}}' | ConvertFrom-Json
+            $info = ConvertFrom-TkFirefoxExtension -Addon $addon
+            $info.Name    | Should -Be 'Cookie Manager'
+            $info.Enabled | Should -BeTrue
+            ConvertFrom-TkFirefoxExtension -Addon ('{"type":"extension","location":"app-builtin","id":"b"}' | ConvertFrom-Json) | Should -BeNullOrEmpty
+        }
+
+        It 'reads the extensions from a sample browser tree' {
+            $base = Join-Path $TestDrive 'browsers'
+            $chrome = Join-Path $base 'Google\Chrome\User Data\Default\Extensions\abcdefghijklmnopabcdefghijklmnop\2.1_0'
+            New-Item -ItemType Directory -Path (Join-Path $chrome '_locales\en') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $chrome 'manifest.json') -Value '{"name":"__MSG_appName__","version":"2.1","default_locale":"en","permissions":["tabs"],"host_permissions":["<all_urls>"]}'
+            Set-Content -LiteralPath (Join-Path $chrome '_locales\en\messages.json') -Value '{"appName":{"message":"Ad Blocker Pro"}}'
+
+            $extensions = @(Get-TkBrowserExtension -LocalAppData $base -AppData $base)
+            $extensions.Count | Should -Be 1
+            $extensions[0].Browser          | Should -Be 'Chrome'
+            $extensions[0].Name             | Should -Be 'Ad Blocker Pro'
+            @($extensions[0].RiskyPermissions).Count | Should -BeGreaterThan 0
+        }
+    }
+
+    Context 'Defender detections' {
+
+        It 'names the severity of a threat' {
+            (Get-TkDefenderSeverityName -Value 5).Name     | Should -Be 'Severe'
+            (Get-TkDefenderSeverityName -Value 5).Severity | Should -Be 'Fail'
+            (Get-TkDefenderSeverityName -Value 1).Name     | Should -Be 'Low'
+        }
+
+        It 'names a detection from the catalog and cleans the resource paths' {
+            $detection = [pscustomobject] @{ ThreatID = '2147'; InitialDetectionTime = [datetime]::new(2026, 9, 10, 9, 0, 0); Resources = @('file:_C:\temp\evil.exe', 'containerfile:_C:\temp\a.zip'); CleaningActionID = 2; ActionSuccess = $true }
+            $catalog   = @{ '2147' = [pscustomobject] @{ ThreatName = 'Trojan:Win32/Test'; SeverityID = 5 } }
+
+            $record = ConvertFrom-TkDefenderDetection -Detection $detection -Catalog $catalog
+            $record.ThreatName | Should -Be 'Trojan:Win32/Test'
+            $record.Severity   | Should -Be 'Fail'
+            $record.Action     | Should -Be 'Quarantine'
+            (@($record.Resources) -join ';') | Should -Be 'C:\temp\evil.exe;C:\temp\a.zip'
+        }
+    }
+}
+
 Describe 'Tools page' {
 
     BeforeAll {

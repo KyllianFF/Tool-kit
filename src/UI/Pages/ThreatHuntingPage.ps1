@@ -33,6 +33,10 @@ function Initialize-TkThreatHuntingPage {
                 1 { Invoke-TkPersistenceFromUi           ; break }
                 2 { Invoke-TkExposureFromUi              ; break }
                 3 { Invoke-TkCertificateInventoryFromUi  ; break }
+                4 { Invoke-TkUsbHistoryFromUi            ; break }
+                5 { Invoke-TkRdpHistoryFromUi            ; break }
+                6 { Invoke-TkBrowserExtensionFromUi      ; break }
+                7 { Invoke-TkDefenderHistoryFromUi       ; break }
             }
         })
     }
@@ -480,6 +484,230 @@ function Invoke-TkEndpointCertificateFromUi {
 
             Set-TkDocument -ControlName 'HuntOutput' -Document $document
             Set-TkStatus -Text ('{0} endpoint(s) checked.' -f $rows.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Lists the USB storage devices that have been connected, and renders it.
+#>
+function Invoke-TkUsbHistoryFromUi {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the USB storage history...' `
+        -ScriptBlock { Get-TkUsbHistory } `
+        -OnComplete {
+            param($result)
+
+            $rows = @($result.Output)
+
+            $script:TkLastHuntReport = $rows
+            $script:TkLastHuntName   = 'usb-history'
+
+            $localTime = { param($value) if ($value) { ([datetime] $value).ToLocalTime().ToString('yyyy-MM-dd HH:mm', [System.Globalization.CultureInfo]::InvariantCulture) } else { '-' } }
+            $withTimes = @($rows | Where-Object { $_.LastConnected })
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'USB storage history' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '{0} USB storage device(s) have been connected to this machine, from the record Windows keeps in USBSTOR. The connect and remove times are readable only with administrator rights, so they are blank when this runs as a standard user.' -f $rows.Count
+            )
+
+            if ($rows.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Info' -Heading 'No USB storage device is on record'
+            }
+            else {
+
+                if ($withTimes.Count -eq 0) {
+                    Add-TkSeverityLine -Document $document -Severity 'Info' `
+                        -Heading 'Connect times are not shown' `
+                        -Note 'They need administrator rights to read. Restart as administrator to see when each device was last plugged in.'
+                }
+
+                Add-TkTable -Document $document -Column @('Device', 'Serial', 'Last connected', 'First connected') `
+                    -Weight @(2.4, 1.6, 1.0, 1.0) `
+                    -Row @($rows | ForEach-Object {
+                        $label = if ($_.FriendlyName) { $_.FriendlyName } else { (('{0} {1}' -f $_.Vendor, $_.Product)).Trim() }
+                        , @($label, $_.Serial, (& $localTime $_.LastConnected), (& $localTime $_.FirstConnected))
+                    })
+            }
+
+            Set-TkDocument -ControlName 'HuntOutput' -Document $document
+            Set-TkStatus -Text ('{0} USB storage device(s) on record.' -f $rows.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows Remote Desktop history, incoming and outgoing, and renders it.
+#>
+function Invoke-TkRdpHistoryFromUi {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the Remote Desktop history...' `
+        -ScriptBlock { Get-TkRdpHistory -Days 30 } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Incoming'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            $script:TkLastHuntReport = $report
+            $script:TkLastHuntName   = 'rdp-history'
+
+            $incoming = @($report.Incoming)
+            $outgoing = @($report.Outgoing)
+            $eventTime = { param($value) if ($value) { ([datetime] $value).ToString('yyyy-MM-dd HH:mm', [System.Globalization.CultureInfo]::InvariantCulture) } else { '-' } }
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Remote Desktop history' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                'Two directions: who connected in with Remote Desktop and from which address, read from the Terminal Services log (administrator rights, and the log must be on), and the servers this account connected out to, read from your own registry.'
+            )
+
+            Add-TkHeading -Document $document -Text 'Incoming connections (last 30 days)' -Level 2
+
+            if ($incoming.Count -gt 0) {
+                Add-TkTable -Document $document -Column @('When', 'User', 'Domain', 'From address') `
+                    -Weight @(1.2, 1.4, 1.0, 1.4) `
+                    -Row @($incoming | ForEach-Object { , @((& $eventTime $_.Time), $_.User, $_.Domain, $_.SourceIp) })
+            }
+            else {
+                Add-TkSeverityLine -Document $document -Severity 'Info' `
+                    -Heading 'No incoming connection recorded' `
+                    -Note 'Either none happened, or the log could not be read without administrator rights.'
+            }
+
+            Add-TkHeading -Document $document -Text 'Servers this account connected to' -Level 2
+
+            if ($outgoing.Count -gt 0) {
+                Add-TkTable -Document $document -Column @('Server', 'Signed in as') -Weight @(2.0, 2.0) `
+                    -Row @($outgoing | ForEach-Object { , @($_.Server, $_.UsernameHint) })
+            }
+            else {
+                Add-TkParagraph -Document $document -Muted -Text 'None on record for this account.'
+            }
+
+            Set-TkDocument -ControlName 'HuntOutput' -Document $document
+            Set-TkStatus -Text ('{0} incoming, {1} outgoing Remote Desktop record(s).' -f $incoming.Count, $outgoing.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Lists the browser extensions and flags the far-reaching ones, and renders it.
+#>
+function Invoke-TkBrowserExtensionFromUi {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the browser extensions...' `
+        -ScriptBlock { Get-TkBrowserExtension } `
+        -OnComplete {
+            param($result)
+
+            $rows = @($result.Output)
+
+            $script:TkLastHuntReport = $rows
+            $script:TkLastHuntName   = 'browser-extensions'
+
+            $risky = @($rows | Where-Object { @($_.RiskyPermissions).Count -gt 0 })
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Browser extensions' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '{0} extension(s) across Chrome, Edge, Brave and Firefox for this user. An extension can be as powerful as an installed program: the ones that can read every page, watch your traffic or talk to the machine are listed first.' -f $rows.Count
+            )
+
+            if ($risky.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Worth a look first' -Level 2
+
+                foreach ($extension in $risky) {
+                    Add-TkSeverityLine -Document $document -Severity 'Warning' `
+                        -Heading ('{0}: {1}' -f $extension.Browser, $extension.Name) `
+                        -Detail ('v{0}' -f $extension.Version) `
+                        -Note ('It {0}.' -f ((@($extension.RiskyPermissions)) -join ', '))
+                }
+            }
+            elseif ($rows.Count -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' `
+                    -Heading 'No extension asks for a far-reaching permission'
+            }
+
+            Add-TkHeading -Document $document -Text 'All extensions' -Level 2
+
+            if ($rows.Count -gt 0) {
+                Add-TkTable -Document $document -Column @('Browser', 'Name', 'Version', 'State', 'Reach') `
+                    -Weight @(0.8, 2.4, 0.7, 0.6, 0.8) `
+                    -Row @($rows | ForEach-Object {
+                        , @($_.Browser, $_.Name, $_.Version,
+                            $(if ($_.Enabled) { 'On' } else { 'Off' }),
+                            $(if (@($_.RiskyPermissions).Count -gt 0) { 'broad' } else { 'limited' }))
+                    })
+            }
+            else {
+                Add-TkParagraph -Document $document -Muted -Text 'No browser extensions were found for this user.'
+            }
+
+            Set-TkDocument -ControlName 'HuntOutput' -Document $document
+            Set-TkStatus -Text ('{0} extension(s), {1} far-reaching.' -f $rows.Count, $risky.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows what Windows Defender has caught, and renders it.
+#>
+function Invoke-TkDefenderHistoryFromUi {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the Windows Defender detection history...' `
+        -ScriptBlock { Get-TkDefenderDetectionHistory -Days 90 } `
+        -OnComplete {
+            param($result)
+
+            $rows = @($result.Output)
+
+            $script:TkLastHuntReport = $rows
+            $script:TkLastHuntName   = 'defender-detections'
+
+            $eventTime = { param($value) if ($value) { ([datetime] $value).ToString('yyyy-MM-dd HH:mm', [System.Globalization.CultureInfo]::InvariantCulture) } else { '-' } }
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading -Document $document -Text 'Windows Defender detections' -Level 1
+
+            if ($rows.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' `
+                    -Heading 'No detection in the last 90 days' `
+                    -Note 'Either nothing was caught, or Windows Defender is not the antivirus on this machine, in which case it keeps no history to read.'
+            }
+            else {
+
+                Add-TkParagraph -Document $document -Muted -Text (
+                    '{0} detection(s) in the last 90 days, newest first, each with what Defender did about it. A detection means it was caught, not that the machine is still infected.' -f $rows.Count
+                )
+
+                foreach ($detection in $rows) {
+                    Add-TkSeverityLine -Document $document -Severity $detection.Severity `
+                        -Heading $detection.ThreatName `
+                        -Detail ('{0} - {1}' -f $detection.SeverityName, $detection.Action) `
+                        -Note (('{0}: {1}' -f (& $eventTime $detection.Time), ((@($detection.Resources)) -join '; '))).Trim(': ')
+                }
+            }
+
+            Set-TkDocument -ControlName 'HuntOutput' -Document $document
+            Set-TkStatus -Text ('{0} Defender detection(s) in the last 90 days.' -f $rows.Count)
         }
 }
 
