@@ -4941,6 +4941,11 @@ Describe 'Administration decoders' {
                 Should -Be 'robocopy "C:\Data Files" \\srv\bk /MIR /MT:16 /R:2 /W:5'
         }
 
+        It 'adds a log file, excluded files and no progress' {
+            Build-TkRobocopyCommand -Source 'C:\A' -Destination 'D:\B' -Options @{ EmptyDirectories = $true; ExcludeFiles = @('*.tmp'); NoProgress = $true; Log = 'C:\Logs\b.log' } |
+                Should -Be 'robocopy C:\A D:\B /E /XF *.tmp /LOG:C:\Logs\b.log /TEE /NP'
+        }
+
         It 'reads an exit code as a bitmask, not a rank' {
 
             $three = ConvertFrom-TkRobocopyExitCode -Code 3
@@ -4950,6 +4955,31 @@ Describe 'Administration decoders' {
             $sixteen = ConvertFrom-TkRobocopyExitCode -Code 16
             $sixteen.Success | Should -BeFalse
             (@($sixteen.Meanings) -join ' ') | Should -Match 'fatal'
+        }
+    }
+
+    Context 'dsacls delegation' {
+
+        It 'builds a full-control grant reaching all children' {
+            $rights = & (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Full control').Build ''
+            Build-TkDsaclsCommand -ObjectDn 'OU=Sales,DC=contoso,DC=com' -Trustee 'CONTOSO\OU-Admins' -Rights $rights -Inheritance 'T' |
+                Should -Be 'dsacls "OU=Sales,DC=contoso,DC=com" /I:T /G "CONTOSO\OU-Admins:GA"'
+        }
+
+        It 'builds a reset-password delegation on user objects' {
+            $rights = & (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Reset passwords').Build 'user'
+            Build-TkDsaclsCommand -ObjectDn 'OU=Staff,DC=contoso,DC=com' -Trustee 'CONTOSO\Helpdesk' -Rights $rights -Inheritance 'S' |
+                Should -Be 'dsacls "OU=Staff,DC=contoso,DC=com" /I:S /G "CONTOSO\Helpdesk:CA;Reset Password;user"'
+        }
+
+        It 'maps create-and-delete to the child object type, and leaves it out for all objects' {
+            (& (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Create and delete child objects').Build 'computer') | Should -Be 'CCDC;computer'
+            (& (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Create and delete child objects').Build '')         | Should -Be 'CCDC'
+        }
+
+        It 'denies with /D instead of /G' {
+            Build-TkDsaclsCommand -ObjectDn 'OU=Staff,DC=contoso,DC=com' -Trustee 'CONTOSO\HR' -Rights 'RPWP;;user' -Inheritance 'S' -Deny |
+                Should -Match '/D "CONTOSO\\HR:RPWP;;user"'
         }
     }
 

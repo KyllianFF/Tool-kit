@@ -1140,7 +1140,8 @@ function Format-TkTransferReport {
 .PARAMETER Options
     A hashtable of switches: Mirror, Subdirectories, EmptyDirectories,
     Restartable, Backup, CopyAll, ExcludeOlder, ExcludeChanged, Purge,
-    Move, ListOnly, Threads, Retries, Wait, ExcludeDirs, Log.
+    Move, ListOnly, NoProgress, Threads, Retries, Wait, ExcludeFiles,
+    ExcludeDirs, Log.
 
 .OUTPUTS
     System.String
@@ -1196,6 +1197,15 @@ function Build-TkRobocopyCommand {
 
     if ($Options.ContainsKey('Wait')) {
         $parts.Add('/W:{0}' -f [int] $Options.Wait)
+    }
+
+    if ($Options.ExcludeFiles) {
+        foreach ($file in @($Options.ExcludeFiles)) {
+            if (([string] $file).Trim()) {
+                $parts.Add('/XF')
+                $parts.Add((& $quote $file))
+            }
+        }
     }
 
     if ($Options.ExcludeDirs) {
@@ -1360,6 +1370,148 @@ function Build-TkSchtasksCommand {
     if ($Options.Force) {
         $parts.Add('/f')
     }
+
+    return ($parts -join ' ')
+}
+
+# ---------------------------------------------------------------------------
+# dsacls: delegating control on directory objects
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    The delegation tasks the dsacls builder offers, and how each maps to a
+    dsacls rights string.
+
+.DESCRIPTION
+    Each preset knows the dsacls permission letters it needs and where the
+    object type belongs in the rights string, since that differs by task: for
+    create and delete the type is the child object to make, for a property or an
+    extended right it is the class the entry is inherited to. The Build script
+    turns a chosen object type into the finished rights string, the part that
+    follows the trustee and a colon.
+
+.OUTPUTS
+    PSCustomObject[] with Label, Description, UsesObjectType, DefaultInheritance
+    and a Build script.
+#>
+function Get-TkDsaclsPreset {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    $preset = {
+        param($label, $description, $usesType, $inheritance, $build)
+        [pscustomobject] @{
+            Label             = $label
+            Description       = $description
+            UsesObjectType    = [bool] $usesType
+            DefaultInheritance = $inheritance
+            Build             = $build
+        }
+    }
+
+    # The object type is dropped in with a leading class where it belongs, and
+    # left out entirely when "all objects" (an empty type) is chosen.
+    return @(
+        (& $preset 'Full control' 'Full control of the OU and everything in it.' $false 'T' { param($type) 'GA' })
+
+        (& $preset 'Create and delete child objects' 'Create and delete objects of a type in the OU, such as user accounts.' $true 'T' {
+            param($type)
+            if ($type) { 'CCDC;{0}' -f $type } else { 'CCDC' }
+        })
+
+        (& $preset 'Reset passwords' 'Reset the password of user accounts (the Reset Password right).' $true 'S' {
+            param($type)
+            $class = if ($type) { $type } else { 'user' }
+            'CA;Reset Password;{0}' -f $class
+        })
+
+        (& $preset 'Read all properties' 'Read every property of the objects.' $true 'S' {
+            param($type)
+            'RP;;{0}' -f $type
+        })
+
+        (& $preset 'Write all properties' 'Change every property of the objects.' $true 'S' {
+            param($type)
+            'WP;;{0}' -f $type
+        })
+
+        (& $preset 'Read and write all properties' 'Read and change every property of the objects.' $true 'S' {
+            param($type)
+            'RPWP;;{0}' -f $type
+        })
+
+        (& $preset 'Manage group membership' 'Add and remove members of groups (write the member property).' $false 'S' {
+            param($type)
+            'WP;member;group'
+        })
+
+        (& $preset 'Custom' 'Type the dsacls rights yourself, such as CCDC;computer or WPRP;member;group.' $false '' { param($type) '' })
+    )
+}
+
+<#
+.SYNOPSIS
+    Builds a dsacls command line that delegates control on a directory object.
+
+.DESCRIPTION
+    dsacls sets the permissions on an Active Directory object such as an OU. The
+    object's distinguished name is quoted, the trustee and its rights follow
+    /G to grant or /D to deny, and /I sets how far the grant reaches: this object
+    and all children (T), child objects only (S), or this object and its
+    immediate children (P). The rights string is passed in ready made, from a
+    preset or typed by hand.
+
+.PARAMETER ObjectDn
+    The distinguished name of the object, such as OU=Sales,DC=contoso,DC=com.
+
+.PARAMETER Trustee
+    Who is granted the rights: DOMAIN\Group, a UPN, or a distinguished name.
+
+.PARAMETER Rights
+    The dsacls rights string after the colon, such as GA or CA;Reset Password;user.
+
+.PARAMETER Inheritance
+    T, S or P, or empty for this object only.
+
+.PARAMETER Deny
+    Deny the rights (/D) instead of granting them (/G).
+
+.OUTPUTS
+    System.String
+#>
+function Build-TkDsaclsCommand {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ObjectDn,
+
+        [Parameter(Mandatory)]
+        [string] $Trustee,
+
+        [Parameter(Mandatory)]
+        [string] $Rights,
+
+        [Parameter()]
+        [ValidateSet('', 'T', 'S', 'P')]
+        [string] $Inheritance = '',
+
+        [Parameter()]
+        [switch] $Deny
+    )
+
+    $parts = New-Object System.Collections.Generic.List[string]
+    $parts.Add('dsacls')
+    $parts.Add('"{0}"' -f $ObjectDn.Trim())
+
+    if ($Inheritance) {
+        $parts.Add('/I:{0}' -f $Inheritance)
+    }
+
+    $parts.Add($(if ($Deny) { '/D' } else { '/G' }))
+    $parts.Add(('"{0}:{1}"' -f $Trustee.Trim(), $Rights.Trim()))
 
     return ($parts -join ' ')
 }

@@ -2946,6 +2946,10 @@
                                          ToolTip="Build a schtasks /create command line from a schedule and a program.">
                                 <TextBlock Text="Scheduled task" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Build a dsacls command that delegates control on an OU, the same as the Delegation of Control wizard.">
+                                <TextBlock Text="dsacls delegation" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
                         </ListBox>
 
                         <Grid Grid.Column="1">
@@ -3780,37 +3784,63 @@
                                             <TextBox x:Name="RoboDest" Width="280" Margin="0,0,0,8"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" Tag="\\server\Backup" />
                                         </WrapPanel>
-                                        <WrapPanel Margin="0,0,0,4">
-                                            <CheckBox x:Name="RoboMirror" Content="Mirror (/MIR)" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="RoboEmptyDirs" Content="Subfolders, empty ones too (/E)" IsChecked="True" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="RoboRestartable" Content="Restartable (/Z)" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="RoboBackup" Content="Backup mode (/ZB)" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="RoboCopyAll" Content="All attributes (/COPYALL)" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="RoboExcludeOlder" Content="Skip older (/XO)" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="RoboListOnly" Content="List only (/L)" Margin="0,0,16,8" />
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <CheckBox x:Name="RoboMirror" Content="Mirror (/MIR)" Margin="0,0,16,8"
+                                                      ToolTip="Make the destination an exact copy of the source, deleting from the destination anything no longer in the source. Powerful and destructive: test with List only first." />
+                                            <CheckBox x:Name="RoboEmptyDirs" Content="Subfolders, empty ones too (/E)" IsChecked="True" Margin="0,0,16,8"
+                                                      ToolTip="Copy all subfolders, empty ones included. Without it, only the files in the top folder are copied." />
+                                            <CheckBox x:Name="RoboRestartable" Content="Restartable (/Z)" Margin="0,0,16,8"
+                                                      ToolTip="If a large file is interrupted part way, resume it rather than start over. Slower, but useful over an unreliable link." />
+                                            <CheckBox x:Name="RoboBackup" Content="Backup mode (/ZB)" Margin="0,0,16,8"
+                                                      ToolTip="Use backup rights to read files the account could not otherwise open. Needs to run elevated, as an administrator or a member of Backup Operators." />
+                                            <CheckBox x:Name="RoboCopyAll" Content="All attributes (/COPYALL)" Margin="0,0,16,8"
+                                                      ToolTip="Copy everything about each file: data, attributes, timestamps, NTFS permissions, owner and auditing. The default copies only data, attributes and timestamps." />
+                                            <CheckBox x:Name="RoboExcludeOlder" Content="Skip older (/XO)" Margin="0,0,16,8"
+                                                      ToolTip="Do not overwrite a destination file that is newer than the one in the source." />
+                                            <CheckBox x:Name="RoboNoProgress" Content="No progress (/NP)" Margin="0,0,16,8"
+                                                      ToolTip="Do not print the per-file percentage. Keeps a log file readable." />
+                                            <CheckBox x:Name="RoboListOnly" Content="List only (/L)" Margin="0,0,16,8"
+                                                      ToolTip="Show what would be copied without copying, deleting or changing anything. A safe dry run." />
                                         </WrapPanel>
-                                        <WrapPanel Margin="0,0,0,4">
-                                            <TextBlock Text="Threads /MT" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Threads /MT" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="Number of files copied at once, 1 to 128. Faster on many small files." />
                                             <TextBox x:Name="RoboThreads" Width="60" Margin="0,0,16,8" Text="8"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" />
-                                            <TextBlock Text="Retries /R" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBlock Text="Retries /R" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="How many times to retry a locked or failed file. Robocopy's own default is a million; a couple is usually enough." />
                                             <TextBox x:Name="RoboRetries" Width="60" Margin="0,0,16,8" Text="2"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" />
-                                            <TextBlock Text="Wait /W" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBlock Text="Wait /W" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="Seconds to wait between retries. The default is 30." />
                                             <TextBox x:Name="RoboWait" Width="60" Margin="0,0,16,8" Text="5"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" />
-                                            <TextBlock Text="Exclude folders /XD" VerticalAlignment="Center" Margin="0,0,8,8" />
-                                            <TextBox x:Name="RoboExcludeDirs" Width="200" Margin="0,0,0,8"
-                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="comma separated" />
                                         </WrapPanel>
-                                        <WrapPanel>
-                                            <TextBlock Text="Exit code" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Exclude files /XF" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="File names or wildcards to skip, separated by commas, such as *.tmp, thumbs.db." />
+                                            <TextBox x:Name="RoboExcludeFiles" Width="200" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="*.tmp, thumbs.db" />
+                                            <TextBlock Text="Exclude folders /XD" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="Folder names or paths to skip, separated by commas, such as bin, obj, .git." />
+                                            <TextBox x:Name="RoboExcludeDirs" Width="200" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="bin, obj, .git" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Log file /LOG" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="Also write the output to this file (with /TEE, so it shows in the window too). Left empty, no log is written." />
+                                            <TextBox x:Name="RoboLog" Width="320" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="C:\Logs\backup.log" />
+                                        </WrapPanel>
+                                        <WrapPanel ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Exit code" VerticalAlignment="Center" Margin="0,0,8,0"
+                                                       ToolTip="Type a robocopy exit code to read what it means. It is a bitmask, not a rank." />
                                             <TextBox x:Name="RoboExitCode" Width="80" Margin="0,0,16,0"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" Tag="e.g. 3" />
                                             <Button x:Name="BtnCopyRobocopy" Content="Copy the command" />
                                         </WrapPanel>
                                         <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
-                                                   Text="Mirror deletes from the destination whatever is gone from the source, so it wins over the plain subfolder copy. The exit code is a bitmask, not a rank: below 8 is a success. Type one to read it." />
+                                                   Text="Hover an option to see what it does. Mirror deletes from the destination whatever is gone from the source, so it wins over the plain subfolder copy. The exit code is a bitmask, not a rank: below 8 is a success." />
                                     </StackPanel>
                                 </Border>
 
@@ -3866,6 +3896,59 @@
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="SchtaskOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolDsacls" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="dsacls delegation builder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Object (OU)" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="The distinguished name of the object the rights are set on, usually an OU." />
+                                            <TextBox x:Name="DsaclsObject" Width="380" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="OU=Sales,DC=contoso,DC=com" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Delegate to" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="Who receives the rights: DOMAIN\Group, a UPN, or a distinguished name." />
+                                            <TextBox x:Name="DsaclsTrustee" Width="240" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="CONTOSO\Helpdesk" />
+                                            <CheckBox x:Name="DsaclsDeny" Content="Deny instead of grant (/D)" VerticalAlignment="Center" Margin="0,0,0,8"
+                                                      ToolTip="Deny the rights rather than grant them. A deny wins over any grant." />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Task" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="What to delegate. Each task fills in the dsacls permission letters for you." />
+                                            <ComboBox x:Name="DsaclsPreset" Width="260" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="On object type" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="The kind of child object the rights apply to. All objects leaves the type out." />
+                                            <ComboBox x:Name="DsaclsObjectType" Width="160" MinHeight="40" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Reaches" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="How far the rights inherit: /I:T this object and all children, /I:S child objects only, /I:P this object and its immediate children, or this object only." />
+                                            <ComboBox x:Name="DsaclsInheritance" Width="280" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Custom rights" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="Used only with the Custom task: the dsacls rights after the colon, such as CCDC;computer or WPRP;member;group." />
+                                            <TextBox x:Name="DsaclsCustom" Width="200" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="CCDC;computer" />
+                                            <Button x:Name="BtnCopyDsacls" Content="Copy the command" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" TextWrapping="Wrap"
+                                                   Text="dsacls sets the permissions on an Active Directory object such as an OU, the same delegation the Delegation of Control wizard writes. Run it elevated on a domain-joined machine with the AD tools. Test on a lab OU first: a wrong deny or a broad grant is easy to make and awkward to unpick." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="DsaclsOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>

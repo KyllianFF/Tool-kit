@@ -339,17 +339,58 @@ function Initialize-TkToolsPage {
     if ($adFlagValue) { $adFlagValue.Add_TextChanged({ Update-TkAdFlagsFromUi }) }
 
     # --- Robocopy ---------------------------------------------------------
-    foreach ($name in @('RoboSource', 'RoboDest', 'RoboThreads', 'RoboRetries', 'RoboWait', 'RoboExcludeDirs', 'RoboExitCode')) {
+    foreach ($name in @('RoboSource', 'RoboDest', 'RoboThreads', 'RoboRetries', 'RoboWait', 'RoboExcludeFiles', 'RoboExcludeDirs', 'RoboLog', 'RoboExitCode')) {
         $box = Get-TkControl -Name $name
         if ($box) { $box.Add_TextChanged({ Update-TkRobocopyFromUi }) }
     }
 
-    foreach ($name in @('RoboMirror', 'RoboEmptyDirs', 'RoboRestartable', 'RoboBackup', 'RoboCopyAll', 'RoboExcludeOlder', 'RoboListOnly')) {
+    foreach ($name in @('RoboMirror', 'RoboEmptyDirs', 'RoboRestartable', 'RoboBackup', 'RoboCopyAll', 'RoboExcludeOlder', 'RoboNoProgress', 'RoboListOnly')) {
         $check = Get-TkControl -Name $name
         if ($check) { $check.Add_Click({ Update-TkRobocopyFromUi }) }
     }
 
     Register-TkClick -Name 'BtnCopyRobocopy' -Action { Copy-TkToolOutput -ControlName 'RoboOutput' }
+
+    # --- dsacls delegation ------------------------------------------------
+    $dsaclsPreset = Get-TkControl -Name 'DsaclsPreset'
+
+    if ($dsaclsPreset) {
+        foreach ($preset in @(Get-TkDsaclsPreset)) {
+            [void] $dsaclsPreset.Items.Add($preset.Label)
+        }
+        $dsaclsPreset.SelectedIndex = 0
+        $dsaclsPreset.Add_SelectionChanged({ Update-TkDsaclsFromUi })
+    }
+
+    $dsaclsObjectType = Get-TkControl -Name 'DsaclsObjectType'
+
+    if ($dsaclsObjectType) {
+        foreach ($label in @('user', 'group', 'computer', 'contact', 'organizationalUnit', 'all objects')) {
+            [void] $dsaclsObjectType.Items.Add($label)
+        }
+        $dsaclsObjectType.SelectedIndex = 0
+        $dsaclsObjectType.Add_SelectionChanged({ Update-TkDsaclsFromUi })
+    }
+
+    $dsaclsInheritance = Get-TkControl -Name 'DsaclsInheritance'
+
+    if ($dsaclsInheritance) {
+        foreach ($label in @('This object and all children (/I:T)', 'Child objects only (/I:S)', 'This object and immediate children (/I:P)', 'This object only')) {
+            [void] $dsaclsInheritance.Items.Add($label)
+        }
+        $dsaclsInheritance.SelectedIndex = 0
+        $dsaclsInheritance.Add_SelectionChanged({ Update-TkDsaclsFromUi })
+    }
+
+    foreach ($name in @('DsaclsObject', 'DsaclsTrustee', 'DsaclsCustom')) {
+        $box = Get-TkControl -Name $name
+        if ($box) { $box.Add_TextChanged({ Update-TkDsaclsFromUi }) }
+    }
+
+    $dsaclsDeny = Get-TkControl -Name 'DsaclsDeny'
+    if ($dsaclsDeny) { $dsaclsDeny.Add_Click({ Update-TkDsaclsFromUi }) }
+
+    Register-TkClick -Name 'BtnCopyDsacls' -Action { Copy-TkToolOutput -ControlName 'DsaclsOutput' }
 
     # --- Scheduled task ---------------------------------------------------
     $schtaskSchedule = Get-TkControl -Name 'SchtaskSchedule'
@@ -1064,8 +1105,11 @@ function Update-TkRobocopyFromUi {
             Backup         = [bool] (Get-TkControl -Name 'RoboBackup').IsChecked
             CopyAll        = [bool] (Get-TkControl -Name 'RoboCopyAll').IsChecked
             ExcludeOlder   = [bool] (Get-TkControl -Name 'RoboExcludeOlder').IsChecked
+            NoProgress     = [bool] (Get-TkControl -Name 'RoboNoProgress').IsChecked
             ListOnly       = [bool] (Get-TkControl -Name 'RoboListOnly').IsChecked
+            ExcludeFiles   = @(([string] (Get-TkControl -Name 'RoboExcludeFiles').Text) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
             ExcludeDirs    = @(([string] (Get-TkControl -Name 'RoboExcludeDirs').Text) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            Log            = ([string] (Get-TkControl -Name 'RoboLog').Text).Trim()
         }
 
         $threads = & $intOr 'RoboThreads'
@@ -1131,6 +1175,61 @@ function Update-TkSchtaskFromUi {
 
     try {
         $output.Text = Build-TkSchtasksCommand -Name $name -Run $run -Schedule $schedule -Options $options
+    }
+    catch {
+        $output.Text = $_.Exception.Message
+    }
+}
+
+<#
+.SYNOPSIS
+    Builds the dsacls delegation command from the controls, as they change.
+#>
+function Update-TkDsaclsFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'DsaclsOutput'
+
+    if (-not $output) {
+        return
+    }
+
+    $object  = [string] (Get-TkControl -Name 'DsaclsObject').Text
+    $trustee = [string] (Get-TkControl -Name 'DsaclsTrustee').Text
+
+    if (-not $object.Trim() -or -not $trustee.Trim()) {
+        $output.Text = 'Type the OU distinguished name and who to delegate to.'
+        return
+    }
+
+    $preset = @(Get-TkDsaclsPreset) | Where-Object { $_.Label -eq [string] (Get-TkControl -Name 'DsaclsPreset').SelectedItem } | Select-Object -First 1
+    if (-not $preset) { $preset = @(Get-TkDsaclsPreset)[0] }
+
+    $typeLabel = [string] (Get-TkControl -Name 'DsaclsObjectType').SelectedItem
+    $type      = if ($typeLabel -and $typeLabel -ne 'all objects') { $typeLabel } else { '' }
+
+    $inheritance = switch ([string] (Get-TkControl -Name 'DsaclsInheritance').SelectedItem) {
+        'Child objects only (/I:S)'                       { 'S' }
+        'This object and immediate children (/I:P)'       { 'P' }
+        'This object only'                                { '' }
+        default                                           { 'T' }
+    }
+
+    if ($preset.Label -eq 'Custom') {
+        $rights = ([string] (Get-TkControl -Name 'DsaclsCustom').Text).Trim()
+        if (-not $rights) {
+            $output.Text = 'Type the dsacls rights for the Custom task, such as CCDC;computer or WPRP;member;group.'
+            return
+        }
+    }
+    else {
+        $rights = & $preset.Build $type
+    }
+
+    try {
+        $command = Build-TkDsaclsCommand -ObjectDn $object -Trustee $trustee -Rights $rights -Inheritance $inheritance -Deny:([bool] (Get-TkControl -Name 'DsaclsDeny').IsChecked)
+        $output.Text = @($command, '', $preset.Description, 'Run elevated on a domain-joined machine with the AD tools. dsacls reads the current ACL when run with no /G or /D.') -join [Environment]::NewLine
     }
     catch {
         $output.Text = $_.Exception.Message
@@ -2104,6 +2203,7 @@ function Get-TkToolEntry {
         (& $tool 'Windows and AD'   'AD account flags' 'ToolAdFlags')
         (& $tool 'Windows and AD'   'Robocopy'       'ToolRobocopy')
         (& $tool 'Windows and AD'   'Scheduled task' 'ToolSchtasks')
+        (& $tool 'Windows and AD'   'dsacls delegation' 'ToolDsacls')
     )
 }
 
