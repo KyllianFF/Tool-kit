@@ -47,6 +47,7 @@ src/Features/Diagnostics/CrashAnalysis.ps1
 src/Features/Diagnostics/DeviceProblems.ps1
 src/Features/Diagnostics/IdentityHealth.ps1
 src/Features/Diagnostics/Performance.ps1
+src/Features/Diagnostics/DiskSpace.ps1
 src/Features/Diagnostics/HardwareTests.ps1
 src/Features/Diagnostics/SupportBundle.ps1
 src/Features/Intervention/Journal.ps1
