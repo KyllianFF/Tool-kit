@@ -2879,6 +2879,18 @@
                                 <TextBlock Text="Timestamps" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Format, minify or validate JSON, and turn it into YAML or CSV.">
+                                <TextBlock Text="JSON and YAML" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="A number in binary, octal, decimal and hexadecimal, and the bits it sets.">
+                                <TextBlock Text="Number bases" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Convert a data size across units and work out how long a transfer takes at a given link speed.">
+                                <TextBlock Text="Data size and rate" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Compare two texts line by line, such as two versions of a configuration file.">
                                 <TextBlock Text="Text diff" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
@@ -2913,6 +2925,26 @@
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Turn a docker run command into the Compose service it describes.">
                                 <TextBlock Text="Docker Compose" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="WINDOWS AND AD" Style="{StaticResource ChoiceGroupTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Read an SDDL security descriptor: owner, group, and each access control entry with its rights and trustee named.">
+                                <TextBlock Text="SDDL" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Break a userAccountControl, groupType or msDS-SupportedEncryptionTypes value into the bits it sets.">
+                                <TextBlock Text="AD account flags" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Build a robocopy command from its options, and read what a robocopy exit code means.">
+                                <TextBlock Text="Robocopy" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Build a schtasks /create command line from a schedule and a program.">
+                                <TextBlock Text="Scheduled task" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                         </ListBox>
 
@@ -3587,6 +3619,255 @@
                                     <TextBox x:Name="DockerComposeOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolJson" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="JSON and YAML" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,8">
+                                            <ComboBox x:Name="JsonOperation" Width="200" MinHeight="40" Margin="0,0,10,0" />
+                                            <Button x:Name="BtnConvertJson" Content="Run" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" />
+                                            <Button x:Name="BtnCopyJson" Content="Copy the result" />
+                                        </WrapPanel>
+                                        <TextBox x:Name="JsonInput" Height="150"
+                                                 AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Paste JSON here" />
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Text="Format lays it out, minify removes the spacing, validate says why a text is not JSON. YAML and CSV read the JSON and write it out: CSV needs an array of flat objects. Numbers and dates are kept exactly as written." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="JsonOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolNumberBase" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Number bases and bitmask" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,8">
+                                            <TextBox x:Name="NumberInput" Width="300" Margin="0,0,10,0"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="0xC0000005, 0b1010, 493 or 755" />
+                                            <TextBlock Text="Read plain numbers as" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <ComboBox x:Name="NumberBase" Width="150" MinHeight="40" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="A 0x, 0b or 0o prefix sets the base; without one the base chosen here is used. Spaces and underscores are grouping. The result shows every base and the bits that are set, so a value such as a userAccountControl or an SDDL mask can be read bit by bit." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="NumberOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolDataSize" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Data size and transfer time" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,8">
+                                            <TextBlock Text="Size" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="DataSizeInput" Width="180" Margin="0,0,16,0"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="25 GB, 500 MiB" />
+                                            <TextBlock Text="Link speed" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="DataRateInput" Width="180"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="100 Mbps, 50 MB/s" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="A capital B is bytes, a small b is bits, as networking writes them; KB is a thousand, KiB is 1024. The size is shown in both, and the transfer time is given at the full rate and at ninety percent, since a real link rarely reaches its advertised speed." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="DataSizeOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolSddl" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="SDDL security descriptor" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,8">
+                                            <TextBlock Text="Applies to" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <ComboBox x:Name="SddlContext" Width="180" MinHeight="40" />
+                                        </WrapPanel>
+                                        <TextBox x:Name="SddlInput" Height="90"
+                                                 AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="O:BAG:BAD:(A;;FA;;;SY)(A;;FR;;;BU) - or the output of sc.exe sdshow, or a Get-Acl Sddl" />
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Text="The owner, group and each access control entry are named. The low bits of an access mask mean different things on a file, a registry key, a directory object or a service, so the kind of object is chosen above." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="SddlOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolAdFlags" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Active Directory account flags" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,8">
+                                            <ComboBox x:Name="AdFlagAttribute" Width="240" MinHeight="40" Margin="0,0,16,0" />
+                                            <TextBlock Text="Value" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="AdFlagValue" Width="180"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="514 or 0x202" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="The value read from an attribute is broken into its bits. userAccountControl holds the state of a user or computer account, groupType the scope and kind of a group, and msDS-SupportedEncryptionTypes the Kerberos ciphers an account offers. A few plain notes point out what matters most." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="AdFlagOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolRobocopy" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Robocopy command builder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Source" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="RoboSource" Width="280" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="C:\Data" />
+                                            <TextBlock Text="Destination" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="RoboDest" Width="280" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="\\server\Backup" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <CheckBox x:Name="RoboMirror" Content="Mirror (/MIR)" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="RoboEmptyDirs" Content="Subfolders, empty ones too (/E)" IsChecked="True" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="RoboRestartable" Content="Restartable (/Z)" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="RoboBackup" Content="Backup mode (/ZB)" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="RoboCopyAll" Content="All attributes (/COPYALL)" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="RoboExcludeOlder" Content="Skip older (/XO)" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="RoboListOnly" Content="List only (/L)" Margin="0,0,16,8" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Threads /MT" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="RoboThreads" Width="60" Margin="0,0,16,8" Text="8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <TextBlock Text="Retries /R" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="RoboRetries" Width="60" Margin="0,0,16,8" Text="2"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <TextBlock Text="Wait /W" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="RoboWait" Width="60" Margin="0,0,16,8" Text="5"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <TextBlock Text="Exclude folders /XD" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="RoboExcludeDirs" Width="200" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="comma separated" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBlock Text="Exit code" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="RoboExitCode" Width="80" Margin="0,0,16,0"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="e.g. 3" />
+                                            <Button x:Name="BtnCopyRobocopy" Content="Copy the command" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Text="Mirror deletes from the destination whatever is gone from the source, so it wins over the plain subfolder copy. The exit code is a bitmask, not a rank: below 8 is a success. Type one to read it." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="RoboOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolSchtasks" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Scheduled task builder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SchtaskName" Width="220" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Nightly backup" />
+                                            <TextBlock Text="Program" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SchtaskRun" Width="320" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="C:\Scripts\backup.cmd" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Schedule" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="SchtaskSchedule" Width="130" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Every /MO" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SchtaskModifier" Width="80" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="1" />
+                                            <TextBlock Text="At /ST" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SchtaskStartTime" Width="90" Margin="0,0,16,8" Text="02:00"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <TextBlock Text="Day /D" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SchtaskDay" Width="90" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="MON or 15" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBlock Text="Run as /RU" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="SchtaskRunAs" Width="150" Margin="0,0,16,0"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="SYSTEM" />
+                                            <CheckBox x:Name="SchtaskHighest" Content="Highest privileges" Margin="0,0,16,0" VerticalAlignment="Center" />
+                                            <CheckBox x:Name="SchtaskForce" Content="Overwrite (/F)" IsChecked="True" Margin="0,0,16,0" VerticalAlignment="Center" />
+                                            <Button x:Name="BtnCopySchtask" Content="Copy the command" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Text="Only the fields a schedule uses are added: a day for weekly and monthly, a start time for the timed schedules. Highest privileges runs the task elevated. Run as SYSTEM needs no password." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="SchtaskOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>
 
