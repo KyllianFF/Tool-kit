@@ -4,7 +4,10 @@
     "https://learn.microsoft.com/windows/deployment/update/windows-update-error-reference",
     "https://learn.microsoft.com/troubleshoot/windows-client/installing-updates-features-roles/common-windows-update-errors",
     "https://learn.microsoft.com/troubleshoot/windows-client/setup-upgrade-and-drivers/windows-10-upgrade-resolution-procedures",
-    "https://learn.microsoft.com/windows/win32/debug/system-error-codes"
+    "https://learn.microsoft.com/windows/win32/debug/system-error-codes",
+    "https://learn.microsoft.com/troubleshoot/mem/intune/device-enrollment/troubleshoot-windows-enrollment-errors",
+    "https://learn.microsoft.com/troubleshoot/windows-server/licensing-and-activation/troubleshoot-activation-error-codes",
+    "https://learn.microsoft.com/windows-hardware/drivers/kernel/using-ntstatus-values"
   ],
   "facilities": [
     { "id": 1,   "name": "RPC" },
@@ -100,6 +103,33 @@
       "steps": [
         "Look at the account in the event, and at where the attempt came from: a mapped drive, a service or a scheduled task still holding an old password retries on its own.",
         "Many attempts against one account look like a guessed password or a stale credential; attempts against many accounts from one source look like password spraying."
+      ]
+    },
+    {
+      "id": "enrollment",
+      "name": "Device enrolment in Intune",
+      "steps": [
+        "Run dsregcmd /status for the join state, and read Event Viewer, Microsoft, Windows, DeviceManagement-Enterprise-Diagnostics-Provider, Admin for the enrolment error.",
+        "In the Intune admin center check the Windows enrolment restrictions and the user's licence; in Microsoft Entra ID, Mobility (MDM and MAM), the MDM user scope.",
+        "The sign-in and management report on the Diagnostics page reads the join and enrolment state of this machine."
+      ]
+    },
+    {
+      "id": "activation",
+      "name": "Volume activation (KMS and MAK)",
+      "steps": [
+        "From an elevated prompt, slmgr.vbs /dlv shows the licence channel, the KMS host used and the last activation result; for Office, cscript ospp.vbs /dstatus in the Office folder.",
+        "For KMS, check that the _vlmcs._tcp SRV record points at the KMS host and that TCP 1688 answers: Test-NetConnection kms01 -Port 1688.",
+        "For a MAK, check the key and its remaining activations in the licensing portal."
+      ]
+    },
+    {
+      "id": "crash",
+      "name": "An application crashed",
+      "steps": [
+        "Event 1000 (Application Error) in the Application log names the faulting module; the crashes report on the Diagnostics page groups repeated faults.",
+        "Update or repair the application, then look at who owns the faulting module: a graphics driver, an add-in, or a security product that injects into processes.",
+        "When the module is a Windows DLL, run DISM /Online /Cleanup-Image /RestoreHealth, then sfc /scannow."
       ]
     }
   ],
@@ -437,6 +467,43 @@
     { "code": "0x8024F002", "name": "WU_E_REPORTER_EVENTNAMESPACEPARSEFAILED", "group": "agent", "meaning": "The XML in the event namespace descriptor could not be parsed." },
     { "code": "0x8024F003", "name": "WU_E_INVALID_EVENT", "group": "agent", "meaning": "The XML in the event namespace descriptor could not be parsed." },
     { "code": "0x8024F004", "name": "WU_E_SERVER_BUSY", "group": "connection", "meaning": "The server rejected an event because it was too busy." },
-    { "code": "0x8024FFFF", "name": "WU_E_REPORTER_UNEXPECTED", "group": "agent", "meaning": "A reporter error not covered by another code." }
+    { "code": "0x8024FFFF", "name": "WU_E_REPORTER_UNEXPECTED", "group": "agent", "meaning": "A reporter error not covered by another code." },
+
+    { "code": "0x80180014", "name": "", "group": "enrollment", "meaning": "Windows MDM enrolment is blocked: a device platform restriction does not allow Windows (MDM), or an Autopilot device enrolled before must be unblocked before it is reused.", "action": "In the Intune admin center, Devices, Enrollment, Device platform restriction, allow Windows (MDM) for the user's groups; for a reused Autopilot device, select it and choose Unblock device." },
+    { "code": "0x8018002B", "name": "", "group": "enrollment", "meaning": "Automatic MDM enrolment failed: the user's UPN has an unverified or non-routable suffix such as .local, or the MDM user scope is set to None.", "action": "Give the user a routable UPN suffix verified in the tenant and synchronise, or set the MDM user scope to All or to a group that includes the user." },
+    { "code": "0x80180026", "name": "", "group": "enrollment", "meaning": "Joining Microsoft Entra ID with automatic MDM enrolment failed because the old Intune PC software client is installed.", "action": "Uninstall the Intune PC software client, or turn automatic MDM enrolment off." },
+    { "code": "0x80180022", "name": "", "group": "enrollment", "meaning": "Autopilot enrolment failed because the device runs Windows Home.", "action": "Upgrade the device to Windows Pro or a higher edition." },
+    { "code": "0x8018000A", "name": "", "group": "enrollment", "meaning": "The device is already enrolled: another user has joined it to Microsoft Entra ID or enrolled it in Intune.", "action": "Sign in with that account, remove it from Settings, Accounts, Access work or school, then enrol with the right account." },
+    { "code": "0x801C03EA", "name": "", "group": "enrollment", "meaning": "Registering the device for mobile management failed: its TPM supports version 2.0 but has not been upgraded to it.", "action": "Upgrade the TPM to version 2.0, and check that the device is not in two groups with different Autopilot profiles." },
+    { "code": "0x80070774", "name": "ERROR_DOMAIN_CONTROLLER_NOT_FOUND", "meaning": "No domain controller could be found for the domain. During a hybrid Autopilot deployment, the device could not reach a domain controller, or was put in a state where it cannot join the domain.", "action": "Check DNS and the network path to a domain controller; for hybrid Autopilot, do not assign a user in the Autopilot profile." },
+
+    { "code": "0xC004F074", "name": "", "group": "activation", "meaning": "No Key Management Service (KMS) could be contacted: the KMS hosts the client tried were unreachable or returned errors.", "action": "Check the _vlmcs._tcp SRV record and TCP 1688 to the KMS host, then read the events 12288 in the Application log." },
+    { "code": "0xC004F038", "name": "", "group": "activation", "meaning": "The count reported by the KMS host is insufficient: it activates Windows clients once it has seen at least 25 of them, and Windows Server once it has seen 5.", "action": "Wait until enough machines contact the host, or activate with a MAK. slmgr.vbs /dli on the host shows the count." },
+    { "code": "0xC004F039", "name": "", "group": "activation", "meaning": "The Key Management Service did not respond to the activation request.", "action": "Check the network path and TCP 1688 between the client and the KMS host." },
+    { "code": "0xC004F041", "name": "", "group": "activation", "meaning": "The KMS host is not activated itself.", "action": "Activate the KMS host online or by phone." },
+    { "code": "0xC004F042", "name": "", "group": "activation", "meaning": "The KMS host contacted cannot activate this product, which happens where application and operating system KMS hosts are mixed.", "action": "Point the client at the right host with slmgr.vbs /skms kms01.contoso.com." },
+    { "code": "0xC004F06C", "name": "", "group": "activation", "meaning": "The KMS host found the request timestamp invalid: the client's clock differs too much from the host's.", "action": "Correct the client's time; the Fixes page resynchronises the clock." },
+    { "code": "0xC004F050", "name": "", "group": "activation", "meaning": "The product key is invalid: mistyped, meant for another edition, or with its dashes replaced when it was pasted.", "action": "Install the key again with slmgr.vbs /ipk, checking the edition it belongs to." },
+    { "code": "0xC004F00F", "name": "", "group": "activation", "meaning": "The hardware ID changed beyond the tolerance of the activation, after hardware changes or driver updates.", "action": "Activate again: slmgr.vbs /ato with KMS, online or by phone with a MAK." },
+    { "code": "0xC004F009", "name": "", "group": "activation", "meaning": "The activation grace period expired before the system was activated." },
+    { "code": "0xC004F014", "name": "", "group": "activation", "meaning": "No product key is installed.", "action": "Install a MAK, or the KMS client setup key, with slmgr.vbs /ipk." },
+    { "code": "0xC004C003", "name": "", "group": "activation", "meaning": "The activation server reports that the product key is blocked.", "action": "Get a new key from the licensing portal and activate again." },
+    { "code": "0xC004C008", "name": "", "group": "activation", "meaning": "The KMS host key can no longer be used: it has reached its activation limit.", "action": "Ask the Microsoft Licensing Activation Centers for more activations." },
+    { "code": "0xC004C020", "name": "", "group": "activation", "meaning": "The Multiple Activation Key has exceeded its activation limit.", "action": "Request more activations for the MAK." },
+    { "code": "0x8007232B", "name": "DNS_ERROR_RCODE_NAME_ERROR", "group": "activation", "meaning": "DNS name does not exist. During activation it means the KMS client found no _vlmcs._tcp SRV record in DNS.", "action": "Publish the KMS SRV record, or set the host by hand with slmgr.vbs /skms kms01.contoso.com." },
+    { "code": "0x8004FE21", "name": "", "group": "activation", "meaning": "This computer is not running genuine Windows: language packs installed on an edition not licensed for them, damaged system files, or malware that modified Windows." },
+
+    { "code": "0xC0000005", "name": "STATUS_ACCESS_VIOLATION", "group": "crash", "meaning": "The application read or wrote memory it does not own, the most common crash code. The faulting module in event 1000 is what to update, repair or remove." },
+    { "code": "0xC0000006", "name": "STATUS_IN_PAGE_ERROR", "group": "crash", "meaning": "Code or data could not be read back from the disk or network share it lives on: a failing disk, or a network path that dropped while the program ran from it." },
+    { "code": "0xC000001D", "name": "STATUS_ILLEGAL_INSTRUCTION", "group": "crash", "meaning": "The program executed an instruction the processor does not have: a build for newer processors, or damaged code." },
+    { "code": "0xC000007B", "name": "STATUS_INVALID_IMAGE_FORMAT", "group": "crash", "meaning": "A program or DLL is damaged or not built for this Windows, typically a 32-bit DLL loaded by a 64-bit program or the reverse.", "action": "Reinstall the application, and the Visual C++ runtimes it needs in both 32-bit and 64-bit versions." },
+    { "code": "0xC0000094", "name": "STATUS_INTEGER_DIVIDE_BY_ZERO", "group": "crash", "meaning": "An integer division by zero in the application's code." },
+    { "code": "0xC00000FD", "name": "STATUS_STACK_OVERFLOW", "group": "crash", "meaning": "A thread ran out of stack space, usually through runaway recursion." },
+    { "code": "0xC0000135", "name": "STATUS_DLL_NOT_FOUND", "group": "crash", "meaning": "A DLL the program needs was not found, so it could not start.", "action": "Reinstall the application; for a missing MSVCP or VCRUNTIME DLL, install the Visual C++ Redistributable." },
+    { "code": "0xC0000142", "name": "STATUS_DLL_INIT_FAILED", "group": "crash", "meaning": "A DLL failed to initialise and the process ended at start-up: a damaged runtime, or a desktop heap exhausted by too many sessions or services." },
+    { "code": "0xC0000374", "name": "STATUS_HEAP_CORRUPTION", "group": "crash", "meaning": "The application damaged its own heap memory. The crash comes later than the bug, so the faulting module named can be innocent." },
+    { "code": "0xC0000409", "name": "STATUS_STACK_BUFFER_OVERRUN", "group": "crash", "meaning": "A security check found a stack buffer overwritten, or the application ended itself on purpose with fail fast; Windows stops the process rather than let it run corrupted." },
+    { "code": "0xE0434352", "name": "", "group": "crash", "meaning": "An unhandled .NET exception. Event 1026 from .NET Runtime in the Application log holds the exception type and its stack." },
+    { "code": "0xE06D7363", "name": "", "group": "crash", "meaning": "An unhandled C++ exception, thrown by the application or by a library it uses." }
   ]
 }
