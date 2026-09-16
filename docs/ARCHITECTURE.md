@@ -166,10 +166,20 @@ exists. The build fails on a catalog that is not valid JSON.
   "description": "...",
   "registry":       [ { "path", "name", "type", "value", "default", "defaultAction" } ],
   "registryKeys":   [ { "path", "applyAction", "revertAction", "defaultValue" } ],
+  "optionalFeatures": [ { "name", "state": "Enabled | Disabled", "default" } ],
+  "capabilities":   [ { "name", "state": "Installed | NotPresent", "default", "installedPath" } ],
   "services":       [ { "name", "startup", "default" } ],
-  "scheduledTasks": [ "\\Microsoft\\Windows\\..." ]
+  "scheduledTasks": [ "\\Microsoft\\Windows\\..." ],
+  "auditPolicy":    [ { "subcategory": "{GUID}", "name", "success", "failure", "defaultSuccess", "defaultFailure" } ]
 }
 ```
+
+Optional features are read with one `Win32_OptionalFeature` query, which a
+standard user may run; a capability from a file it installs; the audit policy
+from an `auditpol` backup, by subcategory GUID because auditpol only speaks the
+language of the machine, and only when elevated. Feature and capability names
+and audit GUIDs are validated before they reach a command, like package
+identifiers.
 
 Applied state is **read back** from the registry rather than remembered, so
 the interface stays correct when a tweak was applied by group policy or by

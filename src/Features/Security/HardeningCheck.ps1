@@ -357,17 +357,24 @@ function ConvertFrom-TkAuditPolicyBackup {
 
 <#
 .SYNOPSIS
-    Checks whether the audit policy records what an investigation needs.
+    Reads the effective audit policy, subcategory by subcategory.
+
+.DESCRIPTION
+    Shared by the audit and by the tweaks that change the audit policy.
+    Needs an administrator: without one, and when auditpol returns nothing
+    readable, the answer is null rather than an empty policy, so a caller
+    cannot mistake "not readable" for "records nothing".
+
+.OUTPUTS
+    Hashtable from ConvertFrom-TkAuditPolicyBackup, or null.
 #>
-function Test-TkAuditPolicy {
+function Read-TkAuditPolicyBackup {
     [CmdletBinding()]
+    [OutputType([hashtable])]
     param()
 
     if (-not (Test-TkIsElevated)) {
-
-        return New-TkAuditFinding -Id 'LOG-002' -Name 'Audit policy' -Category 'Logging' `
-            -Status 'NotAssessed' -Measured 'Needs elevation' `
-            -Detail 'The effective audit policy is only readable as an administrator.'
+        return $null
     }
 
     # Under the Windows temporary folder, whose path has no space in it to
@@ -389,6 +396,30 @@ function Test-TkAuditPolicy {
     $settings = ConvertFrom-TkAuditPolicyBackup -Text $text
 
     if ($settings.Count -eq 0) {
+        return $null
+    }
+
+    return $settings
+}
+
+<#
+.SYNOPSIS
+    Checks whether the audit policy records what an investigation needs.
+#>
+function Test-TkAuditPolicy {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Test-TkIsElevated)) {
+
+        return New-TkAuditFinding -Id 'LOG-002' -Name 'Audit policy' -Category 'Logging' `
+            -Status 'NotAssessed' -Measured 'Needs elevation' `
+            -Detail 'The effective audit policy is only readable as an administrator.'
+    }
+
+    $settings = Read-TkAuditPolicyBackup
+
+    if ($null -eq $settings) {
 
         return New-TkAuditFinding -Id 'LOG-002' -Name 'Audit policy' -Category 'Logging' `
             -Status 'NotAssessed' -Measured 'Not readable' -Detail 'auditpol did not return a policy that could be read.'

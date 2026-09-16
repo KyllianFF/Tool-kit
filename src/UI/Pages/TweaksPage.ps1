@@ -179,7 +179,9 @@ function Test-TkTweakVisible {
 
 .DESCRIPTION
     Registry reads are cheap, so this runs on the UI thread and the list is
-    correct the moment the page appears.
+    correct the moment the page appears. Optional features take one WMI query
+    for all of them, and the audit policy one auditpol backup when elevated:
+    each is read once here, and only when a tweak declares one.
 #>
 function Update-TkTweakState {
     [CmdletBinding()]
@@ -189,11 +191,23 @@ function Update-TkTweakState {
         return
     }
 
+    $definitions   = @($script:TkTweakItems | ForEach-Object { $_.Definition })
+    $featureStates = $null
+    $auditSettings = $null
+
+    if (@($definitions | Where-Object { $_.optionalFeatures }).Count -gt 0) {
+        $featureStates = Get-TkOptionalFeatureStateTable
+    }
+
+    if (@($definitions | Where-Object { $_.auditPolicy }).Count -gt 0) {
+        $auditSettings = Read-TkAuditPolicyBackup
+    }
+
     $applied = 0
 
     foreach ($item in $script:TkTweakItems) {
 
-        $isApplied = Test-TkTweakApplied -Tweak $item.Definition
+        $isApplied = Test-TkTweakApplied -Tweak $item.Definition -FeatureStates $featureStates -AuditSettings $auditSettings
 
         $item.StateText = if ($isApplied) { 'Applied' } else { '' }
 
