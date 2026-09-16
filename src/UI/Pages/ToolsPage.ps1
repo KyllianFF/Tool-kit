@@ -277,6 +277,144 @@ function Initialize-TkToolsPage {
     Register-TkClick -Name 'BtnConvertDocker' -Action { Invoke-TkDockerComposeFromUi }
     Register-TkClick -Name 'BtnCopyCompose'   -Action { Copy-TkToolOutput -ControlName 'DockerComposeOutput' }
 
+    # --- JSON and YAML ----------------------------------------------------
+    $jsonOperation = Get-TkControl -Name 'JsonOperation'
+
+    if ($jsonOperation) {
+        foreach ($label in @('Format', 'Minify', 'Validate', 'To YAML', 'To CSV')) {
+            [void] $jsonOperation.Items.Add($label)
+        }
+        $jsonOperation.SelectedIndex = 0
+    }
+
+    Register-TkClick -Name 'BtnConvertJson' -Action { Invoke-TkJsonFromUi }
+    Register-TkClick -Name 'BtnCopyJson'    -Action { Copy-TkToolOutput -ControlName 'JsonOutput' }
+
+    # --- Number bases -----------------------------------------------------
+    $numberBase = Get-TkControl -Name 'NumberBase'
+
+    if ($numberBase) {
+        foreach ($label in @('Decimal (10)', 'Hexadecimal (16)', 'Binary (2)', 'Octal (8)')) {
+            [void] $numberBase.Items.Add($label)
+        }
+        $numberBase.SelectedIndex = 0
+        $numberBase.Add_SelectionChanged({ Update-TkNumberBaseFromUi })
+    }
+
+    $numberInput = Get-TkControl -Name 'NumberInput'
+    if ($numberInput) { $numberInput.Add_TextChanged({ Update-TkNumberBaseFromUi }) }
+
+    # --- Data size and transfer time --------------------------------------
+    foreach ($name in @('DataSizeInput', 'DataRateInput')) {
+        $box = Get-TkControl -Name $name
+        if ($box) { $box.Add_TextChanged({ Update-TkDataSizeFromUi }) }
+    }
+
+    # --- SDDL -------------------------------------------------------------
+    $sddlContext = Get-TkControl -Name 'SddlContext'
+
+    if ($sddlContext) {
+        foreach ($label in @('Auto / generic', 'File or folder', 'Registry key', 'Directory object', 'Service')) {
+            [void] $sddlContext.Items.Add($label)
+        }
+        $sddlContext.SelectedIndex = 0
+        $sddlContext.Add_SelectionChanged({ Update-TkSddlFromUi })
+    }
+
+    $sddlInput = Get-TkControl -Name 'SddlInput'
+    if ($sddlInput) { $sddlInput.Add_TextChanged({ Update-TkSddlFromUi }) }
+
+    # --- Active Directory account flags -----------------------------------
+    $adFlagAttribute = Get-TkControl -Name 'AdFlagAttribute'
+
+    if ($adFlagAttribute) {
+        foreach ($label in @('userAccountControl', 'groupType', 'msDS-SupportedEncryptionTypes')) {
+            [void] $adFlagAttribute.Items.Add($label)
+        }
+        $adFlagAttribute.SelectedIndex = 0
+        $adFlagAttribute.Add_SelectionChanged({ Update-TkAdFlagsFromUi })
+    }
+
+    $adFlagValue = Get-TkControl -Name 'AdFlagValue'
+    if ($adFlagValue) { $adFlagValue.Add_TextChanged({ Update-TkAdFlagsFromUi }) }
+
+    # --- Robocopy ---------------------------------------------------------
+    foreach ($name in @('RoboSource', 'RoboDest', 'RoboThreads', 'RoboRetries', 'RoboWait', 'RoboExcludeFiles', 'RoboExcludeDirs', 'RoboLog', 'RoboExitCode')) {
+        $box = Get-TkControl -Name $name
+        if ($box) { $box.Add_TextChanged({ Update-TkRobocopyFromUi }) }
+    }
+
+    foreach ($name in @('RoboMirror', 'RoboEmptyDirs', 'RoboRestartable', 'RoboBackup', 'RoboCopyAll', 'RoboExcludeOlder', 'RoboNoProgress', 'RoboListOnly')) {
+        $check = Get-TkControl -Name $name
+        if ($check) { $check.Add_Click({ Update-TkRobocopyFromUi }) }
+    }
+
+    Register-TkClick -Name 'BtnCopyRobocopy' -Action { Copy-TkToolOutput -ControlName 'RoboOutput' }
+
+    # --- dsacls delegation ------------------------------------------------
+    $dsaclsPreset = Get-TkControl -Name 'DsaclsPreset'
+
+    if ($dsaclsPreset) {
+        foreach ($preset in @(Get-TkDsaclsPreset)) {
+            [void] $dsaclsPreset.Items.Add($preset.Label)
+        }
+        $dsaclsPreset.SelectedIndex = 0
+        $dsaclsPreset.Add_SelectionChanged({ Update-TkDsaclsFromUi })
+    }
+
+    $dsaclsObjectType = Get-TkControl -Name 'DsaclsObjectType'
+
+    if ($dsaclsObjectType) {
+        foreach ($label in @('user', 'group', 'computer', 'contact', 'organizationalUnit', 'all objects')) {
+            [void] $dsaclsObjectType.Items.Add($label)
+        }
+        $dsaclsObjectType.SelectedIndex = 0
+        $dsaclsObjectType.Add_SelectionChanged({ Update-TkDsaclsFromUi })
+    }
+
+    $dsaclsInheritance = Get-TkControl -Name 'DsaclsInheritance'
+
+    if ($dsaclsInheritance) {
+        foreach ($label in @('This object and all children (/I:T)', 'Child objects only (/I:S)', 'This object and immediate children (/I:P)', 'This object only')) {
+            [void] $dsaclsInheritance.Items.Add($label)
+        }
+        $dsaclsInheritance.SelectedIndex = 0
+        $dsaclsInheritance.Add_SelectionChanged({ Update-TkDsaclsFromUi })
+    }
+
+    foreach ($name in @('DsaclsObject', 'DsaclsTrustee', 'DsaclsCustom')) {
+        $box = Get-TkControl -Name $name
+        if ($box) { $box.Add_TextChanged({ Update-TkDsaclsFromUi }) }
+    }
+
+    $dsaclsDeny = Get-TkControl -Name 'DsaclsDeny'
+    if ($dsaclsDeny) { $dsaclsDeny.Add_Click({ Update-TkDsaclsFromUi }) }
+
+    Register-TkClick -Name 'BtnCopyDsacls' -Action { Copy-TkToolOutput -ControlName 'DsaclsOutput' }
+
+    # --- Scheduled task ---------------------------------------------------
+    $schtaskSchedule = Get-TkControl -Name 'SchtaskSchedule'
+
+    if ($schtaskSchedule) {
+        foreach ($label in @('MINUTE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'ONCE', 'ONSTART', 'ONLOGON', 'ONIDLE')) {
+            [void] $schtaskSchedule.Items.Add($label)
+        }
+        $schtaskSchedule.SelectedIndex = 2
+        $schtaskSchedule.Add_SelectionChanged({ Update-TkSchtaskFromUi })
+    }
+
+    foreach ($name in @('SchtaskName', 'SchtaskRun', 'SchtaskModifier', 'SchtaskStartTime', 'SchtaskDay', 'SchtaskRunAs')) {
+        $box = Get-TkControl -Name $name
+        if ($box) { $box.Add_TextChanged({ Update-TkSchtaskFromUi }) }
+    }
+
+    foreach ($name in @('SchtaskHighest', 'SchtaskForce')) {
+        $check = Get-TkControl -Name $name
+        if ($check) { $check.Add_Click({ Update-TkSchtaskFromUi }) }
+    }
+
+    Register-TkClick -Name 'BtnCopySchtask' -Action { Copy-TkToolOutput -ControlName 'SchtaskOutput' }
+
     # --- HTML editor ------------------------------------------------------
     $editor = Get-TkControl -Name 'HtmlEditor'
 
@@ -719,6 +857,383 @@ function Open-TkCertificateFileFromUi {
     $lines = @(('File         {0}' -f $file.FullName), '') + @(Format-TkCertificateItem -Item $items)
 
     Set-TkOutput -ControlName 'CertificateOutput' -Text ($lines -join [Environment]::NewLine)
+}
+
+# ---------------------------------------------------------------------------
+# JSON and YAML, numbers, data sizes
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Runs the chosen JSON operation on the text on the page.
+#>
+function Invoke-TkJsonFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'JsonOutput'
+    $box    = Get-TkControl -Name 'JsonInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    if (-not $text.Trim()) {
+        $output.Text = 'Paste JSON, then choose Format, Minify, Validate, To YAML or To CSV.'
+        return
+    }
+
+    $operation = switch ([string] (Get-TkControl -Name 'JsonOperation').SelectedItem) {
+        'Minify'  { 'Minify' }
+        'Validate' { 'Validate' }
+        'To YAML' { 'Yaml' }
+        'To CSV'  { 'Csv' }
+        default   { 'Format' }
+    }
+
+    try {
+        $output.Text = Convert-TkJson -Json $text -Operation $operation
+    }
+    catch {
+        $output.Text = 'Could not convert: {0}' -f $_.Exception.Message
+    }
+}
+
+<#
+.SYNOPSIS
+    Shows the number typed on the page in every base, as it is typed.
+#>
+function Update-TkNumberBaseFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'NumberOutput'
+    $box    = Get-TkControl -Name 'NumberInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    if (-not $text.Trim()) {
+        $output.Text = 'Type a number, in decimal or with a 0x, 0b or 0o prefix.'
+        return
+    }
+
+    $base = switch ([string] (Get-TkControl -Name 'NumberBase').SelectedItem) {
+        'Hexadecimal (16)' { 16 }
+        'Binary (2)'       { 2 }
+        'Octal (8)'        { 8 }
+        default            { 10 }
+    }
+
+    try {
+        $value  = ConvertFrom-TkNumberText -Text $text -Base $base
+        $report = Get-TkNumberReport -Value $value
+        $output.Text = (Format-TkNumberReport -Report $report) -join [Environment]::NewLine
+    }
+    catch {
+        $output.Text = $_.Exception.Message
+    }
+}
+
+<#
+.SYNOPSIS
+    Converts a data size and estimates a transfer time, as the boxes change.
+#>
+function Update-TkDataSizeFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'DataSizeOutput'
+    $sizeBox = Get-TkControl -Name 'DataSizeInput'
+    $rateBox = Get-TkControl -Name 'DataRateInput'
+
+    if (-not $output -or -not $sizeBox -or -not $rateBox) {
+        return
+    }
+
+    $sizeText = [string] $sizeBox.Text
+    $rateText = [string] $rateBox.Text
+
+    if (-not $sizeText.Trim()) {
+        $output.Text = 'Type a size, such as 25 GB, and a link speed, such as 100 Mbps.'
+        return
+    }
+
+    try {
+        $size = ConvertFrom-TkDataSizeText -Text $sizeText
+    }
+    catch {
+        $output.Text = $_.Exception.Message
+        return
+    }
+
+    if (-not $rateText.Trim()) {
+        $output.Text = @(('Size      {0}' -f (Format-TkByteCountBoth -Bytes $size.Bytes)), '', 'Add a link speed to work out the transfer time.') -join [Environment]::NewLine
+        return
+    }
+
+    try {
+        $report = Get-TkTransferReport -SizeText $sizeText -RateText $rateText
+        $output.Text = (Format-TkTransferReport -Report $report) -join [Environment]::NewLine
+    }
+    catch {
+        $output.Text = $_.Exception.Message
+    }
+}
+
+# ---------------------------------------------------------------------------
+# SDDL, Active Directory flags, robocopy and scheduled tasks
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Decodes the SDDL string on the page, as it is typed.
+#>
+function Update-TkSddlFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'SddlOutput'
+    $box    = Get-TkControl -Name 'SddlInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    if (-not $text.Trim()) {
+        $output.Text = 'Paste an SDDL string, such as O:BAG:BAD:(A;;FA;;;SY)(A;;FR;;;BU).'
+        return
+    }
+
+    $context = switch ([string] (Get-TkControl -Name 'SddlContext').SelectedItem) {
+        'File or folder'   { 'File' }
+        'Registry key'     { 'Registry' }
+        'Directory object' { 'Directory' }
+        'Service'          { 'Service' }
+        default            { 'Generic' }
+    }
+
+    try {
+        $descriptor = ConvertFrom-TkSddl -Text $text -Context $context
+        $output.Text = (Format-TkSddl -Descriptor $descriptor) -join [Environment]::NewLine
+    }
+    catch {
+        $output.Text = 'This is not a security descriptor Windows can read: {0}' -f $_.Exception.Message
+    }
+}
+
+<#
+.SYNOPSIS
+    Decodes the Active Directory flag value on the page, as it is typed.
+#>
+function Update-TkAdFlagsFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'AdFlagOutput'
+    $box    = Get-TkControl -Name 'AdFlagValue'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    $attribute = switch ([string] (Get-TkControl -Name 'AdFlagAttribute').SelectedItem) {
+        'groupType' { 'groupType' }
+        'msDS-SupportedEncryptionTypes' { 'supportedEncryptionTypes' }
+        default { 'userAccountControl' }
+    }
+
+    if (-not $text.Trim()) {
+        $output.Text = 'Type the value held in the attribute, in decimal (514) or with a 0x prefix (0x202).'
+        return
+    }
+
+    try {
+        $value  = ConvertFrom-TkNumberText -Text $text
+        if ($value -gt [uint32]::MaxValue) {
+            $output.Text = 'That value is too large for a 32-bit attribute.'
+            return
+        }
+        $report = ConvertFrom-TkAdFlags -Attribute $attribute -Value ([uint32] $value)
+        $output.Text = (Format-TkAdFlags -Report $report) -join [Environment]::NewLine
+    }
+    catch {
+        $output.Text = $_.Exception.Message
+    }
+}
+
+<#
+.SYNOPSIS
+    Builds the robocopy command from the controls, and reads an exit code.
+#>
+function Update-TkRobocopyFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'RoboOutput'
+
+    if (-not $output) {
+        return
+    }
+
+    $source = [string] (Get-TkControl -Name 'RoboSource').Text
+    $dest   = [string] (Get-TkControl -Name 'RoboDest').Text
+
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    if ($source.Trim() -and $dest.Trim()) {
+
+        $intOr = {
+            param($name)
+            $raw = ([string] (Get-TkControl -Name $name).Text).Trim()
+            if ($raw -match '^\d+$') { [int] $raw } else { $null }
+        }
+
+        $options = @{
+            Mirror         = [bool] (Get-TkControl -Name 'RoboMirror').IsChecked
+            EmptyDirectories = [bool] (Get-TkControl -Name 'RoboEmptyDirs').IsChecked
+            Restartable    = [bool] (Get-TkControl -Name 'RoboRestartable').IsChecked
+            Backup         = [bool] (Get-TkControl -Name 'RoboBackup').IsChecked
+            CopyAll        = [bool] (Get-TkControl -Name 'RoboCopyAll').IsChecked
+            ExcludeOlder   = [bool] (Get-TkControl -Name 'RoboExcludeOlder').IsChecked
+            NoProgress     = [bool] (Get-TkControl -Name 'RoboNoProgress').IsChecked
+            ListOnly       = [bool] (Get-TkControl -Name 'RoboListOnly').IsChecked
+            ExcludeFiles   = @(([string] (Get-TkControl -Name 'RoboExcludeFiles').Text) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            ExcludeDirs    = @(([string] (Get-TkControl -Name 'RoboExcludeDirs').Text) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            Log            = ([string] (Get-TkControl -Name 'RoboLog').Text).Trim()
+        }
+
+        $threads = & $intOr 'RoboThreads'
+        $retries = & $intOr 'RoboRetries'
+        $wait    = & $intOr 'RoboWait'
+        if ($null -ne $threads) { $options.Threads = $threads }
+        if ($null -ne $retries) { $options.Retries = $retries }
+        if ($null -ne $wait)    { $options.Wait    = $wait }
+
+        $lines.Add((Build-TkRobocopyCommand -Source $source -Destination $dest -Options $options))
+    }
+    else {
+        $lines.Add('Type a source and a destination.')
+    }
+
+    $exitText = ([string] (Get-TkControl -Name 'RoboExitCode').Text).Trim()
+
+    if ($exitText -match '^\d+$') {
+        $decoded = ConvertFrom-TkRobocopyExitCode -Code ([int] $exitText)
+        $lines.Add('')
+        $lines.Add(('Exit code {0}: {1}' -f $decoded.Code, $(if ($decoded.Success) { 'success' } else { 'at least one failure' })))
+        foreach ($meaning in $decoded.Meanings) {
+            $lines.Add(('  - {0}' -f $meaning))
+        }
+    }
+
+    $output.Text = $lines -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Builds the schtasks command from the controls, as they change.
+#>
+function Update-TkSchtaskFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'SchtaskOutput'
+
+    if (-not $output) {
+        return
+    }
+
+    $name = [string] (Get-TkControl -Name 'SchtaskName').Text
+    $run  = [string] (Get-TkControl -Name 'SchtaskRun').Text
+
+    if (-not $name.Trim() -or -not $run.Trim()) {
+        $output.Text = 'Type a task name and a program to run.'
+        return
+    }
+
+    $schedule = [string] (Get-TkControl -Name 'SchtaskSchedule').SelectedItem
+    if (-not $schedule) { $schedule = 'DAILY' }
+
+    $options = @{
+        Modifier          = [string] (Get-TkControl -Name 'SchtaskModifier').Text
+        StartTime         = [string] (Get-TkControl -Name 'SchtaskStartTime').Text
+        Day               = [string] (Get-TkControl -Name 'SchtaskDay').Text
+        RunAs             = [string] (Get-TkControl -Name 'SchtaskRunAs').Text
+        HighestPrivileges = [bool] (Get-TkControl -Name 'SchtaskHighest').IsChecked
+        Force             = [bool] (Get-TkControl -Name 'SchtaskForce').IsChecked
+    }
+
+    try {
+        $output.Text = Build-TkSchtasksCommand -Name $name -Run $run -Schedule $schedule -Options $options
+    }
+    catch {
+        $output.Text = $_.Exception.Message
+    }
+}
+
+<#
+.SYNOPSIS
+    Builds the dsacls delegation command from the controls, as they change.
+#>
+function Update-TkDsaclsFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'DsaclsOutput'
+
+    if (-not $output) {
+        return
+    }
+
+    $object  = [string] (Get-TkControl -Name 'DsaclsObject').Text
+    $trustee = [string] (Get-TkControl -Name 'DsaclsTrustee').Text
+
+    if (-not $object.Trim() -or -not $trustee.Trim()) {
+        $output.Text = 'Type the OU distinguished name and who to delegate to.'
+        return
+    }
+
+    $preset = @(Get-TkDsaclsPreset) | Where-Object { $_.Label -eq [string] (Get-TkControl -Name 'DsaclsPreset').SelectedItem } | Select-Object -First 1
+    if (-not $preset) { $preset = @(Get-TkDsaclsPreset)[0] }
+
+    $typeLabel = [string] (Get-TkControl -Name 'DsaclsObjectType').SelectedItem
+    $type      = if ($typeLabel -and $typeLabel -ne 'all objects') { $typeLabel } else { '' }
+
+    $inheritance = switch ([string] (Get-TkControl -Name 'DsaclsInheritance').SelectedItem) {
+        'Child objects only (/I:S)'                       { 'S' }
+        'This object and immediate children (/I:P)'       { 'P' }
+        'This object only'                                { '' }
+        default                                           { 'T' }
+    }
+
+    if ($preset.Label -eq 'Custom') {
+        $rights = ([string] (Get-TkControl -Name 'DsaclsCustom').Text).Trim()
+        if (-not $rights) {
+            $output.Text = 'Type the dsacls rights for the Custom task, such as CCDC;computer or WPRP;member;group.'
+            return
+        }
+    }
+    else {
+        $rights = & $preset.Build $type
+    }
+
+    try {
+        $command = Build-TkDsaclsCommand -ObjectDn $object -Trustee $trustee -Rights $rights -Inheritance $inheritance -Deny:([bool] (Get-TkControl -Name 'DsaclsDeny').IsChecked)
+        $output.Text = @($command, '', $preset.Description, 'Run elevated on a domain-joined machine with the AD tools. dsacls reads the current ACL when run with no /G or /D.') -join [Environment]::NewLine
+    }
+    catch {
+        $output.Text = $_.Exception.Message
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -1673,6 +2188,9 @@ function Get-TkToolEntry {
         (& $tool 'Text and data'    'Encoding'       'ToolEncoding')
         (& $tool 'Text and data'    'Regex'          'ToolRegex')
         (& $tool 'Text and data'    'Timestamps'     'ToolTimestamps')
+        (& $tool 'Text and data'    'JSON and YAML'  'ToolJson')
+        (& $tool 'Text and data'    'Number bases'   'ToolNumberBase')
+        (& $tool 'Text and data'    'Data size and rate' 'ToolDataSize')
         (& $tool 'Text and data'    'Text diff'      'ToolTextDiff')
         (& $tool 'Text and data'    'URL parser'     'ToolUrlParser')
         (& $tool 'Text and data'    'NATO alphabet'  'ToolNato')
@@ -1681,6 +2199,11 @@ function Get-TkToolEntry {
         (& $tool 'Linux and DevOps' 'chmod'          'ToolChmod')
         (& $tool 'Linux and DevOps' 'Crontab'        'ToolCrontab')
         (& $tool 'Linux and DevOps' 'Docker Compose' 'ToolDockerCompose')
+        (& $tool 'Windows and AD'   'SDDL'           'ToolSddl')
+        (& $tool 'Windows and AD'   'AD account flags' 'ToolAdFlags')
+        (& $tool 'Windows and AD'   'Robocopy'       'ToolRobocopy')
+        (& $tool 'Windows and AD'   'Scheduled task' 'ToolSchtasks')
+        (& $tool 'Windows and AD'   'dsacls delegation' 'ToolDsacls')
     )
 }
 

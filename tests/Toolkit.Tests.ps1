@@ -4814,6 +4814,212 @@ Describe 'Certificate decoding' {
     }
 }
 
+Describe 'Administration decoders' {
+
+    Context 'SDDL' {
+
+        It 'reads the owner, group and DACL of a descriptor, with rights named for a file' {
+
+            $descriptor = ConvertFrom-TkSddl -Text 'O:BAG:BAD:(A;;FA;;;SY)(A;;FR;;;BU)' -Context File
+
+            $descriptor.Owner.Name | Should -Be 'Administrators'
+            $descriptor.Group.Name | Should -Be 'Administrators'
+            @($descriptor.Dacl).Count | Should -Be 2
+
+            $descriptor.Dacl[0].Type            | Should -Be 'Allow'
+            $descriptor.Dacl[0].Trustee.Name    | Should -Be 'Local System'
+            (@($descriptor.Dacl[0].Rights) -join ',') | Should -Be 'Full control'
+
+            $descriptor.Dacl[1].Trustee.Name    | Should -Be 'Users'
+            (@($descriptor.Dacl[1].Rights) -join ',') | Should -Be 'Read'
+        }
+
+        It 'names the inheritance and audit flags of an entry' {
+
+            $descriptor = ConvertFrom-TkSddl -Text 'D:AI(A;OICIID;FA;;;BA)S:(AU;SAFA;FA;;;WD)' -Context File
+
+            (@($descriptor.Control) -join ',')        | Should -Match 'DACL auto-inherited'
+            (@($descriptor.Dacl[0].Flags) -join ',')  | Should -Be 'Object inherit,Container inherit,Inherited'
+            $descriptor.Sacl[0].Type                  | Should -Be 'Audit'
+            (@($descriptor.Sacl[0].Flags) -join ',')  | Should -Be 'Audit success,Audit failure'
+        }
+
+        It 'reads a service descriptor and a directory descriptor with the right rights' {
+
+            $service = ConvertFrom-TkSddl -Text 'D:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)' -Context Service
+            (@($service.Dacl[0].Rights) -join ',')    | Should -Match 'Full control'
+
+            $directory = ConvertFrom-TkSddl -Text 'D:(A;;RPWP;;;WD)' -Context Directory
+            (@($directory.Dacl[0].Rights) -join ',')  | Should -Be 'Read property,Write property'
+        }
+
+        It 'names a domain relative SID by its RID' {
+            Get-TkSidFriendlyName -Sid 'S-1-5-21-1-2-3-512' | Should -Be 'Domain Admins'
+            Get-TkSidFriendlyName -Sid 'S-1-5-18'           | Should -Be 'Local System'
+        }
+    }
+
+    Context 'Active Directory account flags' {
+
+        It 'reads a disabled normal user from userAccountControl 514' {
+
+            $report = ConvertFrom-TkAdFlags -Attribute userAccountControl -Value 514
+
+            @($report.Flags | Where-Object Set | ForEach-Object { $_.Name }) | Should -Be @('ACCOUNTDISABLE', 'NORMAL_ACCOUNT')
+            (@($report.Notes) -join ' ') | Should -Match 'disabled'
+        }
+
+        It 'reads a password that never expires from 66048' {
+            @(ConvertFrom-TkAdFlags -Attribute userAccountControl -Value 66048).Flags | Where-Object Set | ForEach-Object { $_.Name } |
+                Should -Contain 'DONT_EXPIRE_PASSWORD'
+        }
+
+        It 'reads a security group with global scope from groupType' {
+
+            $report = ConvertFrom-TkAdFlags -Attribute groupType -Value 2147483650
+
+            @($report.Flags | Where-Object Set | ForEach-Object { $_.Name }) | Should -Contain 'SECURITY_ENABLED'
+            (@($report.Notes) -join ' ') | Should -Match 'security group with global scope'
+        }
+
+        It 'reads AES-only and warns on a zero encryption type' {
+
+            $aes = ConvertFrom-TkAdFlags -Attribute supportedEncryptionTypes -Value 24
+            @($aes.Flags | Where-Object Set | ForEach-Object { $_.Name }) | Should -Be @('AES128_CTS_HMAC_SHA1_96', 'AES256_CTS_HMAC_SHA1_96')
+            (@($aes.Notes) -join ' ') | Should -Match 'AES only'
+
+            (@((ConvertFrom-TkAdFlags -Attribute supportedEncryptionTypes -Value 0).Notes) -join ' ') | Should -Match 'RC4'
+        }
+    }
+
+    Context 'Numbers and bitmasks' {
+
+        It 'reads a number from any base' {
+            ConvertFrom-TkNumberText -Text '0xFF'         | Should -Be 255
+            ConvertFrom-TkNumberText -Text '0b1010'       | Should -Be 10
+            ConvertFrom-TkNumberText -Text '0o755'        | Should -Be 493
+            ConvertFrom-TkNumberText -Text '755' -Base 8  | Should -Be 493
+            ConvertFrom-TkNumberText -Text '1_000'        | Should -Be 1000
+        }
+
+        It 'throws on a digit that does not belong to the base' {
+            { ConvertFrom-TkNumberText -Text '0b1012' } | Should -Throw
+        }
+
+        It 'shows every base and the bits that are set' {
+
+            $report = Get-TkNumberReport -Value ([System.Numerics.BigInteger] 493)
+
+            $report.Hex   | Should -Be '0x1ED'
+            $report.Octal | Should -Be '0o755'
+            (@($report.Bits) -join ',') | Should -Be '0,2,3,5,6,7,8'
+        }
+    }
+
+    Context 'Data sizes and transfer times' {
+
+        It 'reads decimal and binary units, and tells bits from bytes' {
+            (ConvertFrom-TkDataSizeText -Text '1 KB').Bytes  | Should -Be 1000
+            (ConvertFrom-TkDataSizeText -Text '1 KiB').Bytes | Should -Be 1024
+            (ConvertFrom-TkDataSizeText -Text '8 b').Bytes   | Should -Be 1
+            (ConvertFrom-TkDataSizeText -Text '100 Mbps').Bits | Should -Be 100000000
+        }
+
+        It 'works out a transfer time from a size and a rate' {
+
+            $report = Get-TkTransferReport -SizeText '1 GB' -RateText '100 Mbps'
+
+            $report.Seconds | Should -Be 80
+            (Format-TkTransferReport -Report $report) -join "`n" | Should -Match 'At the full rate      1 min 20 s'
+        }
+    }
+
+    Context 'Robocopy' {
+
+        It 'builds a command, with mirror winning over a plain subfolder copy' {
+            Build-TkRobocopyCommand -Source 'C:\Data Files' -Destination '\\srv\bk' -Options @{ Mirror = $true; EmptyDirectories = $true; Threads = 16; Retries = 2; Wait = 5 } |
+                Should -Be 'robocopy "C:\Data Files" \\srv\bk /MIR /MT:16 /R:2 /W:5'
+        }
+
+        It 'adds a log file, excluded files and no progress' {
+            Build-TkRobocopyCommand -Source 'C:\A' -Destination 'D:\B' -Options @{ EmptyDirectories = $true; ExcludeFiles = @('*.tmp'); NoProgress = $true; Log = 'C:\Logs\b.log' } |
+                Should -Be 'robocopy C:\A D:\B /E /XF *.tmp /LOG:C:\Logs\b.log /TEE /NP'
+        }
+
+        It 'reads an exit code as a bitmask, not a rank' {
+
+            $three = ConvertFrom-TkRobocopyExitCode -Code 3
+            $three.Success | Should -BeTrue
+            @($three.Meanings).Count | Should -Be 2
+
+            $sixteen = ConvertFrom-TkRobocopyExitCode -Code 16
+            $sixteen.Success | Should -BeFalse
+            (@($sixteen.Meanings) -join ' ') | Should -Match 'fatal'
+        }
+    }
+
+    Context 'dsacls delegation' {
+
+        It 'builds a full-control grant reaching all children' {
+            $rights = & (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Full control').Build ''
+            Build-TkDsaclsCommand -ObjectDn 'OU=Sales,DC=contoso,DC=com' -Trustee 'CONTOSO\OU-Admins' -Rights $rights -Inheritance 'T' |
+                Should -Be 'dsacls "OU=Sales,DC=contoso,DC=com" /I:T /G "CONTOSO\OU-Admins:GA"'
+        }
+
+        It 'builds a reset-password delegation on user objects' {
+            $rights = & (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Reset passwords').Build 'user'
+            Build-TkDsaclsCommand -ObjectDn 'OU=Staff,DC=contoso,DC=com' -Trustee 'CONTOSO\Helpdesk' -Rights $rights -Inheritance 'S' |
+                Should -Be 'dsacls "OU=Staff,DC=contoso,DC=com" /I:S /G "CONTOSO\Helpdesk:CA;Reset Password;user"'
+        }
+
+        It 'maps create-and-delete to the child object type, and leaves it out for all objects' {
+            (& (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Create and delete child objects').Build 'computer') | Should -Be 'CCDC;computer'
+            (& (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Create and delete child objects').Build '')         | Should -Be 'CCDC'
+        }
+
+        It 'denies with /D instead of /G' {
+            Build-TkDsaclsCommand -ObjectDn 'OU=Staff,DC=contoso,DC=com' -Trustee 'CONTOSO\HR' -Rights 'RPWP;;user' -Inheritance 'S' -Deny |
+                Should -Match '/D "CONTOSO\\HR:RPWP;;user"'
+        }
+    }
+
+    Context 'Scheduled tasks' {
+
+        It 'adds only the fields a schedule uses' {
+
+            $weekly = Build-TkSchtasksCommand -Name 'Nightly backup' -Run 'C:\s\b.cmd' -Schedule WEEKLY -Options @{ Day = 'mon'; StartTime = '02:00'; HighestPrivileges = $true; Force = $true }
+            $weekly | Should -Be 'schtasks /create /tn "Nightly backup" /tr "C:\s\b.cmd" /sc WEEKLY /d MON /st 02:00 /rl HIGHEST /f'
+
+            $onstart = Build-TkSchtasksCommand -Name 'Boot' -Run 'x.exe' -Schedule ONSTART -Options @{ Day = 'MON'; StartTime = '02:00' }
+            $onstart | Should -Be 'schtasks /create /tn "Boot" /tr "x.exe" /sc ONSTART'
+        }
+    }
+
+    Context 'JSON and YAML' {
+
+        It 'minifies and validates JSON' {
+            Compress-TkJsonText -Json "{ `"a`": 1, `"b`": [1, 2] }" | Should -Be '{"a":1,"b":[1,2]}'
+            (Test-TkJsonText -Json '{bad}').Valid | Should -BeFalse
+            (Test-TkJsonText -Json '{"a":1}').Valid | Should -BeTrue
+        }
+
+        It 'turns JSON into YAML' {
+            $yaml = Convert-TkJson -Json '{"name":"web","ports":[80,443],"env":{"TZ":"Europe/Paris"}}' -Operation Yaml
+            $yaml | Should -Match 'name: web'
+            $yaml | Should -Match '  - 80'
+            $yaml | Should -Match '  TZ: Europe/Paris'
+        }
+
+        It 'turns an array of flat objects into CSV, and refuses anything else' {
+            $csv = Convert-TkJson -Json '[{"name":"a","id":1},{"name":"b","id":2}]' -Operation Csv
+            $csv | Should -Match '"name","id"'
+            $csv | Should -Match '"a","1"'
+
+            Convert-TkJson -Json '[1,2,3]' -Operation Csv | Should -Match 'array of flat objects'
+        }
+    }
+}
+
 Describe 'Tools page' {
 
     BeforeAll {
