@@ -5282,6 +5282,56 @@ Describe 'Updates, accounts and policy' {
     }
 }
 
+Describe 'Playbooks' {
+
+    BeforeAll {
+        $script:Playbooks  = @(Get-TkPlaybook)
+        $script:PbMarkup   = Get-TkMainWindowXaml
+        $script:DiagTitles = @(Get-TkDiagnosticReport | ForEach-Object { $_.Title })
+        $script:HuntTitles = @('Event log triage', 'Autostart and persistence', 'Network exposure', 'Certificate inventory', 'USB history', 'Remote Desktop history', 'Browser extensions', 'Defender detections')
+        $script:PageNames  = @(Get-TkPageName)
+    }
+
+    It 'has unique ids and at least one step each' {
+        $ids = @($script:Playbooks | ForEach-Object { $_.Id })
+        @($ids | Sort-Object -Unique).Count | Should -Be $ids.Count
+        foreach ($playbook in $script:Playbooks) {
+            @($playbook.Steps).Count | Should -BeGreaterThan 0
+        }
+    }
+
+    It 'points every step at a page that exists' {
+        foreach ($playbook in $script:Playbooks) {
+            foreach ($step in $playbook.Steps) {
+                if ($step.Page) {
+                    $script:PageNames | Should -Contain $step.Page
+                }
+            }
+        }
+    }
+
+    It 'points every report and hunt step at a chooser entry that exists' {
+        foreach ($playbook in $script:Playbooks) {
+            foreach ($step in $playbook.Steps) {
+                if ($step.List -eq 'DiagnosticChoices') {
+                    $script:DiagTitles | Should -Contain $step.Choice
+                }
+                elseif ($step.List -eq 'HuntChoices') {
+                    $script:HuntTitles | Should -Contain $step.Choice
+                }
+            }
+        }
+    }
+
+    It 'lists the playbooks in the markup in the same order as the data' {
+        $start = $script:PbMarkup.IndexOf('x:Name="PlaybookChoices"')
+        $end   = $script:PbMarkup.IndexOf('</ListBox>', $start)
+        $slice = $script:PbMarkup.Substring($start, $end - $start)
+        $actual = @([regex]::Matches($slice, 'Text="(?<t>[^"]+)"') | ForEach-Object { $_.Groups['t'].Value })
+        ($actual -join '|') | Should -Be ((@($script:Playbooks | ForEach-Object { $_.Title })) -join '|')
+    }
+}
+
 Describe 'Tools page' {
 
     BeforeAll {

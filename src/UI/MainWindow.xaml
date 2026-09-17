@@ -1176,6 +1176,7 @@
                             <Button x:Name="NavIntervention"   Content="Intervention"    Style="{StaticResource NavButton}" Tag="&#xE70F;" />
 
                             <TextBlock Text="TROUBLESHOOTING" Style="{StaticResource NavSection}" />
+                            <Button x:Name="NavPlaybooks"      Content="Playbooks"       Style="{StaticResource NavButton}" Tag="&#xE9D9;" />
                             <Button x:Name="NavDiagnostics"    Content="Diagnostics"     Style="{StaticResource NavButton}" Tag="&#xE95E;" />
                             <Button x:Name="NavNetwork"        Content="Network"         Style="{StaticResource NavButton}" Tag="&#xEC26;" />
 
@@ -4290,6 +4291,62 @@
                     the visit. The journal fills itself as operations run; the
                     technician adds the ticket and the notes.
                 -->
+                <!-- ========================= PLAYBOOKS ========================= -->
+                <Grid x:Name="PagePlaybooks" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0">
+                        <TextBlock Text="Playbooks" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                   Text="Guided sequences for the problems a support call is about. A playbook puts the reports, checks and fixes the toolkit already has into the order to work through them. Each step takes you where it happens; come back here for the next one." />
+                    </StackPanel>
+
+                    <Grid Grid.Row="1" Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <ListBox Grid.Column="0" x:Name="PlaybookChoices" Background="Transparent" BorderThickness="0" Margin="0,0,16,0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
+                            <ListBoxItem Style="{StaticResource ReportChoice}" ToolTip="Everything takes too long: applications, start-up, or the whole desktop.">
+                                <TextBlock Text="The machine is slow" Style="{StaticResource ChoiceTitle}" TextWrapping="Wrap" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}" ToolTip="No connectivity, an intermittent connection, or a site that will not load.">
+                                <TextBlock Text="No internet or a network problem" Style="{StaticResource ChoiceTitle}" TextWrapping="Wrap" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}" ToolTip="A sign-in that is refused, a single sign-on that keeps prompting, or a device that lost its trust.">
+                                <TextBlock Text="Cannot sign in to the domain or Microsoft 365" Style="{StaticResource ChoiceTitle}" TextWrapping="Wrap" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}" ToolTip="Low disk space warnings, or a drive with no room left.">
+                                <TextBlock Text="The disk is full" Style="{StaticResource ChoiceTitle}" TextWrapping="Wrap" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}" ToolTip="Odd behaviour, a security alert, or a machine you have reason to distrust.">
+                                <TextBlock Text="Suspected malware or compromise" Style="{StaticResource ChoiceTitle}" TextWrapping="Wrap" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}" ToolTip="The machine restarts on its own, freezes, or shows a stop error.">
+                                <TextBlock Text="Blue screens or crashes" Style="{StaticResource ChoiceTitle}" TextWrapping="Wrap" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}" ToolTip="Nothing prints, the queue is stuck, or a printer has vanished.">
+                                <TextBlock Text="Printing does not work" Style="{StaticResource ChoiceTitle}" TextWrapping="Wrap" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}" ToolTip="An update that will not install, keeps failing, or hangs.">
+                                <TextBlock Text="Windows Update is stuck or failing" Style="{StaticResource ChoiceTitle}" TextWrapping="Wrap" />
+                            </ListBoxItem>
+                        </ListBox>
+
+                        <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="PlaybookSteps" Margin="4" />
+                            </ScrollViewer>
+                        </Border>
+                    </Grid>
+                </Grid>
+
                 <Grid x:Name="PageIntervention" Margin="24,20" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
