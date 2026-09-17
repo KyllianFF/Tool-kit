@@ -18,6 +18,7 @@ src/Core/DataLoader.ps1
 
 # --- Features: depend on core only -----------------------------------------
 src/Features/System/SystemInventory.ps1
+src/Features/System/WindowsUpdate.ps1
 src/Features/System/VendorSupport.ps1
 src/Features/System/Dashboard.ps1
 src/Features/Software/WingetManager.ps1
@@ -49,6 +50,8 @@ src/Features/Diagnostics/DeviceProblems.ps1
 src/Features/Diagnostics/IdentityHealth.ps1
 src/Features/Diagnostics/Performance.ps1
 src/Features/Diagnostics/DiskSpace.ps1
+src/Features/Diagnostics/LocalAccounts.ps1
+src/Features/Diagnostics/GroupPolicyResult.ps1
 src/Features/Diagnostics/HardwareTests.ps1
 src/Features/Diagnostics/SupportBundle.ps1
 src/Features/Intervention/Journal.ps1

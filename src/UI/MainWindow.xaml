@@ -1525,17 +1525,24 @@
                 <Grid x:Name="PageSoftware" Margin="24,20" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0">
                         <TextBlock Text="Software" Style="{StaticResource Heading}" />
                         <TextBlock x:Name="WingetStatusText" Style="{StaticResource Muted}"
-                                   Text="Installation through winget, from the official Microsoft source only." />
+                                   Text="Applications through winget, from the official Microsoft source; and the updates Windows Update has for this machine." />
                     </StackPanel>
 
-                    <Grid Grid.Row="1" Margin="0,14,0,10">
+                    <TabControl Grid.Row="1" x:Name="SoftwareTabs" Background="Transparent" BorderThickness="0" Margin="0,14,0,0">
+                        <TabItem Header="Applications">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
@@ -1553,7 +1560,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0" Padding="4">
+                    <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0" Padding="4">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ItemsControl x:Name="SoftwareList">
                                 <!--
@@ -1656,6 +1663,34 @@
                             </ItemsControl>
                         </ScrollViewer>
                     </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Windows Update">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Button x:Name="BtnCheckUpdates"   Content="Check for updates" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
+                                    <Button x:Name="BtnInstallUpdates" Content="Install selected"  Style="{StaticResource GlyphButton}" Tag="&#xE896;" Margin="0,0,16,0" />
+                                    <TextBlock x:Name="UpdateStatus" Style="{StaticResource Muted}" VerticalAlignment="Center"
+                                               Text="Checking reads only. Installing changes the machine, needs administrator rights, and asks first." />
+                                </StackPanel>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0" Padding="4">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <StackPanel x:Name="UpdateList" Margin="8">
+                                            <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                       Text="Select Check for updates to ask Windows Update what is available. Nothing is downloaded or installed until you choose updates and confirm." />
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
                 </Grid>
 
                 <!-- ========================= TWEAKS ========================= -->
@@ -2407,6 +2442,14 @@
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Profile sizes, mapped drives and logon timing. The domain is under Sign-in and management.">
                                             <TextBlock Text="Profiles and policy" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="The local users and groups: who can sign in, whose password never expires or is not required, and who is a local administrator.">
+                                            <TextBlock Text="Local accounts" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Which Group Policy objects applied to this machine and user, and which were filtered out, from gpresult. The computer side needs administrator rights.">
+                                            <TextBlock Text="Group Policy" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                     </ListBox>
                                 </DockPanel>

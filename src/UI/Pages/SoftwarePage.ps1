@@ -298,7 +298,136 @@ function Initialize-TkSoftwarePage {
     # one.
     Register-TkFirstShow -PageName 'Software' -Action { Update-TkInstalledState }
 
+    # --- Windows Update tab -----------------------------------------------
+    Register-TkClick -Name 'BtnCheckUpdates'   -Action { Invoke-TkCheckUpdatesFromUi }
+    Register-TkClick -Name 'BtnInstallUpdates' -Action { Invoke-TkInstallUpdatesFromUi }
+
     Update-TkWingetStatusText
+}
+
+# The updates from the last check, so the install can find them again.
+$script:TkAvailableUpdates = @()
+
+<#
+.SYNOPSIS
+    Asks Windows Update what is available and lists it with a checkbox each.
+
+.DESCRIPTION
+    The search reads only. Each update becomes a checkbox carrying its record,
+    so the install can read back exactly what was ticked.
+#>
+function Invoke-TkCheckUpdatesFromUi {
+    [CmdletBinding()]
+    param()
+
+    Set-TkStatus -Text 'Asking Windows Update what is available...'
+
+    $panel = Get-TkControl -Name 'UpdateList'
+    if ($panel) {
+        $panel.Children.Clear()
+        $waiting = New-Object System.Windows.Controls.TextBlock
+        $waiting.Text = 'Checking with Windows Update, this can take a minute...'
+        $waiting.TextWrapping = 'Wrap'
+        [void] $panel.Children.Add($waiting)
+    }
+
+    Invoke-TkBackgroundAction -StatusText 'Checking Windows Update...' `
+        -ScriptBlock { Get-TkAvailableUpdate } `
+        -OnComplete {
+            param($result)
+
+            $updates = @($result.Output)
+            $script:TkAvailableUpdates = $updates
+
+            $panel = Get-TkControl -Name 'UpdateList'
+            if (-not $panel) { return }
+
+            $panel.Children.Clear()
+
+            if ($updates.Count -eq 0) {
+                $none = New-Object System.Windows.Controls.TextBlock
+                $none.Text = 'Windows Update has nothing for this machine right now.'
+                $none.TextWrapping = 'Wrap'
+                [void] $panel.Children.Add($none)
+                Set-TkStatus -Text 'Windows Update: nothing available.'
+                return
+            }
+
+            foreach ($update in $updates) {
+
+                $reboot = if ($update.RequiresReboot) { ', needs a restart' } elseif ($update.MayReboot) { ', may need a restart' } else { '' }
+                $check  = New-Object System.Windows.Controls.CheckBox
+                $check.Content = '{0}  [{1}]  {2}{3}' -f $update.Title, $update.SeverityLabel, $update.SizeText, $reboot
+                $check.Tag     = $update
+                $check.Margin  = '0,4,0,4'
+                Set-TkResourceBrush -Element $check -Property Foreground -Key 'TextPrimary'
+                [void] $panel.Children.Add($check)
+            }
+
+            Set-TkStatus -Text ('Windows Update: {0} available.' -f $updates.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Installs the ticked updates, after confirming and checking for elevation.
+#>
+function Invoke-TkInstallUpdatesFromUi {
+    [CmdletBinding()]
+    param()
+
+    $panel = Get-TkControl -Name 'UpdateList'
+    if (-not $panel) { return }
+
+    $chosen = @(foreach ($child in $panel.Children) {
+        if ($child -is [System.Windows.Controls.CheckBox] -and $child.IsChecked -and $child.Tag) { $child.Tag }
+    })
+
+    if ($chosen.Count -eq 0) {
+        Set-TkStatus -Text 'Tick the updates to install first.'
+        return
+    }
+
+    if (-not (Test-TkIsElevated)) {
+        Set-TkStatus -Text 'Installing updates needs administrator rights. Restart as administrator from the header.'
+        return
+    }
+
+    $ids     = @($chosen | ForEach-Object { $_.UpdateId })
+    $titles  = @($chosen | ForEach-Object { $_.Title })
+
+    $message = @(
+        'This will download and install through Windows Update:'
+        ''
+        ($titles | ForEach-Object { '    ' + $_ })
+        ''
+        'Some updates restart the machine. Save your work first. Install now?'
+    ) -join [Environment]::NewLine
+
+    if (-not (Confirm-TkAction -Title 'Install updates' -Message $message)) {
+        return
+    }
+
+    Invoke-TkBackgroundAction -StatusText 'Downloading and installing updates, this can take a while...' `
+        -ArgumentList @(, $ids) `
+        -ScriptBlock {
+            param($updateIds)
+            Install-TkWindowsUpdate -UpdateId $updateIds -Confirm:$false
+        } `
+        -OnComplete {
+            param($result)
+
+            $outcome = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Installed'] } | Select-Object -First 1
+
+            if (-not $outcome) {
+                Set-TkStatus -Text 'The install did not complete. See the output panel.'
+                return
+            }
+
+            $reboot = if ($outcome.RebootRequired) { ' A restart is needed to finish.' } else { '' }
+            Set-TkStatus -Text ('Updates: {0} installed, {1} failed.{2}' -f $outcome.Installed, $outcome.Failed, $reboot)
+            Invoke-TkCheckUpdatesFromUi
+        }
 }
 
 <#

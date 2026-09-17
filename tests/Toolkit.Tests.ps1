@@ -5185,6 +5185,103 @@ Describe 'Threat hunting history' {
     }
 }
 
+Describe 'Updates, accounts and policy' {
+
+    Context 'Local accounts' {
+
+        It 'judges the accounts the way a review does' {
+
+            $users = @(
+                [pscustomobject] @{ Name = 'Guest';  Enabled = $false; PasswordRequired = $false; PasswordExpires = $null;        LastLogon = $null; IsBuiltinAdministrator = $false; IsBuiltinGuest = $true }
+                [pscustomobject] @{ Name = 'Admin';  Enabled = $true;  PasswordRequired = $true;  PasswordExpires = (Get-Date);   LastLogon = (Get-Date); IsBuiltinAdministrator = $true;  IsBuiltinGuest = $false }
+                [pscustomobject] @{ Name = 'Kiosk';  Enabled = $true;  PasswordRequired = $false; PasswordExpires = $null;        LastLogon = (Get-Date).AddDays(-200); IsBuiltinAdministrator = $false; IsBuiltinGuest = $false }
+            )
+            $admins = @(
+                [pscustomobject] @{ Name = 'A'; ObjectClass = 'User' }
+                [pscustomobject] @{ Name = 'B'; ObjectClass = 'User' }
+                [pscustomobject] @{ Name = 'C'; ObjectClass = 'User' }
+                [pscustomobject] @{ Name = 'D'; ObjectClass = 'User' }
+            )
+
+            $findings = @(Get-TkLocalAccountFinding -Users $users -AdminMembers $admins -Now (Get-Date))
+            $joined   = ($findings | ForEach-Object { '{0}:{1}' -f $_.Severity, $_.Heading }) -join '|'
+
+            $joined | Should -Match 'Pass:The Guest account'
+            $joined | Should -Match 'Info:The built-in Administrator'
+            $joined | Should -Match 'Warning:4 local administrator'
+            $joined | Should -Match 'Warning:"Kiosk" needs no password'
+            $joined | Should -Match 'Info:"Kiosk" has not signed in'
+        }
+    }
+
+    Context 'Group Policy' {
+
+        It 'reads applied and filtered policies and the security groups' {
+
+            [xml] $xml = @'
+<Rsop xmlns="http://www.microsoft.com/GroupPolicy/Rsop">
+  <ReadTime>2026-09-17T06:01:00Z</ReadTime>
+  <ComputerResults>
+    <Name>CONTOSO\PC01$</Name>
+    <GPO><Name>Default Domain Policy</Name><Enabled>true</Enabled><FilterAllowed>true</FilterAllowed><AccessDenied>false</AccessDenied><Link>DC=contoso</Link></GPO>
+    <GPO><Name>Blocked Policy</Name><Enabled>true</Enabled><FilterAllowed>false</FilterAllowed><AccessDenied>false</AccessDenied></GPO>
+    <SecurityGroup><Name>BUILTIN\Administrators</Name></SecurityGroup>
+  </ComputerResults>
+  <UserResults>
+    <Name>CONTOSO\jane</Name>
+    <GPO><Name>User Base</Name><Enabled>true</Enabled><FilterAllowed>true</FilterAllowed><AccessDenied>false</AccessDenied></GPO>
+  </UserResults>
+</Rsop>
+'@
+
+            $report = ConvertFrom-TkGpResultXml -Document $xml
+
+            $report.ReadTime         | Should -Be '2026-09-17T06:01:00Z'
+            $report.Computer.Name    | Should -Be 'CONTOSO\PC01$'
+            @($report.Computer.Gpos).Count | Should -Be 2
+            $report.Computer.Gpos[0].Applied | Should -BeTrue
+            $report.Computer.Gpos[1].Applied | Should -BeFalse
+            $report.Computer.Gpos[1].Reason  | Should -Match 'filtered'
+            (@($report.Computer.SecurityGroups) -join ',') | Should -Match 'Administrators'
+            $report.User.Gpos[0].Name | Should -Be 'User Base'
+        }
+    }
+
+    Context 'Windows Update' {
+
+        It 'maps severity and formats an implausible size as not reported' {
+            (Get-TkUpdateSeverity -Severity 'Critical').Severity  | Should -Be 'Fail'
+            (Get-TkUpdateSeverity -Severity 'Important').Severity | Should -Be 'Warning'
+            (Get-TkUpdateSeverity -Severity '').Label             | Should -Be 'Unrated'
+
+            Format-TkUpdateSize -Bytes 734003200 | Should -Match 'MB'
+            Format-TkUpdateSize -Bytes 0         | Should -Be 'size not reported'
+            Format-TkUpdateSize -Bytes 96888104301 | Should -Be 'size not reported'
+        }
+
+        It 'reduces an update object to a record' {
+
+            $update = [pscustomobject] @{
+                Title = '2026-09 Cumulative Update (KB5012345)'
+                KBArticleIDs = @('5012345')
+                MaxDownloadSize = 734003200
+                MsrcSeverity = 'Critical'
+                IsDownloaded = $false
+                InstallationBehavior = [pscustomobject] @{ RebootBehavior = 1 }
+                Categories = @([pscustomobject] @{ Name = 'Security Updates' })
+                Identity = [pscustomobject] @{ UpdateID = 'abc-123' }
+            }
+
+            $record = ConvertFrom-TkUpdateCom -Update $update
+            $record.KB             | Should -Be 'KB5012345'
+            $record.Severity       | Should -Be 'Fail'
+            $record.RequiresReboot | Should -BeTrue
+            $record.SizeText       | Should -Match 'MB'
+            $record.UpdateId       | Should -Be 'abc-123'
+        }
+    }
+}
+
 Describe 'Tools page' {
 
     BeforeAll {
