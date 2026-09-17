@@ -5159,6 +5159,7 @@ Describe 'Threat hunting history' {
 
         It 'names a well-known extension id and leaves an unknown one empty' {
             Get-TkKnownExtensionName -Id 'cjpalhdlnbpafiamejdnhcphjbkeiagm' | Should -Be 'uBlock Origin'
+            Get-TkKnownExtensionName -Id 'neebplgakaahbhdphmkckjjcegoiijjo' | Should -Be 'Keepa'
             Get-TkKnownExtensionName -Id 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' | Should -Be ''
         }
     }

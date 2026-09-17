@@ -482,10 +482,16 @@ function Get-TkKnownExtensionName {
 
     $map = @{
         'cjpalhdlnbpafiamejdnhcphjbkeiagm' = 'uBlock Origin'
+        'ddkjiahejlhfcafbddmgiahcphecmpfh' = 'uBlock Origin Lite'
         'nngceckbapebfimnlniiiahkandclblb' = 'Bitwarden'
         'jbkfoedolllekgbhcbcoahefnbanhhlh' = 'Bitwarden'
         'aeblfdkhhhdcdjpifhhbdiojplfjncoa' = '1Password'
+        'dppgmdbiimibapkepcbdbmkaabgiofem' = '1Password'
         'hdokiejnpimakedhajhdlcegeplioahd' = 'LastPass'
+        'fdjamakpfbbddfjaooikfcpapjohcfmg' = 'Dashlane'
+        'oboonakemofpalcgghocfoadofidjkkk' = 'KeePassXC-Browser'
+        'nkbihfbeogaeaoehlefnkodbefgpgknn' = 'MetaMask'
+        'bhghoamapcdpbohphigoooaddinpkbai' = 'Authenticator'
         'gighmmpiobklfepjocnamgkkbiglidom' = 'AdBlock'
         'cfhdojbkjhnklbpkdaibdccddilifddb' = 'Adblock Plus'
         'efaidnbmnnnibpcajpcglclefindmkaj' = 'Adobe Acrobat'
@@ -496,8 +502,13 @@ function Get-TkKnownExtensionName {
         'pkedcjkdefgpdelpbcmbmeomcjbeemfm' = 'Google Cast'
         'eimadpbcbfnmbkopoojfekhnkhdbieeh' = 'Dark Reader'
         'fmkadmapgofadopljbjfkapdkoienihi' = 'React Developer Tools'
+        'lmhkpmbekcpmknklioeibfkpmmfibljd' = 'Redux DevTools'
+        'dhdgffkkebhmkfjojejmpbldmpobfkfo' = 'Tampermonkey'
         'kbfnbcaeplbcioakkpcpgfkobkghlhen' = 'Grammarly'
         'bmnlcjabgnpnenekpadlanbbkooimhnj' = 'Honey'
+        'neebplgakaahbhdphmkckjjcegoiijjo' = 'Keepa'
+        'oombnmpbbhbakfpfgdflaajkhicgfaam' = 'ESET'
+        'nkapkmklnmidbbgjaipbgpcnbomnaakc' = 'ESET'
     }
 
     if ($map.ContainsKey($Id)) {
