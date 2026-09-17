@@ -52,6 +52,7 @@ src/Features/Diagnostics/Performance.ps1
 src/Features/Diagnostics/DiskSpace.ps1
 src/Features/Diagnostics/LocalAccounts.ps1
 src/Features/Diagnostics/GroupPolicyResult.ps1
+src/Features/Diagnostics/Playbooks.ps1
 src/Features/Diagnostics/HardwareTests.ps1
 src/Features/Diagnostics/SupportBundle.ps1
 src/Features/Intervention/Journal.ps1
@@ -83,6 +84,7 @@ src/UI/Pages/SecurityPage.ps1
 src/UI/Pages/ThreatHuntingPage.ps1
 src/UI/Pages/DiagnosticsPage.ps1
 src/UI/Pages/HardwarePage.ps1
+src/UI/Pages/PlaybooksPage.ps1
 src/UI/Pages/InterventionPage.ps1
 src/UI/Pages/ReferencePage.ps1
 src/UI/Pages/ToolsPage.ps1
