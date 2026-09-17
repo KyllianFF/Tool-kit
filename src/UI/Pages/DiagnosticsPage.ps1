@@ -165,6 +165,8 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Software support';    Show = 'Show-TkSoftwareLifecycleReport' }
         [pscustomobject] @{ Title = 'Printing';            Show = 'Show-TkPrintingReport' }
         [pscustomobject] @{ Title = 'Profiles and policy'; Show = 'Show-TkUserContext' }
+        [pscustomobject] @{ Title = 'Local accounts';     Show = 'Show-TkLocalAccountReport' }
+        [pscustomobject] @{ Title = 'Group Policy';       Show = 'Show-TkGroupPolicyReport' }
     )
 }
 
@@ -353,6 +355,149 @@ function Show-TkDiskSpaceReport {
             }
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows the local users and groups, and what a review looks for in them.
+#>
+function Show-TkLocalAccountReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the local accounts...' `
+        -ScriptBlock {
+            [pscustomobject] @{
+                Users  = @(Get-TkLocalUserInventory)
+                Admins = @(Get-TkLocalAdministrator)
+                Groups = @(Get-TkLocalGroupInventory)
+            }
+        } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Users'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'local-accounts' -Data $report
+
+            $users  = @($report.Users)
+            $admins = @($report.Admins)
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Local accounts' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '{0} local user(s) and {1} local administrator(s). The built-in Administrator and Guest are told from the end of their SID, not their name, so a renamed account is still recognised.' -f $users.Count, $admins.Count
+            )
+
+            foreach ($finding in @(Get-TkLocalAccountFinding -Users $users -AdminMembers $admins)) {
+                Add-TkSeverityLine -Document $document -Severity $finding.Severity -Heading $finding.Heading -Note $finding.Note
+            }
+
+            if ($users.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Users' -Level 2
+
+                $password = {
+                    param($u)
+                    if (-not $u.PasswordRequired) { 'not required' }
+                    elseif ($null -eq $u.PasswordExpires) { 'never expires' }
+                    else { 'set' }
+                }
+                $signIn = { param($u) if ($u.LastLogon) { ([datetime] $u.LastLogon).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) } else { 'never' } }
+
+                Add-TkTable -Document $document -Column @('Name', 'Enabled', 'Password', 'Last sign-in') -Weight @(2.0, 0.7, 1.0, 1.0) `
+                    -Row @($users | ForEach-Object { , @($_.Name, $(if ($_.Enabled) { 'yes' } else { 'no' }), (& $password $_), (& $signIn $_)) })
+            }
+
+            if ($admins.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Local administrators' -Level 2
+                Add-TkTable -Document $document -Column @('Member', 'Kind') -Weight @(3.0, 1.0) `
+                    -Row @($admins | ForEach-Object { , @($_.Name, [string] $_.ObjectClass) })
+            }
+
+            $groups = @($report.Groups | Where-Object { $_.MemberCount -gt 0 })
+
+            if ($groups.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Groups with members' -Level 2
+                Add-TkTable -Document $document -Column @('Group', 'Members') -Weight @(3.0, 0.7) `
+                    -Row @($groups | ForEach-Object { , @($_.Name, [string] $_.MemberCount) })
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+            Set-TkStatus -Text ('{0} local user(s), {1} administrator(s).' -f $users.Count, $admins.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows which Group Policy objects applied, from gpresult.
+#>
+function Show-TkGroupPolicyReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Running gpresult, this takes a moment...' `
+        -ScriptBlock { Get-TkGroupPolicyResult } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['ReadTime'] } | Select-Object -First 1
+
+            $document = New-TkFlowDocument
+            Add-TkHeading -Document $document -Text 'Group Policy' -Level 1
+
+            if (-not $report) {
+                Add-TkSeverityLine -Document $document -Severity 'Info' -Heading 'gpresult did not return a result' `
+                    -Note 'It could not be run or produced no report.'
+                Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'group-policy' -Data $report
+
+            Add-TkParagraph -Document $document -Muted -Text (
+                'The resultant set of policy: which Group Policy objects applied and which were filtered out, from gpresult. Read {0}.' -f $report.ReadTime
+            )
+
+            $section = {
+                param($title, $data, $missingNote)
+
+                Add-TkHeading -Document $document -Text $title -Level 2
+
+                if ($null -eq $data) {
+                    Add-TkSeverityLine -Document $document -Severity 'Info' -Heading 'Not available' -Note $missingNote
+                    return
+                }
+
+                $gpos = @($data.Gpos)
+
+                if ($gpos.Count -eq 0) {
+                    Add-TkParagraph -Document $document -Muted -Text 'No Group Policy object.'
+                }
+                else {
+                    Add-TkTable -Document $document -Column @('Policy', 'Applied', 'Reason') -Weight @(2.4, 0.7, 1.6) `
+                        -Row @($gpos | ForEach-Object { , @($_.Name, $(if ($_.Applied) { 'yes' } else { 'no' }), $_.Reason) })
+                }
+
+                $groups = @($data.SecurityGroups)
+                if ($groups.Count -gt 0) {
+                    Add-TkParagraph -Document $document -Muted -Text ('Security groups in the token ({0}): {1}' -f $groups.Count, ($groups -join ', '))
+                }
+            }
+
+            & $section 'Computer policy' $report.Computer 'The computer side needs administrator rights. Restart as administrator to read it.'
+            & $section ('User policy{0}' -f $(if ($report.User -and $report.User.Name) { ' (' + $report.User.Name + ')' } else { '' })) $report.User 'No user policy was returned.'
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+            Set-TkStatus -Text 'Group Policy result read.'
         }
 }
 
