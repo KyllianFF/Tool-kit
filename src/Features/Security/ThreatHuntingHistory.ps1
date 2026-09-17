@@ -459,6 +459,56 @@ function ConvertFrom-TkFirefoxExtension {
 
 <#
 .SYNOPSIS
+    Names a well-known browser extension from its store id.
+
+.DESCRIPTION
+    The extension id is the folder name, which stays readable even when the
+    manifest inside cannot be read, so a short list of the most common ids lets
+    an extension be named when its manifest is locked.
+
+.PARAMETER Id
+    The extension id.
+
+.OUTPUTS
+    System.String, empty when the id is not in the list.
+#>
+function Get-TkKnownExtensionName {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Id
+    )
+
+    $map = @{
+        'cjpalhdlnbpafiamejdnhcphjbkeiagm' = 'uBlock Origin'
+        'nngceckbapebfimnlniiiahkandclblb' = 'Bitwarden'
+        'jbkfoedolllekgbhcbcoahefnbanhhlh' = 'Bitwarden'
+        'aeblfdkhhhdcdjpifhhbdiojplfjncoa' = '1Password'
+        'hdokiejnpimakedhajhdlcegeplioahd' = 'LastPass'
+        'gighmmpiobklfepjocnamgkkbiglidom' = 'AdBlock'
+        'cfhdojbkjhnklbpkdaibdccddilifddb' = 'Adblock Plus'
+        'efaidnbmnnnibpcajpcglclefindmkaj' = 'Adobe Acrobat'
+        'ghbmnnjooekpmoecnnnilnnbdlolhkhi' = 'Google Docs Offline'
+        'nmmhkkegccagdldgiimedpiccmgmieda' = 'Google Wallet'
+        'lpcaedmchfhocbbapmcbpinfpgnhiddi' = 'Google Keep'
+        'aapbdbdomjkkjkaonfhkkikfgjllcleb' = 'Google Translate'
+        'pkedcjkdefgpdelpbcmbmeomcjbeemfm' = 'Google Cast'
+        'eimadpbcbfnmbkopoojfekhnkhdbieeh' = 'Dark Reader'
+        'fmkadmapgofadopljbjfkapdkoienihi' = 'React Developer Tools'
+        'kbfnbcaeplbcioakkpcpgfkobkghlhen' = 'Grammarly'
+        'bmnlcjabgnpnenekpadlanbbkooimhnj' = 'Honey'
+    }
+
+    if ($map.ContainsKey($Id)) {
+        return $map[$Id]
+    }
+
+    return ''
+}
+
+<#
+.SYNOPSIS
     Lists the extensions installed in the browsers on this machine.
 
 .DESCRIPTION
@@ -466,6 +516,12 @@ function ConvertFrom-TkFirefoxExtension {
     and the extensions.json of Firefox, for the current user. The base folders
     are parameters so the list can be tested against a sample tree; by default
     they are the current user's own.
+
+    A security product such as ESET, or the browser itself while it runs, can
+    refuse to let another process read the profile files even when the account
+    owns them. The extension id and its version folder stay readable, so those
+    extensions are still listed, named from the built-in list where possible and
+    marked as not fully read rather than dropped.
 
 .PARAMETER LocalAppData
     The local application data folder (Chromium browsers).
@@ -475,7 +531,7 @@ function ConvertFrom-TkFirefoxExtension {
 
 .OUTPUTS
     PSCustomObject[] with Browser, Profile, Id, Name, Version, Enabled,
-    Permissions and RiskyPermissions.
+    Readable, Permissions and RiskyPermissions.
 #>
 function Get-TkBrowserExtension {
     [CmdletBinding()]
@@ -528,26 +584,50 @@ function Get-TkBrowserExtension {
 
                 if ($versionDir.Count -eq 0) { continue }
 
-                $manifest = & $readJson (Join-Path $versionDir[0].FullName 'manifest.json')
-                if ($null -eq $manifest) { continue }
+                # The version folder is named <version>_<build>, so the version
+                # is readable from its name even when the manifest is not.
+                $folderVersion = $versionDir[0].Name -replace '_[0-9]+$', ''
+                $manifest      = & $readJson (Join-Path $versionDir[0].FullName 'manifest.json')
 
-                $messages = $null
-                if ([string] $manifest.default_locale) {
-                    $messages = & $readJson (Join-Path $versionDir[0].FullName ('_locales\{0}\messages.json' -f $manifest.default_locale))
+                if ($null -ne $manifest) {
+
+                    $messages = $null
+                    if ([string] $manifest.default_locale) {
+                        $messages = & $readJson (Join-Path $versionDir[0].FullName ('_locales\{0}\messages.json' -f $manifest.default_locale))
+                    }
+
+                    $info = ConvertFrom-TkChromeExtensionManifest -Manifest $manifest -LocaleMessages $messages
+
+                    $records.Add([pscustomobject] @{
+                        Browser          = $browser.Browser
+                        Profile          = $browserProfile.Name
+                        Id               = $extDir.Name
+                        Name             = if ($info.Name) { $info.Name } else { $extDir.Name }
+                        Version          = if ($info.Version) { $info.Version } else { $folderVersion }
+                        Enabled          = $true
+                        Readable         = $true
+                        Permissions      = $info.Permissions
+                        RiskyPermissions = @(Get-TkExtensionPermissionRisk -Permissions $info.Permissions)
+                    })
                 }
+                else {
 
-                $info = ConvertFrom-TkChromeExtensionManifest -Manifest $manifest -LocaleMessages $messages
+                    # The manifest could not be read: name it from the built-in
+                    # list where the id is known, and mark it not fully read.
+                    $known = Get-TkKnownExtensionName -Id $extDir.Name
 
-                $records.Add([pscustomobject] @{
-                    Browser          = $browser.Browser
-                    Profile          = $browserProfile.Name
-                    Id               = $extDir.Name
-                    Name             = $info.Name
-                    Version          = $info.Version
-                    Enabled          = $true
-                    Permissions      = $info.Permissions
-                    RiskyPermissions = @(Get-TkExtensionPermissionRisk -Permissions $info.Permissions)
-                })
+                    $records.Add([pscustomobject] @{
+                        Browser          = $browser.Browser
+                        Profile          = $browserProfile.Name
+                        Id               = $extDir.Name
+                        Name             = if ($known) { $known } else { $extDir.Name }
+                        Version          = $folderVersion
+                        Enabled          = $true
+                        Readable         = $false
+                        Permissions      = @()
+                        RiskyPermissions = @()
+                    })
+                }
             }
         }
     }
@@ -574,6 +654,7 @@ function Get-TkBrowserExtension {
                     Name             = $info.Name
                     Version          = $info.Version
                     Enabled          = $info.Enabled
+                    Readable         = $true
                     Permissions      = $info.Permissions
                     RiskyPermissions = @(Get-TkExtensionPermissionRisk -Permissions $info.Permissions)
                 })

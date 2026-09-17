@@ -618,7 +618,8 @@ function Invoke-TkBrowserExtensionFromUi {
             $script:TkLastHuntReport = $rows
             $script:TkLastHuntName   = 'browser-extensions'
 
-            $risky = @($rows | Where-Object { @($_.RiskyPermissions).Count -gt 0 })
+            $risky   = @($rows | Where-Object { @($_.RiskyPermissions).Count -gt 0 })
+            $blocked = @($rows | Where-Object { -not $_.Readable })
 
             $document = New-TkFlowDocument
 
@@ -626,6 +627,12 @@ function Invoke-TkBrowserExtensionFromUi {
             Add-TkParagraph -Document $document -Muted -Text (
                 '{0} extension(s) across Chrome, Edge, Brave and Firefox for this user. An extension can be as powerful as an installed program: the ones that can read every page, watch your traffic or talk to the machine are listed first.' -f $rows.Count
             )
+
+            if ($blocked.Count -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Info' `
+                    -Heading ('{0} extension(s) could not be fully read' -f $blocked.Count) `
+                    -Note 'A security product such as ESET, or the browser while it is open, is protecting the profile files. These are still listed by their id and version, named where the id is a well-known one, but their permissions could not be read. Closing the browser, or allowing the toolkit in the security product, lets the rest be read.'
+            }
 
             if ($risky.Count -gt 0) {
 
@@ -649,9 +656,8 @@ function Invoke-TkBrowserExtensionFromUi {
                 Add-TkTable -Document $document -Column @('Browser', 'Name', 'Version', 'State', 'Reach') `
                     -Weight @(0.8, 2.4, 0.7, 0.6, 0.8) `
                     -Row @($rows | ForEach-Object {
-                        , @($_.Browser, $_.Name, $_.Version,
-                            $(if ($_.Enabled) { 'On' } else { 'Off' }),
-                            $(if (@($_.RiskyPermissions).Count -gt 0) { 'broad' } else { 'limited' }))
+                        $reach = if (-not $_.Readable) { 'unread' } elseif (@($_.RiskyPermissions).Count -gt 0) { 'broad' } else { 'limited' }
+                        , @($_.Browser, $_.Name, $_.Version, $(if ($_.Enabled) { 'On' } else { 'Off' }), $reach)
                     })
             }
             else {

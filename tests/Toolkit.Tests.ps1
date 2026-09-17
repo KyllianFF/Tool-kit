@@ -5139,7 +5139,27 @@ Describe 'Threat hunting history' {
             $extensions.Count | Should -Be 1
             $extensions[0].Browser          | Should -Be 'Chrome'
             $extensions[0].Name             | Should -Be 'Ad Blocker Pro'
+            $extensions[0].Readable         | Should -BeTrue
             @($extensions[0].RiskyPermissions).Count | Should -BeGreaterThan 0
+        }
+
+        It 'still lists an extension whose manifest cannot be read, named from its id' {
+            # A version folder with no readable manifest stands in for a profile a
+            # security product refuses to let us read.
+            $base = Join-Path $TestDrive 'locked'
+            $dir  = Join-Path $base 'BraveSoftware\Brave-Browser\User Data\Default\Extensions\nngceckbapebfimnlniiiahkandclblb\2026.8.0_0'
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+
+            $extensions = @(Get-TkBrowserExtension -LocalAppData $base -AppData $base)
+            $extensions.Count | Should -Be 1
+            $extensions[0].Name     | Should -Be 'Bitwarden'
+            $extensions[0].Version  | Should -Be '2026.8.0'
+            $extensions[0].Readable | Should -BeFalse
+        }
+
+        It 'names a well-known extension id and leaves an unknown one empty' {
+            Get-TkKnownExtensionName -Id 'cjpalhdlnbpafiamejdnhcphjbkeiagm' | Should -Be 'uBlock Origin'
+            Get-TkKnownExtensionName -Id 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' | Should -Be ''
         }
     }
 
