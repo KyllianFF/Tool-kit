@@ -2452,6 +2452,14 @@
                                                      ToolTip="Which Group Policy objects applied to this machine and user, and which were filtered out, from gpresult. The computer side needs administrator rights.">
                                             <TextBlock Text="Group Policy" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="The Windows services: how each starts, the account it runs as, and which automatic services failed to start.">
+                                            <TextBlock Text="Services" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="The third-party and unsigned drivers, with their provider, version, date and signature.">
+                                            <TextBlock Text="Drivers" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
                                     </ListBox>
                                 </DockPanel>
 
