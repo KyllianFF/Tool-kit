@@ -167,6 +167,8 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Profiles and policy'; Show = 'Show-TkUserContext' }
         [pscustomobject] @{ Title = 'Local accounts';     Show = 'Show-TkLocalAccountReport' }
         [pscustomobject] @{ Title = 'Group Policy';       Show = 'Show-TkGroupPolicyReport' }
+        [pscustomobject] @{ Title = 'Services';           Show = 'Show-TkServiceReport' }
+        [pscustomobject] @{ Title = 'Drivers';            Show = 'Show-TkDriverReport' }
     )
 }
 
@@ -498,6 +500,109 @@ function Show-TkGroupPolicyReport {
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
             Set-TkStatus -Text 'Group Policy result read.'
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows the services: how they start, as whom, and which auto ones are stopped.
+#>
+function Show-TkServiceReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the services...' `
+        -ScriptBlock { Get-TkServiceInventory } `
+        -OnComplete {
+            param($result)
+
+            $services = @($result.Output | Where-Object { $_ -and $_.PSObject.Properties['StartMode'] })
+
+            Set-TkLastDiagnostic -Name 'services' -Data $services
+
+            $auto      = @($services | Where-Object { $_.StartMode -eq 'Auto' })
+            $running   = @($auto | Where-Object { $_.Running }).Count
+            $named     = @($services | Where-Object { $_.NamedAccount })
+            $autoDown  = @($auto | Where-Object { -not $_.Running })
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Services' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '{0} services in total, {1} set to start automatically ({2} running). The point of this list is the automatic ones that did not start, and the ones that run as a named account.' -f
+                    $services.Count, $auto.Count, $running
+            )
+
+            foreach ($finding in @(Get-TkServiceFinding -Services $services)) {
+                Add-TkSeverityLine -Document $document -Severity $finding.Severity -Heading $finding.Heading -Note $finding.Note
+            }
+
+            if ($autoDown.Count -gt 0) {
+                Add-TkHeading -Document $document -Text 'Automatic services that are stopped' -Level 2
+                Add-TkTable -Document $document -Column @('Service', 'Start', 'Account') -Weight @(2.4, 0.8, 1.8) `
+                    -Row @($autoDown | ForEach-Object { , @($_.DisplayName, $(if ($_.DelayedAutoStart) { 'Auto (delayed)' } else { 'Auto' }), $_.Account) })
+            }
+
+            if ($named.Count -gt 0) {
+                Add-TkHeading -Document $document -Text 'Services running as a named account' -Level 2
+                Add-TkTable -Document $document -Column @('Service', 'Account', 'State') -Weight @(2.2, 1.8, 0.7) `
+                    -Row @($named | ForEach-Object { , @($_.DisplayName, $_.Account, $_.State) })
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+            Set-TkStatus -Text ('{0} services, {1} auto stopped, {2} named-account.' -f $services.Count, $autoDown.Count, $named.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows the third-party and unsigned drivers.
+#>
+function Show-TkDriverReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the drivers...' `
+        -ScriptBlock { Get-TkDriverInventory } `
+        -OnComplete {
+            param($result)
+
+            $drivers = @($result.Output | Where-Object { $_ -and $_.PSObject.Properties['Provider'] })
+
+            Set-TkLastDiagnostic -Name 'drivers' -Data $drivers
+
+            $unsigned  = @($drivers | Where-Object { -not $_.Signed })
+            $localTime = { param($d) if ($d) { ([datetime] $d).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) } else { '-' } }
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Drivers' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '{0} third-party or unsigned driver(s). The built-in Windows drivers are left out. An old or unsigned driver is a common cause of crashes and a way in for an attacker.' -f $drivers.Count
+            )
+
+            if ($unsigned.Count -gt 0) {
+                Add-TkHeading -Document $document -Text 'Unsigned' -Level 2
+                foreach ($driver in $unsigned) {
+                    Add-TkSeverityLine -Document $document -Severity 'Warning' `
+                        -Heading ('{0}' -f $driver.Device) `
+                        -Detail $driver.Provider `
+                        -Note ('Version {0}, not signed.' -f $driver.Version)
+                }
+            }
+
+            if ($drivers.Count -gt 0) {
+                Add-TkHeading -Document $document -Text 'All third-party drivers' -Level 2
+                Add-TkTable -Document $document -Column @('Device', 'Provider', 'Version', 'Date', 'Signed') `
+                    -Weight @(2.2, 1.6, 1.0, 0.9, 0.6) `
+                    -Row @($drivers | ForEach-Object { , @($_.Device, $_.Provider, $_.Version, (& $localTime $_.Date), $(if ($_.Signed) { 'yes' } else { 'NO' })) })
+            }
+            else {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No third-party or unsigned driver found'
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+            Set-TkStatus -Text ('{0} third-party driver(s), {1} unsigned.' -f $drivers.Count, $unsigned.Count)
         }
 }
 

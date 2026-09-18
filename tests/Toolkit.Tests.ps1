@@ -5394,6 +5394,52 @@ Set-Cookie: theme=dark; Path=/; Secure; HttpOnly; SameSite=Lax
     }
 }
 
+Describe 'Services and drivers' {
+
+    Context 'Services' {
+
+        It 'normalises a service and tells a named account from a built-in one' {
+            $builtin = ConvertFrom-TkServiceCim -Service ([pscustomobject] @{ Name = 'Spooler'; DisplayName = 'Print Spooler'; State = 'Running'; StartMode = 'Auto'; DelayedAutoStart = $false; StartName = 'LocalSystem'; PathName = 'C:\Windows\System32\spoolsv.exe' })
+            $builtin.NamedAccount | Should -BeFalse
+            $builtin.Running      | Should -BeTrue
+
+            $named = ConvertFrom-TkServiceCim -Service ([pscustomobject] @{ Name = 'App'; DisplayName = 'My App'; State = 'Stopped'; StartMode = 'Auto'; DelayedAutoStart = $false; StartName = 'CONTOSO\svc-app'; PathName = 'C:\App\app.exe' })
+            $named.NamedAccount | Should -BeTrue
+        }
+
+        It 'flags an automatic service that is stopped and notes named accounts' {
+            $services = @(
+                ConvertFrom-TkServiceCim -Service ([pscustomobject] @{ Name = 'A'; DisplayName = 'Stopped Auto'; State = 'Stopped'; StartMode = 'Auto'; DelayedAutoStart = $false; StartName = 'LocalSystem'; PathName = 'x' })
+                ConvertFrom-TkServiceCim -Service ([pscustomobject] @{ Name = 'B'; DisplayName = 'Named';       State = 'Running'; StartMode = 'Auto'; DelayedAutoStart = $false; StartName = 'CONTOSO\svc'; PathName = 'y' })
+            )
+            $joined = (Get-TkServiceFinding -Services $services | ForEach-Object { '{0}:{1}' -f $_.Severity, $_.Heading }) -join '|'
+            $joined | Should -Match 'Warning:"Stopped Auto" is set to start automatically but is stopped'
+            $joined | Should -Match 'Info:1 service'
+        }
+
+        It 'passes when every automatic service is running' {
+            $ok = @(ConvertFrom-TkServiceCim -Service ([pscustomobject] @{ Name = 'A'; DisplayName = 'Ok'; State = 'Running'; StartMode = 'Auto'; DelayedAutoStart = $false; StartName = 'LocalSystem'; PathName = 'x' }))
+            @(Get-TkServiceFinding -Services $ok)[0].Severity | Should -Be 'Pass'
+        }
+    }
+
+    Context 'Drivers' {
+
+        It 'reads a WMI datetime and rejects an empty one' {
+            (ConvertFrom-TkCimDate -Value '20240115000000.000000-000') | Should -Be ([datetime]::new(2024, 1, 15))
+            ConvertFrom-TkCimDate -Value '' | Should -BeNullOrEmpty
+        }
+
+        It 'normalises a signed driver with its date' {
+            $rec = ConvertFrom-TkDriverCim -Driver ([pscustomobject] @{ DeviceName = 'GPU'; DriverProviderName = 'NVIDIA'; DriverVersion = '31.0.15'; DriverDate = '20240115000000.000000-000'; IsSigned = $true; DeviceClass = 'Display'; InfName = 'oem12.inf' })
+            $rec.Device   | Should -Be 'GPU'
+            $rec.Provider | Should -Be 'NVIDIA'
+            $rec.Signed   | Should -BeTrue
+            $rec.Date     | Should -Be ([datetime]::new(2024, 1, 15))
+        }
+    }
+}
+
 Describe 'Tools page' {
 
     BeforeAll {

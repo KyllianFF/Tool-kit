@@ -52,6 +52,8 @@ src/Features/Diagnostics/Performance.ps1
 src/Features/Diagnostics/DiskSpace.ps1
 src/Features/Diagnostics/LocalAccounts.ps1
 src/Features/Diagnostics/GroupPolicyResult.ps1
+src/Features/Diagnostics/ServiceInventory.ps1
+src/Features/Diagnostics/DriverInventory.ps1
 src/Features/Diagnostics/Playbooks.ps1
 src/Features/Diagnostics/HardwareTests.ps1
 src/Features/Diagnostics/SupportBundle.ps1
