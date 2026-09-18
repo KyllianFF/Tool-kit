@@ -5440,6 +5440,30 @@ Describe 'Services and drivers' {
     }
 }
 
+Describe 'Local privilege escalation' {
+
+    It 'flags an unquoted service path with a space and skips the safe ones' {
+        $services = @(
+            [pscustomobject] @{ Name = 'Quoted';  DisplayName = 'Quoted';   Path = '"C:\Program Files\X\x.exe" -run' }
+            [pscustomobject] @{ Name = 'Vuln';    DisplayName = 'Unquoted'; Path = 'C:\Program Files\Encrypto\Encrypto.Service.exe' }
+            [pscustomobject] @{ Name = 'Svchost'; DisplayName = 'Svchost';  Path = 'C:\Windows\system32\svchost.exe -k netsvcs' }
+            [pscustomobject] @{ Name = 'NoSpace'; DisplayName = 'No space'; Path = 'C:\App\app.exe' }
+        )
+        $flagged = @(Get-TkUnquotedServicePath -Services $services)
+        $flagged.Count       | Should -Be 1
+        $flagged[0].Name     | Should -Be 'Vuln'
+    }
+
+    It 'parses cmdkey output by its locale-independent target token' {
+        $text = "    Cible : Domain:target=CONTOSO\dc01`n    Type : Domaine`n    Cible : LegacyGeneric:target=Office16`n"
+        $creds = @(ConvertFrom-TkCmdkeyOutput -Text $text)
+        $creds.Count | Should -Be 2
+        $creds[0].Type   | Should -Be 'Domain'
+        $creds[0].Target | Should -Be 'CONTOSO\dc01'
+        @($creds | Where-Object { $_.Type -match 'Domain' }).Count | Should -Be 1
+    }
+}
+
 Describe 'Tools page' {
 
     BeforeAll {
