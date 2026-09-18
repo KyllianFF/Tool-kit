@@ -37,6 +37,7 @@ function Initialize-TkThreatHuntingPage {
                 5 { Invoke-TkRdpHistoryFromUi            ; break }
                 6 { Invoke-TkBrowserExtensionFromUi      ; break }
                 7 { Invoke-TkDefenderHistoryFromUi       ; break }
+                8 { Invoke-TkPrivilegeEscalationFromUi   ; break }
             }
         })
     }
@@ -714,6 +715,123 @@ function Invoke-TkDefenderHistoryFromUi {
 
             Set-TkDocument -ControlName 'HuntOutput' -Document $document
             Set-TkStatus -Text ('{0} Defender detection(s) in the last 90 days.' -f $rows.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Checks for the common local privilege-escalation misconfigurations.
+#>
+function Invoke-TkPrivilegeEscalationFromUi {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Checking for local privilege escalation...' `
+        -ScriptBlock {
+            [pscustomobject] @{
+                Unquoted  = @(Get-TkUnquotedServicePath -Services (Get-TkServiceInventory))
+                Always    = Get-TkAlwaysInstallElevated
+                AutoLogon = Get-TkAutoLogonSetting
+                Ifeo      = @(Get-TkImageFileExecutionDebugger)
+                Creds     = @(Get-TkStoredCredential)
+            }
+        } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Unquoted'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            $script:TkLastHuntReport = $report
+            $script:TkLastHuntName   = 'privilege-escalation'
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Local privilege escalation' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                'The misconfigurations that let a standard user become SYSTEM or another user. These are the checks the security audit does not already make. Read only; nothing is changed.'
+            )
+
+            # --- AlwaysInstallElevated ---------------------------------------
+            if ($report.Always.Enabled) {
+                Add-TkSeverityLine -Document $document -Severity 'Fail' `
+                    -Heading 'AlwaysInstallElevated is on in both hives' `
+                    -Note 'Any user can install an MSI package as SYSTEM. Turn the policy off in both HKLM and HKCU.'
+            }
+            else {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'AlwaysInstallElevated is not enabled'
+            }
+
+            # --- Autologon ---------------------------------------------------
+            if ($report.AutoLogon.Enabled -and $report.AutoLogon.HasPassword) {
+                Add-TkSeverityLine -Document $document -Severity 'Fail' `
+                    -Heading 'Autologon stores a password in clear text' `
+                    -Detail $report.AutoLogon.User `
+                    -Note 'DefaultPassword is readable by anyone who can read the registry. Use the LSA secret (Sysinternals Autologon) or turn autologon off.'
+            }
+            elseif ($report.AutoLogon.Enabled) {
+                Add-TkSeverityLine -Document $document -Severity 'Warning' `
+                    -Heading 'Autologon is on' -Detail $report.AutoLogon.User `
+                    -Note 'No clear-text password was found, but the machine signs in without one being typed.'
+            }
+            else {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No clear-text autologon password'
+            }
+
+            # --- IFEO debuggers ----------------------------------------------
+            $ifeo = @($report.Ifeo)
+            if ($ifeo.Count -gt 0) {
+                foreach ($entry in $ifeo) {
+                    Add-TkSeverityLine -Document $document -Severity 'Warning' `
+                        -Heading ('A debugger is set for {0}' -f $entry.Image) `
+                        -Detail $entry.Debugger `
+                        -Note 'Image File Execution Options runs this instead of the program. Legitimate uses are rare.'
+                }
+            }
+            else {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No Image File Execution Options debugger'
+            }
+
+            # --- Unquoted service paths --------------------------------------
+            $unquoted = @($report.Unquoted)
+            if ($unquoted.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Unquoted service paths' -Level 2
+                Add-TkParagraph -Document $document -Muted -Text (
+                    '{0} service(s) with an unquoted path that contains a space. Exploitable only if an attacker can write to an earlier path segment; the fix is to quote the ImagePath either way.' -f $unquoted.Count
+                )
+
+                foreach ($service in $unquoted) {
+                    Add-TkSeverityLine -Document $document -Severity 'Warning' `
+                        -Heading $service.DisplayName -Detail $service.Name -Note $service.Path
+                }
+            }
+            else {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No unquoted service path'
+            }
+
+            # --- Stored credentials ------------------------------------------
+            $creds  = @($report.Creds)
+            $domain = @($creds | Where-Object { $_.Type -match 'Domain' })
+
+            Add-TkHeading -Document $document -Text 'Stored credentials' -Level 2
+
+            if ($creds.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No credentials are stored on the machine'
+            }
+            else {
+                Add-TkParagraph -Document $document -Muted -Text (
+                    '{0} credential(s) stored, {1} of them domain credentials, which help an attacker reach another machine.' -f $creds.Count, $domain.Count
+                )
+                Add-TkTable -Document $document -Column @('Type', 'Target') -Weight @(1.0, 3.0) `
+                    -Row @($creds | ForEach-Object { , @($_.Type, $_.Target) })
+            }
+
+            Set-TkDocument -ControlName 'HuntOutput' -Document $document
+            Set-TkStatus -Text ('Privilege escalation: {0} unquoted path(s), {1} stored credential(s).' -f $unquoted.Count, $creds.Count)
         }
 }
 

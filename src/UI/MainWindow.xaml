@@ -2784,7 +2784,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Style="{StaticResource Muted}" Margin="0,0,0,12"
-                                           Text="Eight read only investigations. Nothing here changes the machine, which is what makes them safe to run first on a system whose state you do not want to disturb. Some read what only an administrator can: event triage needs the Security log, USB times and incoming Remote Desktop need an elevated instance too." />
+                                           Text="Nine read only investigations. Nothing here changes the machine, which is what makes them safe to run first on a system whose state you do not want to disturb. Some read what only an administrator can: event triage needs the Security log, USB times and incoming Remote Desktop need an elevated instance too." />
 
                                 <DockPanel Grid.Row="1" Grid.Column="0" Margin="0,0,16,0" LastChildFill="True">
                                     <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
@@ -2831,6 +2831,10 @@
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="What Windows Defender has caught, with each threat named and what was done about it.">
                                             <TextBlock Text="Defender detections" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Local privilege escalation: unquoted service paths, AlwaysInstallElevated, a clear-text autologon password, IFEO debuggers, and the credentials stored on the machine.">
+                                            <TextBlock Text="Privilege escalation" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                     </ListBox>
                                 </DockPanel>
