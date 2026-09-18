@@ -168,6 +168,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'PhoneInput';       Update = { Update-TkPhoneFromUi } }
         @{ Name = 'MailHeaderInput';  Update = { Update-TkMailHeaderFromUi } }
         @{ Name = 'CertificateInput'; Update = { Update-TkCertificateFromUi } }
+        @{ Name = 'HttpHeaderInput';  Update = { Update-TkHttpHeaderFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -391,6 +392,39 @@ function Initialize-TkToolsPage {
     if ($dsaclsDeny) { $dsaclsDeny.Add_Click({ Update-TkDsaclsFromUi }) }
 
     Register-TkClick -Name 'BtnCopyDsacls' -Action { Copy-TkToolOutput -ControlName 'DsaclsOutput' }
+
+    # --- Event log query builder ------------------------------------------
+    $eventLevel = Get-TkControl -Name 'EventQueryLevel'
+
+    if ($eventLevel) {
+        foreach ($choice in @(Get-TkEventLevelChoice)) {
+            [void] $eventLevel.Items.Add($choice.Label)
+        }
+        $eventLevel.SelectedIndex = 0
+        $eventLevel.Add_SelectionChanged({ Update-TkEventQueryFromUi })
+    }
+
+    $eventPreset = Get-TkControl -Name 'EventQueryPreset'
+
+    if ($eventPreset) {
+        foreach ($log in @('System', 'Application', 'Security', 'Setup',
+                           'Microsoft-Windows-Windows Defender/Operational',
+                           'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational',
+                           'Microsoft-Windows-TaskScheduler/Operational',
+                           'Microsoft-Windows-PowerShell/Operational')) {
+            [void] $eventPreset.Items.Add($log)
+        }
+        $eventPreset.SelectedIndex = 0
+        $eventPreset.Add_SelectionChanged({
+            $chosen = [string] (Get-TkControl -Name 'EventQueryPreset').SelectedItem
+            if ($chosen) { (Get-TkControl -Name 'EventQueryLog').Text = $chosen }
+        })
+    }
+
+    foreach ($name in @('EventQueryLog', 'EventQueryIds', 'EventQueryProvider', 'EventQueryHours', 'EventQueryContains', 'EventQueryMax')) {
+        $box = Get-TkControl -Name $name
+        if ($box) { $box.Add_TextChanged({ Update-TkEventQueryFromUi }) }
+    }
 
     # --- Scheduled task ---------------------------------------------------
     $schtaskSchedule = Get-TkControl -Name 'SchtaskSchedule'
@@ -1234,6 +1268,81 @@ function Update-TkDsaclsFromUi {
     catch {
         $output.Text = $_.Exception.Message
     }
+}
+
+<#
+.SYNOPSIS
+    Grades the HTTP response headers pasted on the page, as they are pasted.
+#>
+function Update-TkHttpHeaderFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'HttpHeaderOutput'
+    $box    = Get-TkControl -Name 'HttpHeaderInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    if (-not $text.Trim()) {
+        $output.Text = 'Paste a site''s response headers. In the browser dev tools: Network, click the request, Headers, Response headers. Or run curl -I https://the-site.'
+        return
+    }
+
+    $report = Get-TkHttpHeaderReport -Text $text
+
+    if (@($report.Headers).Count -eq 0) {
+        $output.Text = 'No header was recognised. Headers are lines such as Strict-Transport-Security: max-age=... , pasted as the tools show them.'
+        return
+    }
+
+    $output.Text = (Format-TkHttpHeaderReport -Report $report) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Builds an event log query from the fields on the page, as they change.
+#>
+function Update-TkEventQueryFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'EventQueryOutput'
+
+    if (-not $output) {
+        return
+    }
+
+    $log = [string] (Get-TkControl -Name 'EventQueryLog').Text
+
+    if (-not $log.Trim()) {
+        $output.Text = 'Type a log name, such as System, Application, or a full operational log name.'
+        return
+    }
+
+    $ids = @(([string] (Get-TkControl -Name 'EventQueryIds').Text) -split '[,;\s]+' |
+             Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int] $_ })
+
+    $levelLabel = [string] (Get-TkControl -Name 'EventQueryLevel').SelectedItem
+    $level      = @(Get-TkEventLevelChoice | Where-Object { $_.Label -eq $levelLabel } | Select-Object -First 1).Value
+    if (-not $level) { $level = 0 }
+
+    $intOr = {
+        param($name, $default)
+        $raw = ([string] (Get-TkControl -Name $name).Text).Trim()
+        if ($raw -match '^\d+$') { [int] $raw } else { $default }
+    }
+
+    $query = Build-TkEventQuery -Log $log -Id $ids -Level $level `
+        -Provider ([string] (Get-TkControl -Name 'EventQueryProvider').Text) `
+        -SinceHours (& $intOr 'EventQueryHours' 0) `
+        -Contains ([string] (Get-TkControl -Name 'EventQueryContains').Text) `
+        -MaxEvents (& $intOr 'EventQueryMax' 50)
+
+    $output.Text = (Format-TkEventQuery -Query $query) -join [Environment]::NewLine
 }
 
 # ---------------------------------------------------------------------------
@@ -2181,6 +2290,7 @@ function Get-TkToolEntry {
         (& $tool 'Security'         'E-mail headers' 'ToolMailHeaders')
         (& $tool 'Security'         'Mail DNS records' 'ToolMailDns')
         (& $tool 'Security'         'Certificates'   'ToolCertificates')
+        (& $tool 'Security'         'HTTP headers'   'ToolHttpHeaders')
         (& $tool 'Generators'       'Ports'          'ToolPorts')
         (& $tool 'Generators'       'UUIDs'          'ToolUuids')
         (& $tool 'Generators'       'QR code'        'ToolQrCode')
@@ -2204,6 +2314,7 @@ function Get-TkToolEntry {
         (& $tool 'Windows and AD'   'Robocopy'       'ToolRobocopy')
         (& $tool 'Windows and AD'   'Scheduled task' 'ToolSchtasks')
         (& $tool 'Windows and AD'   'dsacls delegation' 'ToolDsacls')
+        (& $tool 'Windows and AD'   'Event log query'   'ToolEventQuery')
     )
 }
 

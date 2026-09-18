@@ -67,6 +67,8 @@ src/Features/Tools/QrCode.ps1
 src/Features/Tools/MailTools.ps1
 src/Features/Tools/CertificateTools.ps1
 src/Features/Tools/AdminDecoders.ps1
+src/Features/Tools/EventQuery.ps1
+src/Features/Tools/HttpHeaders.ps1
 
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1

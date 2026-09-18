@@ -5332,6 +5332,68 @@ Describe 'Playbooks' {
     }
 }
 
+Describe 'Event log query builder' {
+
+    It 'builds the XPath, hashtable and command forms from the parts' {
+
+        $query = Build-TkEventQuery -Log 'System' -Id 1000, 1001 -Level 2 -Provider 'Application Error' -SinceHours 24 -Contains 'foo' -MaxEvents 20
+
+        $query.PlainXPath | Should -Match '\(EventID=1000 or EventID=1001\)'
+        $query.PlainXPath | Should -Match 'Level=2'
+        $query.PlainXPath | Should -Match "Provider\[@Name='Application Error'\]"
+        $query.PlainXPath | Should -Match 'timediff\(@SystemTime\) <= 86400000'
+        $query.PlainXPath | Should -Match "contains\(\.,'foo'\)"
+        $query.XPath      | Should -Match '&lt;='   # escaped for the Event Viewer XML box
+        $query.FilterHashtable | Should -Match "LogName = 'System'"
+        $query.FilterHashtable | Should -Match 'Id      = 1000, 1001'
+        $query.Wevtutil   | Should -Match '^wevtutil qe "System"'
+        $query.PowerShellHashtable | Should -Match "Where-Object"
+    }
+
+    It 'produces a bare log query when nothing else is given' {
+        (Build-TkEventQuery -Log 'Application' -MaxEvents 50).PlainXPath | Should -Be '*[System]'
+    }
+}
+
+Describe 'HTTP security headers' {
+
+    BeforeAll {
+        $script:Sample = @"
+HTTP/1.1 200 OK
+Server: nginx/1.25.3
+Strict-Transport-Security: max-age=63072000; includeSubDomains
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'
+X-Content-Type-Options: nosniff
+X-Powered-By: PHP/8.1.2
+Set-Cookie: session=abc; Path=/; HttpOnly
+Set-Cookie: theme=dark; Path=/; Secure; HttpOnly; SameSite=Lax
+"@
+    }
+
+    It 'parses the headers and skips the status line' {
+        $headers = @(ConvertFrom-TkHttpHeaderText -Text $script:Sample)
+        $headers.Count | Should -Be 7
+        @($headers | Where-Object { $_.Name -eq 'Set-Cookie' }).Count | Should -Be 2
+        ($headers | Where-Object { $_.Name -eq 'Server' }).Value | Should -Be 'nginx/1.25.3'
+    }
+
+    It 'grades the security headers' {
+        $report = Get-TkHttpHeaderReport -Text $script:Sample
+        $find   = { param($h) @($report.Findings | Where-Object { $_.Header -eq $h } | Select-Object -First 1) }
+
+        (& $find 'Strict-Transport-Security')[0].Severity | Should -Be 'Pass'
+        (& $find 'Content-Security-Policy')[0].Severity   | Should -Be 'Warning'   # unsafe-inline
+        (& $find 'Framing')[0].Severity                   | Should -Be 'Warning'   # none set
+        (& $find 'Server')[0].Severity                    | Should -Be 'Info'
+        (@($report.Findings | Where-Object { $_.Header -match 'session' })[0]).Note | Should -Match 'Secure'
+    }
+
+    It 'fails a response with no HSTS' {
+        $report = Get-TkHttpHeaderReport -Text "HTTP/1.1 200 OK`nX-Content-Type-Options: nosniff"
+        (@($report.Findings | Where-Object { $_.Header -eq 'Strict-Transport-Security' })[0]).Severity | Should -Be 'Fail'
+    }
+}
+
 Describe 'Tools page' {
 
     BeforeAll {
