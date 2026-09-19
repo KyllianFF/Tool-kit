@@ -171,6 +171,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'HttpHeaderInput';  Update = { Update-TkHttpHeaderFromUi } }
         @{ Name = 'HiddenCharsInput'; Update = { Update-TkHiddenCharsFromUi } }
         @{ Name = 'ConnectionStringInput'; Update = { Update-TkConnectionStringFromUi } }
+        @{ Name = 'TotpInput';        Update = { Update-TkTotpFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -178,6 +179,15 @@ function Initialize-TkToolsPage {
             $box.Add_TextChanged($binding.Update)
         }
     }
+
+    # The authenticator code rolls over every window, so a one second timer
+    # keeps it and its countdown current while the TOTP tool is open. It
+    # refreshes nothing while another tool is shown. A started DispatcherTimer
+    # is held alive by the dispatcher, so it needs no field of its own.
+    $totpTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $totpTimer.Interval = [timespan]::FromSeconds(1)
+    $totpTimer.Add_Tick({ Update-TkTotpFromUi })
+    $totpTimer.Start()
 
     # --- Mail records and certificates ------------------------------------
     # The mail check goes out on the network, so it waits for the button, or
@@ -1407,6 +1417,34 @@ function Update-TkConnectionStringFromUi {
 
 <#
 .SYNOPSIS
+    Computes the current authenticator code, on a keystroke and every second.
+
+.DESCRIPTION
+    Runs both when the field changes and on the one second timer, so the code
+    and its countdown stay current. It does nothing when its tool is not the one
+    on screen, so the timer costs nothing the rest of the time.
+#>
+function Update-TkTotpFromUi {
+    [CmdletBinding()]
+    param()
+
+    $panel  = Get-TkControl -Name 'ToolTotp'
+    $output = Get-TkControl -Name 'TotpOutput'
+    $box    = Get-TkControl -Name 'TotpInput'
+
+    if (-not $panel -or -not $output -or -not $box) {
+        return
+    }
+
+    if ($panel.Visibility -ne [System.Windows.Visibility]::Visible) {
+        return
+    }
+
+    $output.Text = (Format-TkTotpReport -Text ([string] $box.Text)) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
     Builds an event log query from the fields on the page, as they change.
 #>
 function Update-TkEventQueryFromUi {
@@ -2399,6 +2437,7 @@ function Get-TkToolEntry {
         (& $tool 'Generators'       'UUIDs'          'ToolUuids')
         (& $tool 'Generators'       'QR code'        'ToolQrCode')
         (& $tool 'Generators'       'Wi-Fi QR code'  'ToolWifiQr')
+        (& $tool 'Generators'       'TOTP code'      'ToolTotp')
         (& $tool 'Text and data'    'Encoding'       'ToolEncoding')
         (& $tool 'Text and data'    'Regex'          'ToolRegex')
         (& $tool 'Text and data'    'Timestamps'     'ToolTimestamps')
