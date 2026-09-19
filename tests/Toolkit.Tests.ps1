@@ -4821,6 +4821,85 @@ Describe 'Certificate decoding' {
 
         (Format-TkCertificateItem -Item @(Get-TkCertificateItem -Bytes $script:CertificateDer -Now $script:Now)) -join "`n" | Should -Match 'Names        www.contoso.com, contoso.com'
     }
+
+    Context 'Format conversion' {
+
+        BeforeAll {
+            $script:Cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(, $script:CertificateDer)
+        }
+
+        It 'encodes an object identifier as DER' {
+
+            # rsaEncryption, 1.2.840.113549.1.1.1, is 06 09 2A 86 48 86 F7 0D 01 01 01.
+            $bytes = ConvertTo-TkDerOid -Oid '1.2.840.113549.1.1.1'
+            (($bytes | ForEach-Object { '{0:X2}' -f $_ }) -join '') | Should -Be '06092A864886F70D010101'
+        }
+
+        It 'encodes a DER length in short and long form' {
+
+            # Under 128 the length is one byte; at 200 it is 0x81 0xC8.
+            (New-TkDerTlv -Tag 0x04 -Content ([byte[]] (1..4)))[1]        | Should -Be 4
+            $long = New-TkDerTlv -Tag 0x04 -Content ([byte[]] (1..200))
+            $long[1] | Should -Be 0x81
+            $long[2] | Should -Be 0xC8
+        }
+
+        It 'converts a certificate to PEM that reads back to the same certificate' {
+
+            $pem   = ConvertTo-TkCertificateFormat -Certificate @($script:Cert) -Format 'Pem'
+            $pem   | Should -Match '-----BEGIN CERTIFICATE-----'
+
+            # Every Base64 line folds at 64 characters.
+            @($pem -split "`n" | Where-Object { $_ -notmatch '-----' -and $_.Trim() -and $_.Length -gt 64 }).Count | Should -Be 0
+
+            $back = @(Get-TkCertificateChain -Text $pem)
+            $back[0].Thumbprint | Should -Be $script:Cert.Thumbprint
+        }
+
+        It 'converts a certificate to one Base64 DER line' {
+
+            $der = ConvertTo-TkCertificateFormat -Certificate @($script:Cert) -Format 'DerBase64'
+            $der | Should -Be ([Convert]::ToBase64String($script:Cert.RawData))
+        }
+
+        It 'extracts the public key as a SubjectPublicKeyInfo PEM' {
+
+            $pem = ConvertTo-TkCertificateFormat -Certificate @($script:Cert) -Format 'PublicKey'
+            $pem | Should -Match '-----BEGIN PUBLIC KEY-----'
+
+            $body  = ($pem -replace '-----[^-]+-----', '') -replace '\s', ''
+            $bytes = [Convert]::FromBase64String($body)
+
+            $bytes[0] | Should -Be 0x30                        # a DER SEQUENCE
+            (($bytes | ForEach-Object { '{0:X2}' -f $_ }) -join '') | Should -Match '2A864886F70D010101'  # rsaEncryption
+
+            # Where the runtime can export it itself, the bytes must be identical.
+            if ($script:Cert.PublicKey.PSObject.Methods['ExportSubjectPublicKeyInfo']) {
+                [Convert]::ToBase64String($bytes) | Should -Be ([Convert]::ToBase64String($script:Cert.PublicKey.ExportSubjectPublicKeyInfo()))
+            }
+        }
+
+        It 'splits a PKCS #7 chain into its certificates' {
+
+            $collection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+            $collection.Add($script:Cert) | Out-Null
+            $collection.Add($script:Cert) | Out-Null
+
+            $pkcs7 = $collection.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs7)
+
+            @(Get-TkCertificateChain -Bytes $pkcs7).Count | Should -Be 2
+        }
+
+        It 'reads a certificate from a chain and ignores a private key block' {
+
+            $text = (& $script:Pem 'CERTIFICATE' $script:CertificateDer) +
+                    "`n-----BEGIN PRIVATE KEY-----`nMIIEvQIBADANBgkqhkiG9w0BAQEF`n-----END PRIVATE KEY-----"
+
+            $chain = @(Get-TkCertificateChain -Text $text)
+            $chain.Count        | Should -Be 1
+            $chain[0].Thumbprint | Should -Be $script:Cert.Thumbprint
+        }
+    }
 }
 
 Describe 'Administration decoders' {
