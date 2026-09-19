@@ -4902,6 +4902,79 @@ Describe 'Certificate decoding' {
     }
 }
 
+Describe 'Hidden characters' {
+
+    It 'raises nothing on ordinary text, accents included' {
+
+        $text = 'A plain sentence.' + [char] 0x00E9 + [char] 0x00E0 + 'tre naive, coeur, ' + [char] 0x00FC + 'ber.'
+        @(Get-TkHiddenCharacterFinding -Text $text).Count | Should -Be 0
+    }
+
+    It 'finds one of each kind, and names it' {
+
+        # A Cyrillic a, a zero-width space, a no-break space, a right-to-left
+        # override and a bell control, one after the other.
+        $text = 'p' + [char] 0x0430 + 'ypal' + [char] 0x200B + 'x' + [char] 0x00A0 + 'y' + [char] 0x202E + 'z' + [char] 0x0007
+
+        $findings = @(Get-TkHiddenCharacterFinding -Text $text)
+        ($findings | ForEach-Object { $_.Category }) | Should -Be @('Confusable', 'Zero-width', 'Unusual space', 'Bidirectional', 'Control')
+
+        $cyrillic = $findings | Where-Object { $_.Code -eq 'U+0430' }
+        $cyrillic.Category   | Should -Be 'Confusable'
+        $cyrillic.Confusable | Should -Be 'a'
+
+        ($findings | Where-Object { $_.Code -eq 'U+202E' }).Name | Should -Be 'RIGHT-TO-LEFT OVERRIDE'
+    }
+
+    It 'reports the line and column of a character' {
+
+        $text = "clean line" + "`n" + "hidden" + [char] 0x200B + "here"
+        $finding = @(Get-TkHiddenCharacterFinding -Text $text)[0]
+
+        $finding.Line   | Should -Be 2
+        $finding.Column | Should -Be 7
+    }
+
+    It 'does not flag or break on an astral emoji' {
+
+        # A surrogate pair is one code point over two chars; it must be stepped
+        # over cleanly and, being ordinary, reported as nothing.
+        $text = 'ok ' + [System.Char]::ConvertFromUtf32(0x1F600) + ' done'
+        @(Get-TkHiddenCharacterFinding -Text $text).Count | Should -Be 0
+    }
+
+    It 'maps the common confusables' {
+
+        $map = Get-TkConfusableMap
+        $map[0x0430].Latin  | Should -Be 'a'          # Cyrillic small a
+        $map[0x0430].Script | Should -Be 'Cyrillic'
+        $map[0x039F].Latin  | Should -Be 'O'          # Greek capital omicron
+        $map[0xFF21].Latin  | Should -Be 'A'          # full-width A
+        $map.ContainsKey([int] [char] 'a') | Should -BeFalse   # a real ASCII a is not a confusable
+    }
+
+    Context 'Report' {
+
+        It 'says so plainly when the text is clean' {
+            (Format-TkHiddenCharacterReport -Text 'nothing to see here') -join "`n" |
+                Should -Match 'No hidden or deceptive characters found'
+        }
+
+        It 'prompts when there is nothing pasted' {
+            (Format-TkHiddenCharacterReport -Text '') -join "`n" | Should -Match 'Paste some text'
+        }
+
+        It 'marks each character in place, look-alikes with their ASCII letter' {
+
+            $text   = 'p' + [char] 0x0430 + 'y' + [char] 0x200B + 'z'
+            $report = (Format-TkHiddenCharacterReport -Text $text) -join "`n"
+
+            $report | Should -Match '2 suspicious character'
+            $report | Should -Match 'p\[U\+0430->a\]y\[U\+200B\]z'
+        }
+    }
+}
+
 Describe 'Administration decoders' {
 
     Context 'SDDL' {
