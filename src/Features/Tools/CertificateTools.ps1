@@ -498,6 +498,290 @@ function Get-TkCertificateItem {
 }
 
 <#
+    Format conversion.
+
+    Reading a certificate is one thing; handing it back in the shape the next
+    tool wants is another. A load balancer wants PEM, a Java keystore import
+    wants DER, a portal shows Base64 with no armour, and a chain arrives as one
+    PKCS #7 file that has to become separate PEM certificates. All of it is the
+    public certificate: a private key is never read here, and a .pfx, which
+    carries one, is out of scope for this reason.
+#>
+
+<#
+.SYNOPSIS
+    Encodes a byte string as one DER TLV: a tag, a length, and the content.
+
+.DESCRIPTION
+    The short form of the length is a single byte under 128; the long form is a
+    lead byte counting the length's own bytes, then the length big-endian. Enough
+    of ASN.1 to reassemble a public key, which .NET Framework cannot export on
+    its own.
+
+.OUTPUTS
+    System.Byte[]
+#>
+function New-TkDerTlv {
+    [CmdletBinding()]
+    [OutputType([byte[]])]
+    param(
+        [Parameter(Mandatory)]
+        [byte] $Tag,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [byte[]] $Content
+    )
+
+    $out = New-Object System.Collections.Generic.List[byte]
+    $out.Add($Tag)
+
+    if ($Content.Length -lt 0x80) {
+        $out.Add([byte] $Content.Length)
+    }
+    else {
+        $length = New-Object System.Collections.Generic.List[byte]
+        $value  = $Content.Length
+
+        while ($value -gt 0) {
+            $length.Insert(0, [byte] ($value -band 0xFF))
+            $value = $value -shr 8
+        }
+
+        $out.Add([byte] (0x80 -bor $length.Count))
+        $out.AddRange($length)
+    }
+
+    $out.AddRange($Content)
+
+    return , $out.ToArray()
+}
+
+<#
+.SYNOPSIS
+    Encodes an object identifier as a DER OBJECT IDENTIFIER.
+
+.DESCRIPTION
+    The first two arcs share a byte as 40*first + second; every arc after is
+    base 128, big-endian, with the high bit set on all but its last byte.
+
+.OUTPUTS
+    System.Byte[]
+#>
+function ConvertTo-TkDerOid {
+    [CmdletBinding()]
+    [OutputType([byte[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Oid
+    )
+
+    $arcs = @($Oid -split '\.' | ForEach-Object { [int] $_ })
+    $body = New-Object System.Collections.Generic.List[byte]
+    $body.Add([byte] (40 * $arcs[0] + $arcs[1]))
+
+    for ($i = 2; $i -lt $arcs.Count; $i++) {
+
+        $arc   = $arcs[$i]
+        $group = New-Object System.Collections.Generic.List[byte]
+
+        $group.Add([byte] ($arc -band 0x7F))
+        $arc = $arc -shr 7
+
+        while ($arc -gt 0) {
+            $group.Insert(0, [byte] (($arc -band 0x7F) -bor 0x80))
+            $arc = $arc -shr 7
+        }
+
+        $body.AddRange($group)
+    }
+
+    return New-TkDerTlv -Tag 0x06 -Content $body.ToArray()
+}
+
+<#
+.SYNOPSIS
+    Builds the SubjectPublicKeyInfo of a certificate as DER.
+
+.DESCRIPTION
+    The public key in the standard SEQUENCE { AlgorithmIdentifier, BIT STRING }
+    form, from the pieces a certificate exposes on every runtime: the algorithm
+    OID, its parameters already encoded, and the raw key value. Rebuilt by hand
+    because .NET Framework, which Windows PowerShell runs on, has no method that
+    exports it.
+
+.OUTPUTS
+    System.Byte[]
+#>
+function Get-TkSubjectPublicKeyInfo {
+    [CmdletBinding()]
+    [OutputType([byte[]])]
+    param(
+        [Parameter(Mandatory)]
+        [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate
+    )
+
+    $key = $Certificate.PublicKey
+
+    # Built through a byte list rather than array concatenation: New-TkDerTlv
+    # returns its bytes as one protected array, which @( ) would keep whole
+    # instead of unrolling, nesting a byte[] where a byte is expected.
+    $algorithmContent = New-Object System.Collections.Generic.List[byte]
+    $algorithmContent.AddRange([byte[]] (ConvertTo-TkDerOid -Oid $key.Oid.Value))
+    $algorithmContent.AddRange([byte[]] $key.EncodedParameters.RawData)
+    $algorithm = New-TkDerTlv -Tag 0x30 -Content $algorithmContent.ToArray()
+
+    $bitStringContent = New-Object System.Collections.Generic.List[byte]
+    $bitStringContent.Add([byte] 0x00)
+    $bitStringContent.AddRange([byte[]] $key.EncodedKeyValue.RawData)
+    $bitString = New-TkDerTlv -Tag 0x03 -Content $bitStringContent.ToArray()
+
+    $spki = New-Object System.Collections.Generic.List[byte]
+    $spki.AddRange([byte[]] $algorithm)
+    $spki.AddRange([byte[]] $bitString)
+
+    return New-TkDerTlv -Tag 0x30 -Content $spki.ToArray()
+}
+
+<#
+.SYNOPSIS
+    Wraps DER bytes in a PEM block, the Base64 folded at 64 characters.
+
+.OUTPUTS
+    System.String
+#>
+function ConvertTo-TkPemBlock {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [byte[]] $Bytes,
+
+        [Parameter()]
+        [string] $Label = 'CERTIFICATE'
+    )
+
+    $base64 = [Convert]::ToBase64String($Bytes)
+
+    $folded = New-Object System.Text.StringBuilder
+    for ($i = 0; $i -lt $base64.Length; $i += 64) {
+        [void] $folded.AppendLine($base64.Substring($i, [math]::Min(64, $base64.Length - $i)))
+    }
+
+    return "-----BEGIN {0}-----`n{1}-----END {0}-----" -f $Label, ($folded.ToString() -replace "`r", '')
+}
+
+<#
+.SYNOPSIS
+    Extracts the public certificates from pasted text or a file's bytes.
+
+.DESCRIPTION
+    Reads PEM (one certificate or a chain), a single DER certificate, a PKCS #7
+    chain, or Base64 with no armour, and returns each certificate as an object.
+    Certificate blocks only: a private key in the text is ignored, not exported.
+
+.OUTPUTS
+    System.Security.Cryptography.X509Certificates.X509Certificate2[]
+#>
+function Get-TkCertificateChain {
+    [CmdletBinding(DefaultParameterSetName = 'Text')]
+    [OutputType([System.Security.Cryptography.X509Certificates.X509Certificate2[]])]
+    param(
+        [Parameter(Mandatory, ParameterSetName = 'Text')]
+        [AllowEmptyString()]
+        [string] $Text,
+
+        [Parameter(Mandatory, ParameterSetName = 'Bytes')]
+        [byte[]] $Bytes
+    )
+
+    $certificateLabels = @('CERTIFICATE', 'TRUSTED CERTIFICATE', 'X509 CERTIFICATE')
+
+    if ($PSCmdlet.ParameterSetName -eq 'Bytes') {
+
+        $asText = [System.Text.Encoding]::ASCII.GetString($Bytes)
+
+        if ($asText -match '-----BEGIN [A-Z0-9 ]+-----') {
+            return @(Get-TkCertificateChain -Text $asText)
+        }
+
+        # DER, a single certificate or a PKCS #7 chain: the collection reads both.
+        try {
+            $collection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+            $collection.Import($Bytes)
+            return @($collection)
+        }
+        catch {
+            return @()
+        }
+    }
+
+    $blocks = @(Split-TkPemBlock -Text $Text | Where-Object { $_.Label -in $certificateLabels -and $_.Bytes })
+
+    if ($blocks.Count -gt 0) {
+        return @(foreach ($block in $blocks) {
+            try { New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(, $block.Bytes) } catch { $null = $_ }
+        })
+    }
+
+    # Base64 with no armour, as some portals present a certificate.
+    $compact = $Text -replace '\s', ''
+
+    if ($compact.Length -ge 64 -and $compact -match '^[A-Za-z0-9+/]+={0,2}$') {
+        try {
+            return @(Get-TkCertificateChain -Bytes ([Convert]::FromBase64String($compact)))
+        }
+        catch {
+            return @()
+        }
+    }
+
+    return @()
+}
+
+<#
+.SYNOPSIS
+    Converts certificates to PEM, to one-line Base64 DER, or to their public key.
+
+.PARAMETER Certificate
+    The certificates from Get-TkCertificateChain.
+
+.PARAMETER Format
+    Pem for armoured certificates, DerBase64 for the raw certificate as one
+    Base64 line, PublicKey for the SubjectPublicKeyInfo as a PEM public key.
+
+.OUTPUTS
+    System.String
+#>
+function ConvertTo-TkCertificateFormat {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [System.Security.Cryptography.X509Certificates.X509Certificate2[]] $Certificate,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('Pem', 'DerBase64', 'PublicKey')]
+        [string] $Format
+    )
+
+    # Not named $certificate: PowerShell variable names are case insensitive, so
+    # that would be the $Certificate parameter itself, and the loop would read
+    # the whole array where one certificate is meant.
+    $parts = foreach ($entry in $Certificate) {
+
+        switch ($Format) {
+            'Pem'       { ConvertTo-TkPemBlock -Bytes $entry.RawData -Label 'CERTIFICATE' }
+            'DerBase64' { [Convert]::ToBase64String($entry.RawData) }
+            'PublicKey' { ConvertTo-TkPemBlock -Bytes (Get-TkSubjectPublicKeyInfo -Certificate $entry) -Label 'PUBLIC KEY' }
+        }
+    }
+
+    return (@($parts) -join "`n`n")
+}
+
+<#
 .SYNOPSIS
     Writes decoded certificates, requests and keys as lines of text.
 

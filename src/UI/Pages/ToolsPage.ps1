@@ -182,6 +182,9 @@ function Initialize-TkToolsPage {
     # Enter in the domain box.
     Register-TkClick -Name 'BtnCheckMailDns'    -Action { Invoke-TkMailDnsFromUi }
     Register-TkClick -Name 'BtnOpenCertificate' -Action { Open-TkCertificateFileFromUi }
+    Register-TkClick -Name 'BtnCertToPem'       -Action { Convert-TkCertificateFromUi -Format 'Pem' }
+    Register-TkClick -Name 'BtnCertToDer'       -Action { Convert-TkCertificateFromUi -Format 'DerBase64' }
+    Register-TkClick -Name 'BtnCertPublicKey'   -Action { Convert-TkCertificateFromUi -Format 'PublicKey' }
 
     $mailDomain = Get-TkControl -Name 'MailDnsDomain'
 
@@ -853,6 +856,9 @@ function Update-TkCertificateFromUi {
         return
     }
 
+    # Typed text is now the source a conversion reads, not the last opened file.
+    $script:TkLastCertificateBytes = $null
+
     $items = @(Get-TkCertificateItem -Text $text)
 
     if ($items.Count -eq 0) {
@@ -887,10 +893,69 @@ function Open-TkCertificateFileFromUi {
         return
     }
 
-    $items = @(Get-TkCertificateItem -Bytes ([System.IO.File]::ReadAllBytes($file.FullName)))
+    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+
+    # Kept so a conversion can work from a binary file (DER, .p7b) the input box
+    # cannot hold. Cleared as soon as the operator types into the box.
+    $script:TkLastCertificateBytes = $bytes
+
+    $items = @(Get-TkCertificateItem -Bytes $bytes)
     $lines = @(('File         {0}' -f $file.FullName), '') + @(Format-TkCertificateItem -Item $items)
 
     Set-TkOutput -ControlName 'CertificateOutput' -Text ($lines -join [Environment]::NewLine)
+}
+
+<#
+.SYNOPSIS
+    Converts the certificate on the page to PEM, DER Base64 or its public key.
+
+.DESCRIPTION
+    Reads what is in the input box, or the last file opened when the box is
+    empty, and writes the converted form to the output. A request or a private
+    key is not a certificate and is reported as such rather than converted.
+
+.PARAMETER Format
+    Pem, DerBase64 or PublicKey.
+#>
+function Convert-TkCertificateFromUi {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Pem', 'DerBase64', 'PublicKey')]
+        [string] $Format
+    )
+
+    $box  = Get-TkControl -Name 'CertificateInput'
+    $text = if ($box) { [string] $box.Text } else { '' }
+
+    $chain = if ($text.Trim()) {
+                 @(Get-TkCertificateChain -Text $text)
+             }
+             elseif ($script:TkLastCertificateBytes) {
+                 @(Get-TkCertificateChain -Bytes $script:TkLastCertificateBytes)
+             }
+             else {
+                 @()
+             }
+
+    if ($chain.Count -eq 0) {
+        Set-TkOutput -ControlName 'CertificateOutput' -Text (
+            'No certificate to convert. Paste a certificate or a chain, or open a file, then convert. ' +
+            'A certificate request or a private key is not converted here.')
+        return
+    }
+
+    $result = ConvertTo-TkCertificateFormat -Certificate $chain -Format $Format
+
+    Set-TkOutput -ControlName 'CertificateOutput' -Text $result
+
+    $what = switch ($Format) {
+        'Pem'       { 'PEM' }
+        'DerBase64' { 'Base64 DER' }
+        'PublicKey' { 'public key' }
+    }
+
+    Set-TkStatus -Text ('{0} certificate(s) converted to {1}.' -f $chain.Count, $what)
 }
 
 # ---------------------------------------------------------------------------

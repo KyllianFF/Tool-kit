@@ -3473,16 +3473,19 @@
 
                                 <Border Grid.Row="0" Style="{StaticResource Card}">
                                     <StackPanel>
-                                        <TextBlock Text="Certificate and CSR decoder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBlock Text="Certificate decoder and converter" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
                                         <TextBox x:Name="CertificateInput" Height="140" Margin="0,0,0,8"
                                                  AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                                  VerticalContentAlignment="Top" FontFamily="Cascadia Mono, Consolas, Courier New"
                                                  Tag="Paste a certificate, a chain or a certificate request, with its -----BEGIN and -----END lines" />
                                         <WrapPanel>
-                                            <Button x:Name="BtnOpenCertificate" Content="Open a file" Margin="0,0,0,8" />
+                                            <Button x:Name="BtnOpenCertificate" Content="Open a file"       Margin="0,0,8,8" />
+                                            <Button x:Name="BtnCertToPem"       Content="To PEM"            Margin="0,0,8,8" />
+                                            <Button x:Name="BtnCertToDer"       Content="To DER (Base64)"   Margin="0,0,8,8" />
+                                            <Button x:Name="BtnCertPublicKey"   Content="Public key"        Margin="0,0,0,8" />
                                         </WrapPanel>
                                         <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
-                                                   Text="Read as you paste: names, validity, key, purposes and fingerprints of each certificate, and what a request asks for. PEM, DER, .cer, .crt, .csr and .p7b files. A private key pasted by mistake is recognised and never decoded." />
+                                                   Text="Read as you paste: names, validity, key, purposes and fingerprints of each certificate, and what a request asks for. Convert the public certificate between PEM and DER, split a chain, or extract its public key. PEM, DER, .cer, .crt, .csr and .p7b files. A private key pasted by mistake is recognised and never decoded." />
                                     </StackPanel>
                                 </Border>
 
