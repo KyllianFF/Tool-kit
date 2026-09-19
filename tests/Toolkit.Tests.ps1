@@ -4975,6 +4975,85 @@ Describe 'Hidden characters' {
     }
 }
 
+Describe 'TOTP authenticator' {
+
+    BeforeAll {
+        # RFC 6238 test secret: the ASCII "12345678901234567890".
+        $script:TotpSecret = [System.Text.Encoding]::ASCII.GetBytes('12345678901234567890')
+    }
+
+    Context 'Base32' {
+
+        It 'decodes to the expected bytes, ignoring spaces and padding' {
+            $bytes = ConvertFrom-TkBase32 -Text 'GEZD GNBV GY3T QOJQ ==='
+            [System.Text.Encoding]::ASCII.GetString($bytes) | Should -Be '1234567890'
+        }
+
+        It 'rejects a character outside the alphabet' {
+            { ConvertFrom-TkBase32 -Text 'ABC!' } | Should -Throw
+        }
+    }
+
+    Context 'RFC 6238 vectors' {
+
+        It 'computes <Want> at T=<Time>' -TestCases @(
+            @{ Time = 59;         Want = '94287082' }
+            @{ Time = 1111111109; Want = '07081804' }
+            @{ Time = 1234567890; Want = '89005924' }
+            @{ Time = 2000000000; Want = '69279037' }
+        ) {
+            param($Time, $Want)
+            Get-TkTotpCode -Secret $script:TotpSecret -UnixTime ([long] $Time) -Digits 8 -Algorithm 'SHA1' | Should -Be $Want
+        }
+    }
+
+    Context 'otpauth URI' {
+
+        It 'reads the issuer, account, secret and parameters' {
+            $uri = ConvertFrom-TkOtpauthUri -Uri 'otpauth://totp/Contoso:alice%40contoso.com?secret=JBSWY3DPEHPK3PXP&issuer=Contoso&digits=8&period=60&algorithm=SHA256'
+
+            $uri.Issuer    | Should -Be 'Contoso'
+            $uri.Account   | Should -Be 'alice@contoso.com'
+            $uri.Secret    | Should -Be 'JBSWY3DPEHPK3PXP'
+            $uri.Digits    | Should -Be 8
+            $uri.Period    | Should -Be 60
+            $uri.Algorithm | Should -Be 'SHA256'
+        }
+
+        It 'is null for anything that is not an otpauth URI' {
+            ConvertFrom-TkOtpauthUri -Uri 'https://contoso.com' | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Report' {
+
+        It 'gives a six digit code and a live window from a bare secret' {
+            $now    = [System.DateTimeOffset]::FromUnixTimeSeconds(1234567890).UtcDateTime
+            $report = Get-TkTotpReport -Text 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ' -Now $now
+
+            $report.Error            | Should -Be ''
+            $report.Code             | Should -Be '005924'   # the low six of the eight digit vector
+            $report.SecondsRemaining | Should -BeGreaterThan 0
+            $report.SecondsRemaining | Should -BeLessOrEqual 30
+        }
+
+        It 'takes its parameters from an otpauth URI' {
+            $report = Get-TkTotpReport -Text 'otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=8&issuer=Acme'
+            $report.Digits | Should -Be 8
+            $report.Issuer | Should -Be 'Acme'
+        }
+
+        It 'reports an empty or invalid secret rather than throwing' {
+            (Get-TkTotpReport -Text 'not base 32 !!!').Error | Should -Match 'not valid Base32'
+        }
+
+        It 'never echoes the secret, and prompts when empty' {
+            ((Format-TkTotpReport -Text 'JBSWY3DPEHPK3PXP') -join ' ') | Should -Not -Match 'JBSWY3DPEHPK3PXP'
+            ((Format-TkTotpReport -Text '') -join ' ') | Should -Match 'Base32 secret'
+        }
+    }
+}
+
 Describe 'Connection string' {
 
     Context 'Parsing' {
