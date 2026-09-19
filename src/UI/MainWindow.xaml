@@ -610,14 +610,17 @@
                                 CornerRadius="5">
                             <Grid>
                                 <!--
-                                    The hint takes its inset from Padding, the
-                                    same source the content host uses below. As
-                                    two independent values, a literal here and a
-                                    template binding there, they drifted: the
-                                    placeholder sat one pixel off from where the
-                                    caret appears, and any control that set its
-                                    own Padding moved the caret without moving
-                                    the placeholder.
+                                    Where the text sits is not the content host's
+                                    business: TextBoxBase renders the editable
+                                    text through an inner TextBoxView that applies
+                                    Padding itself. So the content host is left at
+                                    a zero margin, and the hint alone carries
+                                    Padding so the placeholder lands on the same
+                                    inset as the text and the caret. Binding
+                                    Padding onto the content host too, as an
+                                    earlier version did, applied it a second time
+                                    and pushed the caret a whole Padding.Left to
+                                    the right of the placeholder.
                                 -->
                                 <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}"
                                            Foreground="{DynamicResource TextMuted}"
@@ -627,7 +630,6 @@
                                            IsHitTestVisible="False" Visibility="Collapsed"
                                            TextTrimming="CharacterEllipsis" />
                                 <ScrollViewer x:Name="PART_ContentHost"
-                                              Margin="{TemplateBinding Padding}"
                                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                               HorizontalScrollBarVisibility="{TemplateBinding HorizontalScrollBarVisibility}"
                                               VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}" />

@@ -2401,10 +2401,12 @@ Describe 'Interface rendering' {
 
         It 'aligns the placeholder with the caret' {
 
-            # The hint and the real text are siblings in the same grid, so two
-            # independent insets drifted apart: a literal margin on one and a
-            # template binding on the other. Bound to the same Padding they
-            # cannot separate again, whatever a control sets.
+            # The editable text is drawn by an inner TextBoxView that applies
+            # Padding on its own. So the inset must come from exactly one place:
+            # the hint carries Padding to sit on the same line as the text, and
+            # the content host carries no margin. Binding Padding onto the
+            # content host as well applied it twice and pushed the caret a whole
+            # Padding.Left to the right of the placeholder.
             # Read from the markup rather than the built template: XamlWriter
             # serialises a template with its bindings already resolved, so the
             # very thing under test disappears from the output.
@@ -2413,13 +2415,20 @@ Describe 'Interface rendering' {
             $start = $markup.IndexOf('<Style TargetType="TextBox">')
             $start | Should -BeGreaterThan 0
 
-            $body = $markup.Substring($start, 3000)
+            # Bound the search to this one style, whatever length its comments
+            # grow to, so the next style's own content host cannot stand in.
+            $next = $markup.IndexOf('<Style ', $start + 10)
+            $body = $markup.Substring($start, $next - $start)
 
-            # The hint and the content host both take their inset from Padding.
-            ([regex]::Matches($body, 'Margin="\{TemplateBinding Padding\}"')).Count |
-                Should -BeGreaterOrEqual 2
+            # The hint sits at Padding.
+            $hint = [regex]::Match($body, '<TextBlock x:Name="Hint".*?/>', 'Singleline')
+            $hint.Success | Should -BeTrue
+            $hint.Value   | Should -Match 'Margin="\{TemplateBinding Padding\}"'
 
-            $body | Should -Not -Match 'Margin="9,6,9,6"'
+            # The content host does not add Padding a second time.
+            $contentHost = [regex]::Match($body, '<ScrollViewer x:Name="PART_ContentHost".*?/>', 'Singleline')
+            $contentHost.Success | Should -BeTrue
+            $contentHost.Value   | Should -Not -Match 'Margin='
         }
     }
 
