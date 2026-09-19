@@ -4975,6 +4975,79 @@ Describe 'Hidden characters' {
     }
 }
 
+Describe 'Connection string' {
+
+    Context 'Parsing' {
+
+        It 'reads plain key=value pairs' {
+            $pairs = @(ConvertFrom-TkConnectionString -Text 'Server=srv;Database=db;User Id=me')
+            $pairs.Count       | Should -Be 3
+            $pairs[0].Key      | Should -Be 'Server'
+            $pairs[0].Value    | Should -Be 'srv'
+            $pairs[2].Key      | Should -Be 'User Id'
+        }
+
+        It 'keeps a semicolon inside a quoted value' {
+            $pairs = @(ConvertFrom-TkConnectionString -Text "Server=s;Password='P@ss;word';Database=d")
+            ($pairs | Where-Object { $_.Key -eq 'Password' }).Value | Should -Be 'P@ss;word'
+            $pairs.Count | Should -Be 3
+        }
+
+        It 'reads a braced value, doubled brace and all' {
+            $pairs = @(ConvertFrom-TkConnectionString -Text 'Driver={ODBC Driver 17 for SQL Server};Server=s')
+            $pairs[0].Value | Should -Be 'ODBC Driver 17 for SQL Server'
+
+            $braced = @(ConvertFrom-TkConnectionString -Text 'Key={a}}b};Next=1')
+            $braced[0].Value | Should -Be 'a}b'
+        }
+    }
+
+    Context 'Report' {
+
+        It 'names the kind and normalises the fields' {
+            $report = Get-TkConnectionStringReport -Text 'Data Source=SRV;Initial Catalog=DB;User ID=sa;Password=x;Encrypt=true'
+            $report.Kind            | Should -Be 'SQL Server'
+            $report.Field['Server'] | Should -Be 'SRV'
+            $report.Field['Database'] | Should -Be 'DB'
+            $report.Field['User']   | Should -Be 'sa'
+        }
+
+        It 'detects PostgreSQL, MySQL and ODBC' {
+            (Get-TkConnectionStringReport -Text 'Host=h;Database=d;Username=u;Ssl Mode=Require').Kind | Should -Be 'PostgreSQL'
+            (Get-TkConnectionStringReport -Text 'Server=s;Database=d;Uid=u;Pwd=p;SslMode=None').Kind | Should -Be 'MySQL or MariaDB'
+            (Get-TkConnectionStringReport -Text 'Driver={x};Server=s').Kind | Should -Be 'ODBC'
+        }
+
+        It 'warns on a clear password, no encryption and a trusted certificate' {
+            $report = Get-TkConnectionStringReport -Text 'Server=s;Database=d;User Id=u;Password=p;Encrypt=false;TrustServerCertificate=true'
+            $warnings = @($report.Finding | Where-Object { $_.Severity -eq 'Warning' })
+
+            ($warnings.Text -join ' ') | Should -Match 'password is stored in clear'
+            ($warnings.Text -join ' ') | Should -Match 'Encrypt is off'
+            ($warnings.Text -join ' ') | Should -Match 'certificate is not checked'
+        }
+
+        It 'treats integrated authentication as carrying no password' {
+            $report = Get-TkConnectionStringReport -Text 'Server=s;Database=d;Integrated Security=SSPI'
+            ($report.Finding.Text -join ' ') | Should -Match 'integrated authentication'
+            ($report.Finding | Where-Object { $_.Text -match 'password is stored in clear' }) | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Formatting' {
+
+        It 'masks the password in both the fields and the parameters' {
+            $text = (Format-TkConnectionStringReport -Text 'Server=s;Database=d;User Id=u;Password=SuperSecret') -join "`n"
+            $text | Should -Not -Match 'SuperSecret'
+            $text | Should -Match 'hidden'
+        }
+
+        It 'prompts on empty input and explains unrecognised input' {
+            (Format-TkConnectionStringReport -Text '')  -join "`n" | Should -Match 'Paste a connection string'
+        }
+    }
+}
+
 Describe 'Administration decoders' {
 
     Context 'SDDL' {

@@ -170,6 +170,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'CertificateInput'; Update = { Update-TkCertificateFromUi } }
         @{ Name = 'HttpHeaderInput';  Update = { Update-TkHttpHeaderFromUi } }
         @{ Name = 'HiddenCharsInput'; Update = { Update-TkHiddenCharsFromUi } }
+        @{ Name = 'ConnectionStringInput'; Update = { Update-TkConnectionStringFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -1388,6 +1389,24 @@ function Update-TkHiddenCharsFromUi {
 
 <#
 .SYNOPSIS
+    Takes the pasted connection string apart, as it changes.
+#>
+function Update-TkConnectionStringFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'ConnectionStringOutput'
+    $box    = Get-TkControl -Name 'ConnectionStringInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $output.Text = (Format-TkConnectionStringReport -Text ([string] $box.Text)) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
     Builds an event log query from the fields on the page, as they change.
 #>
 function Update-TkEventQueryFromUi {
@@ -2388,6 +2407,7 @@ function Get-TkToolEntry {
         (& $tool 'Text and data'    'Data size and rate' 'ToolDataSize')
         (& $tool 'Text and data'    'Text diff'      'ToolTextDiff')
         (& $tool 'Text and data'    'URL parser'     'ToolUrlParser')
+        (& $tool 'Text and data'    'Connection string' 'ToolConnectionString')
         (& $tool 'Text and data'    'NATO alphabet'  'ToolNato')
         (& $tool 'Text and data'    'Phone numbers'  'ToolPhone')
         (& $tool 'Text and data'    'HTML editor'    'ToolHtmlEditor')
