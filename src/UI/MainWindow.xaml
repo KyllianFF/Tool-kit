@@ -2924,6 +2924,10 @@
                                          ToolTip="Paste a site's response headers and grade its security headers: HSTS, CSP, framing, sniffing, referrer, cookies.">
                                 <TextBlock Text="HTTP headers" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Reveal invisible and deceptive characters in pasted text: zero-width spaces, direction overrides, unusual spaces, controls, and look-alikes of ASCII letters.">
+                                <TextBlock Text="Invisible characters" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
 
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                 <TextBlock Text="GENERATORS" Style="{StaticResource ChoiceGroupTitle}" />
@@ -4063,6 +4067,31 @@
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="HttpHeaderOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolHiddenChars" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Invisible and deceptive characters" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="HiddenCharsInput" Height="150" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste a link, a file name, a command or any text to inspect" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Read as you paste, on this machine. Reveals zero-width and formatting characters, direction overrides (the gpj.exe trick), unusual spaces, C0 and C1 controls, and letters from other scripts that impersonate an ASCII one (a Cyrillic a in paypal.com). Ordinary text, accents included, raises nothing." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="HiddenCharsOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>

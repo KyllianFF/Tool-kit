@@ -169,6 +169,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'MailHeaderInput';  Update = { Update-TkMailHeaderFromUi } }
         @{ Name = 'CertificateInput'; Update = { Update-TkCertificateFromUi } }
         @{ Name = 'HttpHeaderInput';  Update = { Update-TkHttpHeaderFromUi } }
+        @{ Name = 'HiddenCharsInput'; Update = { Update-TkHiddenCharsFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -1369,6 +1370,24 @@ function Update-TkHttpHeaderFromUi {
 
 <#
 .SYNOPSIS
+    Inspects the pasted text for hidden and deceptive characters, as it changes.
+#>
+function Update-TkHiddenCharsFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'HiddenCharsOutput'
+    $box    = Get-TkControl -Name 'HiddenCharsInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $output.Text = (Format-TkHiddenCharacterReport -Text ([string] $box.Text)) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
     Builds an event log query from the fields on the page, as they change.
 #>
 function Update-TkEventQueryFromUi {
@@ -2356,6 +2375,7 @@ function Get-TkToolEntry {
         (& $tool 'Security'         'Mail DNS records' 'ToolMailDns')
         (& $tool 'Security'         'Certificates'   'ToolCertificates')
         (& $tool 'Security'         'HTTP headers'   'ToolHttpHeaders')
+        (& $tool 'Security'         'Invisible characters' 'ToolHiddenChars')
         (& $tool 'Generators'       'Ports'          'ToolPorts')
         (& $tool 'Generators'       'UUIDs'          'ToolUuids')
         (& $tool 'Generators'       'QR code'        'ToolQrCode')

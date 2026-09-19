@@ -65,6 +65,7 @@ src/Features/Reporting/HtmlReport.ps1
 src/Features/Reference/WindowsReference.ps1
 src/Features/Tools/Calculators.ps1
 src/Features/Tools/TextTools.ps1
+src/Features/Tools/HiddenCharacters.ps1
 src/Features/Tools/DevOpsTools.ps1
 src/Features/Tools/HtmlDocument.ps1
 src/Features/Tools/QrCode.ps1
