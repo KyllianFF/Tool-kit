@@ -1088,8 +1088,10 @@ function Export-TkAuditFromUi {
 
     $dialog = New-Object Microsoft.Win32.SaveFileDialog
     $dialog.Title    = 'Export the audit report'
-    $dialog.Filter   = 'JSON report (*.json)|*.json'
-    $dialog.FileName = '{0}-audit-{1}.json' -f $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd')
+    # HTML first: the printable page for a ticket is what this is usually for.
+    # JSON stays for feeding another tool.
+    $dialog.Filter   = 'HTML report (*.html)|*.html|JSON report (*.json)|*.json'
+    $dialog.FileName = '{0}-audit-{1}.html' -f $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd')
 
     if (-not $dialog.ShowDialog()) {
         return

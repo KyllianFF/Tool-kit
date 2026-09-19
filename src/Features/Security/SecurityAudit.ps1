@@ -1764,10 +1764,16 @@ function Test-TkAuditPasswordPolicy {
 
 <#
 .SYNOPSIS
-    Writes an audit report to disk.
+    Writes an audit report to disk, as HTML or as JSON.
+
+.DESCRIPTION
+    The format follows the file name: a .html or .htm path gets the printable
+    report a person reads and attaches to a ticket, anything else gets the JSON
+    another tool consumes. One function so both formats carry the same score and
+    the same findings, and the caller only has to choose an extension.
 
 .PARAMETER Path
-    Destination file.
+    Destination file. Its extension decides the format.
 
 .OUTPUTS
     System.String
@@ -1794,6 +1800,27 @@ function Export-TkSecurityAuditReport {
     # The same score the screen shows, so an exported report and the page it
     # came from never disagree about the number.
     $score = Get-TkAuditScore -Finding @($Findings)
+
+    # A printable page for a person, chosen by the file name. The JSON below is
+    # for another tool; the HTML is for the ticket.
+    if ([System.IO.Path]::GetExtension($Path) -match '^\.html?$') {
+
+        try {
+            $html = ConvertTo-TkSecurityAuditHtml -Finding @($Findings) -Score $score
+            $html | Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
+
+            Write-TkLog -Level Information -Category 'Audit' -Message ('Audit report written to {0}' -f $Path)
+
+            return $Path
+        }
+        catch {
+            Write-TkLog -Level Error -Category 'Audit' -Message (
+                'Could not write the report: {0}' -f $_.Exception.Message
+            )
+
+            return $null
+        }
+    }
 
     $report = [pscustomobject]@{
         Computer    = $env:COMPUTERNAME

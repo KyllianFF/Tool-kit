@@ -6212,6 +6212,115 @@ Describe 'Support bundle' {
     }
 }
 
+Describe 'HTML report' {
+
+    Context 'Encoding' {
+
+        It 'escapes the five markup characters, ampersand first' {
+            ConvertTo-TkHtmlEncoded -Text 'a<b>&"c''' | Should -Be 'a&lt;b&gt;&amp;&quot;c&#39;'
+        }
+
+        It 'returns an empty string for empty or null input' {
+            ConvertTo-TkHtmlEncoded -Text ''    | Should -Be ''
+            ConvertTo-TkHtmlEncoded -Text $null | Should -Be ''
+        }
+    }
+
+    Context 'Document shell' {
+
+        It 'wraps a body in a complete, self contained document' {
+            $html = New-TkHtmlReport -Title 'T' -Subtitle 'S' -Body '<p>hi</p>' `
+                -Meta ([ordered] @{ Computer = 'PC1' }) -Note 'N'
+
+            $html          | Should -Match '^<!DOCTYPE html>'
+            $html          | Should -Match '<title>T</title>'
+            $html          | Should -Match '<style>'         # the stylesheet is inline
+            $html          | Should -Not -Match 'https?://'   # nothing is fetched
+            $html          | Should -Match '<p>hi</p>'
+            $html          | Should -Match '<th>Computer</th><td>PC1</td>'
+        }
+
+        It 'escapes values that reach the metadata table and the title' {
+            $html = New-TkHtmlReport -Title '<x>' -Body '' -Meta ([ordered] @{ Host = 'a & b' })
+            $html | Should -Match '<title>&lt;x&gt;</title>'
+            $html | Should -Match '<td>a &amp; b</td>'
+        }
+    }
+
+    Context 'Security audit report' {
+
+        BeforeAll {
+            $script:HtmlFindings = @(
+                New-TkAuditFinding -Id 'AV-001' -Name 'Antivirus' -Category 'Endpoint' -Status 'Pass' `
+                    -Measured 'ESET Security' -Detail 'Running.' -Weight 10
+                New-TkAuditFinding -Id 'FW-001' -Name 'Firewall' -Category 'Network' -Status 'Fail' `
+                    -Measured 'Off' -Detail 'The firewall is off.' -Recommendation 'Turn it on.' -Weight 9
+                New-TkAuditFinding -Id 'PS-001' -Name 'PowerShell 2' -Category 'Endpoint' -Status 'NotAssessed' `
+                    -Measured 'Not readable' -Detail 'Needs elevation.' -Weight 5
+            )
+            $script:HtmlReport = ConvertTo-TkSecurityAuditHtml -Finding $script:HtmlFindings -Computer 'PC42'
+        }
+
+        It 'is well formed and self contained' {
+            { [xml] $script:HtmlReport } | Should -Not -Throw
+            $script:HtmlReport | Should -Match '<!DOCTYPE html>'
+        }
+
+        It 'renders one card per finding, in its severity class' {
+            ([regex]::Matches($script:HtmlReport, '<div class="card ')).Count | Should -Be 3
+            $script:HtmlReport | Should -Match 'card sev-pass'
+            $script:HtmlReport | Should -Match 'card sev-fail'
+            $script:HtmlReport | Should -Match 'card sev-notassessed'
+        }
+
+        It 'groups by category once each, in first seen order' {
+            # Endpoint appears before Network, and only as a section heading once.
+            ([regex]::Matches($script:HtmlReport, '<h2 class="section">Endpoint</h2>')).Count | Should -Be 1
+            $script:HtmlReport.IndexOf('>Endpoint<') | Should -BeLessThan $script:HtmlReport.IndexOf('>Network<')
+        }
+
+        It 'shows the recommendation only where there is one' {
+            $script:HtmlReport | Should -Match 'Turn it on\.'
+            # The passing finding carries no recommendation, so exactly one appears.
+            ([regex]::Matches($script:HtmlReport, 'class="reco"')).Count | Should -Be 1
+        }
+
+        It 'carries the same score the page shows, out of one hundred' {
+            $score = Get-TkAuditScore -Finding $script:HtmlFindings
+            $script:HtmlReport | Should -Match ('<div class="value">{0}<span>/100</span>' -f [int] $score.Score)
+        }
+
+        It 'names the machine it describes' {
+            $script:HtmlReport | Should -Match 'PC42'
+        }
+    }
+
+    Context 'Export by extension' {
+
+        It 'writes HTML for a .html path and JSON otherwise' {
+            $findings = @(
+                New-TkAuditFinding -Id 'AV-001' -Name 'Antivirus' -Category 'Endpoint' -Status 'Pass' -Detail 'ok' -Weight 10
+            )
+
+            $htmlPath = Join-Path ([System.IO.Path]::GetTempPath()) ('tk-{0}.html' -f [guid]::NewGuid())
+            $jsonPath = Join-Path ([System.IO.Path]::GetTempPath()) ('tk-{0}.json' -f [guid]::NewGuid())
+
+            try {
+                Export-TkSecurityAuditReport -Path $htmlPath -Findings $findings -Confirm:$false | Should -Be $htmlPath
+                Export-TkSecurityAuditReport -Path $jsonPath -Findings $findings -Confirm:$false | Should -Be $jsonPath
+
+                (Get-Content -LiteralPath $htmlPath -Raw) | Should -Match '<!DOCTYPE html>'
+
+                $json = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
+                $json.Summary.Pass | Should -Be 1
+            }
+            finally {
+                Remove-Item -LiteralPath $htmlPath, $jsonPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
 Describe 'Security audit engine' {
 
     BeforeAll {

@@ -61,6 +61,7 @@ src/Features/Diagnostics/SupportBundle.ps1
 src/Features/Intervention/Journal.ps1
 src/Features/Reporting/Headless.ps1
 src/Features/Reporting/Comparison.ps1
+src/Features/Reporting/HtmlReport.ps1
 src/Features/Reference/WindowsReference.ps1
 src/Features/Tools/Calculators.ps1
 src/Features/Tools/TextTools.ps1
