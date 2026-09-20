@@ -2997,6 +2997,10 @@
                                 <TextBlock Text="Connection string" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Take a User-Agent string apart: browser, layout engine, operating system and device type.">
+                                <TextBlock Text="User-Agent" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Spell out a serial number, a licence key or a password to dictate with the NATO phonetic alphabet.">
                                 <TextBlock Text="NATO alphabet" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
@@ -3638,6 +3642,30 @@
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="ConnectionStringOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolUserAgent" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="User-Agent" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="UserAgentInput" Margin="0,0,0,8"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste a User-Agent string" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Taken apart as you type, on this machine: the browser and its version, the layout engine, the operating system, and whether it is a desktop, a phone, a tablet, a bot or a command line tool. Read by known patterns, most specific first, because an Edge line also says Chrome and a Chrome line also says Safari." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="UserAgentOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>
