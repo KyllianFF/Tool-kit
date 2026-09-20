@@ -4975,6 +4975,45 @@ Describe 'Hidden characters' {
     }
 }
 
+Describe 'User-Agent parser' {
+
+    It 'reads <Browser> <Os> <Device> from the string' -TestCases @(
+        @{ Ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'; Browser = 'Chrome'; Os = 'Windows'; Device = 'Desktop' }
+        @{ Ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'; Browser = 'Edge'; Os = 'Windows'; Device = 'Desktop' }
+        @{ Ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'; Browser = 'Safari'; Os = 'iOS'; Device = 'Mobile' }
+        @{ Ua = 'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0'; Browser = 'Firefox'; Os = 'Linux'; Device = 'Desktop' }
+        @{ Ua = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'; Browser = 'Chrome'; Os = 'Android'; Device = 'Mobile' }
+    ) {
+        param($Ua, $Browser, $Os, $Device)
+        $info = Get-TkUserAgentInfo -Text $Ua
+        $info.Browser | Should -Be $Browser
+        $info.Os      | Should -Be $Os
+        $info.Device  | Should -Be $Device
+    }
+
+    It 'names the engine, Blink for Chromium and Gecko for Firefox' {
+        (Get-TkUserAgentInfo -Text 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36').Engine | Should -Be 'Blink'
+        (Get-TkUserAgentInfo -Text 'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0').Engine | Should -Be 'Gecko'
+    }
+
+    It 'reads the versions, translating the Windows number' {
+        $info = Get-TkUserAgentInfo -Text 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        $info.BrowserVersion | Should -Be '120.0.0.0'
+        $info.OsVersion      | Should -Be '10 or 11'
+    }
+
+    It 'tells a bot and a command line tool apart from a browser' {
+        (Get-TkUserAgentInfo -Text 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)').Device | Should -Be 'Bot'
+        $curl = Get-TkUserAgentInfo -Text 'curl/8.4.0'
+        $curl.Browser | Should -Be 'curl'
+        $curl.Device  | Should -Be 'Tool'
+    }
+
+    It 'prompts when nothing is pasted' {
+        (Format-TkUserAgentReport -Text '') -join "`n" | Should -Match 'Paste a User-Agent'
+    }
+}
+
 Describe 'Hash identifier' {
 
     It 'lists NTLM first for 32 hex characters, alongside MD5 and LM' {

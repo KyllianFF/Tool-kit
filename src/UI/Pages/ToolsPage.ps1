@@ -173,6 +173,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'ConnectionStringInput'; Update = { Update-TkConnectionStringFromUi } }
         @{ Name = 'TotpInput';        Update = { Update-TkTotpFromUi } }
         @{ Name = 'HashIdInput';      Update = { Update-TkHashIdFromUi } }
+        @{ Name = 'UserAgentInput';   Update = { Update-TkUserAgentFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -1418,6 +1419,24 @@ function Update-TkHashIdFromUi {
 
 <#
 .SYNOPSIS
+    Takes the pasted User-Agent apart, as it changes.
+#>
+function Update-TkUserAgentFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'UserAgentOutput'
+    $box    = Get-TkControl -Name 'UserAgentInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $output.Text = (Format-TkUserAgentReport -Text ([string] $box.Text)) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
     Takes the pasted connection string apart, as it changes.
 #>
 function Update-TkConnectionStringFromUi {
@@ -2467,6 +2486,7 @@ function Get-TkToolEntry {
         (& $tool 'Text and data'    'Text diff'      'ToolTextDiff')
         (& $tool 'Text and data'    'URL parser'     'ToolUrlParser')
         (& $tool 'Text and data'    'Connection string' 'ToolConnectionString')
+        (& $tool 'Text and data'    'User-Agent'     'ToolUserAgent')
         (& $tool 'Text and data'    'NATO alphabet'  'ToolNato')
         (& $tool 'Text and data'    'Phone numbers'  'ToolPhone')
         (& $tool 'Text and data'    'HTML editor'    'ToolHtmlEditor')
