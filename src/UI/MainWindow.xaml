@@ -4216,35 +4216,45 @@
                                         <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
                                             <TextBlock Text="Path" VerticalAlignment="Center" Margin="0,0,8,8"
                                                        ToolTip="The file or folder whose permissions are set." />
-                                            <TextBox x:Name="IcaclsPath" Width="380" Margin="0,0,16,8"
+                                            <TextBox x:Name="IcaclsPath" Width="340" Margin="0,0,16,8"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" Tag="C:\Data\Shared" />
                                             <TextBlock Text="Action" VerticalAlignment="Center" Margin="0,0,8,8"
-                                                       ToolTip="Grant or deny rights, remove a trustee's entries, or reset the path to inherit from its parent." />
-                                            <ComboBox x:Name="IcaclsAction" Width="140" MinHeight="40" Margin="0,0,0,8" />
+                                                       ToolTip="Grant or deny rights, remove a trustee, reset to inherited, set the owner, turn inheritance on or off, or save and restore the ACLs." />
+                                            <ComboBox x:Name="IcaclsAction" Width="220" MinHeight="40" Margin="0,0,0,8" />
                                         </WrapPanel>
                                         <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
-                                            <TextBlock Text="Trustee" VerticalAlignment="Center" Margin="0,0,8,8"
-                                                       ToolTip="Who the entry is for: DOMAIN\User, a UPN or a SID. Not used by Reset." />
+                                            <TextBlock x:Name="IcaclsTrusteeLabel" Text="Trustee" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="Who the entry is for, or the owner for Set owner: DOMAIN\User, a UPN or a SID." />
                                             <TextBox x:Name="IcaclsTrustee" Width="240" Margin="0,0,16,8"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" Tag="CONTOSO\Sales" />
-                                            <TextBlock Text="Permission" VerticalAlignment="Center" Margin="0,0,8,8"
-                                                       ToolTip="The simple right the entry grants or denies." />
-                                            <ComboBox x:Name="IcaclsPermission" Width="150" MinHeight="40" Margin="0,0,16,8" />
-                                            <TextBox x:Name="IcaclsCustom" Width="160" Margin="0,0,0,8"
-                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Custom, e.g. (D,WDAC)" />
+                                            <TextBlock x:Name="IcaclsFileLabel" Text="ACL file" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="The file the ACLs are saved to or restored from." />
+                                            <TextBox x:Name="IcaclsFile" Width="240" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="C:\Backup\acls.txt" />
+                                        </WrapPanel>
+                                        <WrapPanel x:Name="IcaclsPermissionRow" Margin="0,0,0,4">
+                                            <TextBlock Text="Permission" VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <CheckBox x:Name="IcaclsPermFull"     Content="Full control"   VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <CheckBox x:Name="IcaclsPermModify"   Content="Modify"         VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <CheckBox x:Name="IcaclsPermRX"       Content="Read &amp; execute" VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <CheckBox x:Name="IcaclsPermRead"     Content="Read"           VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <CheckBox x:Name="IcaclsPermWrite"    Content="Write"          VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <CheckBox x:Name="IcaclsPermDelete"   Content="Delete"         VerticalAlignment="Center" Margin="0,0,0,8" />
                                         </WrapPanel>
                                         <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
                                             <TextBlock Text="Applies to" VerticalAlignment="Center" Margin="0,0,8,8"
-                                                       ToolTip="For a folder, the inheritance flags: what the entry applies to below it." />
-                                            <ComboBox x:Name="IcaclsInheritance" Width="280" MinHeight="40" Margin="0,0,16,8" />
+                                                       ToolTip="For a folder, the inheritance flags: what the entry applies to below it. This is separate from turning the object's own inheritance on or off." />
+                                            <ComboBox x:Name="IcaclsInheritance" Width="260" MinHeight="40" Margin="0,0,16,8" />
                                             <CheckBox x:Name="IcaclsRecurse" Content="Through the tree (/T)" VerticalAlignment="Center" Margin="0,0,16,8"
                                                       ToolTip="Apply the change to the files and folders that already exist under the path." />
                                             <CheckBox x:Name="IcaclsContinue" Content="Continue on errors (/C)" VerticalAlignment="Center" Margin="0,0,16,8" />
                                             <CheckBox x:Name="IcaclsQuiet" Content="Quiet (/Q)" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="IcaclsSymlink" Content="Symlink itself (/L)" VerticalAlignment="Center" Margin="0,0,16,8"
+                                                      ToolTip="Act on a symbolic link itself rather than the target it points at." />
                                             <Button x:Name="BtnCopyIcacls" Content="Copy the command" Margin="0,0,0,8" />
                                         </WrapPanel>
                                         <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" TextWrapping="Wrap"
-                                                   Text="icacls edits the NTFS access control list of a file or folder. Run it elevated. A deny wins over a grant, and /T applies the change to everything already under the path, so test on a copy first: a broad deny or a wrong reset is awkward to unpick." />
+                                                   Text="icacls edits the NTFS access control list of a file or folder. Run it elevated. The permissions combine, and a higher one greys out the rights it already includes. A deny wins over a grant, and /T applies the change to everything already under the path, so test on a copy first: a broad deny or a wrong reset is awkward to unpick." />
                                     </StackPanel>
                                 </Border>
 

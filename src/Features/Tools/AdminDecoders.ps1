@@ -1518,10 +1518,17 @@ function Build-TkDsaclsCommand {
 
 <#
 .SYNOPSIS
-    The permission presets for the icacls builder: a label and its simple right.
+    The permission rights for the icacls builder, most-inclusive first.
+
+.DESCRIPTION
+    Each is a simple icacls right. They are combinable, but with a hierarchy the
+    builder respects: Full contains everything, Modify contains the four below
+    it, and Read & execute contains Read. The Includes list names the rights a
+    right makes redundant, so the interface can grey them out and the command
+    stays minimal.
 
 .OUTPUTS
-    PSCustomObject[] with Label and Right.
+    PSCustomObject[] with Label, Right and Includes.
 #>
 function Get-TkIcaclsPermission {
     [CmdletBinding()]
@@ -1529,18 +1536,58 @@ function Get-TkIcaclsPermission {
     param()
 
     $permission = {
-        param($label, $right)
-        [pscustomobject] @{ Label = $label; Right = $right }
+        param($label, $right, $includes)
+        [pscustomobject] @{ Label = $label; Right = $right; Includes = @($includes) }
     }
 
     return @(
-        (& $permission 'Full control'   'F')
-        (& $permission 'Modify'         'M')
-        (& $permission 'Read & execute' 'RX')
-        (& $permission 'Read'           'R')
-        (& $permission 'Write'          'W')
-        (& $permission 'Custom'         '')
+        (& $permission 'Full control'   'F'  @('Modify', 'Read & execute', 'Read', 'Write', 'Delete'))
+        (& $permission 'Modify'         'M'  @('Read & execute', 'Read', 'Write', 'Delete'))
+        (& $permission 'Read & execute' 'RX' @('Read'))
+        (& $permission 'Read'           'R'  @())
+        (& $permission 'Write'          'W'  @())
+        (& $permission 'Delete'         'D'  @())
     )
+}
+
+<#
+.SYNOPSIS
+    Turns a set of chosen permission labels into an icacls rights string.
+
+.DESCRIPTION
+    Applies the hierarchy: Full wins over everything, Modify over the four it
+    contains, and Read & execute over Read. What is left is the minimal set,
+    written as a single right, or a comma-separated list in parentheses.
+
+.PARAMETER Selected
+    The labels the operator ticked, from Get-TkIcaclsPermission.
+
+.OUTPUTS
+    System.String, empty when nothing is chosen.
+#>
+function Resolve-TkIcaclsPermission {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [string[]] $Selected
+    )
+
+    if ($Selected -contains 'Full control') { return 'F' }
+    if ($Selected -contains 'Modify')       { return 'M' }
+
+    $rights = New-Object System.Collections.Generic.List[string]
+
+    if ($Selected -contains 'Read & execute') { $rights.Add('RX') }
+    if ($Selected -contains 'Read' -and $Selected -notcontains 'Read & execute') { $rights.Add('R') }
+    if ($Selected -contains 'Write')          { $rights.Add('W') }
+    if ($Selected -contains 'Delete')         { $rights.Add('D') }
+
+    if ($rights.Count -eq 0) { return '' }
+    if ($rights.Count -eq 1) { return $rights[0] }
+
+    return '({0})' -f ($rights -join ',')
 }
 
 <#
@@ -1559,16 +1606,21 @@ function Get-TkIcaclsPermission {
     The file or folder, quoted in the command.
 
 .PARAMETER Action
-    Grant, Deny, Remove or Reset.
+    Grant, Deny, Remove, Reset, SetOwner, InheritEnable, InheritDisable,
+    InheritRemove, Save or Restore.
 
 .PARAMETER Trustee
-    Who the entry is for: DOMAIN\User, a UPN or a SID. Not used by Reset.
+    Who the entry is for: DOMAIN\User, a UPN or a SID. Also the owner for
+    SetOwner. Not used by Reset, the inheritance actions or Save.
 
 .PARAMETER Permission
-    The simple right, such as F, M, RX, R or W, or a specific list in parentheses.
+    The simple right, such as F, M, RX, R or W, or a list in parentheses.
 
 .PARAMETER Inheritance
     The inheritance flags, such as (OI)(CI), or empty for this folder only.
+
+.PARAMETER File
+    The ACL file for Save and Restore.
 
 .PARAMETER Recurse
     Apply through the existing tree (/T).
@@ -1578,6 +1630,9 @@ function Get-TkIcaclsPermission {
 
 .PARAMETER Quiet
     Suppress the success messages (/Q).
+
+.PARAMETER Symlink
+    Act on a symbolic link itself rather than its target (/L).
 
 .OUTPUTS
     System.String
@@ -1590,7 +1645,7 @@ function Build-TkIcaclsCommand {
         [string] $Path,
 
         [Parameter()]
-        [ValidateSet('Grant', 'Deny', 'Remove', 'Reset')]
+        [ValidateSet('Grant', 'Deny', 'Remove', 'Reset', 'SetOwner', 'InheritEnable', 'InheritDisable', 'InheritRemove', 'Save', 'Restore')]
         [string] $Action = 'Grant',
 
         [Parameter()]
@@ -1606,13 +1661,20 @@ function Build-TkIcaclsCommand {
         [string] $Inheritance = '',
 
         [Parameter()]
+        [AllowEmptyString()]
+        [string] $File = '',
+
+        [Parameter()]
         [switch] $Recurse,
 
         [Parameter()]
         [switch] $ContinueOnError,
 
         [Parameter()]
-        [switch] $Quiet
+        [switch] $Quiet,
+
+        [Parameter()]
+        [switch] $Symlink
     )
 
     $parts = New-Object System.Collections.Generic.List[string]
@@ -1621,11 +1683,16 @@ function Build-TkIcaclsCommand {
 
     switch ($Action) {
 
-        'Reset'  { $parts.Add('/reset') }
+        'Reset'          { $parts.Add('/reset') }
+        'Remove'         { $parts.Add('/remove "{0}"' -f $Trustee.Trim()) }
+        'SetOwner'       { $parts.Add('/setowner "{0}"' -f $Trustee.Trim()) }
+        'InheritEnable'  { $parts.Add('/inheritance:e') }
+        'InheritDisable' { $parts.Add('/inheritance:d') }
+        'InheritRemove'  { $parts.Add('/inheritance:r') }
+        'Save'           { $parts.Add('/save "{0}"' -f $File.Trim()) }
+        'Restore'        { $parts.Add('/restore "{0}"' -f $File.Trim()) }
 
-        'Remove' { $parts.Add('/remove "{0}"' -f $Trustee.Trim()) }
-
-        default  {
+        default {
             $flag = if ($Action -eq 'Deny') { '/deny' } else { '/grant' }
             $parts.Add(('{0} "{1}:{2}{3}"' -f $flag, $Trustee.Trim(), $Inheritance, $Permission))
         }
@@ -1634,6 +1701,7 @@ function Build-TkIcaclsCommand {
     if ($Recurse)         { $parts.Add('/T') }
     if ($ContinueOnError) { $parts.Add('/C') }
     if ($Quiet)           { $parts.Add('/Q') }
+    if ($Symlink)         { $parts.Add('/L') }
 
     return ($parts -join ' ')
 }

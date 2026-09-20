@@ -5589,9 +5589,27 @@ Describe 'Administration decoders' {
                 Should -Be 'icacls "C:\Data" /reset /T /C'
         }
 
-        It 'offers the simple-right presets' {
-            (@(Get-TkIcaclsPermission) | Where-Object Label -eq 'Full control').Right   | Should -Be 'F'
-            (@(Get-TkIcaclsPermission) | Where-Object Label -eq 'Read & execute').Right | Should -Be 'RX'
+        It 'combines the ticked permissions, respecting the hierarchy' {
+            Resolve-TkIcaclsPermission -Selected @('Read', 'Write')            | Should -Be '(R,W)'
+            Resolve-TkIcaclsPermission -Selected @('Read & execute', 'Write')  | Should -Be '(RX,W)'
+            Resolve-TkIcaclsPermission -Selected @('Read & execute', 'Read')   | Should -Be 'RX'   # Read is redundant
+            Resolve-TkIcaclsPermission -Selected @('Modify', 'Read')           | Should -Be 'M'    # Modify wins
+            Resolve-TkIcaclsPermission -Selected @('Full control', 'Write')    | Should -Be 'F'    # Full wins
+            Resolve-TkIcaclsPermission -Selected @('Read')                     | Should -Be 'R'
+            Resolve-TkIcaclsPermission -Selected @()                           | Should -Be ''
+        }
+
+        It 'sets the owner, turns inheritance on and off, and saves and restores' {
+            Build-TkIcaclsCommand -Path 'C:\Data' -Action 'SetOwner' -Trustee 'CONTOSO\Admin' | Should -Be 'icacls "C:\Data" /setowner "CONTOSO\Admin"'
+            Build-TkIcaclsCommand -Path 'C:\Data' -Action 'InheritDisable'                    | Should -Be 'icacls "C:\Data" /inheritance:d'
+            Build-TkIcaclsCommand -Path 'C:\Data' -Action 'InheritRemove' -Recurse            | Should -Be 'icacls "C:\Data" /inheritance:r /T'
+            Build-TkIcaclsCommand -Path 'C:\Data' -Action 'Save' -File 'C:\acl.txt' -Recurse  | Should -Be 'icacls "C:\Data" /save "C:\acl.txt" /T'
+            Build-TkIcaclsCommand -Path 'C:\Data' -Action 'Restore' -File 'C:\acl.txt'        | Should -Be 'icacls "C:\Data" /restore "C:\acl.txt"'
+        }
+
+        It 'adds the symlink flag' {
+            Build-TkIcaclsCommand -Path 'C:\Link' -Action 'Grant' -Trustee 'U' -Permission 'F' -Symlink |
+                Should -Be 'icacls "C:\Link" /grant "U:F" /L'
         }
     }
 
