@@ -3009,6 +3009,10 @@
                                 <TextBlock Text="Text normalizer" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Format, minify or validate XML, or run an XPath query over it.">
+                                <TextBlock Text="XML" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Spell out a serial number, a licence key or a password to dictate with the NATO phonetic alphabet.">
                                 <TextBlock Text="NATO alphabet" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
@@ -3713,6 +3717,38 @@
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="NormalizeOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="NoWrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolXml" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="XML" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="XmlInput" Height="120" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste an XML document" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <ComboBox x:Name="XmlOperation" Width="180" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="XPath" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="XmlXPath" Width="320" MinHeight="40" VerticalContentAlignment="Center" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                     Tag="//book/title, //@id (for the XPath query)" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Worked out on the machine, as the JSON tool does for JSON: format a document so it can be read, minify it, say whether it is well formed and where it is not, or run an XPath query over it. A query with a namespace prefix needs the document's own prefixes; the common no-namespace case is what this is for." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="XmlOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="NoWrap" />
                                 </Border>

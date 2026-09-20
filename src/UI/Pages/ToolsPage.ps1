@@ -201,6 +201,14 @@ function Initialize-TkToolsPage {
         $iocMode.Add_SelectionChanged({ Update-TkIocFromUi })
     }
 
+    # --- XML --------------------------------------------------------------
+    $xmlOperation = Get-TkControl -Name 'XmlOperation'
+    if ($xmlOperation) {
+        foreach ($choice in @('Format', 'Minify', 'Validate', 'XPath query')) { [void] $xmlOperation.Items.Add($choice) }
+        $xmlOperation.SelectedIndex = 0
+        $xmlOperation.Add_SelectionChanged({ Update-TkXmlFromUi })
+    }
+
     Register-TkClick -Name 'BtnGenerateUuid' -Action { Invoke-TkUuidFromUi }
     Register-TkClick -Name 'BtnCopyUuid'     -Action { Copy-TkToolOutput -ControlName 'UuidOutput' }
     Register-TkClick -Name 'BtnDecodeUuid'   -Action { Invoke-TkUuidDecodeFromUi }
@@ -222,6 +230,8 @@ function Initialize-TkToolsPage {
         @{ Name = 'UserAgentInput';   Update = { Update-TkUserAgentFromUi } }
         @{ Name = 'NormalizeInput';   Update = { Update-TkNormalizeFromUi } }
         @{ Name = 'IocInput';         Update = { Update-TkIocFromUi } }
+        @{ Name = 'XmlInput';         Update = { Update-TkXmlFromUi } }
+        @{ Name = 'XmlXPath';         Update = { Update-TkXmlFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -1497,6 +1507,31 @@ function Update-TkIocFromUi {
 
 <#
 .SYNOPSIS
+    Formats, minifies, validates or queries the pasted XML, as it changes.
+#>
+function Update-TkXmlFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'XmlOutput'
+    $box    = Get-TkControl -Name 'XmlInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $operation = switch (Get-TkSelectedText -Name 'XmlOperation') {
+        'Minify'      { 'Minify' }
+        'Validate'    { 'Validate' }
+        'XPath query' { 'XPath' }
+        default       { 'Format' }
+    }
+
+    $output.Text = Invoke-TkXmlOperation -Text ([string] $box.Text) -Operation $operation -XPath ([string] (Get-TkControl -Name 'XmlXPath').Text)
+}
+
+<#
+.SYNOPSIS
     Takes the pasted User-Agent apart, as it changes.
 #>
 function Update-TkUserAgentFromUi {
@@ -2631,6 +2666,7 @@ function Get-TkToolEntry {
         (& $tool 'Text and data'    'Connection string' 'ToolConnectionString')
         (& $tool 'Text and data'    'User-Agent'     'ToolUserAgent')
         (& $tool 'Text and data'    'Text normalizer' 'ToolTextNormalizer')
+        (& $tool 'Text and data'    'XML'            'ToolXml')
         (& $tool 'Text and data'    'NATO alphabet'  'ToolNato')
         (& $tool 'Text and data'    'Phone numbers'  'ToolPhone')
         (& $tool 'Text and data'    'HTML editor'    'ToolHtmlEditor')
