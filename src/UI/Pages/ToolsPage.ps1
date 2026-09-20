@@ -472,16 +472,11 @@ function Initialize-TkToolsPage {
     # --- icacls NTFS permission builder -----------------------------------
     $icaclsAction = Get-TkControl -Name 'IcaclsAction'
     if ($icaclsAction) {
-        foreach ($label in @('Grant', 'Deny', 'Remove', 'Reset')) { [void] $icaclsAction.Items.Add($label) }
+        foreach ($label in @('Grant', 'Deny', 'Remove', 'Reset', 'Set owner', 'Enable inheritance', 'Disable inheritance (copy)', 'Remove inherited', 'Save ACLs to file', 'Restore ACLs from file')) {
+            [void] $icaclsAction.Items.Add($label)
+        }
         $icaclsAction.SelectedIndex = 0
         $icaclsAction.Add_SelectionChanged({ Update-TkIcaclsFromUi })
-    }
-
-    $icaclsPermission = Get-TkControl -Name 'IcaclsPermission'
-    if ($icaclsPermission) {
-        foreach ($permission in @(Get-TkIcaclsPermission)) { [void] $icaclsPermission.Items.Add($permission.Label) }
-        $icaclsPermission.SelectedIndex = 1
-        $icaclsPermission.Add_SelectionChanged({ Update-TkIcaclsFromUi })
     }
 
     $icaclsInheritance = Get-TkControl -Name 'IcaclsInheritance'
@@ -493,12 +488,13 @@ function Initialize-TkToolsPage {
         $icaclsInheritance.Add_SelectionChanged({ Update-TkIcaclsFromUi })
     }
 
-    foreach ($name in @('IcaclsPath', 'IcaclsTrustee', 'IcaclsCustom')) {
+    foreach ($name in @('IcaclsPath', 'IcaclsTrustee', 'IcaclsFile')) {
         $box = Get-TkControl -Name $name
         if ($box) { $box.Add_TextChanged({ Update-TkIcaclsFromUi }) }
     }
 
-    foreach ($checkName in @('IcaclsRecurse', 'IcaclsContinue', 'IcaclsQuiet')) {
+    foreach ($checkName in @('IcaclsRecurse', 'IcaclsContinue', 'IcaclsQuiet', 'IcaclsSymlink',
+                             'IcaclsPermFull', 'IcaclsPermModify', 'IcaclsPermRX', 'IcaclsPermRead', 'IcaclsPermWrite', 'IcaclsPermDelete')) {
         $check = Get-TkControl -Name $checkName
         if ($check) { $check.Add_Click({ Update-TkIcaclsFromUi }) }
     }
@@ -1458,54 +1454,103 @@ function Update-TkIcaclsFromUi {
         return
     }
 
-    $path   = [string] (Get-TkControl -Name 'IcaclsPath').Text
-    $action = [string] (Get-TkControl -Name 'IcaclsAction').SelectedItem
+    $actionLabel = [string] (Get-TkControl -Name 'IcaclsAction').SelectedItem
+    $action = switch ($actionLabel) {
+        'Deny'                       { 'Deny' }
+        'Remove'                     { 'Remove' }
+        'Reset'                      { 'Reset' }
+        'Set owner'                  { 'SetOwner' }
+        'Enable inheritance'         { 'InheritEnable' }
+        'Disable inheritance (copy)' { 'InheritDisable' }
+        'Remove inherited'           { 'InheritRemove' }
+        'Save ACLs to file'          { 'Save' }
+        'Restore ACLs from file'     { 'Restore' }
+        default                      { 'Grant' }
+    }
 
+    $needsTrustee    = $action -in @('Grant', 'Deny', 'Remove', 'SetOwner')
+    $needsPermission = $action -in @('Grant', 'Deny')
+    $needsFile       = $action -in @('Save', 'Restore')
+
+    # Show only the fields the action uses, and rename the trustee for SetOwner.
+    Set-TkControlVisible -Name 'IcaclsPermissionRow' -Visible $needsPermission
+    Set-TkControlVisible -Name 'IcaclsTrustee'       -Visible $needsTrustee
+    Set-TkControlVisible -Name 'IcaclsTrusteeLabel'  -Visible $needsTrustee
+    Set-TkControlVisible -Name 'IcaclsFile'          -Visible $needsFile
+    Set-TkControlVisible -Name 'IcaclsFileLabel'     -Visible $needsFile
+
+    $trusteeLabel = Get-TkControl -Name 'IcaclsTrusteeLabel'
+    if ($trusteeLabel) { $trusteeLabel.Text = if ($action -eq 'SetOwner') { 'Owner' } else { 'Trustee' } }
+
+    # The permission hierarchy: a higher right greys out the ones it includes.
+    $full   = [bool] (Get-TkControl -Name 'IcaclsPermFull').IsChecked
+    $modify = [bool] (Get-TkControl -Name 'IcaclsPermModify').IsChecked
+    $rx     = [bool] (Get-TkControl -Name 'IcaclsPermRX').IsChecked
+
+    (Get-TkControl -Name 'IcaclsPermModify').IsEnabled = -not $full
+    (Get-TkControl -Name 'IcaclsPermRX').IsEnabled     = -not ($full -or $modify)
+    (Get-TkControl -Name 'IcaclsPermRead').IsEnabled   = -not ($full -or $modify -or $rx)
+    (Get-TkControl -Name 'IcaclsPermWrite').IsEnabled  = -not ($full -or $modify)
+    (Get-TkControl -Name 'IcaclsPermDelete').IsEnabled = -not ($full -or $modify)
+
+    $path = [string] (Get-TkControl -Name 'IcaclsPath').Text
     if (-not $path.Trim()) {
         $output.Text = 'Type the path of the file or folder.'
         return
     }
 
-    if ($action -ne 'Reset' -and -not ([string] (Get-TkControl -Name 'IcaclsTrustee').Text).Trim()) {
-        $output.Text = 'Type the trustee: DOMAIN\User, a UPN or a SID.'
+    if ($needsTrustee -and -not ([string] (Get-TkControl -Name 'IcaclsTrustee').Text).Trim()) {
+        $output.Text = if ($action -eq 'SetOwner') { 'Type the owner: DOMAIN\User, a UPN or a SID.' } else { 'Type the trustee: DOMAIN\User, a UPN or a SID.' }
         return
     }
 
-    # Inheritance flags only make sense for a grant or a deny.
-    $inheritance = if ($action -in @('Grant', 'Deny')) {
+    if ($needsFile -and -not ([string] (Get-TkControl -Name 'IcaclsFile').Text).Trim()) {
+        $output.Text = 'Type the path of the ACL file.'
+        return
+    }
+
+    $permission = ''
+    if ($needsPermission) {
+
+        $selected = New-Object System.Collections.Generic.List[string]
+        foreach ($pair in @(
+            @{ Name = 'IcaclsPermFull';   Label = 'Full control' },
+            @{ Name = 'IcaclsPermModify'; Label = 'Modify' },
+            @{ Name = 'IcaclsPermRX';     Label = 'Read & execute' },
+            @{ Name = 'IcaclsPermRead';   Label = 'Read' },
+            @{ Name = 'IcaclsPermWrite';  Label = 'Write' },
+            @{ Name = 'IcaclsPermDelete'; Label = 'Delete' }
+        )) {
+            if ([bool] (Get-TkControl -Name $pair.Name).IsChecked) { $selected.Add($pair.Label) }
+        }
+
+        $permission = Resolve-TkIcaclsPermission -Selected $selected.ToArray()
+
+        if (-not $permission) {
+            $output.Text = 'Tick at least one permission to grant or deny.'
+            return
+        }
+    }
+
+    $inheritance = if ($needsPermission) {
         switch ([string] (Get-TkControl -Name 'IcaclsInheritance').SelectedItem) {
-            'This folder only'                   { '' }
-            'This folder and subfolders'         { '(CI)' }
-            'This folder and files'              { '(OI)' }
-            'Subfolders and files only'          { '(OI)(CI)(IO)' }
-            default                              { '(OI)(CI)' }
+            'This folder only'           { '' }
+            'This folder and subfolders' { '(CI)' }
+            'This folder and files'      { '(OI)' }
+            'Subfolders and files only'  { '(OI)(CI)(IO)' }
+            default                      { '(OI)(CI)' }
         }
     }
     else { '' }
 
-    $permission = ''
-    if ($action -in @('Grant', 'Deny')) {
-
-        $preset = @(Get-TkIcaclsPermission) | Where-Object { $_.Label -eq [string] (Get-TkControl -Name 'IcaclsPermission').SelectedItem } | Select-Object -First 1
-
-        if ($preset -and $preset.Label -eq 'Custom') {
-            $permission = ([string] (Get-TkControl -Name 'IcaclsCustom').Text).Trim()
-            if (-not $permission) {
-                $output.Text = 'Type the custom rights, such as (D,WDAC), or pick a permission from the list.'
-                return
-            }
-        }
-        elseif ($preset) {
-            $permission = $preset.Right
-        }
-    }
-
     $command = Build-TkIcaclsCommand -Path $path -Action $action `
         -Trustee ([string] (Get-TkControl -Name 'IcaclsTrustee').Text) `
         -Permission $permission -Inheritance $inheritance `
+        -File ([string] (Get-TkControl -Name 'IcaclsFile').Text) `
         -Recurse:([bool] (Get-TkControl -Name 'IcaclsRecurse').IsChecked) `
         -ContinueOnError:([bool] (Get-TkControl -Name 'IcaclsContinue').IsChecked) `
-        -Quiet:([bool] (Get-TkControl -Name 'IcaclsQuiet').IsChecked)
+        -Quiet:([bool] (Get-TkControl -Name 'IcaclsQuiet').IsChecked) `
+        -Symlink:([bool] (Get-TkControl -Name 'IcaclsSymlink').IsChecked)
 
     $output.Text = @($command, '', 'icacls edits the NTFS access control list. Run it elevated. Read the current permissions with icacls "path" and no options.') -join [Environment]::NewLine
 }
@@ -1731,6 +1776,26 @@ function Get-TkSelectedText {
     }
 
     return ''
+}
+
+<#
+.SYNOPSIS
+    Shows or collapses a named control.
+#>
+function Set-TkControlVisible {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [bool] $Visible
+    )
+
+    $control = Get-TkControl -Name $Name
+    if ($control) {
+        $control.Visibility = if ($Visible) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    }
 }
 
 <#
