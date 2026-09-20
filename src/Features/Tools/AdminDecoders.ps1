@@ -1516,6 +1516,128 @@ function Build-TkDsaclsCommand {
     return ($parts -join ' ')
 }
 
+<#
+.SYNOPSIS
+    The permission presets for the icacls builder: a label and its simple right.
+
+.OUTPUTS
+    PSCustomObject[] with Label and Right.
+#>
+function Get-TkIcaclsPermission {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    $permission = {
+        param($label, $right)
+        [pscustomobject] @{ Label = $label; Right = $right }
+    }
+
+    return @(
+        (& $permission 'Full control'   'F')
+        (& $permission 'Modify'         'M')
+        (& $permission 'Read & execute' 'RX')
+        (& $permission 'Read'           'R')
+        (& $permission 'Write'          'W')
+        (& $permission 'Custom'         '')
+    )
+}
+
+<#
+.SYNOPSIS
+    Builds an icacls command line that sets NTFS permissions on a path.
+
+.DESCRIPTION
+    icacls edits the access control list of a file or folder. A grant or a deny
+    is written as "trustee:(inheritance)(rights)", where the inheritance flags,
+    such as (OI)(CI) for this folder, its subfolders and its files, decide what a
+    folder's entry applies to. Reset restores inheritance from the parent, and
+    remove strips the trustee's entries. /T applies the change through the tree
+    that already exists, /C carries on past an error, and /Q stays quiet.
+
+.PARAMETER Path
+    The file or folder, quoted in the command.
+
+.PARAMETER Action
+    Grant, Deny, Remove or Reset.
+
+.PARAMETER Trustee
+    Who the entry is for: DOMAIN\User, a UPN or a SID. Not used by Reset.
+
+.PARAMETER Permission
+    The simple right, such as F, M, RX, R or W, or a specific list in parentheses.
+
+.PARAMETER Inheritance
+    The inheritance flags, such as (OI)(CI), or empty for this folder only.
+
+.PARAMETER Recurse
+    Apply through the existing tree (/T).
+
+.PARAMETER ContinueOnError
+    Carry on past a failure (/C).
+
+.PARAMETER Quiet
+    Suppress the success messages (/Q).
+
+.OUTPUTS
+    System.String
+#>
+function Build-TkIcaclsCommand {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path,
+
+        [Parameter()]
+        [ValidateSet('Grant', 'Deny', 'Remove', 'Reset')]
+        [string] $Action = 'Grant',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Trustee = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Permission = '',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Inheritance = '',
+
+        [Parameter()]
+        [switch] $Recurse,
+
+        [Parameter()]
+        [switch] $ContinueOnError,
+
+        [Parameter()]
+        [switch] $Quiet
+    )
+
+    $parts = New-Object System.Collections.Generic.List[string]
+    $parts.Add('icacls')
+    $parts.Add('"{0}"' -f $Path.Trim())
+
+    switch ($Action) {
+
+        'Reset'  { $parts.Add('/reset') }
+
+        'Remove' { $parts.Add('/remove "{0}"' -f $Trustee.Trim()) }
+
+        default  {
+            $flag = if ($Action -eq 'Deny') { '/deny' } else { '/grant' }
+            $parts.Add(('{0} "{1}:{2}{3}"' -f $flag, $Trustee.Trim(), $Inheritance, $Permission))
+        }
+    }
+
+    if ($Recurse)         { $parts.Add('/T') }
+    if ($ContinueOnError) { $parts.Add('/C') }
+    if ($Quiet)           { $parts.Add('/Q') }
+
+    return ($parts -join ' ')
+}
+
 # ---------------------------------------------------------------------------
 # JSON and YAML
 # ---------------------------------------------------------------------------
