@@ -2928,6 +2928,10 @@
                                          ToolTip="Reveal invisible and deceptive characters in pasted text: zero-width spaces, direction overrides, unusual spaces, controls, and look-alikes of ASCII letters.">
                                 <TextBlock Text="Invisible characters" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Name the likely kind of a pasted hash from its length and shape: NTLM, MD5, SHA-1/256/512, bcrypt, and more.">
+                                <TextBlock Text="Hash identifier" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
 
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                 <TextBlock Text="GENERATORS" Style="{StaticResource ChoiceGroupTitle}" />
@@ -4126,6 +4130,30 @@
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="HiddenCharsOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolHashId" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Hash identifier" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="HashIdInput" Margin="0,0,0,8"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste a hash" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Named as you paste, on this machine, from its length and shape: the same 32 hex characters are an MD5, an NTLM from a Windows dump, or an LM, so the likely kinds are listed rather than guessed at one. Recognises bcrypt, Argon2, the /etc/shadow formats, MySQL and an LM:NTLM pwdump pair by their marks. Nothing is hashed or looked up." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="HashIdOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>

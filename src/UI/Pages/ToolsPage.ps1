@@ -172,6 +172,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'HiddenCharsInput'; Update = { Update-TkHiddenCharsFromUi } }
         @{ Name = 'ConnectionStringInput'; Update = { Update-TkConnectionStringFromUi } }
         @{ Name = 'TotpInput';        Update = { Update-TkTotpFromUi } }
+        @{ Name = 'HashIdInput';      Update = { Update-TkHashIdFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -1399,6 +1400,24 @@ function Update-TkHiddenCharsFromUi {
 
 <#
 .SYNOPSIS
+    Names the likely kind of the pasted hash, as it changes.
+#>
+function Update-TkHashIdFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'HashIdOutput'
+    $box    = Get-TkControl -Name 'HashIdInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $output.Text = (Format-TkHashReport -Text ([string] $box.Text)) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
     Takes the pasted connection string apart, as it changes.
 #>
 function Update-TkConnectionStringFromUi {
@@ -2433,6 +2452,7 @@ function Get-TkToolEntry {
         (& $tool 'Security'         'Certificates'   'ToolCertificates')
         (& $tool 'Security'         'HTTP headers'   'ToolHttpHeaders')
         (& $tool 'Security'         'Invisible characters' 'ToolHiddenChars')
+        (& $tool 'Security'         'Hash identifier' 'ToolHashId')
         (& $tool 'Generators'       'Ports'          'ToolPorts')
         (& $tool 'Generators'       'UUIDs'          'ToolUuids')
         (& $tool 'Generators'       'QR code'        'ToolQrCode')
