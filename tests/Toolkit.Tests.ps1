@@ -4975,6 +4975,47 @@ Describe 'Hidden characters' {
     }
 }
 
+Describe 'Hash identifier' {
+
+    It 'lists NTLM first for 32 hex characters, alongside MD5 and LM' {
+        $names = @((Get-TkHashIdentity -Text '5f4dcc3b5aa765d61d8327deb882cf99').Candidate | ForEach-Object { $_.Name })
+        $names[0]  | Should -Be 'NTLM'
+        $names     | Should -Contain 'MD5'
+        $names     | Should -Contain 'LM'
+    }
+
+    It 'identifies <Name> from its length' -TestCases @(
+        @{ Hash = 'da39a3ee5e6b4b0d3255bfef95601890afd80709'; Name = 'SHA-1' }
+        @{ Hash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'; Name = 'SHA-256' }
+        @{ Hash = ('a' * 128); Name = 'SHA-512' }
+    ) {
+        param($Hash, $Name)
+        @((Get-TkHashIdentity -Text $Hash).Candidate | ForEach-Object { $_.Name }) | Should -Contain $Name
+    }
+
+    It 'recognises the prefixed password formats' {
+        (Get-TkHashIdentity -Text '$2b$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW').Candidate[0].Name | Should -Be 'bcrypt'
+        (Get-TkHashIdentity -Text '$6$rounds=5000$abc$xxxxxxxx').Candidate[0].Name | Should -Be 'sha512crypt'
+        (Get-TkHashIdentity -Text '*2470C0C06DEE42FD1618BB99005ADCA2EC9D1E19').Candidate[0].Name | Should -Be 'MySQL 4.1+'
+    }
+
+    It 'reads an LM:NTLM pwdump pair' {
+        (Get-TkHashIdentity -Text 'aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0').Candidate[0].Name |
+            Should -Be 'LM:NTLM pair'
+    }
+
+    It 'treats Base64 as a raw digest and gives its byte size' {
+        $candidate = (Get-TkHashIdentity -Text ([Convert]::ToBase64String((1..32)))).Candidate[0]
+        $candidate.Name | Should -Match '32-byte'
+        $candidate.Note | Should -Match 'SHA-256'
+    }
+
+    It 'says nothing matches an arbitrary string, and prompts when empty' {
+        (Get-TkHashIdentity -Text 'hello world').Candidate.Count | Should -Be 0
+        (Format-TkHashReport -Text '') -join "`n" | Should -Match 'Paste a hash'
+    }
+}
+
 Describe 'TOTP authenticator' {
 
     BeforeAll {
