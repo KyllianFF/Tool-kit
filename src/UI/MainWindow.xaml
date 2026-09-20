@@ -3069,6 +3069,10 @@
                                 <TextBlock Text="icacls (NTFS)" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Resolve a SID to its account and take it apart, or an account name back to its SID.">
+                                <TextBlock Text="SID resolver" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Build an event log query from a log, event ids, level and time: as a Get-WinEvent FilterHashtable, an XPath filter and a wevtutil command.">
                                 <TextBlock Text="Event log query" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
@@ -4247,6 +4251,30 @@
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="IcaclsOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolSid" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="SID resolver" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="SidInput" Margin="0,0,0,8"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="A SID (S-1-5-...) or an account name (DOMAIN\User, Everyone)" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Read both ways as you type, on this machine. A SID is named and taken apart into its authority, its domain and its RID; an account name is turned back into its SID. The well-known SIDs and the domain RIDs are named offline, and the English well-known names resolve whatever the language of Windows; a local or reachable-domain account is translated by Windows, so a domain account does not resolve on a stand-alone machine." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="SidOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>

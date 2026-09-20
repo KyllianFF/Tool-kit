@@ -232,6 +232,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'IocInput';         Update = { Update-TkIocFromUi } }
         @{ Name = 'XmlInput';         Update = { Update-TkXmlFromUi } }
         @{ Name = 'XmlXPath';         Update = { Update-TkXmlFromUi } }
+        @{ Name = 'SidInput';         Update = { Update-TkSidFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -1634,6 +1635,24 @@ function Update-TkXmlFromUi {
 
 <#
 .SYNOPSIS
+    Resolves the pasted SID or account name, as it changes.
+#>
+function Update-TkSidFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'SidOutput'
+    $box    = Get-TkControl -Name 'SidInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $output.Text = (Format-TkSidReport -Text ([string] $box.Text)) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
     Takes the pasted User-Agent apart, as it changes.
 #>
 function Update-TkUserAgentFromUi {
@@ -2781,6 +2800,7 @@ function Get-TkToolEntry {
         (& $tool 'Windows and AD'   'Scheduled task' 'ToolSchtasks')
         (& $tool 'Windows and AD'   'dsacls delegation' 'ToolDsacls')
         (& $tool 'Windows and AD'   'icacls (NTFS)'  'ToolIcacls')
+        (& $tool 'Windows and AD'   'SID resolver'   'ToolSid')
         (& $tool 'Windows and AD'   'Event log query'   'ToolEventQuery')
     )
 }
