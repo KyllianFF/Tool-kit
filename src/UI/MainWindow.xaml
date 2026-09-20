@@ -3001,6 +3001,10 @@
                                 <TextBlock Text="User-Agent" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Rewrite a text to one set of choices: line endings, tabs and spaces, trailing whitespace and a byte order mark.">
+                                <TextBlock Text="Text normalizer" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Spell out a serial number, a licence key or a password to dictate with the NATO phonetic alphabet.">
                                 <TextBlock Text="NATO alphabet" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
@@ -3667,6 +3671,41 @@
                                     <TextBox x:Name="UserAgentOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolTextNormalizer" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Text normalizer" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="NormalizeInput" Height="120" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste text to normalise" />
+                                        <WrapPanel>
+                                            <TextBlock Text="Line endings" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="NormalizeLineEnding" Width="180" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Tabs" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="NormalizeTabs" Width="150" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Width" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="NormalizeTabWidth" Width="70" MinHeight="40" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="NormalizeTrim" Content="Trim trailing whitespace" VerticalAlignment="Center" Margin="0,0,16,8" IsChecked="True" />
+                                            <CheckBox x:Name="NormalizeBom" Content="Strip BOM" VerticalAlignment="Center" Margin="0,0,0,8" IsChecked="True" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Rewritten on the machine to one set of choices, with a note of what changed: the line endings, tabs turned to spaces or spaces to tabs, spaces and tabs left at the end of a line, and a byte order mark at the front. The invisible differences that make a config behave differently on two machines, or a diff show a change that is not one." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="NormalizeOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="NoWrap" />
                                 </Border>
                             </Grid>
 

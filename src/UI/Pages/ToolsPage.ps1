@@ -155,6 +155,33 @@ function Initialize-TkToolsPage {
         $uuidFormat.SelectedIndex = 0
     }
 
+    # --- Text normalizer --------------------------------------------------
+    $normLineEnding = Get-TkControl -Name 'NormalizeLineEnding'
+    if ($normLineEnding) {
+        foreach ($choice in @('LF (Unix)', 'CRLF (Windows)', 'CR (classic Mac)')) { [void] $normLineEnding.Items.Add($choice) }
+        $normLineEnding.SelectedIndex = 0
+        $normLineEnding.Add_SelectionChanged({ Update-TkNormalizeFromUi })
+    }
+
+    $normTabs = Get-TkControl -Name 'NormalizeTabs'
+    if ($normTabs) {
+        foreach ($choice in @('Keep tabs', 'Tabs to spaces', 'Spaces to tabs')) { [void] $normTabs.Items.Add($choice) }
+        $normTabs.SelectedIndex = 0
+        $normTabs.Add_SelectionChanged({ Update-TkNormalizeFromUi })
+    }
+
+    $normWidth = Get-TkControl -Name 'NormalizeTabWidth'
+    if ($normWidth) {
+        foreach ($choice in @('2', '4', '8')) { [void] $normWidth.Items.Add($choice) }
+        $normWidth.SelectedIndex = 1
+        $normWidth.Add_SelectionChanged({ Update-TkNormalizeFromUi })
+    }
+
+    foreach ($checkName in @('NormalizeTrim', 'NormalizeBom')) {
+        $check = Get-TkControl -Name $checkName
+        if ($check) { $check.Add_Click({ Update-TkNormalizeFromUi }) }
+    }
+
     Register-TkClick -Name 'BtnGenerateUuid' -Action { Invoke-TkUuidFromUi }
     Register-TkClick -Name 'BtnCopyUuid'     -Action { Copy-TkToolOutput -ControlName 'UuidOutput' }
     Register-TkClick -Name 'BtnDecodeUuid'   -Action { Invoke-TkUuidDecodeFromUi }
@@ -174,6 +201,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'TotpInput';        Update = { Update-TkTotpFromUi } }
         @{ Name = 'HashIdInput';      Update = { Update-TkHashIdFromUi } }
         @{ Name = 'UserAgentInput';   Update = { Update-TkUserAgentFromUi } }
+        @{ Name = 'NormalizeInput';   Update = { Update-TkNormalizeFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -1437,6 +1465,70 @@ function Update-TkUserAgentFromUi {
 
 <#
 .SYNOPSIS
+    Rewrites the pasted text to the chosen normalisation, as it changes.
+#>
+function Update-TkNormalizeFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'NormalizeOutput'
+    $box    = Get-TkControl -Name 'NormalizeInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    if (-not ([string] $box.Text)) {
+        $output.Text = 'Paste text to normalise its line endings, tabs and trailing whitespace.'
+        return
+    }
+
+    $lineEnding = switch (Get-TkSelectedText -Name 'NormalizeLineEnding') {
+        { $_ -like 'CRLF*' } { 'CRLF' }
+        { $_ -like 'CR *' }  { 'CR' }
+        default              { 'LF' }
+    }
+
+    $tabs = switch (Get-TkSelectedText -Name 'NormalizeTabs') {
+        { $_ -like 'Tabs to*' }   { 'ToSpaces' }
+        { $_ -like 'Spaces to*' } { 'ToTabs' }
+        default                   { 'Keep' }
+    }
+
+    $width = [int] ((Get-TkSelectedText -Name 'NormalizeTabWidth') -replace '\D', '')
+    if ($width -le 0) { $width = 4 }
+
+    $trim = [bool] (Get-TkControl -Name 'NormalizeTrim').IsChecked
+    $bom  = [bool] (Get-TkControl -Name 'NormalizeBom').IsChecked
+
+    $result = Get-TkTextNormalization -Text ([string] $box.Text) `
+        -LineEnding $lineEnding -Tabs $tabs -TabWidth $width -TrimTrailing $trim -StripBom $bom
+
+    $output.Text = (@($result.Summary) -join [Environment]::NewLine) + [Environment]::NewLine + [Environment]::NewLine + $result.Text
+}
+
+<#
+.SYNOPSIS
+    Returns the text of a combo box's selected item, or empty.
+#>
+function Get-TkSelectedText {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $combo = Get-TkControl -Name $Name
+    if ($combo -and $combo.SelectedItem) {
+        return [string] $combo.SelectedItem
+    }
+
+    return ''
+}
+
+<#
+.SYNOPSIS
     Takes the pasted connection string apart, as it changes.
 #>
 function Update-TkConnectionStringFromUi {
@@ -2487,6 +2579,7 @@ function Get-TkToolEntry {
         (& $tool 'Text and data'    'URL parser'     'ToolUrlParser')
         (& $tool 'Text and data'    'Connection string' 'ToolConnectionString')
         (& $tool 'Text and data'    'User-Agent'     'ToolUserAgent')
+        (& $tool 'Text and data'    'Text normalizer' 'ToolTextNormalizer')
         (& $tool 'Text and data'    'NATO alphabet'  'ToolNato')
         (& $tool 'Text and data'    'Phone numbers'  'ToolPhone')
         (& $tool 'Text and data'    'HTML editor'    'ToolHtmlEditor')
