@@ -5537,6 +5537,32 @@ Describe 'Administration decoders' {
         }
     }
 
+    Context 'icacls' {
+
+        It 'grants a right with inheritance flags, quoted and recursed' {
+            Build-TkIcaclsCommand -Path 'C:\Data' -Action 'Grant' -Trustee 'CONTOSO\Sales' -Permission 'M' -Inheritance '(OI)(CI)' -Recurse |
+                Should -Be 'icacls "C:\Data" /grant "CONTOSO\Sales:(OI)(CI)M" /T'
+        }
+
+        It 'denies with /deny' {
+            Build-TkIcaclsCommand -Path 'C:\Data' -Action 'Deny' -Trustee 'Guests' -Permission 'F' |
+                Should -Be 'icacls "C:\Data" /deny "Guests:F"'
+        }
+
+        It 'removes a trustee and resets a path' {
+            Build-TkIcaclsCommand -Path 'C:\Data' -Action 'Remove' -Trustee 'CONTOSO\Temp' -Recurse -Quiet |
+                Should -Be 'icacls "C:\Data" /remove "CONTOSO\Temp" /T /Q'
+
+            Build-TkIcaclsCommand -Path 'C:\Data' -Action 'Reset' -Recurse -ContinueOnError |
+                Should -Be 'icacls "C:\Data" /reset /T /C'
+        }
+
+        It 'offers the simple-right presets' {
+            (@(Get-TkIcaclsPermission) | Where-Object Label -eq 'Full control').Right   | Should -Be 'F'
+            (@(Get-TkIcaclsPermission) | Where-Object Label -eq 'Read & execute').Right | Should -Be 'RX'
+        }
+    }
+
     Context 'Scheduled tasks' {
 
         It 'adds only the fields a schedule uses' {

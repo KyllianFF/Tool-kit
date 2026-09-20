@@ -3065,6 +3065,10 @@
                                 <TextBlock Text="dsacls delegation" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Build an icacls command to grant, deny, remove or reset NTFS permissions on a file or folder.">
+                                <TextBlock Text="icacls (NTFS)" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Build an event log query from a log, event ids, level and time: as a Get-WinEvent FilterHashtable, an XPath filter and a wevtutil command.">
                                 <TextBlock Text="Event log query" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
@@ -4191,6 +4195,57 @@
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="DsaclsOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolIcacls" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="icacls NTFS permission builder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Path" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="The file or folder whose permissions are set." />
+                                            <TextBox x:Name="IcaclsPath" Width="380" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="C:\Data\Shared" />
+                                            <TextBlock Text="Action" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="Grant or deny rights, remove a trustee's entries, or reset the path to inherit from its parent." />
+                                            <ComboBox x:Name="IcaclsAction" Width="140" MinHeight="40" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Trustee" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="Who the entry is for: DOMAIN\User, a UPN or a SID. Not used by Reset." />
+                                            <TextBox x:Name="IcaclsTrustee" Width="240" Margin="0,0,16,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="CONTOSO\Sales" />
+                                            <TextBlock Text="Permission" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="The simple right the entry grants or denies." />
+                                            <ComboBox x:Name="IcaclsPermission" Width="150" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBox x:Name="IcaclsCustom" Width="160" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Custom, e.g. (D,WDAC)" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
+                                            <TextBlock Text="Applies to" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="For a folder, the inheritance flags: what the entry applies to below it." />
+                                            <ComboBox x:Name="IcaclsInheritance" Width="280" MinHeight="40" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="IcaclsRecurse" Content="Through the tree (/T)" VerticalAlignment="Center" Margin="0,0,16,8"
+                                                      ToolTip="Apply the change to the files and folders that already exist under the path." />
+                                            <CheckBox x:Name="IcaclsContinue" Content="Continue on errors (/C)" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="IcaclsQuiet" Content="Quiet (/Q)" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <Button x:Name="BtnCopyIcacls" Content="Copy the command" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" TextWrapping="Wrap"
+                                                   Text="icacls edits the NTFS access control list of a file or folder. Run it elevated. A deny wins over a grant, and /T applies the change to everything already under the path, so test on a copy first: a broad deny or a wrong reset is awkward to unpick." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="IcaclsOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
