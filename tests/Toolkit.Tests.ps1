@@ -4999,6 +4999,45 @@ Describe 'Hidden characters' {
     }
 }
 
+Describe 'XML tool' {
+
+    BeforeAll {
+        $script:Xml = '<?xml version="1.0"?><catalog><book id="1"><title>PowerShell</title></book><book id="2"><title>XML</title></book></catalog>'
+    }
+
+    It 'formats an XML document, keeping its declaration' {
+        $formatted = Invoke-TkXmlOperation -Text $script:Xml -Operation 'Format'
+        $formatted | Should -Match '^<\?xml version="1.0"\?>'
+        $formatted | Should -Match "`n  <book id=`"1`">"
+    }
+
+    It 'minifies away the insignificant whitespace' {
+        Invoke-TkXmlOperation -Text "<a>  <b>1</b>  </a>" -Operation 'Minify' | Should -Be '<a><b>1</b></a>'
+    }
+
+    It 'passes a well-formed document and locates the fault in a bad one' {
+        Invoke-TkXmlOperation -Text $script:Xml -Operation 'Validate' | Should -Be 'Well formed.'
+        Invoke-TkXmlOperation -Text '<a><b></a>' -Operation 'Validate' | Should -Match 'Not well formed. Line 1, position 9'
+    }
+
+    It 'runs an XPath query, returning elements as markup and attributes as values' {
+        $elements = Invoke-TkXmlOperation -Text $script:Xml -Operation 'XPath' -XPath '//title'
+        $elements | Should -Match '2 match'
+        $elements | Should -Match '<title>PowerShell</title>'
+
+        Invoke-TkXmlOperation -Text $script:Xml -Operation 'XPath' -XPath '//book/@id' | Should -Match 'id="1"'
+    }
+
+    It 'reports no match and a bad expression without throwing' {
+        Invoke-TkXmlOperation -Text $script:Xml -Operation 'XPath' -XPath '//author' | Should -Match 'No node matched'
+        Invoke-TkXmlOperation -Text $script:Xml -Operation 'XPath' -XPath '//[bad'   | Should -Match 'not a valid XPath'
+    }
+
+    It 'prompts when nothing is pasted' {
+        Invoke-TkXmlOperation -Text '' -Operation 'Format' | Should -Match 'Paste an XML document'
+    }
+}
+
 Describe 'Text normalizer' {
 
     It 'converts mixed line endings to the chosen one and counts them' {
