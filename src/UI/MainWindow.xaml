@@ -3398,8 +3398,13 @@
                                         <TextBox x:Name="EncodingInput" Height="110"
                                                  AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
                                                  FontFamily="Cascadia Mono, Consolas, Courier New" Tag="Text, Base64, a URL, hexadecimal or a JWT" />
+                                        <WrapPanel Margin="0,8,0,0">
+                                            <TextBlock Text="JWT secret" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox x:Name="JwtSecret" Width="320"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="The HMAC secret, to verify an HS256/384/512 token" />
+                                        </WrapPanel>
                                         <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
-                                                   Text="UTF-8 throughout. A JWT is only decoded: its signature is not checked, so anyone could have written what it says." />
+                                                   Text="UTF-8 throughout. Decoding a JWT shows its header and payload; enter the HMAC secret to verify an HS256, HS384 or HS512 signature on the machine. An RS, ES or PS token is signed with a private key and needs the public key, which is not taken here." />
                                     </StackPanel>
                                 </Border>
 

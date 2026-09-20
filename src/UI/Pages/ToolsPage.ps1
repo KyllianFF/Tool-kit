@@ -135,6 +135,17 @@ function Initialize-TkToolsPage {
         (Get-TkControl -Name 'EncodingInput').Text = (Get-TkControl -Name 'EncodingOutput').Text
     }
 
+    # The JWT secret verifies live, so a decoded token's verdict updates as the
+    # secret is typed without a second click on Convert.
+    $jwtSecret = Get-TkControl -Name 'JwtSecret'
+    if ($jwtSecret) {
+        $jwtSecret.Add_TextChanged({
+            if ([string] (Get-TkControl -Name 'EncodingOperation').SelectedItem -eq 'Decode a JWT') {
+                Invoke-TkTextConversionFromUi
+            }
+        })
+    }
+
     # --- UUIDs ------------------------------------------------------------
     $uuidVersion = Get-TkControl -Name 'UuidVersion'
 
@@ -3219,9 +3230,10 @@ function Invoke-TkTextConversionFromUi {
 
     $choice = @(Get-TkTextOperationChoice) | Where-Object { $_.Label -eq [string] (Get-TkControl -Name 'EncodingOperation').SelectedItem } | Select-Object -First 1
     $output = Get-TkControl -Name 'EncodingOutput'
+    $secret = [string] (Get-TkControl -Name 'JwtSecret').Text
 
     try {
-        $output.Text = Convert-TkText -Text ([string] (Get-TkControl -Name 'EncodingInput').Text) -Operation $choice.Operation
+        $output.Text = Convert-TkText -Text ([string] (Get-TkControl -Name 'EncodingInput').Text) -Operation $choice.Operation -Secret $secret
     }
     catch {
         $output.Text = 'Could not convert: {0}' -f $_.Exception.Message

@@ -965,6 +965,88 @@ function ConvertFrom-TkJwt {
 
 <#
 .SYNOPSIS
+    Verifies the HMAC signature of a JWT against a secret.
+
+.DESCRIPTION
+    Only the symmetric HS256, HS384 and HS512 algorithms can be checked from a
+    secret; an RS, ES or PS token is signed with a private key and needs the
+    matching public key, which this does not take. A token whose header says
+    "none" is unsigned and is called out as such.
+
+.PARAMETER Token
+    The JWT.
+
+.PARAMETER Secret
+    The shared HMAC secret.
+
+.OUTPUTS
+    PSCustomObject with Algorithm, Result and Message.
+#>
+function Test-TkJwtSignature {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Token,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Secret = ''
+    )
+
+    $utf8  = New-Object System.Text.UTF8Encoding($false)
+    $parts = $Token.Trim() -split '\.'
+
+    $make = {
+        param($algorithm, $result, $message)
+        [pscustomobject] @{ Algorithm = $algorithm; Result = $result; Message = $message }
+    }
+
+    try {
+        $header = $utf8.GetString((ConvertFrom-TkBase64Text -Text $parts[0])) | ConvertFrom-Json
+        $alg    = [string] $header.alg
+    }
+    catch {
+        return (& $make '' 'Unsupported' 'The header could not be read.')
+    }
+
+    if ($alg -eq 'none') {
+        return (& $make 'none' 'Unsigned' 'The header algorithm is "none": the token is unsigned and should be rejected.')
+    }
+
+    if ($alg -notmatch '^HS(256|384|512)$') {
+        return (& $make $alg 'Unsupported' 'This is an asymmetric algorithm, signed with a private key. Verifying it needs the matching public key, which this tool does not take.')
+    }
+
+    if (-not $Secret) {
+        return (& $make $alg 'NoSecret' 'Enter the HMAC secret to verify this token.')
+    }
+
+    if ($parts.Count -lt 3 -or -not $parts[2]) {
+        return (& $make $alg 'Invalid' 'There is no signature on the token to check.')
+    }
+
+    $hmac = switch ($alg) {
+        'HS384' { New-Object System.Security.Cryptography.HMACSHA384 }
+        'HS512' { New-Object System.Security.Cryptography.HMACSHA512 }
+        default { New-Object System.Security.Cryptography.HMACSHA256 }
+    }
+
+    $hmac.Key = $utf8.GetBytes($Secret)
+    $signature = $hmac.ComputeHash($utf8.GetBytes(($parts[0] + '.' + $parts[1])))
+    $hmac.Dispose()
+
+    $expected = [Convert]::ToBase64String($signature).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+
+    if ($expected -eq $parts[2]) {
+        return (& $make $alg 'Valid' 'The signature matches the secret: the token is genuine and unaltered.')
+    }
+
+    return (& $make $alg 'Invalid' 'The signature does not match this secret: either the secret is wrong or the token was altered.')
+}
+
+<#
+.SYNOPSIS
     Encodes or decodes text.
 
 .PARAMETER Text
@@ -972,6 +1054,9 @@ function ConvertFrom-TkJwt {
 
 .PARAMETER Operation
     What to do with it. Text is read and written as UTF-8.
+
+.PARAMETER Secret
+    For a JWT, the HMAC secret to verify its signature with. Empty to only decode.
 
 .OUTPUTS
     System.String
@@ -986,7 +1071,11 @@ function Convert-TkText {
 
         [Parameter(Mandatory)]
         [ValidateSet('Base64Encode', 'Base64Decode', 'UrlEncode', 'UrlDecode', 'HtmlEncode', 'HtmlDecode', 'HexEncode', 'HexDecode', 'JwtDecode')]
-        [string] $Operation
+        [string] $Operation,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Secret = ''
     )
 
     $utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -1039,7 +1128,20 @@ function Convert-TkText {
             }
 
             $lines.Add('')
-            $lines.Add('The signature is not checked: anyone can write a token that decodes like this one. Only the service that issued it can say whether it is genuine.')
+
+            $verify = Test-TkJwtSignature -Token $Text -Secret $Secret
+            $verdict = switch ($verify.Result) {
+                'Valid'   { 'VALID' }
+                'Invalid' { 'INVALID' }
+                default   { $verify.Result }
+            }
+
+            $lines.Add(('Signature ({0}): {1}' -f $(if ($verify.Algorithm) { $verify.Algorithm } else { 'unknown' }), $verdict))
+            $lines.Add('  ' + $verify.Message)
+
+            if ($verify.Result -eq 'NoSecret') {
+                $lines.Add('  Until then, anyone can write a token that decodes like this one.')
+            }
 
             return ($lines -join [Environment]::NewLine)
         }
