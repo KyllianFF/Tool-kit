@@ -182,6 +182,14 @@ function Initialize-TkToolsPage {
         if ($check) { $check.Add_Click({ Update-TkNormalizeFromUi }) }
     }
 
+    # --- Indicators of compromise -----------------------------------------
+    $iocMode = Get-TkControl -Name 'IocMode'
+    if ($iocMode) {
+        foreach ($choice in @('Extract indicators', 'Defang text', 'Refang text')) { [void] $iocMode.Items.Add($choice) }
+        $iocMode.SelectedIndex = 0
+        $iocMode.Add_SelectionChanged({ Update-TkIocFromUi })
+    }
+
     Register-TkClick -Name 'BtnGenerateUuid' -Action { Invoke-TkUuidFromUi }
     Register-TkClick -Name 'BtnCopyUuid'     -Action { Copy-TkToolOutput -ControlName 'UuidOutput' }
     Register-TkClick -Name 'BtnDecodeUuid'   -Action { Invoke-TkUuidDecodeFromUi }
@@ -202,6 +210,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'HashIdInput';      Update = { Update-TkHashIdFromUi } }
         @{ Name = 'UserAgentInput';   Update = { Update-TkUserAgentFromUi } }
         @{ Name = 'NormalizeInput';   Update = { Update-TkNormalizeFromUi } }
+        @{ Name = 'IocInput';         Update = { Update-TkIocFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
 
@@ -1447,6 +1456,36 @@ function Update-TkHashIdFromUi {
 
 <#
 .SYNOPSIS
+    Extracts, defangs or refangs the pasted text, by the chosen mode.
+#>
+function Update-TkIocFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'IocOutput'
+    $box    = Get-TkControl -Name 'IocInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $text = [string] $box.Text
+
+    $output.Text = switch (Get-TkSelectedText -Name 'IocMode') {
+        'Defang text' {
+            if ($text) { ConvertTo-TkDefanged -Text $text } else { 'Paste a text to defang its indicators.' }
+        }
+        'Refang text' {
+            if ($text) { ConvertTo-TkRefanged -Text $text } else { 'Paste a defanged text to turn its indicators back.' }
+        }
+        default {
+            (Format-TkIocReport -Text $text) -join [Environment]::NewLine
+        }
+    }
+}
+
+<#
+.SYNOPSIS
     Takes the pasted User-Agent apart, as it changes.
 #>
 function Update-TkUserAgentFromUi {
@@ -2564,6 +2603,7 @@ function Get-TkToolEntry {
         (& $tool 'Security'         'HTTP headers'   'ToolHttpHeaders')
         (& $tool 'Security'         'Invisible characters' 'ToolHiddenChars')
         (& $tool 'Security'         'Hash identifier' 'ToolHashId')
+        (& $tool 'Security'         'Indicators (IOC)' 'ToolIoc')
         (& $tool 'Generators'       'Ports'          'ToolPorts')
         (& $tool 'Generators'       'UUIDs'          'ToolUuids')
         (& $tool 'Generators'       'QR code'        'ToolQrCode')
