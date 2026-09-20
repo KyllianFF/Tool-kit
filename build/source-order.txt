@@ -70,6 +70,7 @@ src/Features/Tools/ConnectionString.ps1
 src/Features/Tools/Totp.ps1
 src/Features/Tools/HashIdentifier.ps1
 src/Features/Tools/UserAgent.ps1
+src/Features/Tools/TextNormalizer.ps1
 src/Features/Tools/DevOpsTools.ps1
 src/Features/Tools/HtmlDocument.ps1
 src/Features/Tools/QrCode.ps1

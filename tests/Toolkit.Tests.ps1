@@ -4975,6 +4975,45 @@ Describe 'Hidden characters' {
     }
 }
 
+Describe 'Text normalizer' {
+
+    It 'converts mixed line endings to the chosen one and counts them' {
+        $result = Get-TkTextNormalization -Text "a`r`nb`nc`rd" -LineEnding 'LF'
+        $result.Text | Should -Be "a`nb`nc`nd"
+        ($result.Summary -join ' ') | Should -Match '1 CRLF, 1 LF, 1 CR -> LF'
+    }
+
+    It 'gives CRLF when asked' {
+        (Get-TkTextNormalization -Text "a`nb" -LineEnding 'CRLF').Text | Should -Be "a`r`nb"
+    }
+
+    It 'trims trailing spaces and tabs, and reports how many lines' {
+        $result = Get-TkTextNormalization -Text "a   `nb`t`nc" -LineEnding 'LF' -TrimTrailing $true
+        $result.Text | Should -Be "a`nb`nc"
+        ($result.Summary -join ' ') | Should -Match 'Trimmed trailing whitespace on 2 line'
+    }
+
+    It 'turns tabs into spaces at the chosen width' {
+        (Get-TkTextNormalization -Text "`ta" -Tabs 'ToSpaces' -TabWidth 4 -TrimTrailing $false).Text | Should -Be '    a'
+    }
+
+    It 'turns a leading run of spaces into a tab' {
+        (Get-TkTextNormalization -Text '    a' -Tabs 'ToTabs' -TabWidth 4).Text | Should -Be "`ta"
+    }
+
+    It 'strips a leading byte order mark' {
+        $bom    = [char] 0xFEFF
+        $result = Get-TkTextNormalization -Text ($bom + 'hello') -StripBom $true
+        $result.Text | Should -Be 'hello'
+        ($result.Summary -join ' ') | Should -Match 'Byte order mark removed'
+    }
+
+    It 'leaves the byte order mark when asked to keep it' {
+        $bom = [char] 0xFEFF
+        (Get-TkTextNormalization -Text ($bom + 'hello') -StripBom $false).Text[0] | Should -Be $bom
+    }
+}
+
 Describe 'User-Agent parser' {
 
     It 'reads <Browser> <Os> <Device> from the string' -TestCases @(
