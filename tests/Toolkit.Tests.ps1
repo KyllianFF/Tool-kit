@@ -5053,6 +5053,65 @@ Describe 'User-Agent parser' {
     }
 }
 
+Describe 'Indicator extractor' {
+
+    BeforeAll {
+        $script:IocBlob = @'
+Payload from hxxps://malware.evil[.]com/drop.php and http://1.2.3.4/x.
+Contact bad.actor(at)proton[.]me. See CVE-2024-1234 and cve-2023-44487.
+Do not run invoice.exe. Legit: microsoft.com. MD5 5f4dcc3b5aa765d61d8327deb882cf99
+'@
+    }
+
+    Context 'Extraction' {
+
+        It 'refangs then pulls each kind of indicator out' {
+            $finding = Get-TkIocFinding -Text $script:IocBlob
+
+            $finding.Urls    | Should -Contain 'https://malware.evil.com/drop.php'
+            $finding.IPv4    | Should -Contain '1.2.3.4'
+            $finding.Emails  | Should -Contain 'bad.actor@proton.me'
+            $finding.Domains | Should -Contain 'microsoft.com'
+            $finding.Md5     | Should -Contain '5f4dcc3b5aa765d61d8327deb882cf99'
+            @($finding.Cve)  | Should -Contain 'CVE-2023-44487'
+        }
+
+        It 'trims sentence punctuation off a URL' {
+            (Get-TkIocFinding -Text 'go to http://1.2.3.4/x.').Urls | Should -Contain 'http://1.2.3.4/x'
+        }
+
+        It 'leaves a file name that only looks like a domain out of the domains' {
+            $finding = Get-TkIocFinding -Text 'The file invoice.exe and report.pdf are attached.'
+            $finding.Domains | Should -Not -Contain 'invoice.exe'
+            $finding.Domains | Should -Not -Contain 'report.pdf'
+        }
+    }
+
+    Context 'Defang and refang' {
+
+        It 'defangs URLs, e-mails and IPs, leaving prose alone' {
+            $out = ConvertTo-TkDefanged -Text 'Visit https://evil.com/p and mail a@b.com or ping 8.8.8.8. Keep notes.txt.'
+            $out | Should -Match 'hxxps://evil\[\.\]com'
+            $out | Should -Match 'a\[at\]b\[\.\]com'
+            $out | Should -Match '8\[\.\]8\[\.\]8\[\.\]8'
+            $out | Should -Match 'notes\.txt'     # a file name is not defanged
+        }
+
+        It 'refangs the common notations back' {
+            ConvertTo-TkRefanged -Text 'hxxps://bad[.]site[.]com and 10[.]0[.]0[.]1 and user[at]evil[.]com' |
+                Should -Be 'https://bad.site.com and 10.0.0.1 and user@evil.com'
+        }
+    }
+
+    Context 'Report' {
+
+        It 'prompts when empty and says so when nothing matches' {
+            (Format-TkIocReport -Text '') -join "`n" | Should -Match 'Paste an e-mail'
+            (Format-TkIocReport -Text 'just some words with no indicators at all') -join "`n" | Should -Match 'No indicators found'
+        }
+    }
+}
+
 Describe 'Hash identifier' {
 
     It 'lists NTLM first for 32 hex characters, alongside MD5 and LM' {
