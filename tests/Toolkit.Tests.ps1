@@ -4999,6 +4999,38 @@ Describe 'Hidden characters' {
     }
 }
 
+Describe 'SID resolver' {
+
+    It 'names a well-known SID and takes it apart' {
+        $report = Get-TkSidReport -Text 'S-1-5-18'
+        $report.Kind                    | Should -Be 'Sid'
+        $report.Name                    | Should -Be 'Local System'
+        $report.Structure.AuthorityName | Should -Be 'NT Authority'
+    }
+
+    It 'reads the domain and RID of a domain SID, and names the RID' {
+        $report = Get-TkSidReport -Text 'S-1-5-21-1004336348-1177238915-682003330-512'
+        $report.Name             | Should -Be 'Domain Admins'
+        $report.Structure.Rid    | Should -Be '512'
+        $report.Structure.Domain | Should -Be 'S-1-5-21-1004336348-1177238915-682003330'
+    }
+
+    It 'resolves the English well-known names offline, whatever the OS language' {
+        (Get-TkSidReport -Text 'Everyone').Sid               | Should -Be 'S-1-1-0'
+        (Get-TkSidReport -Text 'SYSTEM').Sid                 | Should -Be 'S-1-5-18'
+        (Get-TkSidReport -Text 'BUILTIN\Administrators').Sid | Should -Be 'S-1-5-32-544'
+        (ConvertTo-TkAccountSid -Account 'Authenticated Users') | Should -Be 'S-1-5-11'
+    }
+
+    It 'says so when an account cannot be resolved' {
+        (Get-TkSidReport -Text 'CONTOSO\NoSuchUser987654321').Kind | Should -Be 'Unresolved'
+    }
+
+    It 'prompts when nothing is pasted' {
+        (Format-TkSidReport -Text '') -join "`n" | Should -Match 'Paste a SID'
+    }
+}
+
 Describe 'XML tool' {
 
     BeforeAll {
