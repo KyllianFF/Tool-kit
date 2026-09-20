@@ -1344,11 +1344,35 @@ Describe 'Tools calculators' {
             $decoded.Expired      | Should -BeTrue
             $decoded.Signed       | Should -BeTrue
 
-            Convert-TkText -Text $token -Operation JwtDecode | Should -BeLike '*not checked*'
+            # With no secret, the decode invites verification rather than vouching.
+            Convert-TkText -Text $token -Operation JwtDecode | Should -Match 'Enter the HMAC secret'
 
             $decoded.PayloadText | Should -Be "{`n  `"sub`": `"42`",`n  `"exp`": 1726300800`n}"
 
             { ConvertFrom-TkJwt -Token 'not a token' } | Should -Throw
+        }
+
+        It 'verifies an HS256 signature against its secret' {
+
+            # The canonical jwt.io example.
+            $token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+
+            (Test-TkJwtSignature -Token $token -Secret 'your-256-bit-secret').Result | Should -Be 'Valid'
+            (Test-TkJwtSignature -Token $token -Secret 'wrong').Result               | Should -Be 'Invalid'
+            (Test-TkJwtSignature -Token $token -Secret '').Result                    | Should -Be 'NoSecret'
+
+            Convert-TkText -Text $token -Operation JwtDecode -Secret 'your-256-bit-secret' | Should -Match 'Signature \(HS256\): VALID'
+        }
+
+        It 'calls out an unsigned token and declines an asymmetric one' {
+
+            $encode = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)).TrimEnd('=').Replace('+', '-').Replace('/', '_') }
+
+            $none = '{0}.{1}.' -f (& $encode '{"alg":"none"}'), (& $encode '{"sub":"x"}')
+            (Test-TkJwtSignature -Token $none).Result | Should -Be 'Unsigned'
+
+            $rs = '{0}.{1}.sig' -f (& $encode '{"alg":"RS256"}'), (& $encode '{"sub":"x"}')
+            (Test-TkJwtSignature -Token $rs -Secret 'anything').Result | Should -Be 'Unsupported'
         }
     }
 }
