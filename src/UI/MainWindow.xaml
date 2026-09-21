@@ -2936,6 +2936,10 @@
                                          ToolTip="Pull the indicators out of an e-mail or a report (IPs, domains, URLs, hashes, CVEs), and defang or refang a text.">
                                 <TextBlock Text="Indicators (IOC)" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Scan a config, a script or a log for exposed secrets: API keys, tokens, passwords and private keys, each named and masked.">
+                                <TextBlock Text="Secret scanner" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
 
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                 <TextBlock Text="GENERATORS" Style="{StaticResource ChoiceGroupTitle}" />
@@ -4429,6 +4433,31 @@
                                     <TextBox x:Name="IocOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolSecrets" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Secret scanner" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="SecretInput" Height="150" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste a config, a script or a log" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Scanned as you paste, on the machine: the cloud and service tokens that announce themselves with a prefix (AWS, GitHub, Slack, Stripe, Google, npm), a private key block, a JSON Web Token, and a password or secret on an assignment or in a connection string. Each is named and masked, so the report does not carry the secret. It matches shape, so it can miss a secret with no form and flag a value that is not one. Nothing is sent anywhere." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="SecretOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="NoWrap" />
                                 </Border>
                             </Grid>
 

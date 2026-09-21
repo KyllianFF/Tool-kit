@@ -74,6 +74,7 @@ src/Features/Tools/TextNormalizer.ps1
 src/Features/Tools/IocExtractor.ps1
 src/Features/Tools/XmlTool.ps1
 src/Features/Tools/SidResolver.ps1
+src/Features/Tools/SecretScanner.ps1
 src/Features/Tools/DevOpsTools.ps1
 src/Features/Tools/HtmlDocument.ps1
 src/Features/Tools/QrCode.ps1

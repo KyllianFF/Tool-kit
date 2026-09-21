@@ -230,6 +230,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'UserAgentInput';   Update = { Update-TkUserAgentFromUi } }
         @{ Name = 'NormalizeInput';   Update = { Update-TkNormalizeFromUi } }
         @{ Name = 'IocInput';         Update = { Update-TkIocFromUi } }
+        @{ Name = 'SecretInput';      Update = { Update-TkSecretFromUi } }
         @{ Name = 'XmlInput';         Update = { Update-TkXmlFromUi } }
         @{ Name = 'XmlXPath';         Update = { Update-TkXmlFromUi } }
         @{ Name = 'SidInput';         Update = { Update-TkSidFromUi } }
@@ -1769,6 +1770,24 @@ function Update-TkIocFromUi {
 
 <#
 .SYNOPSIS
+    Scans the pasted text for exposed secrets, as it changes.
+#>
+function Update-TkSecretFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'SecretOutput'
+    $box    = Get-TkControl -Name 'SecretInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $output.Text = (Format-TkSecretReport -Text ([string] $box.Text)) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
     Formats, minifies, validates or queries the pasted XML, as it changes.
 #>
 function Update-TkXmlFromUi {
@@ -2950,6 +2969,7 @@ function Get-TkToolEntry {
         (& $tool 'Security'         'Invisible characters' 'ToolHiddenChars')
         (& $tool 'Security'         'Hash identifier' 'ToolHashId')
         (& $tool 'Security'         'Indicators (IOC)' 'ToolIoc')
+        (& $tool 'Security'         'Secret scanner' 'ToolSecrets')
         (& $tool 'Generators'       'Ports'          'ToolPorts')
         (& $tool 'Generators'       'UUIDs'          'ToolUuids')
         (& $tool 'Generators'       'QR code'        'ToolQrCode')

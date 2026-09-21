@@ -5148,6 +5148,52 @@ Describe 'User-Agent parser' {
     }
 }
 
+Describe 'Secret scanner' {
+
+    BeforeAll {
+        $script:SecretBlob = @'
+aws_access_key_id = AKIAIOSFODNN7EXAMPLE
+github_token = ghp_16C7e42F292c6912E7710c838347Ae178B4a
+DB_PASSWORD = SuperSecret123!
+API_KEY = changeme
+placeholder = ${env:TOKEN}
+-----BEGIN RSA PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEF
+-----END RSA PRIVATE KEY-----
+'@
+    }
+
+    It 'names the token and password kinds' {
+        $types = @((Get-TkSecretFinding -Text $script:SecretBlob) | ForEach-Object { $_.Type })
+        $types | Should -Contain 'AWS access key ID'
+        $types | Should -Contain 'GitHub token'
+        $types | Should -Contain 'Password or secret'
+        $types | Should -Contain 'Private key block'
+    }
+
+    It 'skips obvious placeholders' {
+        $findings = Get-TkSecretFinding -Text $script:SecretBlob
+        @($findings | Where-Object { $_.Value -eq 'changeme' })     | Should -BeNullOrEmpty
+        @($findings | Where-Object { $_.Value -match '\$\{' })      | Should -BeNullOrEmpty
+    }
+
+    It 'masks the secret so the report does not carry it' {
+        $report = (Format-TkSecretReport -Text $script:SecretBlob) -join "`n"
+        $report | Should -Not -Match 'AKIAIOSFODNN7EXAMPLE'
+        $report | Should -Not -Match 'SuperSecret123'
+        $report | Should -Match 'AKIA'   # the head is kept to recognise it
+    }
+
+    It 'keeps a passphrase-style value out of the report' {
+        Protect-TkSecretValue -Value 'abcdefghijklmnop' | Should -Not -Match 'defghijklm'
+    }
+
+    It 'says so plainly on clean text, and prompts when empty' {
+        (Format-TkSecretReport -Text 'just ordinary text, nothing to hide') -join "`n" | Should -Match 'No secret found'
+        (Format-TkSecretReport -Text '') -join "`n" | Should -Match 'Paste a config'
+    }
+}
+
 Describe 'Indicator extractor' {
 
     BeforeAll {
