@@ -430,27 +430,44 @@ function Initialize-TkToolsPage {
 
     # --- dsacls delegation ------------------------------------------------
     $dsaclsPreset = Get-TkControl -Name 'DsaclsPreset'
-
     if ($dsaclsPreset) {
-        foreach ($preset in @(Get-TkDsaclsPreset)) {
-            [void] $dsaclsPreset.Items.Add($preset.Label)
-        }
+        foreach ($action in @(Get-TkDsaclsAction)) { [void] $dsaclsPreset.Items.Add($action.Label) }
         $dsaclsPreset.SelectedIndex = 0
-        $dsaclsPreset.Add_SelectionChanged({ Update-TkDsaclsFromUi })
+        $dsaclsPreset.Add_SelectionChanged({ Update-TkDsaclsPropertyList; Update-TkDsaclsFromUi })
+    }
+
+    # A double-click on the cheat sheet selects the matching task.
+    $dsaclsCheatSheet = Get-TkControl -Name 'DsaclsCheatSheet'
+    if ($dsaclsCheatSheet) {
+        foreach ($action in @(Get-TkDsaclsAction)) {
+            $item = New-Object System.Windows.Controls.ListBoxItem
+            $item.Content = $action.Label
+            $item.ToolTip = $action.Description
+            [void] $dsaclsCheatSheet.Items.Add($item)
+        }
+        $dsaclsCheatSheet.Add_MouseDoubleClick({
+            $chosen = (Get-TkControl -Name 'DsaclsCheatSheet').SelectedItem
+            if ($chosen) {
+                (Get-TkControl -Name 'DsaclsPreset').SelectedItem = [string] $chosen.Content
+            }
+        })
     }
 
     $dsaclsObjectType = Get-TkControl -Name 'DsaclsObjectType'
-
     if ($dsaclsObjectType) {
-        foreach ($label in @('user', 'group', 'computer', 'contact', 'organizationalUnit', 'all objects')) {
-            [void] $dsaclsObjectType.Items.Add($label)
-        }
+        foreach ($class in @(Get-TkDsaclsObjectClass)) { [void] $dsaclsObjectType.Items.Add($class.Label) }
         $dsaclsObjectType.SelectedIndex = 0
-        $dsaclsObjectType.Add_SelectionChanged({ Update-TkDsaclsFromUi })
+        $dsaclsObjectType.Add_SelectionChanged({ Update-TkDsaclsPropertyList; Update-TkDsaclsFromUi })
+    }
+
+    $dsaclsAccess = Get-TkControl -Name 'DsaclsAccess'
+    if ($dsaclsAccess) {
+        foreach ($label in @('Read', 'Write', 'Read and write')) { [void] $dsaclsAccess.Items.Add($label) }
+        $dsaclsAccess.SelectedIndex = 2
+        $dsaclsAccess.Add_SelectionChanged({ Update-TkDsaclsFromUi })
     }
 
     $dsaclsInheritance = Get-TkControl -Name 'DsaclsInheritance'
-
     if ($dsaclsInheritance) {
         foreach ($label in @('This object and all children (/I:T)', 'Child objects only (/I:S)', 'This object and immediate children (/I:P)', 'This object only')) {
             [void] $dsaclsInheritance.Items.Add($label)
@@ -459,13 +476,15 @@ function Initialize-TkToolsPage {
         $dsaclsInheritance.Add_SelectionChanged({ Update-TkDsaclsFromUi })
     }
 
-    foreach ($name in @('DsaclsObject', 'DsaclsTrustee', 'DsaclsCustom')) {
+    foreach ($name in @('DsaclsObject', 'DsaclsSource', 'DsaclsTrustee', 'DsaclsCustom')) {
         $box = Get-TkControl -Name $name
         if ($box) { $box.Add_TextChanged({ Update-TkDsaclsFromUi }) }
     }
 
     $dsaclsDeny = Get-TkControl -Name 'DsaclsDeny'
     if ($dsaclsDeny) { $dsaclsDeny.Add_Click({ Update-TkDsaclsFromUi }) }
+
+    Update-TkDsaclsPropertyList
 
     Register-TkClick -Name 'BtnCopyDsacls' -Action { Copy-TkToolOutput -ControlName 'DsaclsOutput' }
 
@@ -1387,6 +1406,46 @@ function Update-TkSchtaskFromUi {
 
 <#
 .SYNOPSIS
+    Fills the dsacls property picker with the attributes of the chosen class.
+#>
+function Update-TkDsaclsPropertyList {
+    [CmdletBinding()]
+    param()
+
+    $panel = Get-TkControl -Name 'DsaclsProperties'
+    if (-not $panel) {
+        return
+    }
+
+    $panel.Children.Clear()
+
+    $class = @(Get-TkDsaclsObjectClass) | Where-Object { $_.Label -eq (Get-TkSelectedText -Name 'DsaclsObjectType') } | Select-Object -First 1
+    if (-not $class) {
+        return
+    }
+
+    $add = {
+        param($content, $tag)
+        $check = New-Object System.Windows.Controls.CheckBox
+        $check.Content = $content
+        $check.Tag     = $tag
+        $check.Width   = 240
+        $check.Margin  = New-Object System.Windows.Thickness(0, 0, 8, 6)
+        $check.Add_Click({ Update-TkDsaclsFromUi })
+        [void] $panel.Children.Add($check)
+    }
+
+    foreach ($set in @(Get-TkDsaclsPropertySet | Where-Object { $class.PropertySets -contains $_.Name })) {
+        & $add ($set.Label + '  [set]') $set.Name
+    }
+
+    foreach ($attribute in $class.Attributes) {
+        & $add $attribute.Label $attribute.Name
+    }
+}
+
+<#
+.SYNOPSIS
     Builds the dsacls delegation command from the controls, as they change.
 #>
 function Update-TkDsaclsFromUi {
@@ -1394,10 +1453,33 @@ function Update-TkDsaclsFromUi {
     param()
 
     $output = Get-TkControl -Name 'DsaclsOutput'
-
     if (-not $output) {
         return
     }
+
+    $action = @(Get-TkDsaclsAction) | Where-Object { $_.Label -eq (Get-TkSelectedText -Name 'DsaclsPreset') } | Select-Object -First 1
+    if (-not $action) {
+        return
+    }
+
+    $isMove     = $action.Kind -eq 'Move'
+    $isProperty = $action.Kind -eq 'Property'
+    $isCustom   = $action.Kind -eq 'Custom'
+    $usesType   = $action.ObjectType -eq 'combo'
+
+    # Show only the fields this task uses.
+    Set-TkControlVisible -Name 'DsaclsSource'          -Visible $isMove
+    Set-TkControlVisible -Name 'DsaclsSourceLabel'     -Visible $isMove
+    Set-TkControlVisible -Name 'DsaclsAccess'          -Visible $isProperty
+    Set-TkControlVisible -Name 'DsaclsAccessLabel'     -Visible $isProperty
+    Set-TkControlVisible -Name 'DsaclsCustom'          -Visible $isCustom
+    Set-TkControlVisible -Name 'DsaclsCustomLabel'     -Visible $isCustom
+    Set-TkControlVisible -Name 'DsaclsPropertyCard'    -Visible $isProperty
+    Set-TkControlVisible -Name 'DsaclsObjectType'      -Visible $usesType
+    Set-TkControlVisible -Name 'DsaclsObjectTypeLabel' -Visible $usesType
+
+    $objectLabel = Get-TkControl -Name 'DsaclsObjectLabel'
+    if ($objectLabel) { $objectLabel.Text = if ($isMove) { 'Target OU' } else { 'Object (OU)' } }
 
     $object  = [string] (Get-TkControl -Name 'DsaclsObject').Text
     $trustee = [string] (Get-TkControl -Name 'DsaclsTrustee').Text
@@ -1407,33 +1489,65 @@ function Update-TkDsaclsFromUi {
         return
     }
 
-    $preset = @(Get-TkDsaclsPreset) | Where-Object { $_.Label -eq [string] (Get-TkControl -Name 'DsaclsPreset').SelectedItem } | Select-Object -First 1
-    if (-not $preset) { $preset = @(Get-TkDsaclsPreset)[0] }
+    $deny = [bool] (Get-TkControl -Name 'DsaclsDeny').IsChecked
 
-    $typeLabel = [string] (Get-TkControl -Name 'DsaclsObjectType').SelectedItem
-    $type      = if ($typeLabel -and $typeLabel -ne 'all objects') { $typeLabel } else { '' }
-
-    $inheritance = switch ([string] (Get-TkControl -Name 'DsaclsInheritance').SelectedItem) {
-        'Child objects only (/I:S)'                       { 'S' }
-        'This object and immediate children (/I:P)'       { 'P' }
-        'This object only'                                { '' }
-        default                                           { 'T' }
+    $inheritance = switch (Get-TkSelectedText -Name 'DsaclsInheritance') {
+        'Child objects only (/I:S)'                 { 'S' }
+        'This object and immediate children (/I:P)' { 'P' }
+        'This object only'                          { '' }
+        default                                     { 'T' }
     }
 
-    if ($preset.Label -eq 'Custom') {
-        $rights = ([string] (Get-TkControl -Name 'DsaclsCustom').Text).Trim()
-        if (-not $rights) {
-            $output.Text = 'Type the dsacls rights for the Custom task, such as CCDC;computer or WPRP;member;group.'
-            return
-        }
-    }
-    else {
-        $rights = & $preset.Build $type
-    }
+    $class    = @(Get-TkDsaclsObjectClass) | Where-Object { $_.Label -eq (Get-TkSelectedText -Name 'DsaclsObjectType') } | Select-Object -First 1
+    $typeName = if ($class) { $class.Class } else { '' }
 
     try {
-        $command = Build-TkDsaclsCommand -ObjectDn $object -Trustee $trustee -Rights $rights -Inheritance $inheritance -Deny:([bool] (Get-TkControl -Name 'DsaclsDeny').IsChecked)
-        $output.Text = @($command, '', $preset.Description, 'Run elevated on a domain-joined machine with the AD tools. dsacls reads the current ACL when run with no /G or /D.') -join [Environment]::NewLine
+        switch ($action.Kind) {
+
+            'Custom' {
+                $rights = ([string] (Get-TkControl -Name 'DsaclsCustom').Text).Trim()
+                if (-not $rights) {
+                    $output.Text = 'Type the dsacls rights for the Custom task, such as CCDC;computer or WPRP;member;group.'
+                    return
+                }
+                $command = Build-TkDsaclsAces -ObjectDn $object -Trustee $trustee -Inheritance $inheritance -Deny:$deny -Ace @($rights)
+            }
+
+            'Move' {
+                $source = [string] (Get-TkControl -Name 'DsaclsSource').Text
+                if (-not $source.Trim()) {
+                    $output.Text = 'Type the source OU the object is moved out of.'
+                    return
+                }
+                $command = (Build-TkDsaclsMove -SourceDn $source -TargetDn $object -Trustee $trustee -ObjectType $typeName -Deny:$deny) -join [Environment]::NewLine
+            }
+
+            'Property' {
+                $properties = New-Object System.Collections.Generic.List[string]
+                $panel = Get-TkControl -Name 'DsaclsProperties'
+                if ($panel) {
+                    foreach ($child in $panel.Children) {
+                        if ($child -is [System.Windows.Controls.CheckBox] -and $child.IsChecked) { $properties.Add([string] $child.Tag) }
+                    }
+                }
+
+                if ($properties.Count -eq 0) {
+                    $output.Text = 'Tick the properties to delegate on the right.'
+                    return
+                }
+
+                $access = switch (Get-TkSelectedText -Name 'DsaclsAccess') { 'Read' { 'Read' } 'Write' { 'Write' } default { 'ReadWrite' } }
+                $aces   = Get-TkDsaclsPropertyAce -Access $access -ObjectType $typeName -Property $properties.ToArray()
+                $command = Build-TkDsaclsAces -ObjectDn $object -Trustee $trustee -Inheritance $inheritance -Deny:$deny -Ace $aces
+            }
+
+            default {
+                $aces = @($action.Aces | ForEach-Object { if ($_ -match '\{0\}') { $_ -f $typeName } else { $_ } })
+                $command = Build-TkDsaclsAces -ObjectDn $object -Trustee $trustee -Inheritance $inheritance -Deny:$deny -Ace $aces
+            }
+        }
+
+        $output.Text = @($command, '', $action.Description, 'Run elevated on a domain-joined machine with the AD tools.') -join [Environment]::NewLine
     }
     catch {
         $output.Text = $_.Exception.Message
