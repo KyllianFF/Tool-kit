@@ -1380,108 +1380,167 @@ function Build-TkSchtasksCommand {
 
 <#
 .SYNOPSIS
-    The delegation tasks the dsacls builder offers, and how each maps to a
-    dsacls rights string.
+    The Active Directory property sets a delegation can be granted on.
 
 .DESCRIPTION
-    Each preset knows the dsacls permission letters it needs and where the
-    object type belongs in the rights string, since that differs by task: for
-    create and delete the type is the child object to make, for a property or an
-    extended right it is the class the entry is inherited to. The Build script
-    turns a chosen object type into the finished rights string, the part that
-    follows the trustee and a colon.
+    The same groupings the Delegation of Control wizard offers, each a named set
+    of related attributes. dsacls resolves the name against the schema.
 
 .OUTPUTS
-    PSCustomObject[] with Label, Description, UsesObjectType, DefaultInheritance
-    and a Build script.
+    PSCustomObject[] with Name and Label.
 #>
-function Get-TkDsaclsPreset {
+function Get-TkDsaclsPropertySet {
     [CmdletBinding()]
     [OutputType([pscustomobject[]])]
     param()
 
-    $preset = {
-        param($label, $description, $usesType, $inheritance, $build)
-        [pscustomobject] @{
-            Label             = $label
-            Description       = $description
-            UsesObjectType    = [bool] $usesType
-            DefaultInheritance = $inheritance
-            Build             = $build
-        }
-    }
+    $set = { param($name, $label) [pscustomobject] @{ Name = $name; Label = $label } }
 
-    # The object type is dropped in with a leading class where it belongs, and
-    # left out entirely when "all objects" (an empty type) is chosen.
     return @(
-        (& $preset 'Full control' 'Full control of the OU and everything in it.' $false 'T' { param($type) 'GA' })
-
-        (& $preset 'Create and delete child objects' 'Create and delete objects of a type in the OU, such as user accounts.' $true 'T' {
-            param($type)
-            if ($type) { 'CCDC;{0}' -f $type } else { 'CCDC' }
-        })
-
-        (& $preset 'Reset passwords' 'Reset the password of user accounts (the Reset Password right).' $true 'S' {
-            param($type)
-            $class = if ($type) { $type } else { 'user' }
-            'CA;Reset Password;{0}' -f $class
-        })
-
-        (& $preset 'Read all properties' 'Read every property of the objects.' $true 'S' {
-            param($type)
-            'RP;;{0}' -f $type
-        })
-
-        (& $preset 'Write all properties' 'Change every property of the objects.' $true 'S' {
-            param($type)
-            'WP;;{0}' -f $type
-        })
-
-        (& $preset 'Read and write all properties' 'Read and change every property of the objects.' $true 'S' {
-            param($type)
-            'RPWP;;{0}' -f $type
-        })
-
-        (& $preset 'Manage group membership' 'Add and remove members of groups (write the member property).' $false 'S' {
-            param($type)
-            'WP;member;group'
-        })
-
-        (& $preset 'Custom' 'Type the dsacls rights yourself, such as CCDC;computer or WPRP;member;group.' $false '' { param($type) '' })
+        (& $set 'Personal Information' 'Personal Information (phone, address)')
+        (& $set 'Public Information'   'Public Information')
+        (& $set 'General Information'  'General Information')
+        (& $set 'Web Information'      'Web Information')
+        (& $set 'Email Information'    'Email Information')
+        (& $set 'Membership'          'Membership')
     )
 }
 
 <#
 .SYNOPSIS
-    Builds a dsacls command line that delegates control on a directory object.
+    The object classes a delegation targets, and the attributes each exposes.
 
 .DESCRIPTION
-    dsacls sets the permissions on an Active Directory object such as an OU. The
-    object's distinguished name is quoted, the trustee and its rights follow
-    /G to grant or /D to deny, and /I sets how far the grant reaches: this object
-    and all children (T), child objects only (S), or this object and its
-    immediate children (P). The rights string is passed in ready made, from a
-    preset or typed by hand.
+    A curated list of the common LDAP attributes per class, plus the property
+    sets that apply to it, so the interface can offer exactly what makes sense
+    for the object type chosen. The names are the ones dsacls takes after the
+    verb: an ldapDisplayName or a property set name.
 
-.PARAMETER ObjectDn
-    The distinguished name of the object, such as OU=Sales,DC=contoso,DC=com.
+.OUTPUTS
+    PSCustomObject[] with Class, Label, Attributes (Name, Label) and PropertySets.
+#>
+function Get-TkDsaclsObjectClass {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
 
-.PARAMETER Trustee
-    Who is granted the rights: DOMAIN\Group, a UPN, or a distinguished name.
+    $attr = { param($name, $label) [pscustomobject] @{ Name = $name; Label = ('{0} ({1})' -f $label, $name) } }
 
-.PARAMETER Rights
-    The dsacls rights string after the colon, such as GA or CA;Reset Password;user.
+    $class = {
+        param($class, $label, $attributes, $sets)
+        [pscustomobject] @{ Class = $class; Label = $label; Attributes = @($attributes); PropertySets = @($sets) }
+    }
 
-.PARAMETER Inheritance
-    T, S or P, or empty for this object only.
+    $userAttributes = @(
+        (& $attr 'givenName' 'First name'), (& $attr 'sn' 'Last name'), (& $attr 'initials' 'Initials'),
+        (& $attr 'displayName' 'Display name'), (& $attr 'description' 'Description'),
+        (& $attr 'telephoneNumber' 'Telephone'), (& $attr 'mobile' 'Mobile'), (& $attr 'facsimileTelephoneNumber' 'Fax'),
+        (& $attr 'homePhone' 'Home phone'), (& $attr 'ipPhone' 'IP phone'), (& $attr 'pager' 'Pager'),
+        (& $attr 'mail' 'E-mail'), (& $attr 'wWWHomePage' 'Web page'),
+        (& $attr 'streetAddress' 'Street'), (& $attr 'l' 'City'), (& $attr 'st' 'State'),
+        (& $attr 'postalCode' 'Postal code'), (& $attr 'co' 'Country'), (& $attr 'physicalDeliveryOfficeName' 'Office'),
+        (& $attr 'company' 'Company'), (& $attr 'department' 'Department'), (& $attr 'title' 'Title'),
+        (& $attr 'manager' 'Manager'), (& $attr 'employeeID' 'Employee ID'), (& $attr 'employeeNumber' 'Employee number'),
+        (& $attr 'userAccountControl' 'Account flags'), (& $attr 'pwdLastSet' 'Password last set'),
+        (& $attr 'accountExpires' 'Account expiry'), (& $attr 'lockoutTime' 'Lockout time'),
+        (& $attr 'scriptPath' 'Logon script'), (& $attr 'profilePath' 'Profile path'),
+        (& $attr 'homeDirectory' 'Home folder'), (& $attr 'homeDrive' 'Home drive')
+    )
+    $userSets = @('Personal Information', 'Public Information', 'General Information', 'Web Information', 'Email Information')
 
-.PARAMETER Deny
-    Deny the rights (/D) instead of granting them (/G).
+    $contactAttributes = @(
+        (& $attr 'givenName' 'First name'), (& $attr 'sn' 'Last name'), (& $attr 'displayName' 'Display name'),
+        (& $attr 'description' 'Description'), (& $attr 'telephoneNumber' 'Telephone'), (& $attr 'mobile' 'Mobile'),
+        (& $attr 'mail' 'E-mail'), (& $attr 'title' 'Title'), (& $attr 'department' 'Department'), (& $attr 'company' 'Company'),
+        (& $attr 'streetAddress' 'Street'), (& $attr 'l' 'City'), (& $attr 'st' 'State'), (& $attr 'postalCode' 'Postal code'), (& $attr 'co' 'Country')
+    )
+
+    return @(
+        (& $class 'user' 'User' $userAttributes $userSets)
+        (& $class 'inetOrgPerson' 'inetOrgPerson' $userAttributes $userSets)
+        (& $class 'group' 'Group' @(
+            (& $attr 'member' 'Members'), (& $attr 'description' 'Description'), (& $attr 'info' 'Notes'),
+            (& $attr 'mail' 'E-mail'), (& $attr 'managedBy' 'Managed by'), (& $attr 'displayName' 'Display name')
+        ) @('Membership'))
+        (& $class 'computer' 'Computer' @(
+            (& $attr 'description' 'Description'), (& $attr 'managedBy' 'Managed by'), (& $attr 'dNSHostName' 'DNS host name'),
+            (& $attr 'servicePrincipalName' 'SPNs'), (& $attr 'location' 'Location'),
+            (& $attr 'operatingSystem' 'Operating system'), (& $attr 'userAccountControl' 'Account flags')
+        ) @())
+        (& $class 'organizationalUnit' 'Organizational Unit' @(
+            (& $attr 'description' 'Description'), (& $attr 'gPLink' 'GPO links'), (& $attr 'gPOptions' 'GPO options'),
+            (& $attr 'managedBy' 'Managed by'), (& $attr 'street' 'Street'), (& $attr 'l' 'City'),
+            (& $attr 'st' 'State'), (& $attr 'postalCode' 'Postal code'), (& $attr 'co' 'Country')
+        ) @())
+        (& $class 'contact' 'Contact' $contactAttributes @('Personal Information'))
+        (& $class 'printQueue' 'Printer (printQueue)' @(
+            (& $attr 'description' 'Description'), (& $attr 'location' 'Location'), (& $attr 'managedBy' 'Managed by'),
+            (& $attr 'printShareName' 'Share name'), (& $attr 'portName' 'Port'), (& $attr 'driverName' 'Driver')
+        ) @())
+        (& $class 'volume' 'Shared folder (volume)' @(
+            (& $attr 'description' 'Description'), (& $attr 'uNCName' 'UNC path'), (& $attr 'keywords' 'Keywords'), (& $attr 'managedBy' 'Managed by')
+        ) @())
+    )
+}
+
+<#
+.SYNOPSIS
+    The delegation tasks, for the task list and the double-click cheat sheet.
+
+.DESCRIPTION
+    Each task carries what it needs to build. Fixed tasks hold their rights ready
+    made ({0} is the chosen object type where it varies); a Property task reads
+    the property picker and the chosen access; Move works on a source and a
+    target object; Custom is typed by hand.
+
+.OUTPUTS
+    PSCustomObject[] with Label, Description, Kind, ObjectType, Aces and Access.
+#>
+function Get-TkDsaclsAction {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    $task = {
+        param($label, $description, $kind, $objectType, $aces, $access)
+        [pscustomobject] @{
+            Label = $label; Description = $description; Kind = $kind
+            ObjectType = $objectType; Aces = @($aces); Access = $access
+        }
+    }
+
+    return @(
+        (& $task 'Full control' 'Full control of the OU and everything in it.' 'Fixed' '' @('GA') '')
+        (& $task 'Create and delete child objects' 'Create and delete objects of the chosen type in the OU.' 'Fixed' 'combo' @('CCDC;{0}') '')
+
+        (& $task 'Specific properties' 'Tick the properties to delegate, and choose read, write or both.' 'Property' 'combo' @() 'ReadWrite')
+
+        (& $task 'Reset user passwords' 'Reset the password of user accounts.' 'Fixed' 'user' @('CA;Reset Password;user') '')
+        (& $task 'Force password change at next logon' 'Make users change their password at the next sign-in.' 'Fixed' 'user' @('WP;pwdLastSet;user') '')
+        (& $task 'Unlock user accounts' 'Unlock locked-out user accounts.' 'Fixed' 'user' @('WP;lockoutTime;user') '')
+        (& $task 'Enable and disable user accounts' 'Turn user accounts on and off.' 'Fixed' 'user' @('WP;userAccountControl;user') '')
+        (& $task 'Set account expiry' 'Set when user accounts expire.' 'Fixed' 'user' @('WP;accountExpires;user') '')
+        (& $task 'Edit contact information' 'Change the phone and address details of users.' 'Fixed' 'user' @('WP;Personal Information;user') '')
+        (& $task 'Manage group membership' 'Add and remove members of groups.' 'Fixed' 'group' @('WP;member;group') '')
+        (& $task 'Link and unlink GPOs' 'Link and unlink Group Policy objects on the OU.' 'Fixed' 'organizationalUnit' @('WP;gPLink;organizationalUnit', 'WP;gPOptions;organizationalUnit') '')
+        (& $task 'Join computers to the domain' 'Create computer accounts and join machines to the domain.' 'Fixed' 'computer' @('CC;computer', 'CA;Reset Password;computer', 'WP;userAccountControl;computer', 'WP;dNSHostName;computer', 'WP;servicePrincipalName;computer', 'WP;sAMAccountName;computer') '')
+
+        (& $task 'Move an object' 'Delete the object in a source OU and create it in this one.' 'Move' 'combo' @() '')
+        (& $task 'Custom' 'Type the dsacls rights yourself, such as CCDC;computer or WPRP;member;group.' 'Custom' '' @() '')
+    )
+}
+
+<#
+.SYNOPSIS
+    Builds a dsacls command that grants or denies a set of access-control entries.
+
+.PARAMETER Ace
+    One or more rights strings, each becoming a /G (or /D) trustee:rights.
 
 .OUTPUTS
     System.String
 #>
-function Build-TkDsaclsCommand {
+function Build-TkDsaclsAces {
     [CmdletBinding()]
     [OutputType([string])]
     param(
@@ -1491,15 +1550,15 @@ function Build-TkDsaclsCommand {
         [Parameter(Mandatory)]
         [string] $Trustee,
 
-        [Parameter(Mandatory)]
-        [string] $Rights,
-
         [Parameter()]
         [ValidateSet('', 'T', 'S', 'P')]
         [string] $Inheritance = '',
 
         [Parameter()]
-        [switch] $Deny
+        [switch] $Deny,
+
+        [Parameter(Mandatory)]
+        [string[]] $Ace
     )
 
     $parts = New-Object System.Collections.Generic.List[string]
@@ -1510,10 +1569,82 @@ function Build-TkDsaclsCommand {
         $parts.Add('/I:{0}' -f $Inheritance)
     }
 
-    $parts.Add($(if ($Deny) { '/D' } else { '/G' }))
-    $parts.Add(('"{0}:{1}"' -f $Trustee.Trim(), $Rights.Trim()))
+    $flag = if ($Deny) { '/D' } else { '/G' }
+
+    foreach ($entry in $Ace) {
+        $parts.Add(('{0} "{1}:{2}"' -f $flag, $Trustee.Trim(), $entry))
+    }
 
     return ($parts -join ' ')
+}
+
+<#
+.SYNOPSIS
+    Builds the two dsacls commands that delegate moving an object between OUs.
+
+.DESCRIPTION
+    A move is a delete in the source and a create in the target, so it is two
+    entries on two objects: DC on the source OU and CC on the target OU, for the
+    chosen object type.
+
+.OUTPUTS
+    System.String[]
+#>
+function Build-TkDsaclsMove {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $SourceDn,
+
+        [Parameter(Mandatory)]
+        [string] $TargetDn,
+
+        [Parameter(Mandatory)]
+        [string] $Trustee,
+
+        [Parameter(Mandatory)]
+        [string] $ObjectType,
+
+        [Parameter()]
+        [switch] $Deny
+    )
+
+    return @(
+        (Build-TkDsaclsAces -ObjectDn $SourceDn -Trustee $Trustee -Deny:$Deny -Ace @('DC;{0}' -f $ObjectType)),
+        (Build-TkDsaclsAces -ObjectDn $TargetDn -Trustee $Trustee -Deny:$Deny -Ace @('CC;{0}' -f $ObjectType))
+    )
+}
+
+<#
+.SYNOPSIS
+    Turns chosen properties into access-control entries for a verb and a class.
+
+.PARAMETER Access
+    Read (RP), Write (WP) or ReadWrite (RPWP).
+
+.OUTPUTS
+    System.String[]
+#>
+function Get-TkDsaclsPropertyAce {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Read', 'Write', 'ReadWrite')]
+        [string] $Access,
+
+        [Parameter(Mandatory)]
+        [string] $ObjectType,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [string[]] $Property
+    )
+
+    $verb = switch ($Access) { 'Read' { 'RP' } 'Write' { 'WP' } default { 'RPWP' } }
+
+    return @($Property | ForEach-Object { '{0};{1};{2}' -f $verb, $_, $ObjectType })
 }
 
 <#

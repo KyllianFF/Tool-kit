@@ -4161,10 +4161,14 @@
                                     <StackPanel>
                                         <TextBlock Text="dsacls delegation builder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
                                         <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
-                                            <TextBlock Text="Object (OU)" VerticalAlignment="Center" Margin="0,0,8,8"
-                                                       ToolTip="The distinguished name of the object the rights are set on, usually an OU." />
-                                            <TextBox x:Name="DsaclsObject" Width="380" Margin="0,0,0,8"
+                                            <TextBlock x:Name="DsaclsObjectLabel" Text="Object (OU)" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="The distinguished name of the object the rights are set on, usually an OU. For a move, this is the target OU." />
+                                            <TextBox x:Name="DsaclsObject" Width="340" Margin="0,0,16,8"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" Tag="OU=Sales,DC=contoso,DC=com" />
+                                            <TextBlock x:Name="DsaclsSourceLabel" Text="Source OU" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="For a move: the OU the object is taken out of." />
+                                            <TextBox x:Name="DsaclsSource" Width="300" Margin="0,0,0,8"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" Tag="OU=Staging,DC=contoso,DC=com" />
                                         </WrapPanel>
                                         <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
                                             <TextBlock Text="Delegate to" VerticalAlignment="Center" Margin="0,0,8,8"
@@ -4176,32 +4180,68 @@
                                         </WrapPanel>
                                         <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
                                             <TextBlock Text="Task" VerticalAlignment="Center" Margin="0,0,8,8"
-                                                       ToolTip="What to delegate. Each task fills in the dsacls permission letters for you." />
+                                                       ToolTip="What to delegate. Each task fills in the dsacls rights for you, or double-click one on the left." />
                                             <ComboBox x:Name="DsaclsPreset" Width="260" MinHeight="40" Margin="0,0,16,8" />
-                                            <TextBlock Text="On object type" VerticalAlignment="Center" Margin="0,0,8,8"
-                                                       ToolTip="The kind of child object the rights apply to. All objects leaves the type out." />
-                                            <ComboBox x:Name="DsaclsObjectType" Width="160" MinHeight="40" Margin="0,0,0,8" />
+                                            <TextBlock x:Name="DsaclsObjectTypeLabel" Text="On object type" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="The kind of object the rights apply to. It also decides which properties are offered below." />
+                                            <ComboBox x:Name="DsaclsObjectType" Width="180" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock x:Name="DsaclsAccessLabel" Text="Access" VerticalAlignment="Center" Margin="0,0,8,8"
+                                                       ToolTip="For a specific-properties task: read, write, or both." />
+                                            <ComboBox x:Name="DsaclsAccess" Width="150" MinHeight="40" Margin="0,0,0,8" />
                                         </WrapPanel>
                                         <WrapPanel Margin="0,0,0,4" ToolTipService.InitialShowDelay="350" ToolTipService.ShowDuration="20000">
                                             <TextBlock Text="Reaches" VerticalAlignment="Center" Margin="0,0,8,8"
                                                        ToolTip="How far the rights inherit: /I:T this object and all children, /I:S child objects only, /I:P this object and its immediate children, or this object only." />
-                                            <ComboBox x:Name="DsaclsInheritance" Width="280" MinHeight="40" Margin="0,0,16,8" />
-                                            <TextBlock Text="Custom rights" VerticalAlignment="Center" Margin="0,0,8,8"
+                                            <ComboBox x:Name="DsaclsInheritance" Width="260" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock x:Name="DsaclsCustomLabel" Text="Custom rights" VerticalAlignment="Center" Margin="0,0,8,8"
                                                        ToolTip="Used only with the Custom task: the dsacls rights after the colon, such as CCDC;computer or WPRP;member;group." />
-                                            <TextBox x:Name="DsaclsCustom" Width="200" Margin="0,0,16,8"
+                                            <TextBox x:Name="DsaclsCustom" Width="180" Margin="0,0,16,8"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" Tag="CCDC;computer" />
                                             <Button x:Name="BtnCopyDsacls" Content="Copy the command" Margin="0,0,0,8" />
                                         </WrapPanel>
                                         <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" TextWrapping="Wrap"
-                                                   Text="dsacls sets the permissions on an Active Directory object such as an OU, the same delegation the Delegation of Control wizard writes. Run it elevated on a domain-joined machine with the AD tools. Test on a lab OU first: a wrong deny or a broad grant is easy to make and awkward to unpick." />
+                                                   Text="dsacls sets the permissions on an Active Directory object such as an OU, the same delegation the Delegation of Control wizard writes. Double-click a common task on the left, or tick specific properties. Run it elevated on a domain-joined machine with the AD tools. Test on a lab OU first: a wrong deny or a broad grant is easy to make and awkward to unpick." />
                                     </StackPanel>
                                 </Border>
 
-                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
-                                    <TextBox x:Name="DsaclsOutput" Style="{StaticResource Mono}" IsReadOnly="True"
-                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             AcceptsReturn="True" TextWrapping="Wrap" />
-                                </Border>
+                                <Grid Grid.Row="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="300" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Top" Text="Common tasks" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                            <TextBlock DockPanel.Dock="Top" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                                       Text="Double-click to fill the rights with the minimum for the job." />
+                                            <ListBox x:Name="DsaclsCheatSheet" Background="Transparent" BorderThickness="0"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                                        </DockPanel>
+                                    </Border>
+
+                                    <Grid Grid.Column="1">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+
+                                        <Border x:Name="DsaclsPropertyCard" Grid.Row="0" Style="{StaticResource Card}" Margin="0,0,0,12">
+                                            <StackPanel>
+                                                <TextBlock Text="Properties for this object type" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                                <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
+                                                    <WrapPanel x:Name="DsaclsProperties" />
+                                                </ScrollViewer>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                            <TextBox x:Name="DsaclsOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                                     AcceptsReturn="True" TextWrapping="Wrap" />
+                                        </Border>
+                                    </Grid>
+                                </Grid>
                             </Grid>
 
                             <Grid x:Name="ToolIcacls" Visibility="Collapsed">

@@ -5546,26 +5546,46 @@ Describe 'Administration decoders' {
 
     Context 'dsacls delegation' {
 
-        It 'builds a full-control grant reaching all children' {
-            $rights = & (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Full control').Build ''
-            Build-TkDsaclsCommand -ObjectDn 'OU=Sales,DC=contoso,DC=com' -Trustee 'CONTOSO\OU-Admins' -Rights $rights -Inheritance 'T' |
-                Should -Be 'dsacls "OU=Sales,DC=contoso,DC=com" /I:T /G "CONTOSO\OU-Admins:GA"'
+        It 'builds a fixed task, one entry per ace' {
+            $link = @(Get-TkDsaclsAction) | Where-Object Label -eq 'Link and unlink GPOs'
+            Build-TkDsaclsAces -ObjectDn 'OU=Sites,DC=contoso,DC=com' -Trustee 'CONTOSO\GPO' -Inheritance 'T' -Ace $link.Aces |
+                Should -Be 'dsacls "OU=Sites,DC=contoso,DC=com" /I:T /G "CONTOSO\GPO:WP;gPLink;organizationalUnit" /G "CONTOSO\GPO:WP;gPOptions;organizationalUnit"'
         }
 
-        It 'builds a reset-password delegation on user objects' {
-            $rights = & (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Reset passwords').Build 'user'
-            Build-TkDsaclsCommand -ObjectDn 'OU=Staff,DC=contoso,DC=com' -Trustee 'CONTOSO\Helpdesk' -Rights $rights -Inheritance 'S' |
-                Should -Be 'dsacls "OU=Staff,DC=contoso,DC=com" /I:S /G "CONTOSO\Helpdesk:CA;Reset Password;user"'
+        It 'substitutes the object type into a create-and-delete task' {
+            $create = @(Get-TkDsaclsAction) | Where-Object Label -eq 'Create and delete child objects'
+            $ace    = @($create.Aces | ForEach-Object { $_ -f 'computer' })
+            Build-TkDsaclsAces -ObjectDn 'OU=W,DC=contoso,DC=com' -Trustee 'CONTOSO\PC' -Ace $ace |
+                Should -Be 'dsacls "OU=W,DC=contoso,DC=com" /G "CONTOSO\PC:CCDC;computer"'
         }
 
-        It 'maps create-and-delete to the child object type, and leaves it out for all objects' {
-            (& (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Create and delete child objects').Build 'computer') | Should -Be 'CCDC;computer'
-            (& (@(Get-TkDsaclsPreset) | Where-Object Label -eq 'Create and delete child objects').Build '')         | Should -Be 'CCDC'
+        It 'writes one entry per property for a specific-properties task' {
+            $aces = Get-TkDsaclsPropertyAce -Access 'Write' -ObjectType 'user' -Property @('telephoneNumber', 'mobile')
+            Build-TkDsaclsAces -ObjectDn 'OU=Staff,DC=contoso,DC=com' -Trustee 'CONTOSO\HD' -Inheritance 'S' -Ace $aces |
+                Should -Be 'dsacls "OU=Staff,DC=contoso,DC=com" /I:S /G "CONTOSO\HD:WP;telephoneNumber;user" /G "CONTOSO\HD:WP;mobile;user"'
+        }
+
+        It 'uses RPWP for read-and-write access' {
+            @(Get-TkDsaclsPropertyAce -Access 'ReadWrite' -ObjectType 'group' -Property @('member'))[0] | Should -Be 'RPWP;member;group'
+        }
+
+        It 'builds the two commands of a move: delete in the source, create in the target' {
+            $move = Build-TkDsaclsMove -SourceDn 'OU=Staging,DC=contoso,DC=com' -TargetDn 'OU=WS,DC=contoso,DC=com' -Trustee 'CONTOSO\HD' -ObjectType 'computer'
+            $move[0] | Should -Be 'dsacls "OU=Staging,DC=contoso,DC=com" /G "CONTOSO\HD:DC;computer"'
+            $move[1] | Should -Be 'dsacls "OU=WS,DC=contoso,DC=com" /G "CONTOSO\HD:CC;computer"'
         }
 
         It 'denies with /D instead of /G' {
-            Build-TkDsaclsCommand -ObjectDn 'OU=Staff,DC=contoso,DC=com' -Trustee 'CONTOSO\HR' -Rights 'RPWP;;user' -Inheritance 'S' -Deny |
+            Build-TkDsaclsAces -ObjectDn 'OU=Staff,DC=contoso,DC=com' -Trustee 'CONTOSO\HR' -Inheritance 'S' -Deny -Ace @('RPWP;;user') |
                 Should -Match '/D "CONTOSO\\HR:RPWP;;user"'
+        }
+
+        It 'offers the object classes with their attributes and the join-domain task' {
+            $classes = @(Get-TkDsaclsObjectClass | ForEach-Object { $_.Class })
+            $classes | Should -Contain 'printQueue'
+            $classes | Should -Contain 'volume'
+            (@(Get-TkDsaclsObjectClass) | Where-Object Class -eq 'user').Attributes.Count | Should -BeGreaterThan 20
+            (@(Get-TkDsaclsAction)      | Where-Object Label -like 'Join*').Aces           | Should -Contain 'CC;computer'
         }
     }
 
