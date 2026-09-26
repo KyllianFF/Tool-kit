@@ -5723,6 +5723,123 @@ Describe 'WMI query builder' {
     }
 }
 
+Describe 'Firewall rule builder' {
+
+    BeforeAll {
+        $script:FwBuild = {
+            param([hashtable] $Fields)
+            $defaults = @{ Name = 'Test rule'; Direction = 'Inbound'; Action = 'Allow'; Protocol = 'TCP'; LocalPort = '8080'
+                           RemotePort = ''; RemoteAddress = 'LocalSubnet'; Program = ''; NetworkProfile = @('Domain', 'Private') }
+            foreach ($key in $Fields.Keys) { $defaults[$key] = $Fields[$key] }
+            New-TkFirewallRuleCommand @defaults
+        }
+    }
+
+    It 'reads ports and ranges, and refuses what is not one' {
+        (ConvertFrom-TkFirewallPortList -Value '80, 443,8000 - 8080').Items | Should -Be @('80', '443', '8000-8080')
+        (ConvertFrom-TkFirewallPortList -Value '').Items.Count              | Should -Be 0
+
+        foreach ($value in @('0', '70000', '9000-8000', '80-80', 'http', '443;80')) {
+            (ConvertFrom-TkFirewallPortList -Value $value).Error | Should -Not -BeNullOrEmpty -Because $value
+        }
+    }
+
+    It 'reads keywords, addresses, subnets and ranges, and refuses a bare number' {
+        $list = ConvertFrom-TkFirewallAddressList -Value 'localsubnet, 192.168.1.0/24, 10.0.0.10-10.0.0.20, fe80::1, 172.16.0.5'
+
+        $list.Error      | Should -BeNullOrEmpty
+        $list.Items      | Should -Be @('LocalSubnet', '192.168.1.0/24', '10.0.0.10-10.0.0.20', 'fe80::1', '172.16.0.5')
+        $list.NetshItems | Should -Be @('localsubnet', '192.168.1.0/24', '10.0.0.10-10.0.0.20', 'fe80::1', '172.16.0.5')
+        $list.IsAny      | Should -BeFalse
+
+        (ConvertFrom-TkFirewallAddressList -Value '').IsAny               | Should -BeTrue
+        (ConvertFrom-TkFirewallAddressList -Value 'Any, 10.0.0.1').IsAny  | Should -BeTrue
+
+        foreach ($value in @('10', '192.168.1.0/33', '10.0.0.1-fe80::1', 'server01', '300.1.1.1')) {
+            (ConvertFrom-TkFirewallAddressList -Value $value).Error | Should -Not -BeNullOrEmpty -Because $value
+        }
+    }
+
+    It 'writes the same rule for PowerShell and for netsh' {
+        $rule = & $script:FwBuild @{ Name = 'Allow RDP'; LocalPort = '3389'; RemoteAddress = '192.168.1.0/24' }
+
+        $rule.PowerShell | Should -Be "New-NetFirewallRule -DisplayName 'Allow RDP' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3389 -RemoteAddress '192.168.1.0/24' -Profile Domain,Private"
+        $rule.Netsh      | Should -Be 'netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=tcp localport=3389 remoteip=192.168.1.0/24 profile=domain,private enable=yes'
+        $rule.PowerShellRemove | Should -Be "Remove-NetFirewallRule -DisplayName 'Allow RDP'"
+        $rule.NetshRemove      | Should -Be 'netsh advfirewall firewall delete rule name="Allow RDP"'
+    }
+
+    It 'writes ping as an echo request, for both protocols' {
+        $v4 = & $script:FwBuild @{ Protocol = 'ICMPv4 (ping)'; LocalPort = '' }
+        $v6 = & $script:FwBuild @{ Protocol = 'ICMPv6 (ping)'; LocalPort = '' }
+
+        $v4.PowerShell | Should -Match '-Protocol ICMPv4 -IcmpType 8 '
+        $v4.Netsh      | Should -Match 'protocol=icmpv4:8,any'
+        $v6.Netsh      | Should -Match 'protocol=icmpv6:128,any'
+    }
+
+    It 'doubles a quote in the name for PowerShell' {
+        (& $script:FwBuild @{ Name = "Bob's rule" }).PowerShell | Should -Match "-DisplayName 'Bob''s rule' "
+    }
+
+    It 'writes commands PowerShell parses, with parameters New-NetFirewallRule has' {
+        $known = @((Get-Command -Name New-NetFirewallRule -ErrorAction Stop).Parameters.Keys)
+
+        foreach ($preset in @(Get-TkFirewallRulePreset)) {
+
+            $rule = New-TkFirewallRuleCommand -Name $preset.RuleName -Direction $preset.Direction -Action $preset.Action `
+                -Protocol $preset.Protocol -LocalPort $preset.LocalPort -RemotePort $preset.RemotePort `
+                -RemoteAddress $preset.RemoteAddress -Program $preset.Program -NetworkProfile $preset.Profile
+
+            @($rule.Errors).Count | Should -Be 0 -Because $preset.Name
+
+            $tokens = $null
+            $errors = $null
+            $ast    = [System.Management.Automation.Language.Parser]::ParseInput($rule.PowerShell, [ref] $tokens, [ref] $errors)
+
+            @($errors).Count | Should -Be 0 -Because $preset.Name
+
+            $used = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandParameterAst] }, $true) |
+                      ForEach-Object { $_.ParameterName })
+
+            foreach ($parameter in $used) {
+                $known | Should -Contain $parameter -Because ('{0}: -{1}' -f $preset.Name, $parameter)
+            }
+        }
+    }
+
+    It 'warns when a remote administration port is open to any address, ranges included' {
+        $wide = & $script:FwBuild @{ LocalPort = '3000-4000'; RemoteAddress = ''; NetworkProfile = @('Domain', 'Private', 'Public') }
+
+        ($wide.Warnings -join ' ') | Should -Match '3389 \(Remote Desktop\)'
+        ($wide.Warnings -join ' ') | Should -Match 'Public profile'
+
+        $narrow = & $script:FwBuild @{ LocalPort = '3389'; RemoteAddress = '192.168.1.0/24' }
+        @($narrow.Warnings).Count | Should -Be 0
+    }
+
+    It 'warns when every port is let in' {
+        (& $script:FwBuild @{ LocalPort = '' }).Warnings -join ' ' | Should -Match 'Every port and every program'
+        @((& $script:FwBuild @{ LocalPort = ''; Program = 'C:\Program Files\App\app.exe' }).Warnings).Count | Should -Be 0
+    }
+
+    It 'writes nothing until the rule can exist' {
+        foreach ($fields in @(
+            @{ Name = '' }
+            @{ Name = 'a "quoted" name' }
+            @{ NetworkProfile = @() }
+            @{ Protocol = 'ICMPv4 (ping)'; LocalPort = '80' }
+            @{ Program = 'app.exe' }
+            @{ LocalPort = 'http' }
+        )) {
+            $rule = & $script:FwBuild $fields
+            @($rule.Errors).Count | Should -BeGreaterThan 0 -Because ($fields.Keys -join ',')
+            $rule.PowerShell      | Should -BeNullOrEmpty
+            @(Format-TkFirewallRuleReport -Rule $rule)[0] | Should -Match '^Fix first:'
+        }
+    }
+}
+
 Describe 'LDAP filter builder' {
 
     It 'turns an attribute operator value line into a clause, escaping the value' {

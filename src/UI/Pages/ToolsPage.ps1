@@ -288,6 +288,36 @@ function Initialize-TkToolsPage {
         $wmiPreset.Add_SelectionChanged({ Set-TkWmiClassFromPreset })
     }
 
+    # --- Firewall rule builder --------------------------------------------
+    foreach ($combo in @(
+        @{ Name = 'FwDirection'; Items = @('Inbound', 'Outbound') }
+        @{ Name = 'FwAction';    Items = @('Allow', 'Block') }
+        @{ Name = 'FwProtocol';  Items = @('TCP', 'UDP', 'ICMPv4 (ping)', 'ICMPv6 (ping)', 'Any') }
+    )) {
+        $control = Get-TkControl -Name $combo.Name
+        if ($control) {
+            foreach ($item in $combo.Items) { [void] $control.Items.Add($item) }
+            $control.SelectedIndex = 0
+            $control.Add_SelectionChanged({ Update-TkFirewallRuleFromUi })
+        }
+    }
+
+    $fwPreset = Get-TkControl -Name 'FwPreset'
+    if ($fwPreset) {
+        [void] $fwPreset.Items.Add('Ready-made rules...')
+        foreach ($choice in @(Get-TkFirewallRulePreset)) { [void] $fwPreset.Items.Add($choice.Name) }
+        $fwPreset.SelectedIndex = 0
+        $fwPreset.Add_SelectionChanged({ Set-TkFirewallPresetFromUi })
+    }
+
+    foreach ($name in @('FwDomain', 'FwPrivate', 'FwPublic')) {
+        $box = Get-TkControl -Name $name
+        if ($box) { $box.Add_Click({ Update-TkFirewallRuleFromUi }) }
+    }
+
+    # Built once now, so the tool opens with the commands for its defaults.
+    Update-TkFirewallRuleFromUi
+
     $wmiMatch = Get-TkControl -Name 'WmiMatch'
     if ($wmiMatch) {
         foreach ($choice in @('All conditions (AND)', 'Any condition (OR)')) { [void] $wmiMatch.Items.Add($choice) }
@@ -326,6 +356,11 @@ function Initialize-TkToolsPage {
         @{ Name = 'WmiNamespace';     Update = { Update-TkWmiFromUi } }
         @{ Name = 'WmiProperties';    Update = { Update-TkWmiFromUi } }
         @{ Name = 'WmiConditions';    Update = { Update-TkWmiFromUi } }
+        @{ Name = 'FwName';           Update = { Update-TkFirewallRuleFromUi } }
+        @{ Name = 'FwLocalPort';      Update = { Update-TkFirewallRuleFromUi } }
+        @{ Name = 'FwRemotePort';     Update = { Update-TkFirewallRuleFromUi } }
+        @{ Name = 'FwRemoteAddress';  Update = { Update-TkFirewallRuleFromUi } }
+        @{ Name = 'FwProgram';        Update = { Update-TkFirewallRuleFromUi } }
         @{ Name = 'SidInput';         Update = { Update-TkSidFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
@@ -2024,6 +2059,84 @@ function Add-TkLdapPreset {
 
 <#
 .SYNOPSIS
+    Builds the firewall rule commands from the form.
+#>
+function Update-TkFirewallRuleFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'FwOutput'
+
+    if (-not $output -or $script:TkFirewallFilling) {
+        return
+    }
+
+    $text     = { param($name) $control = Get-TkControl -Name $name; if ($control) { [string] $control.Text } else { '' } }
+    $profiles = @(@('Domain', 'Private', 'Public') | Where-Object { $box = Get-TkControl -Name ('Fw' + $_); $box -and $box.IsChecked })
+
+    $rule = New-TkFirewallRuleCommand `
+        -Name           (& $text 'FwName') `
+        -Direction      (Get-TkSelectedText -Name 'FwDirection') `
+        -Action         (Get-TkSelectedText -Name 'FwAction') `
+        -Protocol       (Get-TkSelectedText -Name 'FwProtocol') `
+        -LocalPort      (& $text 'FwLocalPort') `
+        -RemotePort     (& $text 'FwRemotePort') `
+        -RemoteAddress  (& $text 'FwRemoteAddress') `
+        -Program        (& $text 'FwProgram') `
+        -NetworkProfile $profiles
+
+    $output.Text = (Format-TkFirewallRuleReport -Rule $rule) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Fills the firewall form from a ready-made rule.
+#>
+function Set-TkFirewallPresetFromUi {
+    [CmdletBinding()]
+    param()
+
+    $combo = Get-TkControl -Name 'FwPreset'
+
+    if (-not $combo -or $combo.SelectedIndex -le 0) {
+        return
+    }
+
+    $preset = @(Get-TkFirewallRulePreset) | Where-Object { $_.Name -eq [string] $combo.SelectedItem } | Select-Object -First 1
+
+    # Back to the placeholder, so the same preset can be chosen again.
+    $combo.SelectedIndex = 0
+
+    if (-not $preset) {
+        return
+    }
+
+    # Filled as a whole, then built once, rather than once per field.
+    $script:TkFirewallFilling = $true
+
+    try {
+        (Get-TkControl -Name 'FwName').Text          = $preset.RuleName
+        (Get-TkControl -Name 'FwLocalPort').Text     = $preset.LocalPort
+        (Get-TkControl -Name 'FwRemotePort').Text    = $preset.RemotePort
+        (Get-TkControl -Name 'FwRemoteAddress').Text = $preset.RemoteAddress
+        (Get-TkControl -Name 'FwProgram').Text       = $preset.Program
+        (Get-TkControl -Name 'FwDirection').SelectedItem = $preset.Direction
+        (Get-TkControl -Name 'FwAction').SelectedItem    = $preset.Action
+        (Get-TkControl -Name 'FwProtocol').SelectedItem  = $preset.Protocol
+
+        foreach ($name in @('Domain', 'Private', 'Public')) {
+            (Get-TkControl -Name ('Fw' + $name)).IsChecked = (@($preset.Profile) -contains $name)
+        }
+    }
+    finally {
+        $script:TkFirewallFilling = $false
+    }
+
+    Update-TkFirewallRuleFromUi
+}
+
+<#
+.SYNOPSIS
     Builds the CIM and WMI commands from the class, properties and conditions.
 #>
 function Update-TkWmiFromUi {
@@ -3267,6 +3380,7 @@ function Get-TkToolEntry {
         (& $tool 'Windows and AD'   'Event log query'   'ToolEventQuery')
         (& $tool 'Windows and AD'   'LDAP filter'    'ToolLdap')
         (& $tool 'Windows and AD'   'WMI query'      'ToolWmi')
+        (& $tool 'Windows and AD'   'Firewall rule'  'ToolFirewall')
     )
 }
 
