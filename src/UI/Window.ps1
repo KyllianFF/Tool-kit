@@ -870,6 +870,10 @@ function Invoke-TkBackgroundAction {
 
 .PARAMETER StatusText
     Shown while the action runs.
+
+.PARAMETER OnResult
+    Runs on the UI thread with the result object after the status is set, for
+    an action that also refreshes part of the interface.
 #>
 function Start-TkPrivilegedAction {
     [CmdletBinding()]
@@ -881,7 +885,10 @@ function Start-TkPrivilegedAction {
         [hashtable] $Parameters = @{},
 
         [Parameter(Mandatory)]
-        [string] $StatusText
+        [string] $StatusText,
+
+        [Parameter()]
+        [scriptblock] $OnResult
     )
 
     $ctx = Get-TkContext
@@ -905,7 +912,11 @@ function Start-TkPrivilegedAction {
             if ($outcome) {
                 Set-TkStatus -Text ([string] $outcome.Message)
             }
-        }
+
+            if ($OnResult) {
+                & $OnResult $outcome
+            }
+        }.GetNewClosure()
 }
 
 <#
@@ -1545,15 +1556,19 @@ function Update-TkPrivilegedControls {
     # sources from that other profile, finds none, and reports every package
     # as not found. That is what "nothing installs at all" turned out to be.
     # Actions absent here run their own single UAC prompt from a standard user
-    # (see Start-TkPrivilegedAction), so they stay enabled: a restore point and
-    # adding or removing a route. The rest are still disabled until the whole
-    # toolkit is elevated; they will move to per-action elevation in turn.
+    # (see Start-TkPrivilegedAction), so they stay enabled: a restore point,
+    # adding or removing a route, publishing or removing a port proxy, and
+    # applying an adapter profile.
+    #
+    # The three left disabled until the whole toolkit is elevated each have a
+    # reason not to take the file-based per-action path: the firmware utility
+    # installs through winget, which must not run elevated (an elevated winget
+    # reads its sources from the wrong profile); automatic logon would put a
+    # password in a temporary file; and the switch discovery returns data to
+    # render rather than a state change to report.
     $controls = @{
         'BtnVendorTool'        = 'Installing the vendor firmware utility'
         'BtnAutoLogon'         = 'Configuring automatic logon'
-        'BtnApplyProfile'      = 'Changing an adapter configuration'
-        'BtnAddProxy'          = 'Publishing a port'
-        'BtnRemoveProxy'       = 'Removing a port proxy rule'
         'BtnSwitchPort'        = 'Listening for the switch announcement with Packet Monitor'
     }
 
