@@ -254,6 +254,50 @@
       "requiresRestart": false,
       "description": "Removes the security intelligence Defender downloaded dynamically (MpCmdRun -RemoveDefinitions -DynamicSignatures), then downloads the current set again (-SignatureUpdate). The signatures of the last full update keep protecting the machine in between.",
       "whenToUse": "Security intelligence updates keep failing, or Defender keeps flagging a file after a signature Microsoft has since corrected."
+    },
+    {
+      "id": "reset-windows-hello-pin",
+      "name": "Reset the Windows Hello PIN",
+      "action": "ResetWindowsHelloPin",
+      "category": "Shell",
+      "risk": "Medium",
+      "requiresElevation": false,
+      "requiresRestart": true,
+      "description": "Deletes the Windows Hello container of this account (certutil -DeleteHelloContainer): the PIN, and the fingerprint or face enrolled with it, are removed. Sign out, sign in with the account password, and Windows offers to set up a new PIN. Run it from the account whose PIN is broken, and make sure its password is known first.",
+      "whenToUse": "The PIN is refused, or Windows says \"Something happened and your PIN isn't available\", and \"I forgot my PIN\" does not help."
+    },
+    {
+      "id": "reset-windows-security-app",
+      "name": "Repair the Windows Security app",
+      "action": "ResetWindowsSecurityApp",
+      "category": "Apps",
+      "risk": "Low",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Resets the Windows Security app package for every account (Reset-AppxPackage on Microsoft.SecHealthUI), or registers it again from its manifest on builds without Reset-AppxPackage. Defender itself and its settings are not touched.",
+      "whenToUse": "Windows Security opens blank, closes at once, or asks for an app to open a windowsdefender:// link, while Defender keeps working."
+    },
+    {
+      "id": "reset-office-activation",
+      "name": "Reset the Office activation and accounts",
+      "action": "ResetOfficeActivation",
+      "category": "Apps",
+      "risk": "Medium",
+      "requiresElevation": false,
+      "requiresRestart": false,
+      "description": "The per-user part of Microsoft's reset of Microsoft 365 Apps activation: removes the license files in %LOCALAPPDATA%\\Microsoft\\Office, the Office Licensing and Identity keys of this account, and the Office credentials (MicrosoftOffice16_Data) in Credential Manager. Office asks to sign in again and activates afresh. Close every Office app first.",
+      "whenToUse": "Office stays unlicensed or keeps signing in with an old or wrong account, after a change of subscription, tenant or user of the PC."
+    },
+    {
+      "id": "make-network-private",
+      "name": "Mark the main network Private",
+      "action": "MakeNetworkPrivate",
+      "category": "Network",
+      "risk": "Medium",
+      "requiresElevation": true,
+      "requiresRestart": false,
+      "description": "Changes the network of the physical connection that carries the default route from Public to Private, so file sharing, network discovery and the firewall rules for private networks apply to it. A VPN, a virtual switch or a domain network is left as it is. Only for a network you trust, such as your home or office.",
+      "whenToUse": "Windows filed your own network as Public, so other machines cannot see this one, shared folders and printers are unreachable, or the LAN throughput test gets no connection."
     }
   ]
 }
