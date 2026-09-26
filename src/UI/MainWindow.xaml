@@ -2298,6 +2298,7 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
 
                                         <!-- Path behaviour -->
@@ -2354,7 +2355,7 @@
                                         </Grid>
 
                                         <!-- Layer two -->
-                                        <Grid Grid.Row="2">
+                                        <Grid Grid.Row="2" Margin="0,0,0,10">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" SharedSizeGroup="AdminLabel" />
                                                 <ColumnDefinition Width="Auto" />
@@ -2390,8 +2391,38 @@
                                             </Border>
                                         </Grid>
 
-                                        <TextBlock Grid.Row="3" Style="{StaticResource Muted}" Margin="0,10,0,0" TextWrapping="Wrap"
-                                                   Text="Hover any action for what it reports. Everything on this tab is read only except the magic packet, which only asks a machine to power on. Switch port listens with Packet Monitor for about a minute and needs administrator rights." />
+                                        <!-- Throughput between two toolkits -->
+                                        <Grid Grid.Row="3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AdminLabel" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="LAN" Style="{StaticResource FormLabel}" />
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <TextBox x:Name="ThroughputPeer" Tag="Other PC running the toolkit" Width="260"
+                                                         ToolTip="Name or address of the other machine. Click Listen for a test on that machine first." />
+                                                <TextBox x:Name="ThroughputSeconds" Tag="Seconds" Width="80" Margin="8,0,0,0"
+                                                         Text="5" ToolTip="How long each direction runs, 1 to 30 seconds." />
+                                            </StackPanel>
+
+                                            <Border Grid.Column="2" Style="{StaticResource ActionGroup}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnThroughputTest" Content="Test throughput"
+                                                            Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Sends to the other machine, then receives from it, and reports both rates in Mbps next to the link speed of this adapter. Measured memory to memory, so the disks are left out." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnThroughputListen" Content="Listen for a test"
+                                                            Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Waits two minutes at most for one test from another machine of the local network, on TCP port 5201, then closes the port. Offers a temporary firewall rule, removed at the end." />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+
+                                        <TextBlock Grid.Row="4" Style="{StaticResource Muted}" Margin="0,10,0,0" TextWrapping="Wrap"
+                                                   Text="Hover any action for what it reports. Everything on this tab is read only except the magic packet, which only asks a machine to power on, and Listen for a test, which opens port 5201 to the local network for two minutes at most. Switch port listens with Packet Monitor for about a minute and needs administrator rights." />
                                     </Grid>
                                 </Border>
 
