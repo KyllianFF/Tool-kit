@@ -736,6 +736,7 @@ function Invoke-TkPrivilegeEscalationFromUi {
                 AutoLogon = Get-TkAutoLogonSetting
                 Ifeo      = @(Get-TkImageFileExecutionDebugger)
                 Creds     = @(Get-TkStoredCredential)
+                Path      = Get-TkPathAudit
             }
         } `
         -OnComplete {
@@ -813,6 +814,20 @@ function Invoke-TkPrivilegeEscalationFromUi {
             }
             else {
                 Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No unquoted service path'
+            }
+
+            # --- System PATH -------------------------------------------------
+            # The same reading as the Command path report on the Diagnostics page.
+            $pathFails = @($report.Path.Entries | Where-Object { $_.Scope -eq 'Machine' -and $_.Severity -eq 'Fail' })
+
+            if ($pathFails.Count -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Fail' `
+                    -Heading ('{0} system PATH folder(s) a standard account can change' -f $pathFails.Count) `
+                    -Detail (($pathFails | ForEach-Object { $_.Raw }) -join ', ') `
+                    -Note 'Services running as SYSTEM search the system PATH: a program or DLL planted in one of these folders, or in one created where it is missing, runs with the highest rights. The Command path report on the Diagnostics page details each one.'
+            }
+            else {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No system PATH folder a standard account can change'
             }
 
             # --- Stored credentials ------------------------------------------

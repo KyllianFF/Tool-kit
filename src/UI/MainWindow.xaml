@@ -2592,6 +2592,10 @@
                                             <TextBlock Text="Profiles and policy" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="The system and user PATH: folders a standard account can change or create in the system PATH, setx copies, missing and repeated entries, and commands two folders provide.">
+                                            <TextBlock Text="Command path (PATH)" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="The local users and groups: who can sign in, whose password never expires or is not required, and who is a local administrator.">
                                             <TextBlock Text="Local accounts" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
