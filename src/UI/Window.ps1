@@ -1178,6 +1178,7 @@ function Show-TkDialog {
     # The same dictionary instance, so a theme change reaches this too.
     $window.Resources = $ctx.Window.Resources
     $window.SetResourceReference([System.Windows.Window]::BackgroundProperty, 'AppBackground')
+    Set-TkTitleBarTheme -Window $window -Name (Get-TkThemeName) | Out-Null
 
     $layout = New-Object System.Windows.Controls.Grid
     $layout.Margin = New-Object System.Windows.Thickness(22, 20, 22, 18)
@@ -1431,6 +1432,10 @@ function Show-TkTableWindow {
     $window.Resources = $ctx.Window.Resources
 
     $window.SetResourceReference([System.Windows.Window]::BackgroundProperty, 'AppBackground')
+
+    # Its title bar follows the theme now; Set-TkTheme repaints it on a change,
+    # since this window is owned by the main one.
+    Set-TkTitleBarTheme -Window $window -Name (Get-TkThemeName) | Out-Null
 
     # Modeless, so two of these can be compared and the main window stays
     # usable behind them.

@@ -131,6 +131,150 @@ function Get-TkThemeTint {
 
 <#
 .SYNOPSIS
+    Returns the theme in use: the stored choice, or Dark when there is none.
+
+.OUTPUTS
+    System.String: Dark or Light.
+#>
+function Get-TkThemeName {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $ctx = Get-TkContext
+
+    if ($ctx.Settings.ContainsKey('Theme') -and $ctx.Settings['Theme'] -in @('Dark', 'Light')) {
+        return $ctx.Settings['Theme']
+    }
+
+    return 'Dark'
+}
+
+<#
+.SYNOPSIS
+    Paints a window's native title bar dark or light, to match the theme.
+
+.DESCRIPTION
+    WPF draws everything inside a window, but the title bar belongs to Windows,
+    which paints it light whatever the palette underneath. The Desktop Window
+    Manager paints it dark when asked through the immersive dark mode
+    attribute: 20 from Windows 10 2004, 19 on the 1809 to 1909 builds that had
+    it before it was documented. On a build with neither, or when the call
+    fails, the light title bar stays and the window works as before.
+
+    The call needs a small interop type, compiled on first use like the other
+    Windows API calls in the toolkit. A light theme needs nothing until a dark
+    one has been applied, because the title bar starts light: a session that
+    stays light never compiles it.
+
+.PARAMETER Window
+    The window whose title bar to paint.
+
+.PARAMETER Name
+    Dark or Light.
+
+.OUTPUTS
+    System.Boolean: whether the title bar now matches.
+#>
+function Set-TkTitleBarTheme {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Window] $Window,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('Dark', 'Light')]
+        [string] $Name
+    )
+
+    $loaded = [bool] ('TkTitleBar' -as [type])
+
+    if ($Name -eq 'Light' -and -not $loaded) {
+        return $true
+    }
+
+    if (-not $loaded) {
+
+        $source = @'
+using System;
+using System.Runtime.InteropServices;
+
+/// <summary>
+/// The dark title bar of a window. One stateless call to the Desktop Window
+/// Manager, and one to redraw the frame so a change shows at once.
+/// </summary>
+public static class TkTitleBar
+{
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    private const int DarkMode       = 20;
+    private const int DarkModeBefore = 19;
+
+    private const uint SWP_NOSIZE       = 0x0001;
+    private const uint SWP_NOMOVE       = 0x0002;
+    private const uint SWP_NOZORDER     = 0x0004;
+    private const uint SWP_NOACTIVATE   = 0x0010;
+    private const uint SWP_FRAMECHANGED = 0x0020;
+
+    public static bool SetDark(IntPtr hwnd, bool dark)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+
+        int value  = dark ? 1 : 0;
+        int result = DwmSetWindowAttribute(hwnd, DarkMode, ref value, sizeof(int));
+
+        if (result != 0)
+        {
+            result = DwmSetWindowAttribute(hwnd, DarkModeBefore, ref value, sizeof(int));
+        }
+
+        // The frame is otherwise repainted only on the next activation.
+        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                     SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+        return result == 0;
+    }
+
+    /// <summary>1 dark, 0 light, -1 when the attribute cannot be read.</summary>
+    public static int Read(IntPtr hwnd)
+    {
+        int value;
+
+        if (DwmGetWindowAttribute(hwnd, DarkMode, out value, sizeof(int)) == 0) return value;
+        if (DwmGetWindowAttribute(hwnd, DarkModeBefore, out value, sizeof(int)) == 0) return value;
+
+        return -1;
+    }
+}
+'@
+
+        try {
+            Add-Type -TypeDefinition $source -Language CSharp -ErrorAction Stop
+        }
+        catch {
+            Write-TkLog -Level Debug -Category 'UI' -Message ('The title bar colour is not available: {0}' -f $_.Exception.Message)
+            return $false
+        }
+    }
+
+    # A window not shown yet has no handle; EnsureHandle creates it, so the
+    # title bar is right from the first frame instead of flashing light.
+    $handle = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).EnsureHandle()
+
+    return [TkTitleBar]::SetDark($handle, ($Name -eq 'Dark'))
+}
+
+<#
+.SYNOPSIS
     Applies a theme to the open window.
 
 .DESCRIPTION
@@ -195,6 +339,12 @@ function Set-TkTheme {
 
     $ctx.Settings['Theme'] = $Name
 
+    # The native title bars: this window and every window it owns that is
+    # still open, such as a document viewer left beside it.
+    foreach ($target in @($ctx.Window) + @($ctx.Window.OwnedWindows)) {
+        Set-TkTitleBarTheme -Window $target -Name $Name | Out-Null
+    }
+
     # Nothing to repaint in the navigation: its active entry takes the
     # Selection brush by resource reference and follows the new palette by
     # itself. It used to be repainted by showing the last page again, which at
@@ -223,14 +373,8 @@ function Initialize-TkThemeSelector {
     [CmdletBinding()]
     param()
 
-    $ctx      = Get-TkContext
     $selector = Get-TkControl -Name 'ThemeSelect'
-
-    $current = 'Dark'
-
-    if ($ctx.Settings.ContainsKey('Theme') -and $ctx.Settings['Theme'] -in @('Dark', 'Light')) {
-        $current = $ctx.Settings['Theme']
-    }
+    $current  = Get-TkThemeName
 
     if ($selector) {
 

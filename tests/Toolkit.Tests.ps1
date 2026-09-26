@@ -2448,6 +2448,51 @@ Describe 'Theme palettes' {
         }
     }
 
+    It 'names the stored theme, and falls back to Dark for anything else' {
+
+        $settings = (Get-TkContext).Settings
+        $held     = $settings['Theme']
+
+        try {
+            $settings['Theme'] = 'Light'
+            Get-TkThemeName | Should -Be 'Light'
+
+            $settings['Theme'] = 'Sepia'
+            Get-TkThemeName | Should -Be 'Dark'
+
+            $settings.Remove('Theme')
+            Get-TkThemeName | Should -Be 'Dark'
+        }
+        finally {
+            if ($null -ne $held) { $settings['Theme'] = $held } else { $settings.Remove('Theme') }
+        }
+    }
+
+    It 'paints the native title bar dark, then light again, on a real window' {
+
+        # Windows owns the title bar, so this is asked of the Desktop Window
+        # Manager and read back from it rather than trusted.
+        Add-Type -AssemblyName PresentationFramework
+        $window = New-Object System.Windows.Window
+
+        try {
+            if (-not (Set-TkTitleBarTheme -Window $window -Name Dark)) {
+                Set-ItResult -Skipped -Because 'this Windows build has no dark title bar'
+                return
+            }
+
+            $handle = (New-Object System.Windows.Interop.WindowInteropHelper($window)).Handle
+
+            [TkTitleBar]::Read($handle) | Should -Be 1
+
+            Set-TkTitleBarTheme -Window $window -Name Light | Should -BeTrue
+            [TkTitleBar]::Read($handle) | Should -Be 0
+        }
+        finally {
+            $window.Close()
+        }
+    }
+
     It 'declares a default brush in the window for every palette key' {
 
         # A key the palette sets but the XAML never declares resolves to nothing

@@ -1005,6 +1005,7 @@ function Show-TkAuditExclusionDialog {
     }
 
     $window.SetResourceReference([System.Windows.Window]::BackgroundProperty, 'Surface')
+    Set-TkTitleBarTheme -Window $window -Name (Get-TkThemeName) | Out-Null
 
     $stack = New-Object System.Windows.Controls.StackPanel
     $stack.Margin = New-Object System.Windows.Thickness(18)
