@@ -7377,6 +7377,111 @@ Describe 'Password strength' {
     }
 }
 
+Describe 'Command path (PATH)' {
+
+    Context 'Reading the value' {
+
+        It 'splits the entries and notes what is odd about each' {
+
+            $entries = @(ConvertFrom-TkPathValue -Value 'C:\Windows;;"C:\Program Files\Tool";bin;%APPDATA%\npm;C:\Users\alice\go\bin;C:\Users\Public\tools' -Scope Machine)
+
+            $entries.Count              | Should -Be 7
+            $entries[1].Empty           | Should -BeTrue
+            $entries[2].Quoted          | Should -BeTrue
+            $entries[2].Expanded        | Should -Be 'C:\Program Files\Tool'
+            $entries[3].Relative        | Should -BeTrue
+            $entries[4].ProfileVariable | Should -BeTrue
+            $entries[4].InUserProfile   | Should -BeFalse
+            $entries[5].InUserProfile   | Should -BeTrue
+            $entries[6].InUserProfile   | Should -BeFalse   # Public is shared on purpose
+            $entries[0].Key             | Should -Be 'c:\windows'
+        }
+
+        It 'marks a variable that a plain string value never expands' {
+            (@(ConvertFrom-TkPathValue -Value '%SystemRoot%\bin' -Scope Machine -ValueKind String)[0]).Unexpandable       | Should -BeTrue
+            (@(ConvertFrom-TkPathValue -Value '%SystemRoot%\bin' -Scope Machine -ValueKind ExpandString)[0]).Unexpandable | Should -BeFalse
+        }
+    }
+
+    Context 'Judging an entry' {
+
+        BeforeAll {
+            $script:PathEntry = { param($value, $scope = 'Machine') @(ConvertFrom-TkPathValue -Value $value -Scope $scope)[0] }
+        }
+
+        It 'fails a system folder a standard account can write' {
+            $v = Get-TkPathEntryVerdict -Entry (& $script:PathEntry 'C:\Tools') -Writers @('PC-01\alice')
+            $v.Severity | Should -Be 'Fail'
+            $v.State    | Should -Be 'Writable'
+            $v.Note     | Should -Match 'PC-01\\alice'
+        }
+
+        It 'fails a missing system folder a standard account can create' {
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry 'C:\Users\alice\go\bin') -Exists $false -Creators @('PC-01\alice')).State |
+                Should -Be 'Missing, can be created'
+        }
+
+        It 'leaves the user PATH to its owner' {
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry 'C:\Users\alice\bin' 'User') -Writers @('PC-01\alice')).Severity | Should -Be 'Pass'
+        }
+
+        It 'fails a relative entry' {
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry 'bin')).Severity | Should -Be 'Fail'
+        }
+
+        It 'warns about a profile variable, a literal profile path and quotes in the system PATH' {
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry '%APPDATA%\npm')).State           | Should -Be 'User variable'
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry 'C:\Users\alice\tools')).State    | Should -Be 'In a user profile'
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry '"C:\Program Files\Tool"')).State | Should -Be 'Quoted'
+        }
+
+        It 'notes a repeated, a missing and an empty entry' {
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry 'C:\Windows') -DuplicateOf 3).State | Should -Be 'Duplicate'
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry 'C:\Gone') -Exists $false).State    | Should -Be 'Missing'
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry '')).State                          | Should -Be 'Empty'
+            (Get-TkPathEntryVerdict -Entry (& $script:PathEntry 'C:\Windows')).Severity             | Should -Be 'Pass'
+        }
+    }
+
+    It 'tells the accounts only administrators and Windows hold' {
+        Test-TkPrivilegedSid -Sid 'S-1-5-18'     | Should -BeTrue
+        Test-TkPrivilegedSid -Sid 'S-1-5-32-544' | Should -BeTrue
+        Test-TkPrivilegedSid -Sid 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464' | Should -BeTrue   # TrustedInstaller
+        Test-TkPrivilegedSid -Sid 'S-1-5-32-545' | Should -BeFalse
+        Test-TkPrivilegedSid -Sid 'S-1-5-11'     | Should -BeFalse
+        Test-TkPrivilegedSid -Sid 'S-1-5-21-1-2-3-1001' | Should -BeFalse
+    }
+
+    Context 'Commands two folders provide' {
+
+        It 'says which folder wins, and calls out a Store alias found first' {
+
+            $alias = 'C:\Users\alice\AppData\Local\Microsoft\WindowsApps'
+            $found = @(Find-TkShadowedCommand -Folders @($alias, 'C:\Python312', 'C:\Git\cmd') `
+                                              -Files @{ $alias = @('python.exe'); 'C:\Python312' = @('python.exe'); 'C:\Git\cmd' = @('git.exe') } `
+                                              -Commands @('python', 'git'))
+
+            $found.Count         | Should -Be 1
+            $found[0].Command    | Should -Be 'python'
+            $found[0].Winner     | Should -Be "$alias\python.exe"
+            $found[0].StoreAlias | Should -BeTrue
+            $found[0].Others     | Should -Be 'C:\Python312\python.exe'
+        }
+
+        It 'does not call an installed program found first a Store alias' {
+            $alias = 'C:\Users\a\AppData\Local\Microsoft\WindowsApps'
+            $found = @(Find-TkShadowedCommand -Folders @('C:\Python312', $alias) `
+                                              -Files @{ 'C:\Python312' = @('python.exe'); $alias = @('python.exe') } `
+                                              -Commands @('python'))
+            $found[0].StoreAlias | Should -BeFalse
+        }
+    }
+
+    It 'is offered as a headless report' {
+        @(Get-TkHeadlessReport | ForEach-Object { $_.Name }) | Should -Contain 'Path'
+    }
+}
+
 Describe 'Saved Wi-Fi networks' {
 
     BeforeAll {

@@ -107,6 +107,12 @@ function Get-TkHeadlessReport {
             }
         })
 
+        (& $row 'Path' $false 'The system and user PATH, each entry judged, and the commands two folders provide.' {
+            param($Options)
+            $null = $Options
+            Get-TkPathAudit
+        })
+
         (& $row 'Restarts' $false 'Every start of the last 30 days, how the session before it ended and who asked.' {
             param($Options)
             $null = $Options

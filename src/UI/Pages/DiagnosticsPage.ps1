@@ -166,6 +166,7 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Software support';    Show = 'Show-TkSoftwareLifecycleReport' }
         [pscustomobject] @{ Title = 'Printing';            Show = 'Show-TkPrintingReport' }
         [pscustomobject] @{ Title = 'Profiles and policy'; Show = 'Show-TkUserContext' }
+        [pscustomobject] @{ Title = 'Command path (PATH)'; Show = 'Show-TkPathReport' }
         [pscustomobject] @{ Title = 'Local accounts';     Show = 'Show-TkLocalAccountReport' }
         [pscustomobject] @{ Title = 'Group Policy';       Show = 'Show-TkGroupPolicyReport' }
         [pscustomobject] @{ Title = 'Services';           Show = 'Show-TkServiceReport' }
@@ -998,6 +999,135 @@ function Show-TkStabilityReport {
                     -Detail $(if ($row.When) { ([datetime] $row.When).ToString('yyyy-MM-dd HH:mm') } else { '' }) `
                     -Note $row.Detail
             }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows the system and user PATH, what is wrong with each entry, and the commands two folders provide.
+#>
+function Show-TkPathReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the command path...' `
+        -ScriptBlock { Get-TkPathAudit } `
+        -OnComplete {
+            param($result)
+
+            $audit = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Entries'] } | Select-Object -First 1
+
+            if (-not $audit) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'path' -Data $audit
+
+            $entries = @($audit.Entries | Where-Object { $_ })
+            $fails   = @($entries | Where-Object { $_.Severity -eq 'Fail' })
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Command path (PATH)' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                'The folders Windows searches when a command is typed: the system PATH first, then the user one. Services running as SYSTEM search the system PATH too, which makes it a security boundary. Read only; permissions are read, nothing is written to test them.'
+            )
+
+            # --- Security ------------------------------------------------------
+            # One finding for the lot, then the folders side by side: the fix is
+            # the same for each.
+            if ($fails.Count -gt 0) {
+
+                Add-TkSeverityLine -Document $document -Severity 'Fail' `
+                    -Heading ('{0} PATH folder(s) a standard account can change or create' -f $fails.Count) `
+                    -Note 'Services running as SYSTEM search the system PATH: a program or DLL left in one of these folders, or in one created where it is missing, runs with the highest rights. A relative entry is searched from whatever folder is current.' `
+                    -Action 'Remove these folders from the system PATH; a tool one account uses belongs in that account''s user PATH. A folder that must stay needs write access for administrators only.'
+
+                Add-TkTable -Document $document -Column @('Entry', 'Folder', 'Problem', 'Who can') -Weight @(0.95, 2.75, 1.3, 1.5) `
+                    -Row @($fails | ForEach-Object {
+                        , @(('{0} {1}' -f $(if ($_.Scope -eq 'Machine') { 'System' } else { 'User' }), $_.Position), $_.Raw, $_.State, $_.Who)
+                    })
+            }
+
+            if ($fails.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No system PATH folder a standard account can change'
+            }
+
+            # --- The PATH as a whole ---------------------------------------------
+            if ($audit.SetxCopies -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Warning' `
+                    -Heading ('The user PATH repeats {0} entries of the system PATH' -f $audit.SetxCopies) `
+                    -Note 'Usually setx PATH "%PATH%;...", which writes the whole PATH, system part included, into the user PATH each time it is run. The system PATH is searched first anyway: the copies only make the value longer until an edit cuts it.' `
+                    -Action 'Keep in the user PATH only the folders that are not in the system one: Settings, System, About, Advanced system settings, Environment Variables.'
+            }
+
+            foreach ($scope in @(@{ Name = 'system'; Data = $audit.Machine }, @{ Name = 'user'; Data = $audit.User })) {
+                if ($scope.Data.Length -gt 2047) {
+                    Add-TkSeverityLine -Document $document -Severity 'Warning' `
+                        -Heading ('The {0} PATH is {1} characters long' -f $scope.Name, $scope.Data.Length) `
+                        -Note 'setx cuts a value at 1024 characters and some installers at 2047: past that, the next edit can silently lose folders.'
+                }
+            }
+
+            $variables = @($entries | Where-Object { $_.State -eq 'User variable' })
+
+            if ($variables.Count -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Warning' `
+                    -Heading ('{0} system PATH entr(ies) written with a profile variable' -f $variables.Count) `
+                    -Detail (($variables | ForEach-Object { $_.Raw }) -join ', ') `
+                    -Note $variables[0].Note
+            }
+
+            $missing    = @($entries | Where-Object { $_.State -eq 'Missing' })
+            $duplicates = @($entries | Where-Object { $_.State -eq 'Duplicate' })
+            $empty      = @($entries | Where-Object { $_.State -eq 'Empty' })
+
+            if ($missing.Count -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Info' `
+                    -Heading ('{0} folder(s) that no longer exist' -f $missing.Count) `
+                    -Note 'Usually left behind by a tool that was uninstalled. Every command typed checks them for nothing; they are listed below.'
+            }
+
+            if ($duplicates.Count -gt 0 -or $empty.Count -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Info' `
+                    -Heading ('{0} repeated and {1} empty entr(ies)' -f $duplicates.Count, $empty.Count) `
+                    -Note 'Only the first of a repeated folder is ever used, and an empty entry is left by a doubled ";". Harmless, but they make the PATH hard to read and edit.'
+            }
+
+            # --- Commands two folders provide -----------------------------------
+            $shadowed = @($audit.Shadowed | Where-Object { $_ })
+
+            foreach ($item in ($shadowed | Where-Object { $_.StoreAlias })) {
+                Add-TkSeverityLine -Document $document -Severity 'Warning' `
+                    -Heading ('Typing {0} opens the Microsoft Store' -f $item.Command) `
+                    -Detail $item.Winner `
+                    -Note ('The Store alias in WindowsApps is found before {0}, so the installed program never runs.' -f ($item.Others -join ', ')) `
+                    -Action 'Turn the alias off in Settings, Apps, Advanced app settings, App execution aliases, or move the program''s folder before WindowsApps.'
+            }
+
+            if ($shadowed.Count -gt 0) {
+                Add-TkHeading -Document $document -Text 'Commands found in more than one folder' -Level 2
+                Add-TkParagraph -Document $document -Muted -Text 'The first folder in the PATH wins; the others are never reached by typing the name.'
+                Add-TkTable -Document $document -Column @('Command', 'Runs', 'Also found in') -Weight @(0.6, 2, 2.4) `
+                    -Row @($shadowed | ForEach-Object { , @($_.Command, $_.Winner, ($_.Others -join ', ')) })
+            }
+
+            # --- Entries to look at -----------------------------------------------
+            # Repeats are summed up above rather than listed one by one, and the
+            # failures have their own table.
+            $look = @($entries | Where-Object { $_.Severity -notin @('Pass', 'Fail') -and $_.State -ne 'Duplicate' })
+
+            if ($look.Count -gt 0) {
+                Add-TkHeading -Document $document -Text 'Entries to look at' -Level 2
+                Add-TkTable -Document $document -Column @('PATH', 'Entry', 'Folder', 'State') -Weight @(0.6, 0.5, 3.2, 1.2) `
+                    -Row @($look | ForEach-Object {
+                        , @($(if ($_.Scope -eq 'Machine') { 'System' } else { 'User' }), [string] $_.Position, $(if ($_.Raw) { $_.Raw } else { '(empty)' }), $_.State)
+                    })
+            }
+
+            Add-TkParagraph -Document $document -Muted -Text 'A change to the PATH reaches the programs started after it: open a new window to see it.'
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
         }
