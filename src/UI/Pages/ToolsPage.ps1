@@ -209,6 +209,26 @@ function Initialize-TkToolsPage {
         $xmlOperation.Add_SelectionChanged({ Update-TkXmlFromUi })
     }
 
+    # --- INI and .env -----------------------------------------------------
+    $iniEnvFormat = Get-TkControl -Name 'IniEnvFormat'
+    if ($iniEnvFormat) {
+        foreach ($choice in @('Auto', 'INI', '.env')) { [void] $iniEnvFormat.Items.Add($choice) }
+        $iniEnvFormat.SelectedIndex = 0
+        $iniEnvFormat.Add_SelectionChanged({ Update-TkIniEnvFromUi })
+    }
+
+    $iniEnvView = Get-TkControl -Name 'IniEnvView'
+    if ($iniEnvView) {
+        foreach ($choice in @('Grouped', 'JSON')) { [void] $iniEnvView.Items.Add($choice) }
+        $iniEnvView.SelectedIndex = 0
+        $iniEnvView.Add_SelectionChanged({ Update-TkIniEnvFromUi })
+    }
+
+    $iniEnvReveal = Get-TkControl -Name 'IniEnvReveal'
+    if ($iniEnvReveal) {
+        $iniEnvReveal.Add_Click({ Update-TkIniEnvFromUi })
+    }
+
     Register-TkClick -Name 'BtnGenerateUuid' -Action { Invoke-TkUuidFromUi }
     Register-TkClick -Name 'BtnCopyUuid'     -Action { Copy-TkToolOutput -ControlName 'UuidOutput' }
     Register-TkClick -Name 'BtnDecodeUuid'   -Action { Invoke-TkUuidDecodeFromUi }
@@ -233,6 +253,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'SecretInput';      Update = { Update-TkSecretFromUi } }
         @{ Name = 'XmlInput';         Update = { Update-TkXmlFromUi } }
         @{ Name = 'XmlXPath';         Update = { Update-TkXmlFromUi } }
+        @{ Name = 'IniEnvInput';      Update = { Update-TkIniEnvFromUi } }
         @{ Name = 'SidInput';         Update = { Update-TkSidFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
@@ -1813,6 +1834,38 @@ function Update-TkXmlFromUi {
 
 <#
 .SYNOPSIS
+    Reads the pasted INI or .env, grouped or as JSON, secrets masked, as it changes.
+#>
+function Update-TkIniEnvFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'IniEnvOutput'
+    $box    = Get-TkControl -Name 'IniEnvInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $format = switch (Get-TkSelectedText -Name 'IniEnvFormat') {
+        'INI'  { 'Ini' }
+        '.env' { 'Env' }
+        default { 'Auto' }
+    }
+
+    $reveal = [bool] (Get-TkControl -Name 'IniEnvReveal').IsChecked
+    $text   = [string] $box.Text
+
+    if ((Get-TkSelectedText -Name 'IniEnvView') -eq 'JSON') {
+        $output.Text = ConvertTo-TkConfigJson -Text $text -Format $format -Reveal:$reveal
+    }
+    else {
+        $output.Text = (Format-TkConfigReport -Text $text -Format $format -Reveal:$reveal) -join [Environment]::NewLine
+    }
+}
+
+<#
+.SYNOPSIS
     Resolves the pasted SID or account name, as it changes.
 #>
 function Update-TkSidFromUi {
@@ -2987,6 +3040,7 @@ function Get-TkToolEntry {
         (& $tool 'Text and data'    'User-Agent'     'ToolUserAgent')
         (& $tool 'Text and data'    'Text normalizer' 'ToolTextNormalizer')
         (& $tool 'Text and data'    'XML'            'ToolXml')
+        (& $tool 'Text and data'    'INI and .env'   'ToolIniEnv')
         (& $tool 'Text and data'    'NATO alphabet'  'ToolNato')
         (& $tool 'Text and data'    'Phone numbers'  'ToolPhone')
         (& $tool 'Text and data'    'HTML editor'    'ToolHtmlEditor')

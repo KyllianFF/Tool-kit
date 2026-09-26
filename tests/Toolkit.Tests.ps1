@@ -5310,6 +5310,84 @@ MIIEvQIBADANBgkqhkiG9w0BAQEF
     }
 }
 
+Describe 'INI and .env parser' {
+
+    BeforeAll {
+        $script:IniBlob = @'
+; a comment
+looseKey = above any section
+[database]
+Host = db.local
+port : 5432
+Password = S3cr3tP@ssw0rd123
+Password = second-one
+this line is broken
+'@
+
+        $script:EnvBlob = @'
+export API_KEY="abcdef1234567890abcdef"
+DB_PASSWORD=hunter2   # trailing comment
+PLAIN=hello world
+'@
+    }
+
+    It 'tells INI from .env by the section header' {
+        Get-TkConfigFormat -Text $script:IniBlob | Should -Be 'Ini'
+        Get-TkConfigFormat -Text $script:EnvBlob | Should -Be 'Env'
+    }
+
+    It 'reads both = and : as INI separators, and keeps the section' {
+        $pairs = @(ConvertFrom-TkConfigText -Text $script:IniBlob -Format Ini | Where-Object { $_.Kind -eq 'Pair' })
+
+        ($pairs | Where-Object { $_.Key -eq 'port' }).Value    | Should -Be '5432'
+        ($pairs | Where-Object { $_.Key -eq 'Host' }).Section  | Should -Be 'database'
+    }
+
+    It 'drops the surrounding quotes and an unquoted inline comment (.env)' {
+        $pairs = @(ConvertFrom-TkConfigText -Text $script:EnvBlob -Format Env | Where-Object { $_.Kind -eq 'Pair' })
+
+        ($pairs | Where-Object { $_.Key -eq 'API_KEY' }).Value     | Should -Be 'abcdef1234567890abcdef'
+        ($pairs | Where-Object { $_.Key -eq 'API_KEY' }).Exported  | Should -BeTrue
+        ($pairs | Where-Object { $_.Key -eq 'DB_PASSWORD' }).Value | Should -Be 'hunter2'
+        ($pairs | Where-Object { $_.Key -eq 'PLAIN' }).Value       | Should -Be 'hello world'
+    }
+
+    It 'masks the values whose key names a secret' {
+        $report = (Format-TkConfigReport -Text $script:IniBlob) -join "`n"
+        $report | Should -Not -Match 'S3cr3tP@ssw0rd123'
+        $report | Should -Match 'host = db.local'   # a plain value is left alone
+    }
+
+    It 'reveals the secrets only when asked' {
+        (Format-TkConfigReport -Text $script:EnvBlob -Reveal) -join "`n" | Should -Match 'hunter2'
+        (Format-TkConfigReport -Text $script:EnvBlob) -join "`n"         | Should -Not -Match 'hunter2'
+    }
+
+    It 'flags a duplicate key, a key above the first section, and a broken line' {
+        $report = (Format-TkConfigReport -Text $script:IniBlob) -join "`n"
+        $report | Should -Match "duplicate key 'Password'"
+        $report | Should -Match "key 'looseKey' sits above the first"
+        $report | Should -Match 'this line is broken'
+    }
+
+    It 'writes .env as a flat JSON object, masked' {
+        $json = ConvertTo-TkConfigJson -Text $script:EnvBlob | ConvertFrom-Json
+        $json.PLAIN       | Should -Be 'hello world'
+        $json.DB_PASSWORD | Should -Not -Be 'hunter2'
+    }
+
+    It 'writes INI as sections of keys, with the last duplicate winning' {
+        $json = ConvertTo-TkConfigJson -Text $script:IniBlob -Reveal | ConvertFrom-Json
+        $json.database.Host     | Should -Be 'db.local'
+        $json.database.Password | Should -Be 'second-one'
+    }
+
+    It 'prompts on empty input' {
+        (Format-TkConfigReport -Text '') -join "`n" | Should -Match 'Paste an INI or a .env'
+        ConvertTo-TkConfigJson -Text ''             | Should -Be '{}'
+    }
+}
+
 Describe 'Indicator extractor' {
 
     BeforeAll {
