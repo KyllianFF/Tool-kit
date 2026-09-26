@@ -76,12 +76,21 @@ function Start-Toolkit {
 
         [Parameter()]
         [ValidateSet('Essential', 'Full')]
-        [string] $AuditLevel = 'Essential'
+        [string] $AuditLevel = 'Essential',
+
+        [Parameter()]
+        [string] $RunAction,
+
+        [Parameter()]
+        [string] $ActionData,
+
+        [Parameter()]
+        [string] $ResultFile
     )
 
     # Set on every start, so a headless run does not leave a later start
     # without its progress lines.
-    $script:TkQuietConsole = [bool] ($Report -or $CompareWith)
+    $script:TkQuietConsole = [bool] ($Report -or $CompareWith -or $RunAction)
 
     # --- 1. Context and logging ------------------------------------------
     $ctx = Initialize-TkContext
@@ -118,6 +127,12 @@ function Start-Toolkit {
     if ($Report -or $CompareWith) {
         return Invoke-TkHeadlessReport -Report @($Report | Where-Object { $_ }) -CompareWith ([string] $CompareWith) `
                                        -OutFile ([string] $OutFile) -AuditLevel $AuditLevel
+    }
+
+    # The elevated worker: this process was started (as administrator) to run
+    # one registered action and report its result. No window either.
+    if ($RunAction) {
+        return Complete-TkElevatedAction -Name $RunAction -ActionDataPath ([string] $ActionData) -ResultFile ([string] $ResultFile)
     }
 
     if ($NoGui) {

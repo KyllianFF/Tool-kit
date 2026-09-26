@@ -290,7 +290,16 @@ param(
 
     [Parameter()]
     [ValidateSet('Essential', 'Full')]
-    [string] `$AuditLevel = 'Essential'
+    [string] `$AuditLevel = 'Essential',
+
+    [Parameter()]
+    [string] `$RunAction,
+
+    [Parameter()]
+    [string] `$ActionData,
+
+    [Parameter()]
+    [string] `$ResultFile
 )
 
 `$ErrorActionPreference = 'Stop'
@@ -375,6 +384,9 @@ $($resourceLines -join "`r`n")
 
 if (`$Report -or `$CompareWith) {
     Start-Toolkit -Report `$Report -CompareWith `$CompareWith -OutFile `$OutFile -AuditLevel `$AuditLevel -SourceUri `$SourceUri
+}
+elseif (`$RunAction) {
+    Start-Toolkit -RunAction `$RunAction -ActionData `$ActionData -ResultFile `$ResultFile -SourceUri `$SourceUri
 }
 elseif (`$NoGui) {
     Start-Toolkit -NoGui -SourceUri `$SourceUri

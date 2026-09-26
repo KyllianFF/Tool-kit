@@ -118,25 +118,11 @@ function Initialize-TkFixesPage {
 
     Register-TkClick -Name 'BtnRestorePoint' -Action {
 
-        if (-not (Test-TkIsElevated)) {
-            Set-TkStatus -Text 'Creating a restore point requires an elevated instance.'
-            return
-        }
+        # A standard user gets a single UAC prompt for this one action; an
+        # elevated instance runs it in place.
+        $status = if (Test-TkIsElevated) { 'Creating a restore point...' } else { 'Waiting for administrator consent...' }
 
-        Invoke-TkBackgroundAction -StatusText 'Creating a restore point...' `
-            -ScriptBlock {
-                New-TkRestorePoint -Description 'Toolkit - manual checkpoint' -Confirm:$false
-            } `
-            -OnComplete {
-                param($result)
-
-                if (@($result.Output) -contains $true) {
-                    Set-TkStatus -Text 'Restore point created.'
-                }
-                else {
-                    Set-TkStatus -Text 'No restore point was created. Windows allows one per 24 hours.'
-                }
-            }
+        Start-TkPrivilegedAction -Name 'RestorePoint' -StatusText $status
     }
 }
 
