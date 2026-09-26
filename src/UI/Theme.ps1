@@ -39,49 +39,58 @@ function Get-TkThemePalette {
         [string] $Name
     )
 
+    # The soft style: a violet accent, surfaces with a faint violet cast, and
+    # the page background shared by the header and the navigation so the
+    # cards carry the structure.
+    #
+    # AccentText is the label on an accent fill, the primary buttons. It is a
+    # colour of its own because the accent is light in the dark theme and dark
+    # in the light one, so no single text colour is legible on both.
     if ($Name -eq 'Dark') {
 
         return @{
-            AppBackground   = '#16181D'
-            Surface         = '#1E2128'
-            SurfaceRaised   = '#262A33'
-            InputBackground = '#12141A'
-            BorderSubtle    = '#333845'
-            TextPrimary     = '#E7EAF0'
-            TextMuted       = '#98A1B2'
-            Accent          = '#4C8DFF'
-            AccentMuted     = '#2A4C8A'
-            Selection       = '#2F3A4F'
-            RowAlternate    = '#252932'
-            Success         = '#3FB950'
-            Warning         = '#D29922'
-            Danger          = '#F85149'
+            AppBackground   = '#15131C'
+            Surface         = '#1E1B27'
+            SurfaceRaised   = '#282433'
+            InputBackground = '#1A1723'
+            BorderSubtle    = '#302B3D'
+            TextPrimary     = '#EDEAF4'
+            TextMuted       = '#A39DB3'
+            Accent          = '#A78BFA'
+            AccentText      = '#1B1030'
+            AccentMuted     = '#3B2F63'
+            Selection       = '#2C2640'
+            RowAlternate    = '#221F2C'
+            Success         = '#4ADE80'
+            Warning         = '#FBBF24'
+            Danger          = '#F87171'
         }
     }
 
     # Light values are chosen for contrast rather than as inverted dark ones.
-    # Accent and AccentMuted are darkened so white text on the primary button
-    # still clears the 4.5:1 contrast ratio, and Success and Warning are
-    # deepened because the dark theme values are unreadable on white.
+    # The accent is deepened so it carries white text on a primary button and
+    # reads as text on white, and Success and Warning are deepened because the
+    # dark theme values are unreadable on white.
     #
     # RowAlternate is the banding on every other table row. It is a colour per
     # theme rather than a transparency, because a transparency that reads as a
     # faint lift on the dark surface reads as dirt on the light one.
     return @{
-        AppBackground   = '#F4F5F7'
+        AppBackground   = '#F5F4FA'
         Surface         = '#FFFFFF'
-        SurfaceRaised   = '#EDEFF3'
-        InputBackground = '#FFFFFF'
-        BorderSubtle    = '#D0D5DD'
-        TextPrimary     = '#1B1F27'
-        TextMuted       = '#5C6675'
-        Accent          = '#1F63D6'
-        AccentMuted     = '#DCE7FB'
-        Selection       = '#E3EBF9'
-        RowAlternate    = '#EFF1F5'
-        Success         = '#1A7F37'
-        Warning         = '#9A6700'
-        Danger          = '#C0342B'
+        SurfaceRaised   = '#F0EEF7'
+        InputBackground = '#FBFAFE'
+        BorderSubtle    = '#E6E3F0'
+        TextPrimary     = '#1E1B2E'
+        TextMuted       = '#6B6680'
+        Accent          = '#6D28D9'
+        AccentText      = '#FFFFFF'
+        AccentMuted     = '#EDE9FE'
+        Selection       = '#EEE9FF'
+        RowAlternate    = '#F7F5FC'
+        Success         = '#15803D'
+        Warning         = '#A16207'
+        Danger          = '#DC2626'
     }
 }
 
@@ -126,9 +135,9 @@ function Get-TkThemeTint {
 
 .DESCRIPTION
     Replaces the brush behind every palette key and every tint derived from
-    it. Also fixes up the primary button style, whose foreground has to stay
-    legible on the accent fill in both themes. The navigation highlight needs
-    nothing: Show-TkPage gives it the Selection brush by resource reference.
+    it. The primary buttons need nothing more: their label is the AccentText
+    key, set per theme. Nor does the navigation highlight: Show-TkPage gives
+    it the Selection and Accent brushes by resource reference.
 
     Only what refers to a key follows: an element given the brush object
     itself keeps the old colour. Documents and generated controls use

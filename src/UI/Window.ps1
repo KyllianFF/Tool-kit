@@ -337,11 +337,16 @@ function Show-TkPage {
             # by itself. A brush assigned directly keeps the palette it was
             # assigned from, which is why the theme used to show the last page
             # again to repaint it, with the consequence described below.
+            # The accent colours the label and, through the template, the icon.
             $button.SetResourceReference([System.Windows.Controls.Control]::BackgroundProperty, 'Selection')
+            $button.SetResourceReference([System.Windows.Controls.Control]::ForegroundProperty, 'Accent')
             $button.FontWeight = [System.Windows.FontWeights]::SemiBold
         }
         else {
+            # Cleared rather than set, so the entry takes the style's
+            # foreground again, whatever the theme.
             $button.Background = [System.Windows.Media.Brushes]::Transparent
+            $button.ClearValue([System.Windows.Controls.Control]::ForegroundProperty)
             $button.FontWeight = [System.Windows.FontWeights]::Normal
         }
     }

@@ -80,7 +80,7 @@ function New-TkFlowDocument {
 
     $document = New-Object System.Windows.Documents.FlowDocument
 
-    $document.FontFamily      = New-Object System.Windows.Media.FontFamily('Segoe UI')
+    $document.FontFamily      = New-Object System.Windows.Media.FontFamily('Segoe UI Variable Text, Segoe UI')
     $document.FontSize        = 13
     $document.SetResourceReference([System.Windows.Documents.FlowDocument]::ForegroundProperty, 'TextPrimary')
     $document.Background      = [System.Windows.Media.Brushes]::Transparent
@@ -1045,7 +1045,7 @@ function Add-TkFindingCard {
     )
 
     $card = New-Object System.Windows.Controls.Border
-    $card.CornerRadius = New-Object System.Windows.CornerRadius(7)
+    $card.CornerRadius = New-Object System.Windows.CornerRadius(12)
     $card.Padding      = New-Object System.Windows.Thickness(14, 11, 14, 11)
     $card.Margin       = New-Object System.Windows.Thickness(0, 0, 0, 9)
 
@@ -1216,7 +1216,7 @@ function New-TkSeverityChip {
                                (Get-TkSeverityBrushKey -Severity $Severity))
 
     $chip = New-Object System.Windows.Controls.Border
-    $chip.CornerRadius      = New-Object System.Windows.CornerRadius(4)
+    $chip.CornerRadius      = New-Object System.Windows.CornerRadius(10)
     $chip.BorderThickness   = New-Object System.Windows.Thickness(1)
     $chip.Padding           = New-Object System.Windows.Thickness(7, 3, 7, 3)
     $chip.MinWidth          = 66

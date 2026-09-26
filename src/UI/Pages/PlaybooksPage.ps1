@@ -75,7 +75,7 @@ function Show-TkPlaybook {
         $number++
 
         $border = New-Object System.Windows.Controls.Border
-        $border.CornerRadius    = New-Object System.Windows.CornerRadius(8)
+        $border.CornerRadius    = New-Object System.Windows.CornerRadius(12)
         $border.BorderThickness = New-Object System.Windows.Thickness(1)
         $border.Padding         = New-Object System.Windows.Thickness(14, 12, 14, 12)
         $border.Margin          = New-Object System.Windows.Thickness(4, 0, 4, 10)

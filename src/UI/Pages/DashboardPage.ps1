@@ -245,7 +245,7 @@ function New-TkHealthTile {
     $severityKey = Get-TkSeverityBrushKey -Severity $Tile.Severity
 
     $border = New-Object System.Windows.Controls.Border
-    $border.CornerRadius    = New-Object System.Windows.CornerRadius(7)
+    $border.CornerRadius    = New-Object System.Windows.CornerRadius(12)
     $border.Padding         = New-Object System.Windows.Thickness(12, 10, 12, 10)
     # The same gap below as to the right: the tiles wrap onto a second row.
     $border.Margin          = New-Object System.Windows.Thickness(0, 0, 8, 8)
