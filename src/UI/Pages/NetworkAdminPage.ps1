@@ -715,13 +715,14 @@ function Invoke-TkAddRouteFromUi {
         return
     }
 
-    if (-not (Test-TkIsElevated)) {
-        Set-TkStatus -Text 'Adding a route requires an elevated instance.'
-        return
-    }
+    # A standard user gets a single UAC prompt for this action; an elevated
+    # instance runs it in place.
+    $status = if (Test-TkIsElevated) { 'Adding the route...' } else { 'Waiting for administrator consent...' }
 
-    if (Add-TkPersistentRoute -DestinationPrefix $prefix -NextHop $nextHop -InterfaceAlias $adapter -Confirm:$false) {
-        Set-TkStatus -Text ('Route added: {0} via {1}' -f $prefix, $nextHop)
+    Start-TkPrivilegedAction -Name 'AddRoute' -StatusText $status -Parameters @{
+        DestinationPrefix = $prefix
+        NextHop           = $nextHop
+        InterfaceAlias    = $adapter
     }
 }
 
@@ -740,11 +741,7 @@ function Invoke-TkRemoveRouteFromUi {
         return
     }
 
-    if (-not (Test-TkIsElevated)) {
-        Set-TkStatus -Text 'Removing a route requires an elevated instance.'
-        return
-    }
-
+    # Confirm in the window first; the UAC prompt, if any, then follows.
     $confirmed = Confirm-TkAction -Title 'Remove a route' -Message (
         "Remove the route to {0}?" -f $prefix
     )
@@ -753,8 +750,10 @@ function Invoke-TkRemoveRouteFromUi {
         return
     }
 
-    if (Remove-TkRoute -DestinationPrefix $prefix -Confirm:$false) {
-        Set-TkStatus -Text ('Route removed: {0}' -f $prefix)
+    $status = if (Test-TkIsElevated) { 'Removing the route...' } else { 'Waiting for administrator consent...' }
+
+    Start-TkPrivilegedAction -Name 'RemoveRoute' -StatusText $status -Parameters @{
+        DestinationPrefix = $prefix
     }
 }
 

@@ -851,6 +851,65 @@ function Invoke-TkBackgroundAction {
 
 <#
 .SYNOPSIS
+    Runs a privileged action, raising a UAC prompt for it alone when the
+    toolkit is not already elevated.
+
+.DESCRIPTION
+    The standard-user path for an action that needs administrator rights:
+    instead of disabling the button and asking for a whole-app restart, the
+    click runs one action elevated. The work goes on a background thread, since
+    the UAC prompt and the elevated child both block until they finish, and the
+    result comes back to the status bar. When the toolkit is already elevated
+    the same call runs the action in place, with no prompt.
+
+.PARAMETER Name
+    The action name from Get-TkElevatedAction.
+
+.PARAMETER Parameters
+    The action parameters, scalars only, carried to the elevated child as JSON.
+
+.PARAMETER StatusText
+    Shown while the action runs.
+#>
+function Start-TkPrivilegedAction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter()]
+        [hashtable] $Parameters = @{},
+
+        [Parameter(Mandatory)]
+        [string] $StatusText
+    )
+
+    $ctx = Get-TkContext
+
+    Invoke-TkBackgroundAction -StatusText $StatusText `
+        -ScriptBlock {
+            param($Name, $Parameters, $EntryScript, $SourceUri)
+            Invoke-TkElevatedActionCore -Name $Name -Parameters $Parameters -EntryScript $EntryScript -SourceUri $SourceUri
+        } `
+        -ParameterList @{
+            Name        = $Name
+            Parameters  = $Parameters
+            EntryScript = [string] $ctx.EntryScript
+            SourceUri   = [string] $ctx.SourceUri
+        } `
+        -OnComplete {
+            param($result)
+
+            $outcome = @($result.Output) | Select-Object -Last 1
+
+            if ($outcome) {
+                Set-TkStatus -Text ([string] $outcome.Message)
+            }
+        }
+}
+
+<#
+.SYNOPSIS
     Writes text into one of the page output boxes.
 
 .PARAMETER ControlName
@@ -1485,13 +1544,14 @@ function Update-TkPrivilegedControls {
     # elevation used a different administrator account winget reads its
     # sources from that other profile, finds none, and reports every package
     # as not found. That is what "nothing installs at all" turned out to be.
+    # Actions absent here run their own single UAC prompt from a standard user
+    # (see Start-TkPrivilegedAction), so they stay enabled: a restore point and
+    # adding or removing a route. The rest are still disabled until the whole
+    # toolkit is elevated; they will move to per-action elevation in turn.
     $controls = @{
         'BtnVendorTool'        = 'Installing the vendor firmware utility'
-        'BtnRestorePoint'      = 'Creating a system restore point'
         'BtnAutoLogon'         = 'Configuring automatic logon'
         'BtnApplyProfile'      = 'Changing an adapter configuration'
-        'BtnAddRoute'          = 'Adding a persistent route'
-        'BtnRemoveRoute'       = 'Removing a route'
         'BtnAddProxy'          = 'Publishing a port'
         'BtnRemoveProxy'       = 'Removing a port proxy rule'
         'BtnSwitchPort'        = 'Listening for the switch announcement with Packet Monitor'

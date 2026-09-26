@@ -355,6 +355,117 @@ Describe 'Portable build' {
     }
 }
 
+Describe 'Per-action elevation' {
+
+    <#
+        A standard user can run one privileged action through a single UAC
+        prompt, rather than restart the whole toolkit elevated. The action runs
+        in a short-lived elevated child that reads its parameters from a file
+        and writes its result to another. Only a name from the fixed registry
+        is ever run; no code crosses the boundary.
+    #>
+
+    It 'registers each action with a worker of its own' {
+        $actions = @(Get-TkElevatedAction)
+
+        ($actions | ForEach-Object { $_.Name }) | Should -Contain 'RestorePoint'
+        ($actions | ForEach-Object { $_.Name }) | Should -Contain 'AddRoute'
+        ($actions | ForEach-Object { $_.Name }) | Should -Contain 'RemoveRoute'
+
+        foreach ($action in $actions) {
+            $action.Worker | Should -BeOfType [scriptblock]
+        }
+    }
+
+    It 'runs the named worker and writes its result to the result file' {
+
+        Mock Get-TkElevatedAction {
+            @([pscustomobject] @{ Name = 'TestEcho'; Worker = { param($p) [pscustomobject] @{ Ok = $true; Message = ('echo:{0}' -f $p.Value) } } })
+        }
+
+        $data = Join-Path $TestDrive 'action-data.json'
+        '{ "Value": "hi" }' | Set-Content -LiteralPath $data -Encoding UTF8
+        $out = Join-Path $TestDrive 'action-result.json'
+
+        $result = Complete-TkElevatedAction -Name 'TestEcho' -ActionDataPath $data -ResultFile $out
+
+        $result.Ok      | Should -BeTrue
+        $result.Message | Should -Be 'echo:hi'
+        (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).Message | Should -Be 'echo:hi'
+    }
+
+    It 'reports an unknown action rather than running anything' {
+        (Complete-TkElevatedAction -Name 'NoSuchAction').Message | Should -Match 'Unknown elevated action'
+    }
+
+    It 'runs the worker in place when already elevated, without spawning a process' {
+
+        Mock Test-TkIsElevated { $true }
+        Mock Get-TkElevatedAction {
+            @([pscustomobject] @{ Name = 'TestEcho'; Worker = { param($p) [pscustomobject] @{ Ok = $true; Message = 'ran-in-place' } } })
+        }
+        Mock Start-TkElevatedWorker { throw 'must not spawn when already elevated' }
+
+        (Invoke-TkElevatedActionCore -Name 'TestEcho' -Parameters @{}).Message | Should -Be 'ran-in-place'
+        Should -Invoke Start-TkElevatedWorker -Times 0
+    }
+
+    It 'spawns the elevated worker and reads its result when not elevated' {
+
+        Mock Test-TkIsElevated { $false }
+        Mock Get-TkElevatedAction {
+            @([pscustomobject] @{ Name = 'TestEcho'; Worker = { param($p) [pscustomobject] @{ Ok = $true; Message = 'unused in this path' } } })
+        }
+        Mock Start-TkElevatedWorker {
+            param($Name, $ActionDataPath, $ResultFile, $EntryScript, $SourceUri)
+            [pscustomobject] @{ Ok = $true; Message = 'from-child' } | ConvertTo-Json | Set-Content -LiteralPath $ResultFile -Encoding UTF8
+            'Ran'
+        }
+
+        (Invoke-TkElevatedActionCore -Name 'TestEcho' -Parameters @{ A = 1 } -EntryScript 'anything').Message | Should -Be 'from-child'
+        Should -Invoke Start-TkElevatedWorker -Times 1
+    }
+
+    It 'reports a cancelled prompt as no change' {
+
+        Mock Test-TkIsElevated { $false }
+        Mock Get-TkElevatedAction {
+            @([pscustomobject] @{ Name = 'TestEcho'; Worker = { param($p) } })
+        }
+        Mock Start-TkElevatedWorker { 'Cancelled' }
+
+        $result = Invoke-TkElevatedActionCore -Name 'TestEcho' -Parameters @{}
+
+        $result.Cancelled | Should -BeTrue
+        $result.Message   | Should -Match 'cancelled'
+    }
+
+    It 'refuses to replay a non-HTTPS source to the elevated worker' {
+        Start-TkElevatedWorker -Name 'RestorePoint' -ActionDataPath 'x' -ResultFile 'y' -SourceUri 'http://example.org/toolkit.ps1' |
+            Should -Be 'Refused'
+    }
+
+    It 'exposes the elevated-action parameters at every entry point' {
+
+        foreach ($name in @('RunAction', 'ActionData', 'ResultFile')) {
+            (Get-Command -Name 'Start-Toolkit').Parameters.Keys                                  | Should -Contain $name
+            (Get-Command -Name (Join-Path $script:RepositoryRoot 'toolkit.ps1')).Parameters.Keys | Should -Contain $name
+        }
+
+        $build = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'build\Build-Toolkit.ps1') -Raw
+        $build | Should -Match '\[string\] `\$RunAction'
+        $build | Should -Match 'Start-Toolkit -RunAction `\$RunAction -ActionData `\$ActionData -ResultFile `\$ResultFile'
+    }
+
+    It 'gives the standard-user path a helper and stops disabling the converted actions' {
+
+        Get-Command -Name 'Start-TkPrivilegedAction' | Should -Not -BeNullOrEmpty
+
+        $window = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\Window.ps1') -Raw
+        $window | Should -Match 'run their own single UAC prompt'
+    }
+}
+
 Describe 'Report comparison' {
 
     BeforeAll {
