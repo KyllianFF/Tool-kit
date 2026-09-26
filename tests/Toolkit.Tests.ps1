@@ -239,6 +239,122 @@ Describe 'Headless reports' {
     }
 }
 
+Describe 'Portable build' {
+
+    <#
+        The portable edition is the same code laid out for an offline machine:
+        a readable script with the catalogs and the interface left in plain
+        files beside it, rather than one file full of base64. That shape leans
+        on the disk fallbacks in the loaders, so the tests below assert both
+        the build produces a de-blobbed script and the loaders find their data
+        on disk when nothing is embedded.
+    #>
+
+    BeforeAll {
+        $script:BuildScript    = Join-Path $script:RepositoryRoot 'build\Build-Toolkit.ps1'
+        $script:PortableFolder = Join-Path $script:RepositoryRoot 'build\portable'
+
+        $script:PortableScript = Join-Path $TestDrive 'Toolkit.ps1'
+        & $script:BuildScript -NoEmbed -SkipAnalysis -OutputPath $script:PortableScript | Out-Null
+        $script:PortableText = Get-Content -LiteralPath $script:PortableScript -Raw
+    }
+
+    It 'exposes a -NoEmbed switch on the build' {
+        (Get-Command -Name $script:BuildScript).Parameters.Keys | Should -Contain 'NoEmbed'
+    }
+
+    It 'produces a script with no embedded catalog blob' {
+        $script:PortableText | Should -Not -Match 'TkEmbeddedCatalogsRaw\s*=\s*@\{'
+    }
+
+    It 'leaves the embedded XAML empty so it is read from the file on disk' {
+        $script:PortableText | Should -Match "TkEmbeddedXaml\s*=\s*''"
+    }
+
+    It 'still stamps the build metadata' {
+        $script:PortableText | Should -Match "TkAppVersion\s*=\s*'"
+    }
+
+    It 'parses as valid PowerShell' {
+        $errors = $null
+        $tokens = $null
+        [System.Management.Automation.Language.Parser]::ParseFile($script:PortableScript, [ref] $tokens, [ref] $errors) | Out-Null
+        $errors | Should -BeNullOrEmpty
+    }
+
+    It 'is materially smaller than the embedded build, because the blobs are gone' {
+        $embedded = Join-Path $TestDrive 'toolkit-embedded.ps1'
+        & $script:BuildScript -SkipAnalysis -OutputPath $embedded | Out-Null
+
+        (Get-Item $script:PortableScript).Length | Should -BeLessThan (Get-Item $embedded).Length
+    }
+
+    It 'reads a catalog from a data folder in the working directory when none is embedded' {
+
+        $dataDir = Join-Path $TestDrive 'work\data'
+        New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dataDir 'portable-sample.json') -Value '{}' -Encoding UTF8
+
+        Push-Location (Split-Path $dataDir -Parent)
+
+        try {
+            $found = Get-TkCatalogPath -Name 'portable-sample'
+        }
+        finally {
+            Pop-Location
+        }
+
+        $found                       | Should -Not -BeNullOrEmpty
+        (Split-Path $found -Leaf)    | Should -Be 'portable-sample.json'
+    }
+
+    It 'falls back to the interface file on disk when no XAML is embedded' {
+        $script:TkEmbeddedXaml | Should -BeNullOrEmpty
+        Get-TkMainWindowXaml   | Should -Match '<Window'
+    }
+
+    It 'ships a launcher and a readme template' {
+        Test-Path (Join-Path $script:PortableFolder 'Start-Toolkit.cmd') | Should -BeTrue
+        Test-Path (Join-Path $script:PortableFolder 'README.txt')        | Should -BeTrue
+    }
+
+    It 'launches with the apartment and policy the interface needs, and nothing more' {
+        $launcher = Get-Content -LiteralPath (Join-Path $script:PortableFolder 'Start-Toolkit.cmd') -Raw
+        $launcher | Should -Match '-Sta'
+        $launcher | Should -Match '-ExecutionPolicy Bypass'
+    }
+
+    It 'fills the readme version tokens at package time' {
+        $readme = Get-Content -LiteralPath (Join-Path $script:PortableFolder 'README.txt') -Raw
+        $readme | Should -Match '\{\{VERSION\}\}'
+        $readme | Should -Match '\{\{COMMIT\}\}'
+    }
+
+    It 'keeps the packaging and signing scripts parseable' {
+
+        foreach ($name in @('New-PortablePackage.ps1', 'Sign-Toolkit.ps1', 'New-CodeSigningCertificate.ps1')) {
+
+            $path   = Join-Path $script:RepositoryRoot ('build\{0}' -f $name)
+            $errors = $null
+            $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($path, [ref] $tokens, [ref] $errors) | Out-Null
+
+            $errors | Should -BeNullOrEmpty -Because ('{0} must parse' -f $name)
+        }
+    }
+
+    It 'signs by thumbprint or by pfx, and timestamps' {
+
+        $sign = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'build\Sign-Toolkit.ps1') -Raw
+        $parameters = (Get-Command -Name (Join-Path $script:RepositoryRoot 'build\Sign-Toolkit.ps1')).Parameters
+
+        $parameters.Keys | Should -Contain 'Thumbprint'
+        $parameters.Keys | Should -Contain 'PfxPath'
+        $parameters.Keys | Should -Contain 'TimestampServer'
+        $sign            | Should -Match 'Set-AuthenticodeSignature'
+    }
+}
+
 Describe 'Report comparison' {
 
     BeforeAll {

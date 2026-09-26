@@ -40,7 +40,14 @@ param(
     [string] $Version,
 
     [Parameter()]
-    [switch] $SkipAnalysis
+    [switch] $SkipAnalysis,
+
+    # Concatenate the sources but leave the XAML, catalogs and resources out, so
+    # the script reads them from sibling files instead. Used by the portable
+    # build, where readable data files beside a readable script are far less
+    # likely to trip an antivirus than a single file full of base64 blobs.
+    [Parameter()]
+    [switch] $NoEmbed
 )
 
 $ErrorActionPreference = 'Stop'
@@ -304,7 +311,22 @@ foreach ($file in $sourceFiles) {
 }
 
 # --- Embedded resources ----------------------------------------------------
-[void] $builder.AppendLine(@"
+if ($NoEmbed) {
+
+    # Portable build: only the metadata is set here. The XAML, catalogs and
+    # resources stay at their in-code defaults (empty), so the loaders fall
+    # through to the readable files shipped beside this script.
+    [void] $builder.AppendLine(@"
+# ==========================================================================
+# Build metadata (portable build: data is read from the sibling files)
+# ==========================================================================
+
+`$script:TkAppVersion = '$Version'
+`$script:TkAppCommit  = '$commit'
+"@)
+}
+else {
+    [void] $builder.AppendLine(@"
 # ==========================================================================
 # Embedded resources
 # ==========================================================================
@@ -337,7 +359,11 @@ foreach (`$catalogName in `$script:TkEmbeddedCatalogsRaw.Keys) {
 `$script:TkEmbeddedResources = @{
 $($resourceLines -join "`r`n")
 }
+"@)
+}
 
+# --- Entry point -----------------------------------------------------------
+[void] $builder.AppendLine(@"
 # ==========================================================================
 # Entry point
 # ==========================================================================

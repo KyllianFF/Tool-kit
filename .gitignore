@@ -3,6 +3,12 @@
 dist/*.tmp
 dist/*.bak
 
+# Portable build outputs, produced on demand by build/New-PortablePackage.ps1.
+dist/Toolkit-Portable-*
+dist/Toolkit-*.ps1
+dist/Toolkit-*.ps1.sha256
+dist/signing/
+
 # PowerShell
 *.ps1.bak
 

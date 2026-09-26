@@ -241,6 +241,48 @@ Add `-Elevated` to `toolkit.ps1` to raise a consent prompt before loading.
 
 ---
 
+## Portable, offline edition
+
+For a machine with no network, or one where a single file full of base64 makes
+an antivirus nervous, `build/New-PortablePackage.ps1` produces an offline build
+that is deliberately unremarkable: a readable script with the catalogs and the
+interface left in plain files beside it, rather than embedded as blobs.
+
+```powershell
+.\build\New-PortablePackage.ps1
+```
+
+This writes to `dist/`:
+
+- `Toolkit-Portable-<version>/` and its `.zip` — the de-blobbed folder:
+  `Toolkit.ps1`, `MainWindow.xaml`, `data/`, a `Start-Toolkit.cmd` launcher,
+  a `README.txt` with offline-run and allowlisting guidance, and a
+  `SHA256SUMS.txt` for the whole set.
+- `Toolkit-<version>.ps1` — the same self-contained single file the one-liner
+  serves, under a versioned name so it can be signed and shipped on its own.
+
+Run it by double-clicking `Start-Toolkit.cmd`, or:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -Sta -File .\Toolkit.ps1
+```
+
+**Signing.** Code signing is the honest way to get an administration tool past
+an endpoint product: sign it, then let the security team allow it by publisher.
+Create a certificate, then build again with it:
+
+```powershell
+.\build\New-CodeSigningCertificate.ps1 -Install         # self-signed, for a lab or an internal fleet
+.\build\New-PortablePackage.ps1 -Thumbprint <thumbprint> # signs both editions, timestamped
+```
+
+The build makes no attempt to hide from or disable any security product. If an
+endpoint sensor still flags a signed build, the answer is a scoped exception
+the security team owns — the package `README.txt` has the specifics for
+Microsoft Defender, CrowdStrike Falcon and ESET.
+
+---
+
 ## Requirements
 
 - Windows 10 1809 or later, or Windows 11, or Server 2016 or later
@@ -263,6 +305,10 @@ Tool-kit/
   toolkit.ps1              Development launcher: loads src/ and starts the app
   build/
     Build-Toolkit.ps1      Compiles src/ + data/ + XAML into one file
+    New-PortablePackage.ps1 Builds the offline, de-blobbed editions
+    Sign-Toolkit.ps1       Authenticode-signs a build, timestamped
+    New-CodeSigningCertificate.ps1 Creates a self-signed signing certificate
+    portable/              Launcher and readme templates for the portable build
     Invoke-Tests.ps1       Runs the Pester suite
     source-order.txt       Load order, shared by the launcher and the build
   src/
