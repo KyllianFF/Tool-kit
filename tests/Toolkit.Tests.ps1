@@ -5388,6 +5388,61 @@ PLAIN=hello world
     }
 }
 
+Describe 'LDAP filter builder' {
+
+    It 'turns an attribute operator value line into a clause, escaping the value' {
+        ConvertTo-TkLdapCondition -Line 'department = Sales'   | Should -Be '(department=Sales)'
+        ConvertTo-TkLdapCondition -Line 'title = *manager*'    | Should -Be '(title=*manager*)'
+        ConvertTo-TkLdapCondition -Line 'mail = *'             | Should -Be '(mail=*)'
+        ConvertTo-TkLdapCondition -Line 'name != Guest'        | Should -Be '(!(name=Guest))'
+        ConvertTo-TkLdapCondition -Line 'cn = Smith (IT)'      | Should -Be '(cn=Smith \28IT\29)'
+    }
+
+    It 'passes a raw clause through and ignores blanks and comments' {
+        ConvertTo-TkLdapCondition -Line '(objectClass=user)' | Should -Be '(objectClass=user)'
+        ConvertTo-TkLdapCondition -Line '   '                | Should -BeNullOrEmpty
+        ConvertTo-TkLdapCondition -Line '# a note'           | Should -BeNullOrEmpty
+        ConvertTo-TkLdapCondition -Line 'no operator here'   | Should -BeNullOrEmpty
+    }
+
+    It 'ANDs the object scope and the conditions, flattened' {
+        $users = (@(Get-TkLdapObjectClass) | Where-Object { $_.Name -eq 'Users' }).Parts
+        $filter = Build-TkLdapFilter -Conditions @('(department=Sales)', '(l=Paris)') -Match All -ObjectParts $users
+
+        $filter | Should -Be '(&(objectCategory=person)(objectClass=user)(department=Sales)(l=Paris))'
+    }
+
+    It 'ORs the conditions but keeps the object scope an AND' {
+        $groups = (@(Get-TkLdapObjectClass) | Where-Object { $_.Name -eq 'Groups' }).Parts
+        $filter = Build-TkLdapFilter -Conditions @('(mail=*)', '(l=Paris)') -Match Any -ObjectParts $groups
+
+        $filter | Should -Be '(&(objectCategory=group)(|(mail=*)(l=Paris)))'
+    }
+
+    It 'wraps the whole filter when negated' {
+        Build-TkLdapFilter -Conditions @('(mail=*)') -Match All -ObjectParts @() -Negate | Should -Be '(!(mail=*))'
+    }
+
+    It 'falls back to a catch-all when nothing is given' {
+        Build-TkLdapFilter -Conditions @() -Match All -ObjectParts @() | Should -Be '(objectClass=*)'
+    }
+
+    It 'writes the filter, the cmdlets and dsquery, and notes an ignored line' {
+        $report = (Format-TkLdapReport -Conditions "department = Sales`nbroken line" -ObjectClass Users -Match All) -join "`n"
+
+        $report | Should -Match 'Get-ADObject -LDAPFilter'
+        $report | Should -Match 'Get-ADUser -LDAPFilter'
+        $report | Should -Match 'dsquery \* -limit 0 -filter'
+        $report | Should -Match 'Ignored lines:'
+        $report | Should -Match 'broken line'
+    }
+
+    It 'carries the matching-rule OID in the userAccountControl presets' {
+        $disabled = (@(Get-TkLdapPreset) | Where-Object { $_.Name -eq 'Disabled accounts' }).Clause
+        $disabled | Should -Be '(userAccountControl:1.2.840.113556.1.4.803:=2)'
+    }
+}
+
 Describe 'CSV cleaner' {
 
     BeforeAll {
