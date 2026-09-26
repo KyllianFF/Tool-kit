@@ -153,6 +153,11 @@ function Import-TkSettings {
         ConfirmPrivilegedOps  = $true
         LastPage              = 'System'
         VirusTotalKeyStored   = $false
+
+        # Keys ("Kind|Title") of the search palette favourites and of what
+        # was opened last, newest first.
+        Favourites            = @()
+        Recent                = @()
     }
 
     if (Test-Path -LiteralPath $ctx.SettingsFile) {

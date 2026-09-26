@@ -372,6 +372,7 @@ function Open-TkSearchEntry {
     )
 
     Hide-TkSearch
+    Register-TkRecentEntry -Entry $Entry
 
     if ($Entry.Action) {
         Invoke-TkQuickAction -Id $Entry.Action
@@ -405,24 +406,223 @@ function Open-TkSearchEntry {
 
 <#
 .SYNOPSIS
-    Draws one result: its title, and its kind with the detail underneath.
+    The key an entry is remembered by in the favourites and the recent list.
+
+.OUTPUTS
+    System.String, "Kind|Title".
 #>
-function New-TkSearchResultItem {
+function Get-TkSearchEntryKey {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject] $Entry
+    )
+
+    return ('{0}|{1}' -f $Entry.Kind, $Entry.Title)
+}
+
+<#
+.SYNOPSIS
+    Puts a key at the top of the recent list.
+
+.DESCRIPTION
+    Pure. The key moves up if it is already there, and the list keeps the
+    newest Limit keys.
+
+.OUTPUTS
+    System.String[]
+#>
+function Add-TkRecentKey {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter()] [AllowEmptyCollection()] [AllowNull()] [string[]] $Recent = @(),
+        [Parameter(Mandatory)] [string] $Key,
+        [Parameter()] [ValidateRange(1, 50)] [int] $Limit = 8
+    )
+
+    return @(@($Key) + @($Recent | Where-Object { $_ -and $_ -ne $Key }) | Select-Object -First $Limit)
+}
+
+<#
+.SYNOPSIS
+    Adds a key to the favourites, or takes it out when it is there.
+
+.DESCRIPTION
+    Pure. A new favourite goes at the end, so the list keeps the order they
+    were chosen in; the list holds Limit favourites at most.
+
+.OUTPUTS
+    System.String[]
+#>
+function Switch-TkFavouriteKey {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter()] [AllowEmptyCollection()] [AllowNull()] [string[]] $Favourites = @(),
+        [Parameter(Mandatory)] [string] $Key,
+        [Parameter()] [ValidateRange(1, 100)] [int] $Limit = 20
+    )
+
+    $current = @($Favourites | Where-Object { $_ })
+
+    if ($current -contains $Key) {
+        return @($current | Where-Object { $_ -ne $Key })
+    }
+
+    return @(@($current + $Key) | Select-Object -Last $Limit)
+}
+
+<#
+.SYNOPSIS
+    What the palette shows before anything is typed: favourites, recent entries, then the pages.
+
+.DESCRIPTION
+    Pure. A key that no longer matches an entry (a tool renamed since) is
+    skipped rather than shown broken, and an entry that is a favourite is not
+    repeated among the recent ones.
+
+.OUTPUTS
+    PSCustomObject[] with Entry and Section (Favourite, Recent or Page).
+#>
+function Get-TkSearchStartList {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Index,
+        [Parameter()] [AllowEmptyCollection()] [AllowNull()] [string[]] $Favourites = @(),
+        [Parameter()] [AllowEmptyCollection()] [AllowNull()] [string[]] $Recent = @()
+    )
+
+    $byKey = @{}
+
+    foreach ($entry in $Index) {
+        $key = Get-TkSearchEntryKey -Entry $entry
+        if (-not $byKey.ContainsKey($key)) { $byKey[$key] = $entry }
+    }
+
+    $favouriteKeys = @($Favourites | Where-Object { $_ -and $byKey.ContainsKey($_) })
+
+    $start = New-Object System.Collections.Generic.List[object]
+
+    foreach ($key in $favouriteKeys) {
+        $start.Add([pscustomobject] @{ Entry = $byKey[$key]; Section = 'Favourite' })
+    }
+
+    foreach ($key in @($Recent | Where-Object { $_ -and $byKey.ContainsKey($_) -and $favouriteKeys -notcontains $_ })) {
+        $start.Add([pscustomobject] @{ Entry = $byKey[$key]; Section = 'Recent' })
+    }
+
+    foreach ($entry in @($Index | Where-Object { $_.Kind -eq 'Page' -and $favouriteKeys -notcontains (Get-TkSearchEntryKey -Entry $_) })) {
+        $start.Add([pscustomobject] @{ Entry = $entry; Section = 'Page' })
+    }
+
+    return @($start.ToArray())
+}
+
+<#
+.SYNOPSIS
+    Remembers an entry as recently opened.
+#>
+function Register-TkRecentEntry {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [pscustomobject] $Entry
     )
 
+    # Pages are already one click away in the menu.
+    if ($Entry.Kind -eq 'Page') {
+        return
+    }
+
+    $ctx = Get-TkContext
+    $ctx.Settings['Recent'] = @(Add-TkRecentKey -Recent @($ctx.Settings['Recent']) -Key (Get-TkSearchEntryKey -Entry $Entry))
+
+    Save-TkSettings
+}
+
+<#
+.SYNOPSIS
+    Adds an entry to the favourites, or takes it out.
+
+.OUTPUTS
+    System.Boolean, whether it is a favourite now.
+#>
+function Switch-TkFavouriteEntry {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject] $Entry
+    )
+
+    $ctx = Get-TkContext
+    $key = Get-TkSearchEntryKey -Entry $Entry
+
+    $ctx.Settings['Favourites'] = @(Switch-TkFavouriteKey -Favourites @($ctx.Settings['Favourites']) -Key $key)
+
+    Save-TkSettings
+
+    return (@($ctx.Settings['Favourites']) -contains $key)
+}
+
+<#
+.SYNOPSIS
+    Stars or unstars the highlighted result, and keeps the highlight where it was.
+#>
+function Switch-TkSelectedFavourite {
+    [CmdletBinding()]
+    param()
+
+    $list = Get-TkControl -Name 'SearchResults'
+
+    if (-not $list -or -not $list.SelectedItem -or -not $list.SelectedItem.Tag) {
+        return
+    }
+
+    $entry     = $list.SelectedItem.Tag
+    $favourite = Switch-TkFavouriteEntry -Entry $entry
+    $position  = $list.SelectedIndex
+
+    Update-TkSearchResult
+
+    if ($list.Items.Count -gt 0) {
+        $list.SelectedIndex = [math]::Min($position, $list.Items.Count - 1)
+    }
+
+    Set-TkStatus -Text $(if ($favourite) { 'Added to favourites: {0}' -f $entry.Title } else { 'Removed from favourites: {0}' -f $entry.Title })
+}
+
+<#
+.SYNOPSIS
+    Draws one result: its title, and its kind with the detail underneath.
+#>
+function New-TkSearchResultItem {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject] $Entry,
+
+        [Parameter()]
+        [switch] $Favourite,
+
+        [Parameter()]
+        [switch] $Recent
+    )
+
     $title = New-Object System.Windows.Controls.TextBlock
-    $title.Text       = $Entry.Title
+    # A star before a favourite, built at run time so the source stays ASCII.
+    $title.Text       = if ($Favourite) { '{0}  {1}' -f [char] 0x2605, $Entry.Title } else { $Entry.Title }
     $title.FontSize   = 13
     $title.FontWeight = [System.Windows.FontWeights]::SemiBold
     $title.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
     $title.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextPrimary')
 
     $detail = New-Object System.Windows.Controls.TextBlock
-    $detail.Text         = if ($Entry.Detail) { '{0}  -  {1}' -f $Entry.Kind, $Entry.Detail } else { $Entry.Kind }
+    $kind                = if ($Recent) { 'Recent  -  {0}' -f $Entry.Kind } else { $Entry.Kind }
+    $detail.Text         = if ($Entry.Detail) { '{0}  -  {1}' -f $kind, $Entry.Detail } else { $kind }
     $detail.FontSize     = 11
     $detail.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
     $detail.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMuted')
@@ -443,8 +643,9 @@ function New-TkSearchResultItem {
     Fills the result list for what is typed.
 
 .DESCRIPTION
-    With nothing typed, the pages are listed, so the palette is also a way to
-    move around without the mouse.
+    With nothing typed, the favourites come first, then what was opened
+    recently, then the pages, so the palette is also a way to move around
+    without the mouse.
 #>
 function Update-TkSearchResult {
     [CmdletBinding()]
@@ -461,13 +662,17 @@ function Update-TkSearchResult {
     $index = @(Get-TkSearchIndex)
     $query = [string] $searchBox.Text
 
-    $hits = if ($query.Trim()) { @(Find-TkSearchEntry -Index $index -Query $query) }
-            else { @($index | Where-Object { $_.Kind -eq 'Page' }) }
+    $settings   = (Get-TkContext).Settings
+    $favourites = @($settings['Favourites'] | Where-Object { $_ })
+
+    $hits = if ($query.Trim()) { @(Find-TkSearchEntry -Index $index -Query $query | ForEach-Object { [pscustomobject] @{ Entry = $_; Section = '' } }) }
+            else { @(Get-TkSearchStartList -Index $index -Favourites $favourites -Recent @($settings['Recent'])) }
 
     $results.Items.Clear()
 
     foreach ($hit in $hits) {
-        [void] $results.Items.Add((New-TkSearchResultItem -Entry $hit))
+        $isFavourite = $favourites -contains (Get-TkSearchEntryKey -Entry $hit.Entry)
+        [void] $results.Items.Add((New-TkSearchResultItem -Entry $hit.Entry -Favourite:$isFavourite -Recent:($hit.Section -eq 'Recent')))
     }
 
     if ($results.Items.Count -gt 0) {
@@ -475,7 +680,7 @@ function Update-TkSearchResult {
     }
 
     if ($hint) {
-        $hint.Text = if (-not $query.Trim()) { 'Type to search. Up and down to choose, Enter to open, Escape to close.' }
+        $hint.Text = if (-not $query.Trim()) { 'Type to search. Up and down to choose, Enter to open, Ctrl+D or a right-click to star it as a favourite, Escape to close.' }
                      elseif ($hits.Count -eq 0) { 'Nothing matches.' }
                      else { '{0} result(s). Enter opens the highlighted one.' -f $hits.Count }
     }
@@ -567,6 +772,51 @@ function Initialize-TkSearch {
         })
     }
 
+    if ($results) {
+        $results.Add_MouseRightButtonUp({
+            param($source, $mouseArgs)
+            $null = $source
+
+            # The right-click selects the row under the pointer first.
+            $row = $mouseArgs.OriginalSource
+            while ($row -and -not ($row -is [System.Windows.Controls.ListBoxItem])) {
+                $row = [System.Windows.Media.VisualTreeHelper]::GetParent($row)
+            }
+
+            if ($row) {
+                $row.IsSelected = $true
+                Switch-TkSelectedFavourite
+            }
+        })
+    }
+
+    # A report, tool, hardware test or investigation picked from its own list
+    # is remembered too, not only what is opened from the palette.
+    foreach ($listName in @($script:TkSearchListKind.Keys)) {
+
+        $chooser = Get-TkControl -Name $listName
+
+        if (-not $chooser) {
+            continue
+        }
+
+        $chooser.Add_PreviewMouseLeftButtonUp({
+            param($source, $mouseArgs)
+
+            # Only a click on an entry: not on the scroll bar or a heading.
+            $row = $mouseArgs.OriginalSource
+            while ($row -and -not ($row -is [System.Windows.Controls.ListBoxItem])) {
+                $row = [System.Windows.Media.VisualTreeHelper]::GetParent($row)
+            }
+
+            $title = if ($row -and $row.IsSelected) { Get-TkItemTitle -Item $source.SelectedItem } else { '' }
+
+            if ($title) {
+                Register-TkRecentEntry -Entry ([pscustomobject] @{ Kind = $script:TkSearchListKind[[string] $source.Name]; Title = $title })
+            }
+        })
+    }
+
     $backdrop = Get-TkControl -Name 'SearchBackdrop'
 
     if ($backdrop) {
@@ -616,6 +866,13 @@ function Initialize-TkSearch {
                     $list.ScrollIntoView($list.SelectedItem)
                 }
                 $keyArgs.Handled = $true
+            }
+
+            ([System.Windows.Input.Key]::D) {
+                if ($control) {
+                    Switch-TkSelectedFavourite
+                    $keyArgs.Handled = $true
+                }
             }
 
             ([System.Windows.Input.Key]::Enter) {
