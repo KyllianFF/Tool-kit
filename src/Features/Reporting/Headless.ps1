@@ -107,6 +107,12 @@ function Get-TkHeadlessReport {
             }
         })
 
+        (& $row 'Restarts' $false 'Every start of the last 30 days, how the session before it ended and who asked.' {
+            param($Options)
+            $null = $Options
+            Get-TkBootHistory -Days 30
+        })
+
         (& $row 'Wifi' $false 'Wi-Fi signal, band, rate, security and drops of the last week.' {
             param($Options)
             $null = $Options

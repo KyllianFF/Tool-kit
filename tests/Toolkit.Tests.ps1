@@ -7377,6 +7377,131 @@ Describe 'Password strength' {
     }
 }
 
+Describe 'Restarts and shutdowns' {
+
+    Context 'Who asked' {
+
+        It 'names <File> as <Name>' -TestCases @(
+            @{ Process = 'C:\Windows\servicing\TrustedInstaller.exe (PC-01)'; File = 'TrustedInstaller.exe'; Name = 'Windows Update' }
+            @{ Process = 'C:\Windows\SystemApps\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\StartMenuExperienceHost.exe (PC-01)'; File = 'StartMenuExperienceHost.exe'; Name = 'Start menu (the user)' }
+            @{ Process = 'C:\WINDOWS\system32\winlogon.exe (PC-01)'; File = 'winlogon.exe'; Name = 'Windows (power button, sign-in or lock screen)' }
+            @{ Process = 'C:\Program Files\ESET\ESET Security\ekrn.exe (PC-01)'; File = 'ekrn.exe'; Name = 'ekrn.exe' }
+        ) {
+            param($Process, $File, $Name)
+
+            $who = ConvertFrom-TkShutdownInitiator -Process $Process
+            $who.File | Should -Be $File
+            $who.Name | Should -Be $Name
+        }
+
+        It 'says Unknown when User32 recorded no program' {
+            (ConvertFrom-TkShutdownInitiator -Process '').Name | Should -Be 'Unknown'
+        }
+
+        It 'names the kind of start from the Kernel-Boot boot type' {
+            Get-TkBootTypeName -BootType 0     | Should -Be 'Full start'
+            Get-TkBootTypeName -BootType '1'   | Should -Be 'Fast startup'
+            Get-TkBootTypeName -BootType 2     | Should -Be 'Resume from hibernation'
+            Get-TkBootTypeName -BootType $null | Should -Be 'Unknown'
+        }
+    }
+
+    Context 'Timeline' {
+
+        BeforeAll {
+            $script:T = [datetime] '2026-09-20 08:00'
+            $at = { param($minutes) $script:T.AddMinutes($minutes) }
+
+            # 0: first start. 1: restarted by Windows Update. 2: shut down from Start
+            # for 10 h. 3: power lost. 4: blue screen nine minutes later, so the
+            # two unexpected-end events both fall in the window of the first.
+            $script:BootTimeline = @(ConvertTo-TkBootTimeline `
+                -Boot @(
+                    [pscustomobject] @{ When = & $at 0 }
+                    [pscustomobject] @{ When = & $at 62 }
+                    [pscustomobject] @{ When = & $at 780 }
+                    [pscustomobject] @{ When = & $at 900 }
+                    [pscustomobject] @{ When = & $at 909 }
+                ) `
+                -Stop @(
+                    [pscustomobject] @{ When = & $at 60 }
+                    [pscustomobject] @{ When = & $at 180 }
+                ) `
+                -Initiator @(
+                    [pscustomobject] @{ When = & $at 59;  Process = 'C:\Windows\servicing\TrustedInstaller.exe (PC-01)'; User = 'NT AUTHORITY\SYSTEM'; Reason = 'Operating System: Service pack (Planned)'; ReasonCode = '0x80020010' }
+                    [pscustomobject] @{ When = & $at 179; Process = 'C:\Windows\explorer.exe (PC-01)'; User = 'PC-01\alice'; Reason = 'Other (Unplanned)'; ReasonCode = '0x0' }
+                ) `
+                -Unexpected @(
+                    [pscustomobject] @{ When = (& $at 909).AddSeconds(8); BugcheckCode = '26' }
+                    [pscustomobject] @{ When = (& $at 900).AddSeconds(8); BugcheckCode = '0' }
+                ) `
+                -BootType @(
+                    [pscustomobject] @{ When = & $at 780; Type = '1' }
+                ))
+        }
+
+        It 'lists the starts newest first' {
+            $script:BootTimeline.Count       | Should -Be 5
+            $script:BootTimeline[0].Started  | Should -Be ($script:T.AddMinutes(909))
+            $script:BootTimeline[-1].Started | Should -Be $script:T
+        }
+
+        It 'tells a restart by the short time off, and names who asked' {
+            $row = $script:BootTimeline | Where-Object { $_.Started -eq $script:T.AddMinutes(62) }
+
+            $row.PreviousEnd              | Should -Be 'Restart'
+            $row.By                       | Should -Be 'Windows Update'
+            $row.OffFor.TotalMinutes      | Should -Be 2
+            $row.SessionLength.TotalMinutes | Should -Be 60
+        }
+
+        It 'tells a shutdown by the long time off, and reads the kind of start' {
+            # Before, a local $stop overwrote the $Stop parameter after the first
+            # start, and every later session read as Unknown.
+            $row = $script:BootTimeline | Where-Object { $_.Started -eq $script:T.AddMinutes(780) }
+
+            $row.PreviousEnd         | Should -Be 'Shut down'
+            $row.By                  | Should -Be 'Start menu (the user)'
+            $row.OffFor.TotalHours   | Should -Be 10
+            $row.StartType           | Should -Be 'Fast startup'
+        }
+
+        It 'gives each of two resets nine minutes apart its own event' {
+            $lost = $script:BootTimeline | Where-Object { $_.Started -eq $script:T.AddMinutes(900) }
+            $blue = $script:BootTimeline | Where-Object { $_.Started -eq $script:T.AddMinutes(909) }
+
+            $lost.PreviousEnd | Should -Be 'Unexpected'
+            $lost.Severity    | Should -Be 'Warning'
+            $blue.PreviousEnd | Should -Be 'Blue screen'
+            $blue.Severity    | Should -Be 'Fail'
+
+            # No clean stop, so no length and no initiator are claimed.
+            $lost.SessionLength | Should -BeNullOrEmpty
+            $lost.By            | Should -BeNullOrEmpty
+        }
+
+        It 'says Unknown when nothing explains the end of the session' {
+            ($script:BootTimeline | Where-Object { $_.Started -eq $script:T }).PreviousEnd | Should -Be 'Unknown'
+        }
+
+        It 'counts the timeline and ranks who asked' {
+            $summary = Get-TkBootHistorySummary -Timeline $script:BootTimeline
+
+            $summary.Starts       | Should -Be 5
+            $summary.Restarts     | Should -Be 1
+            $summary.Shutdowns    | Should -Be 1
+            $summary.Unexpected   | Should -Be 2
+            $summary.BlueScreens  | Should -Be 1
+            $summary.FastStartups | Should -Be 1
+            @($summary.Initiators).Count | Should -Be 2
+        }
+    }
+
+    It 'is offered as a headless report' {
+        @(Get-TkHeadlessReport | ForEach-Object { $_.Name }) | Should -Contain 'Restarts'
+    }
+}
+
 Describe 'Diagnostic reports' {
 
     BeforeAll {
