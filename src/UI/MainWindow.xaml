@@ -614,7 +614,7 @@
         <Style x:Key="NavSection" TargetType="TextBlock">
             <Setter Property="FontSize"   Value="11" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin"     Value="30,10,16,2" />
+            <Setter Property="Margin"     Value="30,8,16,2" />
             <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
         </Style>
 
@@ -629,7 +629,7 @@
             <Setter Property="BorderThickness"     Value="0" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="Padding"             Value="16,7" />
+            <Setter Property="Padding"             Value="16,6" />
             <Setter Property="Margin"              Value="12,1,12,1" />
             <Setter Property="FontSize"            Value="13" />
             <Setter Property="Template">
@@ -651,6 +651,65 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SurfaceRaised}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+            A switch laid out like a navigation entry: the icon from Tag, the
+            label, and a track on the right whose knob slides across and takes
+            the accent when it is on. A check box underneath, so Space and a
+            click toggle it and IsChecked is the state.
+        -->
+        <Style x:Key="ThemeSwitch" TargetType="CheckBox">
+            <Setter Property="Foreground"  Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontFamily"  Value="Segoe UI Variable Text, Segoe UI" />
+            <Setter Property="FontSize"    Value="13" />
+            <Setter Property="Margin"      Value="12,1,12,1" />
+            <Setter Property="Cursor"      Value="Hand" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Chrome" Background="Transparent" CornerRadius="18" Padding="16,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{TemplateBinding Tag}"
+                                           FontFamily="{DynamicResource IconFont}"
+                                           FontSize="16"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           VerticalAlignment="Center"
+                                           Width="28" />
+                                <ContentPresenter Grid.Column="1" VerticalAlignment="Center" />
+                                <Border x:Name="Track" Grid.Column="2" Width="34" Height="18" CornerRadius="9"
+                                        Margin="8,0,0,0" VerticalAlignment="Center"
+                                        Background="Transparent" BorderThickness="1"
+                                        BorderBrush="{DynamicResource TextMuted}">
+                                    <Ellipse x:Name="Knob" Width="10" Height="10" Margin="3,0"
+                                             HorizontalAlignment="Left" VerticalAlignment="Center"
+                                             Fill="{DynamicResource TextMuted}" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SurfaceRaised}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background"  Value="{DynamicResource Accent}" />
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                                <Setter TargetName="Knob"  Property="Fill"        Value="{DynamicResource AccentText}" />
+                                <Setter TargetName="Knob"  Property="HorizontalAlignment" Value="Right" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
                                 <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SurfaceRaised}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -1191,21 +1250,24 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- The name with its version underneath, so the version never
+                     competes with the host line for the width of the header. -->
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
                     <TextBlock Text="Toolkit" FontSize="19" FontWeight="Bold" />
                     <TextBlock x:Name="HeaderVersion" Text="v1.0.0" Style="{StaticResource Muted}"
-                               Margin="10,0,0,0" VerticalAlignment="Bottom" />
+                               FontSize="11" Margin="1,0,0,0" />
                 </StackPanel>
 
+                <!-- One line, cut with an ellipsis when the window is narrow; the
+                     whole of it is in the tooltip. Wrapping it pushed the header
+                     to three lines at the minimum width. -->
                 <TextBlock Grid.Column="1" x:Name="HeaderHost" Style="{StaticResource Muted}"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24,0,24,0" />
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnSearch" Content="Search    Ctrl+K" Style="{StaticResource GlyphButton}" Tag="&#xE721;"
-                            Margin="0,0,18,0" ToolTip="Find a page, a report, a fix, a tweak, an application, a topic or a vendor command." />
-                    <TextBlock Text="Theme" Style="{StaticResource Muted}"
-                               VerticalAlignment="Center" Margin="0,0,8,0" />
-                    <ComboBox x:Name="ThemeSelect" Width="110" Margin="0,0,14,0" />
+                            Margin="0,0,14,0" ToolTip="Find a page, a report, a fix, a tweak, an application, a topic or a vendor command." />
                     <Border x:Name="ElevationBadge" CornerRadius="12" Padding="10,4" Margin="0,0,10,0"
                             Background="{DynamicResource SurfaceRaised}"
                             BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
@@ -1271,6 +1333,9 @@
                     <StackPanel Grid.Row="1">
                         <Border Height="1" Margin="16,0,16,6" Background="{DynamicResource BorderSubtle}" />
                         <Button x:Name="NavSettings" Content="Settings" Style="{StaticResource NavButton}" Tag="&#xE713;" />
+                        <!-- The theme, as a switch under Settings: on is dark. -->
+                        <CheckBox x:Name="ThemeToggle" Content="Dark theme" Style="{StaticResource ThemeSwitch}" Tag="&#xE708;"
+                                  ToolTip="Switch between the dark and the light theme. The choice is remembered." />
                     </StackPanel>
 
                     <StackPanel Grid.Row="2" Margin="16,8,16,16">

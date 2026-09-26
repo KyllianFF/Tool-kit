@@ -78,7 +78,7 @@ The pages are grouped by the kind of work, the way a support call unfolds.
 | **Reference** | Knowledge base, Commands |
 | | Settings, pinned below the groups |
 
-Light and dark themes are switched from the header and remembered. Both share one soft style: a violet accent, rounded cards, pill-shaped buttons and navigation, and Segoe UI Variable on Windows 11 (Segoe UI on Windows 10).
+Light and dark themes are toggled with the switch under Settings, in the navigation, and remembered. Both share one soft style: a violet accent, rounded cards, pill-shaped buttons and navigation, and Segoe UI Variable on Windows 11 (Segoe UI on Windows 10).
 
 **Search** everything with **Ctrl+K**, or the Search button in the header: pages, tabs, reports, hardware tests, investigations, quick actions, fixes, tweaks, applications, knowledge base topics and vendor commands. Every word typed has to match, in any order. Up and down choose, Enter opens: the page, the tab and the entry, or the page's own search box filled in. With nothing typed, the palette lists the pages, so the whole toolkit can be driven from the keyboard.
 
