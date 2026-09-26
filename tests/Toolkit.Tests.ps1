@@ -7760,6 +7760,190 @@ Describe 'Duplicate files' {
     }
 }
 
+Describe 'Sign-in, security app, Office and network profile fixes' {
+
+    <#
+        Each of these changes the account or the machine, so every test runs
+        against stand-ins: certutil, cmdkey, the Appx and network cmdlets are
+        replaced, and the Office locations point into the test drive and the
+        test registry.
+    #>
+
+    BeforeEach {
+        $script:FixCalls = New-Object System.Collections.Generic.List[object]
+    }
+
+    Context 'Windows Hello PIN' {
+
+        It 'deletes the Hello container with certutil, as the account itself' {
+            function Invoke-TkProcess { param($FilePath, $ArgumentList, $TimeoutSeconds) $null = $TimeoutSeconds; $script:FixCalls.Add(@{ File = $FilePath; Args = $ArgumentList }); [pscustomobject] @{ ExitCode = 0; StandardOutput = '' } }
+            (Get-Command -Name Invoke-TkProcess).ScriptBlock.ToString() | Should -Match 'FixCalls'
+
+            Reset-TkWindowsHelloPin -Confirm:$false | Should -BeTrue
+
+            $script:FixCalls[0].File | Should -Match 'System32\\certutil\.exe$'
+            $script:FixCalls[0].Args | Should -Be @('-DeleteHelloContainer')
+        }
+
+        It 'reports a failure when certutil does' {
+            function Invoke-TkProcess { param($FilePath, $ArgumentList, $TimeoutSeconds) $null = $FilePath, $ArgumentList, $TimeoutSeconds; [pscustomobject] @{ ExitCode = 5; StandardOutput = 'Access denied' } }
+
+            Reset-TkWindowsHelloPin -Confirm:$false | Should -BeFalse
+        }
+    }
+
+    Context 'Windows Security app' {
+
+        BeforeEach {
+            function Reset-AppxPackage { [CmdletBinding()] param($Package) $script:FixCalls.Add($Package) }
+        }
+
+        It 'resets the package it finds, under either of its names' {
+            function Get-AppxPackage { [CmdletBinding()] param([switch] $AllUsers, $Name) $null = $AllUsers; if ($Name -eq 'Microsoft.SecHealthUI') { [pscustomobject] @{ Name = $Name; PackageFullName = 'Microsoft.SecHealthUI_1000_x64__8wekyb3d8bbwe'; InstallLocation = 'C:\X' } } }
+            (Get-Command -Name Reset-AppxPackage).CommandType | Should -Be 'Function'
+            (Get-Command -Name Get-AppxPackage).CommandType   | Should -Be 'Function'
+
+            Reset-TkWindowsSecurityApp -Confirm:$false | Should -BeTrue
+            $script:FixCalls | Should -Be @('Microsoft.SecHealthUI_1000_x64__8wekyb3d8bbwe')
+        }
+
+        It 'says so when the app is not installed' {
+            function Get-AppxPackage { [CmdletBinding()] param([switch] $AllUsers, $Name) $null = $AllUsers, $Name }
+
+            Reset-TkWindowsSecurityApp -Confirm:$false | Should -BeFalse
+            $script:FixCalls.Count | Should -Be 0
+        }
+    }
+
+    Context 'Office activation' {
+
+        BeforeEach {
+            $script:OfficeLocal = Join-Path $TestDrive ('local-{0}' -f [guid]::NewGuid())
+            $script:OfficeRoot  = 'TestRegistry:\Office16Common'
+
+            New-Item -ItemType Directory -Path (Join-Path $script:OfficeLocal 'Microsoft\Office\Licenses\token') -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $script:OfficeLocal 'Microsoft\Office\16.0\Licensing') -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $script:OfficeLocal 'Microsoft\Office\16.0\Other') -Force | Out-Null
+            foreach ($key in @('Licensing', 'Identity\Identities', 'General')) {
+                New-Item -Path (Join-Path $script:OfficeRoot $key) -Force | Out-Null
+            }
+
+            $script:CmdkeyList = @(
+                'Cible : LegacyGeneric:target=MicrosoftOffice16_Data:SSPI:user@contoso.com'
+                'Type : Generique'
+                'Target: LegacyGeneric:target=MicrosoftOffice15_Data:ADAL:1234'
+                'Target: LegacyGeneric:target=OneDrive Cached Credential'
+            ) -join "`n"
+
+            function Invoke-TkProcess {
+                param($FilePath, $ArgumentList, $TimeoutSeconds)
+                $null = $FilePath, $TimeoutSeconds
+                $script:FixCalls.Add(($ArgumentList -join ' '))
+                [pscustomobject] @{ ExitCode = 0; StandardOutput = $(if ($ArgumentList[0] -eq '/list') { $script:CmdkeyList } else { '' }) }
+            }
+        }
+
+        It 'finds the Office credentials in a cmdkey list, whatever its language' {
+            Get-TkOfficeCredentialTarget -CmdkeyOutput $script:CmdkeyList | Should -Be @(
+                'LegacyGeneric:target=MicrosoftOffice16_Data:SSPI:user@contoso.com'
+                'LegacyGeneric:target=MicrosoftOffice15_Data:ADAL:1234'
+            )
+        }
+
+        It 'removes the licenses, the Licensing and Identity keys and the Office credentials, and nothing else' {
+            function Get-Process { [CmdletBinding()] param($Name) $null = $Name }
+            (Get-Command -Name Get-Process).CommandType | Should -Be 'Function'
+
+            Reset-TkOfficeActivation -LocalAppData $script:OfficeLocal -RegistryRoot $script:OfficeRoot -Confirm:$false | Should -BeTrue
+
+            Test-Path (Join-Path $script:OfficeLocal 'Microsoft\Office\Licenses')      | Should -BeFalse
+            Test-Path (Join-Path $script:OfficeLocal 'Microsoft\Office\16.0\Licensing') | Should -BeFalse
+            Test-Path (Join-Path $script:OfficeLocal 'Microsoft\Office\16.0\Other')     | Should -BeTrue
+            Test-Path (Join-Path $script:OfficeRoot 'Licensing') | Should -BeFalse
+            Test-Path (Join-Path $script:OfficeRoot 'Identity')  | Should -BeFalse
+            Test-Path (Join-Path $script:OfficeRoot 'General')   | Should -BeTrue
+
+            $script:FixCalls | Should -Be @(
+                '/list'
+                '/delete:LegacyGeneric:target=MicrosoftOffice16_Data:SSPI:user@contoso.com'
+                '/delete:LegacyGeneric:target=MicrosoftOffice15_Data:ADAL:1234'
+            )
+        }
+
+        It 'refuses while an Office app is open, and changes nothing' {
+            function Get-Process { [CmdletBinding()] param($Name) $null = $Name; [pscustomobject] @{ ProcessName = 'WINWORD' } }
+
+            Reset-TkOfficeActivation -LocalAppData $script:OfficeLocal -RegistryRoot $script:OfficeRoot -Confirm:$false | Should -BeFalse
+
+            Test-Path (Join-Path $script:OfficeRoot 'Identity') | Should -BeTrue
+            $script:FixCalls.Count | Should -Be 0
+        }
+    }
+
+    Context 'Network profile' {
+
+        BeforeAll {
+            $script:NetProfiles = @(
+                [pscustomobject] @{ InterfaceIndex = 7;  InterfaceAlias = 'Ethernet';  Name = 'Home';     NetworkCategory = 'Public' }
+                [pscustomobject] @{ InterfaceIndex = 12; InterfaceAlias = 'WireGuard'; Name = 'Tunnel';   NetworkCategory = 'Public' }
+                [pscustomobject] @{ InterfaceIndex = 9;  InterfaceAlias = 'Wi-Fi';     Name = 'Neighbor'; NetworkCategory = 'Public' }
+            )
+            $script:NetRoutes = @(
+                [pscustomobject] @{ InterfaceIndex = 12; RouteMetric = 0; InterfaceMetric = 5 }
+                [pscustomobject] @{ InterfaceIndex = 9;  RouteMetric = 0; InterfaceMetric = 45 }
+                [pscustomobject] @{ InterfaceIndex = 7;  RouteMetric = 0; InterfaceMetric = 25 }
+            )
+            $script:NetAdapters = @(
+                [pscustomobject] @{ InterfaceIndex = 7;  HardwareInterface = $true }
+                [pscustomobject] @{ InterfaceIndex = 9;  HardwareInterface = $true }
+                [pscustomobject] @{ InterfaceIndex = 12; HardwareInterface = $false }
+            )
+        }
+
+        It 'picks the physical connection with the best default route, never the VPN' {
+            $choice = Select-TkNetworkToMakePrivate -ConnectionProfile $script:NetProfiles -Route $script:NetRoutes -Adapter $script:NetAdapters
+
+            $choice.Profile.InterfaceAlias | Should -Be 'Ethernet'
+        }
+
+        It 'changes nothing when the main network is already Private' {
+            $profiles = @($script:NetProfiles | ForEach-Object { $_.PSObject.Copy() })
+            $profiles[0].NetworkCategory = 'Private'
+
+            $choice = Select-TkNetworkToMakePrivate -ConnectionProfile $profiles -Route $script:NetRoutes -Adapter $script:NetAdapters
+
+            $choice.Profile     | Should -BeNullOrEmpty
+            $choice.AlreadyDone | Should -BeTrue
+        }
+
+        It 'finds nothing to change without a physical default route' {
+            $choice = Select-TkNetworkToMakePrivate -ConnectionProfile $script:NetProfiles -Route @($script:NetRoutes[0]) -Adapter $script:NetAdapters
+
+            $choice.Profile     | Should -BeNullOrEmpty
+            $choice.AlreadyDone | Should -BeFalse
+        }
+
+        It 'marks only that connection Private' {
+            function Get-NetConnectionProfile { [CmdletBinding()] param() $script:NetProfiles }
+            function Get-NetRoute { [CmdletBinding()] param($DestinationPrefix) $null = $DestinationPrefix; $script:NetRoutes }
+            function Get-NetAdapter { [CmdletBinding()] param() $script:NetAdapters }
+            function Set-NetConnectionProfile { [CmdletBinding()] param($InterfaceIndex, $NetworkCategory) $script:FixCalls.Add(('{0}:{1}' -f $InterfaceIndex, $NetworkCategory)) }
+            (Get-Command -Name Set-NetConnectionProfile).CommandType | Should -Be 'Function'
+
+            Set-TkMainNetworkPrivate -Confirm:$false | Should -BeTrue
+            $script:FixCalls | Should -Be @('7:Private')
+        }
+    }
+
+    It 'lists the four fixes in the catalog' {
+        $ids = @(Get-TkFix | ForEach-Object { $_.id })
+
+        foreach ($id in @('reset-windows-hello-pin', 'reset-windows-security-app', 'reset-office-activation', 'make-network-private')) {
+            $ids | Should -Contain $id
+        }
+    }
+}
+
 Describe 'LAN throughput test' {
 
     <#

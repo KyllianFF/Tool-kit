@@ -51,6 +51,10 @@ function Get-TkFixDispatchTable {
         'RestartBluetoothService' = 'Restart-TkBluetoothService'
         'RestartStartMenu'       = 'Restart-TkStartMenu'
         'ResetDefenderSignatures' = 'Reset-TkDefenderSignature'
+        'ResetWindowsHelloPin'   = 'Reset-TkWindowsHelloPin'
+        'ResetWindowsSecurityApp' = 'Reset-TkWindowsSecurityApp'
+        'ResetOfficeActivation'  = 'Reset-TkOfficeActivation'
+        'MakeNetworkPrivate'     = 'Set-TkMainNetworkPrivate'
     }
 }
 
@@ -1312,6 +1316,315 @@ function Restart-TkStartMenu {
     }
 
     Write-TkLog -Level Information -Category 'Fixes' -Message 'Start menu and search restarted; they come back when opened.'
+
+    return $true
+}
+
+# ---------------------------------------------------------------------------
+# Sign-in, security app, Office, network profile
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Erases the Windows Hello container of this account, so a new PIN is set.
+
+.DESCRIPTION
+    The supported way: certutil -DeleteHelloContainer, run as the account
+    itself. The PIN, and the fingerprint or face enrolled with it, are
+    removed; at the next sign-in the password is asked and Windows offers to
+    set up a new PIN. Runs as the account the toolkit runs as, which is why
+    the fix does not ask for elevation.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Reset-TkWindowsHelloPin {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    $account = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+
+    if (-not $PSCmdlet.ShouldProcess($account, 'Delete the Windows Hello container')) {
+        return $false
+    }
+
+    $run = Invoke-TkProcess -FilePath (Join-Path -Path $env:SystemRoot -ChildPath 'System32\certutil.exe') `
+                            -ArgumentList @('-DeleteHelloContainer') -TimeoutSeconds 60
+
+    if ($run.ExitCode -ne 0) {
+        Write-TkLog -Level Error -Category 'Fixes' -Message (
+            'certutil could not delete the Windows Hello container (exit code {0}): {1}' -f $run.ExitCode, ([string] $run.StandardOutput).Trim()
+        )
+
+        return $false
+    }
+
+    Write-TkLog -Level Information -Category 'Fixes' -Message (
+        'Windows Hello container deleted for {0}. Sign out, sign in with the password, and set up a new PIN.' -f $account
+    )
+
+    return $true
+}
+
+<#
+.SYNOPSIS
+    Resets the Windows Security app for every account.
+
+.DESCRIPTION
+    The app that opens blank, or not at all, is a broken registration of its
+    package, not a broken Defender: resetting the package is the documented
+    repair. Its name changed between Windows 10 and 11, so both are looked
+    for. Where Reset-AppxPackage is missing, the package is registered again
+    from its manifest instead.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Reset-TkWindowsSecurityApp {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    $packages = @(foreach ($name in @('Microsoft.SecHealthUI', 'Microsoft.Windows.SecHealthUI')) {
+        Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue
+    })
+
+    if ($packages.Count -eq 0) {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message 'The Windows Security app package is not installed on this machine.'
+        return $false
+    }
+
+    $ok = $true
+
+    foreach ($package in $packages) {
+
+        if (-not $PSCmdlet.ShouldProcess($package.PackageFullName, 'Reset the Windows Security app')) {
+            return $false
+        }
+
+        try {
+            if (Get-Command -Name 'Reset-AppxPackage' -ErrorAction SilentlyContinue) {
+                Reset-AppxPackage -Package $package.PackageFullName -ErrorAction Stop
+            }
+            else {
+                Add-AppxPackage -DisableDevelopmentMode -Register (Join-Path -Path $package.InstallLocation -ChildPath 'AppxManifest.xml') -ErrorAction Stop
+            }
+
+            Write-TkLog -Level Information -Category 'Fixes' -Message ('{0} reset.' -f $package.Name)
+        }
+        catch {
+            $ok = $false
+            Write-TkLog -Level Error -Category 'Fixes' -Message ('{0} could not be reset: {1}' -f $package.Name, $_.Exception.Message)
+        }
+    }
+
+    return $ok
+}
+
+<#
+.SYNOPSIS
+    Finds the Office credentials in a cmdkey /list output.
+
+.DESCRIPTION
+    Pure. The labels of cmdkey are translated, so the targets are matched on
+    their own form, MicrosoftOffice15_Data or MicrosoftOffice16_Data, with the
+    prefix cmdkey shows before them kept, as /delete wants it.
+
+.OUTPUTS
+    System.String[]
+#>
+function Get-TkOfficeCredentialTarget {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $CmdkeyOutput = ''
+    )
+
+    return @([regex]::Matches($CmdkeyOutput, '(?:LegacyGeneric:target=)?MicrosoftOffice1[56]_Data:\S+') |
+             ForEach-Object { $_.Value } | Select-Object -Unique)
+}
+
+<#
+.SYNOPSIS
+    Clears the Microsoft 365 activation and the Office accounts cached for this account.
+
+.DESCRIPTION
+    The per-user part of Microsoft's "Reset activation state for Microsoft 365
+    Apps" procedure: the license files, the Licensing and Identity keys, and
+    the Office credentials in Credential Manager. Office asks to sign in again
+    and activates afresh. Refused while an Office app is open, since it would
+    write its state back on close.
+
+.PARAMETER LocalAppData
+    The local application data folder of the account.
+
+.PARAMETER RegistryRoot
+    The Office Common key of the account.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Reset-TkOfficeActivation {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param(
+        [Parameter()] [string] $LocalAppData = $env:LOCALAPPDATA,
+        [Parameter()] [string] $RegistryRoot = 'HKCU:\Software\Microsoft\Office\16.0\Common'
+    )
+
+    $open = @(Get-Process -Name @('WINWORD', 'EXCEL', 'POWERPNT', 'OUTLOOK', 'ONENOTE', 'MSACCESS', 'MSPUB', 'VISIO', 'WINPROJ', 'lync') -ErrorAction SilentlyContinue)
+
+    if ($open.Count -gt 0) {
+        Write-TkLog -Level Warning -Category 'Fixes' -Message (
+            'Close Office first: {0} is still open.' -f ((@($open | ForEach-Object { $_.ProcessName } | Select-Object -Unique)) -join ', ')
+        )
+
+        return $false
+    }
+
+    if (-not $PSCmdlet.ShouldProcess('Office activation and cached accounts', 'Reset')) {
+        return $false
+    }
+
+    $ok = $true
+
+    foreach ($path in @(
+        (Join-Path -Path $LocalAppData -ChildPath 'Microsoft\Office\Licenses')
+        (Join-Path -Path $LocalAppData -ChildPath 'Microsoft\Office\16.0\Licensing')
+        (Join-Path -Path $RegistryRoot -ChildPath 'Licensing')
+        (Join-Path -Path $RegistryRoot -ChildPath 'Identity')
+    )) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            continue
+        }
+
+        try {
+            Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+            Write-TkLog -Level Information -Category 'Fixes' -Message ('Removed {0}' -f $path)
+        }
+        catch {
+            $ok = $false
+            Write-TkLog -Level Error -Category 'Fixes' -Message ('{0} could not be removed: {1}' -f $path, $_.Exception.Message)
+        }
+    }
+
+    $list = Invoke-TkProcess -FilePath 'cmdkey.exe' -ArgumentList @('/list') -TimeoutSeconds 30
+
+    foreach ($target in @(Get-TkOfficeCredentialTarget -CmdkeyOutput ([string] $list.StandardOutput))) {
+
+        $delete = Invoke-TkProcess -FilePath 'cmdkey.exe' -ArgumentList @(('/delete:{0}' -f $target)) -TimeoutSeconds 30
+
+        if ($delete.ExitCode -ne 0) {
+            $ok = $false
+            Write-TkLog -Level Error -Category 'Fixes' -Message ('The credential {0} could not be removed.' -f $target)
+        }
+    }
+
+    Write-TkLog -Level Information -Category 'Fixes' -Message 'Office activation reset: open an Office app and sign in again to activate.'
+
+    return $ok
+}
+
+<#
+.SYNOPSIS
+    Picks the network to mark Private: the physical connection that carries the default route, when it is Public.
+
+.DESCRIPTION
+    Pure. A VPN or a virtual switch is never picked: marking a tunnel or a
+    virtual network Private would open file sharing and discovery on it.
+
+.PARAMETER ConnectionProfile
+    Objects with InterfaceIndex, InterfaceAlias, Name and NetworkCategory.
+
+.PARAMETER Route
+    Default routes: InterfaceIndex, RouteMetric, InterfaceMetric.
+
+.PARAMETER Adapter
+    Objects with InterfaceIndex and HardwareInterface.
+
+.OUTPUTS
+    PSCustomObject with Profile (or $null), AlreadyDone and Reason.
+#>
+function Select-TkNetworkToMakePrivate {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()] [AllowEmptyCollection()] [object[]] $ConnectionProfile = @(),
+        [Parameter()] [AllowEmptyCollection()] [object[]] $Route = @(),
+        [Parameter()] [AllowEmptyCollection()] [object[]] $Adapter = @()
+    )
+
+    $physical = @($Adapter | Where-Object { $_ -and $_.HardwareInterface } | ForEach-Object { [int] $_.InterfaceIndex })
+
+    $primary = @($Route | Where-Object { $_ -and $physical -contains [int] $_.InterfaceIndex } |
+                 Sort-Object @{ Expression = { [int] $_.RouteMetric + [int] $_.InterfaceMetric } }) | Select-Object -First 1
+
+    if (-not $primary) {
+        return [pscustomobject] @{ Profile = $null; AlreadyDone = $false; Reason = 'No physical network adapter carries a default route.' }
+    }
+
+    $connection = @($ConnectionProfile | Where-Object { $_ -and [int] $_.InterfaceIndex -eq [int] $primary.InterfaceIndex }) | Select-Object -First 1
+
+    if (-not $connection) {
+        return [pscustomobject] @{ Profile = $null; AlreadyDone = $false; Reason = 'The main network connection has no network profile yet.' }
+    }
+
+    if ([string] $connection.NetworkCategory -ne 'Public') {
+        return [pscustomobject] @{ Profile = $null; AlreadyDone = $true; Reason = ('{0} is already {1}.' -f $connection.InterfaceAlias, $connection.NetworkCategory) }
+    }
+
+    return [pscustomobject] @{ Profile = $connection; AlreadyDone = $false; Reason = '' }
+}
+
+<#
+.SYNOPSIS
+    Marks the main network Private when Windows filed it as Public.
+
+.DESCRIPTION
+    Only the physical connection that carries the default route is changed;
+    a VPN, a virtual switch or a second network stays as it is. A domain
+    network is left alone: its category is set by the domain.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Set-TkMainNetworkPrivate {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param()
+
+    [void] (Import-TkCommandModule -Command @('Get-NetConnectionProfile', 'Get-NetRoute', 'Get-NetAdapter'))
+
+    $choice = Select-TkNetworkToMakePrivate `
+        -ConnectionProfile @(Get-NetConnectionProfile -ErrorAction SilentlyContinue) `
+        -Route @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue) `
+        -Adapter @(Get-NetAdapter -ErrorAction SilentlyContinue)
+
+    if (-not $choice.Profile) {
+        Write-TkLog -Level Information -Category 'Fixes' -Message ('Nothing changed: {0}' -f $choice.Reason)
+        return [bool] $choice.AlreadyDone
+    }
+
+    $connection = $choice.Profile
+
+    if (-not $PSCmdlet.ShouldProcess(('{0} ({1})' -f $connection.Name, $connection.InterfaceAlias), 'Mark the network Private')) {
+        return $false
+    }
+
+    try {
+        Set-NetConnectionProfile -InterfaceIndex $connection.InterfaceIndex -NetworkCategory Private -ErrorAction Stop
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Fixes' -Message ('The network could not be marked Private: {0}' -f $_.Exception.Message)
+        return $false
+    }
+
+    Write-TkLog -Level Information -Category 'Fixes' -Message (
+        '{0} ({1}) is now Private: file sharing, discovery and the rules for private networks apply to it.' -f $connection.Name, $connection.InterfaceAlias
+    )
 
     return $true
 }
