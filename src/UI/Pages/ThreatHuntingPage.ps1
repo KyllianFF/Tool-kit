@@ -38,6 +38,7 @@ function Initialize-TkThreatHuntingPage {
                 6 { Invoke-TkBrowserExtensionFromUi      ; break }
                 7 { Invoke-TkDefenderHistoryFromUi       ; break }
                 8 { Invoke-TkPrivilegeEscalationFromUi   ; break }
+                9 { Invoke-TkShareExposureFromUi         ; break }
             }
         })
     }
@@ -832,6 +833,99 @@ function Invoke-TkPrivilegeEscalationFromUi {
 
             Set-TkDocument -ControlName 'HuntOutput' -Document $document
             Set-TkStatus -Text ('Privilege escalation: {0} unquoted path(s), {1} stored credential(s).' -f $unquoted.Count, $creds.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows what this PC shares on the network and who can reach each share.
+#>
+function Invoke-TkShareExposureFromUi {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the shared folders...' `
+        -ScriptBlock { Get-TkShareExposure } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Shares'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            $script:TkLastHuntReport = $report
+            $script:TkLastHuntName   = 'shared-folders'
+
+            $shares  = @($report.Shares | Where-Object { $_ })
+            $own     = @($shares | Where-Object { -not $_.DefaultAdmin })
+            $default = @($shares | Where-Object { $_.DefaultAdmin })
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Shared folders' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                'What this PC shares on the network, and who can reach it. Access over the network is the stricter of two layers: the permissions of the share and the NTFS permissions of the folder, read here at the root of each share. Read only; nothing is changed.'
+            )
+
+            if (-not $report.ServerRunning) {
+                Add-TkSeverityLine -Document $document -Severity 'Info' `
+                    -Heading 'The Server service is stopped' `
+                    -Note 'Nothing is reachable over the network while it is stopped. The shares below come back when it starts.'
+            }
+
+            # --- The shares someone made --------------------------------------
+            if ($own.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No folder is shared besides the ones Windows creates'
+            }
+
+            foreach ($share in ($own | Sort-Object @{ Expression = { @('Fail', 'Warning', 'Info', 'Pass').IndexOf($_.Severity) } }, Name)) {
+
+                $action = switch ($share.Severity) {
+                    'Fail'    { 'Remove the broad group from the share permissions (folder Properties, Sharing, Advanced Sharing, Permissions) and from the folder''s Security tab, or stop sharing the folder.' }
+                    'Warning' { 'Grant the share to the accounts that need it rather than to a whole group, or stop sharing the folder if it is no longer used.' }
+                    default   { '' }
+                }
+
+                $note = @(
+                    $share.Note
+                    $(if ($share.Permissions) { 'Share permissions: {0}.' -f ($share.Permissions -join ', ') })
+                    $(if ($share.Encrypted) { 'Traffic to it is encrypted.' })
+                ) | Where-Object { $_ }
+
+                Add-TkSeverityLine -Document $document -Severity $share.Severity `
+                    -Heading ('{0}: {1}' -f $share.Name, $share.Heading) `
+                    -Detail $share.Path `
+                    -Note ($note -join ' ') `
+                    -Action $action
+            }
+
+            # --- The ones Windows makes --------------------------------------
+            if ($default.Count -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Info' `
+                    -Heading ('{0} default administrative share(s)' -f $default.Count) `
+                    -Detail (($default | ForEach-Object { $_.Name }) -join ', ') `
+                    -Note 'Created by Windows for remote administration: C$ and the other drive letters, ADMIN$ and IPC$. Only administrators reach them.'
+            }
+
+            # --- The shares of your own, side by side --------------------------
+            # The default ones are summed up in the line above.
+            if ($own.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Your shares' -Level 2
+                Add-TkTable -Document $document -Column @('Share', 'Kind', 'Folder', 'Share permissions', 'A broad group can write the folder') `
+                    -Weight @(1.3, 0.6, 1.5, 2.3, 1.2) `
+                    -Row @($own | ForEach-Object {
+                        $ntfs = if (-not $_.NtfsReadable) { 'could not be read' } elseif ($_.NtfsWrite) { ($_.NtfsWrite -join ', ') } else { '' }
+                        , @($_.Name, $_.Kind, $_.Path, ($_.Permissions -join ', '), $ntfs)
+                    })
+            }
+
+            Add-TkParagraph -Document $document -Muted -Text 'SMB1 and SMB signing are checked by the Security audit. Subfolders can grant more than the root of a share: a folder that must stay private is best not shared at all.'
+
+            Set-TkDocument -ControlName 'HuntOutput' -Document $document
+            Set-TkStatus -Text ('Shared folders: {0} of your own, {1} default.' -f $own.Count, $default.Count)
         }
 }
 
