@@ -39,6 +39,7 @@ function Initialize-TkThreatHuntingPage {
                 7 { Invoke-TkDefenderHistoryFromUi       ; break }
                 8 { Invoke-TkPrivilegeEscalationFromUi   ; break }
                 9 { Invoke-TkShareExposureFromUi         ; break }
+                10 { Invoke-TkWifiProfileFromUi          ; break }
             }
         })
     }
@@ -926,6 +927,67 @@ function Invoke-TkShareExposureFromUi {
 
             Set-TkDocument -ControlName 'HuntOutput' -Document $document
             Set-TkStatus -Text ('Shared folders: {0} of your own, {1} default.' -f $own.Count, $default.Count)
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows the saved Wi-Fi networks and how safe each one is.
+#>
+function Invoke-TkWifiProfileFromUi {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the saved Wi-Fi networks...' `
+        -ScriptBlock { Get-TkWifiProfileAudit } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Profiles'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            $script:TkLastHuntReport = $report
+            $script:TkLastHuntName   = 'wifi-profiles'
+
+            $profiles = @($report.Profiles | Where-Object { $_ })
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Saved Wi-Fi networks' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                'Every Wi-Fi network this PC has joined stays in its list, and the PC keeps looking for it. Read from the Wi-Fi API; the keys are never read. Nothing is changed.'
+            )
+
+            if (-not $report.Available) {
+                Add-TkSeverityLine -Document $document -Severity 'Info' -Heading 'No saved network to read' -Note $report.Reason
+            }
+            elseif ($profiles.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No Wi-Fi network is saved'
+            }
+
+            foreach ($network in $profiles) {
+
+                $detail = @(
+                    $network.Security
+                    $(if ($network.AutoConnect) { 'joins by itself' } else { 'joined by hand' })
+                    $(if ($network.Hidden) { 'hidden' })
+                    $(if ($network.GroupPolicy) { 'set by policy' })
+                ) | Where-Object { $_ }
+
+                Add-TkSeverityLine -Document $document -Severity $network.Severity `
+                    -Heading ('{0}: {1}' -f $network.Name, $network.Heading) `
+                    -Detail ($detail -join ', ') `
+                    -Note $network.Note `
+                    -Action $(if ($network.Severity -in @('Fail', 'Warning')) { $network.Action } else { '' })
+            }
+
+            $weak = @($profiles | Where-Object { $_.Severity -in @('Fail', 'Warning') })
+
+            Set-TkDocument -ControlName 'HuntOutput' -Document $document
+            Set-TkStatus -Text ('Saved Wi-Fi networks: {0}, {1} to look at.' -f $profiles.Count, $weak.Count)
         }
 }
 

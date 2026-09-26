@@ -7377,6 +7377,99 @@ Describe 'Password strength' {
     }
 }
 
+Describe 'Saved Wi-Fi networks' {
+
+    BeforeAll {
+        # A profile as the Wi-Fi API returns it, key left encrypted.
+        function New-WifiTestProfile {
+            param([string] $Name = 'Home', [string] $Auth = 'WPA2PSK', [string] $Cipher = 'AES',
+                  [string] $Mode = 'auto', [string] $Hidden = 'false', [string] $OneX = 'false')
+            @"
+<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+  <name>$Name</name>
+  <SSIDConfig><SSID><name>$Name</name></SSID><nonBroadcast>$Hidden</nonBroadcast></SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>$Mode</connectionMode>
+  <MSM><security><authEncryption><authentication>$Auth</authentication><encryption>$Cipher</encryption><useOneX>$OneX</useOneX></authEncryption>
+  <sharedKey><keyType>passPhrase</keyType><protected>true</protected><keyMaterial>01000000D08C9DDF</keyMaterial></sharedKey></security></MSM>
+</WLANProfile>
+"@
+        }
+
+        $script:WifiVerdict = { param($xml) Get-TkWifiProfileVerdict -Network (ConvertFrom-TkWlanProfileXml -Xml $xml) }
+    }
+
+    It 'reads the saved profile names and flags from the API list' {
+
+        $bytes = New-Object byte[] (8 + 516 * 2)
+        [BitConverter]::GetBytes([int] 2).CopyTo($bytes, 0)
+
+        foreach ($i in 0, 1) {
+            $name = [Text.Encoding]::Unicode.GetBytes(@('Home', 'Office')[$i])
+            $name.CopyTo($bytes, 8 + 516 * $i)
+            [BitConverter]::GetBytes([int] @(0, 1)[$i]).CopyTo($bytes, 8 + 516 * $i + 512)
+        }
+
+        $list = @(ConvertFrom-TkWlanProfileList -Bytes $bytes)
+
+        $list.Count           | Should -Be 2
+        $list[0].Name         | Should -Be 'Home'
+        $list[1].Name         | Should -Be 'Office'
+        $list[1].GroupPolicy  | Should -BeTrue
+        $list[0].GroupPolicy  | Should -BeFalse
+    }
+
+    It 'reads the security, the cipher and how the PC joins' {
+
+        $parsed = ConvertFrom-TkWlanProfileXml -Xml (New-WifiTestProfile -Name 'Box' -Auth 'WPA3SAE' -Cipher 'AES')
+
+        $parsed.Name        | Should -Be 'Box'
+        $parsed.Security    | Should -Be 'WPA3-Personal, AES'
+        $parsed.AutoConnect | Should -BeTrue
+        $parsed.Hidden      | Should -BeFalse
+    }
+
+    It 'returns nothing for text that is not a profile' {
+        ConvertFrom-TkWlanProfileXml -Xml 'not xml'   | Should -BeNullOrEmpty
+        ConvertFrom-TkWlanProfileXml -Xml '<other />' | Should -BeNullOrEmpty
+    }
+
+    It 'fails an open network the PC joins by itself' {
+        $v = & $script:WifiVerdict (New-WifiTestProfile -Name 'Cafe' -Auth 'open' -Cipher 'none' -Mode 'auto')
+        $v.Severity | Should -Be 'Fail'
+        $v.Heading  | Should -Be 'Open network joined automatically'
+        $v.Action   | Should -Match 'netsh wlan delete profile name="Cafe"'
+    }
+
+    It 'warns about an open network joined by hand' {
+        (& $script:WifiVerdict (New-WifiTestProfile -Auth 'open' -Cipher 'none' -Mode 'manual')).Severity | Should -Be 'Warning'
+    }
+
+    It 'fails WEP, and warns about WPA and TKIP' {
+        (& $script:WifiVerdict (New-WifiTestProfile -Auth 'open'   -Cipher 'WEP')).Severity  | Should -Be 'Fail'
+        (& $script:WifiVerdict (New-WifiTestProfile -Auth 'shared' -Cipher 'WEP')).Severity  | Should -Be 'Fail'
+        (& $script:WifiVerdict (New-WifiTestProfile -Auth 'WPAPSK' -Cipher 'TKIP')).Heading  | Should -Be 'Retired security (WPA or TKIP)'
+        (& $script:WifiVerdict (New-WifiTestProfile -Auth 'WPA2PSK' -Cipher 'TKIP')).Severity | Should -Be 'Warning'
+    }
+
+    It 'warns about a hidden network, and keeps every note when there are several' {
+        (& $script:WifiVerdict (New-WifiTestProfile -Hidden 'true')).Heading | Should -Be 'Hidden network'
+
+        $both = & $script:WifiVerdict (New-WifiTestProfile -Auth 'open' -Cipher 'none' -Hidden 'true')
+        $both.Severity | Should -Be 'Fail'
+        $both.Note     | Should -Match 'look-alike hotspot|hotspot with this name'
+        $both.Note     | Should -Match 'calls this name out'
+    }
+
+    It 'passes WPA2 and WPA3, Enhanced Open and an enterprise network' {
+        (& $script:WifiVerdict (New-WifiTestProfile -Auth 'WPA2PSK' -Cipher 'AES')).Severity            | Should -Be 'Pass'
+        (& $script:WifiVerdict (New-WifiTestProfile -Auth 'WPA3SAE' -Cipher 'AES')).Heading             | Should -Be 'Protected'
+        (& $script:WifiVerdict (New-WifiTestProfile -Auth 'OWE' -Cipher 'AES')).Severity                | Should -Be 'Pass'
+        (& $script:WifiVerdict (New-WifiTestProfile -Auth 'WPA2' -Cipher 'AES' -OneX 'true')).Severity  | Should -Be 'Pass'
+    }
+}
+
 Describe 'Shared folders' {
 
     It 'names the groups that reach beyond named accounts' {

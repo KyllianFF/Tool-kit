@@ -60,6 +60,12 @@ public static class TkWlanApi
     private static extern int WlanGetNetworkBssList(IntPtr clientHandle, ref Guid interfaceGuid, IntPtr ssid, int bssType, bool securityEnabled, IntPtr reserved, out IntPtr bssList);
 
     [DllImport("wlanapi.dll")]
+    private static extern int WlanGetProfileList(IntPtr clientHandle, ref Guid interfaceGuid, IntPtr reserved, out IntPtr profileList);
+
+    [DllImport("wlanapi.dll", CharSet = CharSet.Unicode)]
+    private static extern int WlanGetProfile(IntPtr clientHandle, ref Guid interfaceGuid, string profileName, IntPtr reserved, out IntPtr profileXml, ref int flags, out int grantedAccess);
+
+    [DllImport("wlanapi.dll")]
     private static extern void WlanFreeMemory(IntPtr memory);
 
     // Version 2 is the API of Windows Vista and later.
@@ -150,6 +156,58 @@ public static class TkWlanApi
         finally
         {
             if (list != IntPtr.Zero) WlanFreeMemory(list);
+            WlanCloseHandle(handle, IntPtr.Zero);
+        }
+    }
+
+    /// <summary>The WLAN_PROFILE_INFO_LIST of the saved networks, or null with the error code.</summary>
+    public static byte[] GetProfileList(Guid interfaceGuid, out int error)
+    {
+        IntPtr handle = Open(out error);
+        if (error != 0) return null;
+
+        IntPtr list = IntPtr.Zero;
+
+        try
+        {
+            error = WlanGetProfileList(handle, ref interfaceGuid, IntPtr.Zero, out list);
+            if (error != 0) return null;
+
+            // WLAN_PROFILE_INFO is 516 bytes: 256 wide characters and the flags.
+            return Copy(list, 8 + 516 * Marshal.ReadInt32(list, 0));
+        }
+        finally
+        {
+            if (list != IntPtr.Zero) WlanFreeMemory(list);
+            WlanCloseHandle(handle, IntPtr.Zero);
+        }
+    }
+
+    /// <summary>
+    /// A saved network's profile as XML, or null with the error code. The key is
+    /// never asked for in clear: without WLAN_PROFILE_GET_PLAINTEXT_KEY Windows
+    /// returns it encrypted, and nothing here reads it.
+    /// </summary>
+    public static string GetProfileXml(Guid interfaceGuid, string profileName, out int error)
+    {
+        IntPtr handle = Open(out error);
+        if (error != 0) return null;
+
+        IntPtr xml = IntPtr.Zero;
+
+        try
+        {
+            int flags = 0;
+            int access;
+
+            error = WlanGetProfile(handle, ref interfaceGuid, profileName, IntPtr.Zero, out xml, ref flags, out access);
+            if (error != 0) return null;
+
+            return Marshal.PtrToStringUni(xml);
+        }
+        finally
+        {
+            if (xml != IntPtr.Zero) WlanFreeMemory(xml);
             WlanCloseHandle(handle, IntPtr.Zero);
         }
     }
