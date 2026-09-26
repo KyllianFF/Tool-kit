@@ -2640,6 +2640,10 @@
                                             <TextBlock Text="Disk space" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Files that exist more than once in your own folders, compared by content, grouped by the folders that hold them, with the space the copies take. Nothing is deleted.">
+                                            <TextBlock Text="Duplicate files" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="What uses the processor, memory and disks right now, the programs that start with Windows, and how long start up takes and what slows it.">
                                             <TextBlock Text="Performance" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>

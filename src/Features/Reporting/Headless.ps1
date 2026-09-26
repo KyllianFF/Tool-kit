@@ -107,6 +107,12 @@ function Get-TkHeadlessReport {
             }
         })
 
+        (& $row 'Duplicates' $false 'Files that exist more than once in the account''s own folders, and the space the copies take.' {
+            param($Options)
+            $null = $Options
+            Get-TkDuplicateFileReport
+        })
+
         (& $row 'Path' $false 'The system and user PATH, each entry judged, and the commands two folders provide.' {
             param($Options)
             $null = $Options

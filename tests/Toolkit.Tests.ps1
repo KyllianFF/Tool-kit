@@ -7496,6 +7496,152 @@ Describe 'Store apps' {
     }
 }
 
+Describe 'Duplicate files' {
+
+    Context 'Grouping in stages' {
+
+        BeforeAll {
+            # Content by path: what a whole-file hash and a first-bytes hash would see.
+            $script:DupContent = @{
+                'C:\A\photo.jpg'  = @{ Start = 'S1'; Whole = 'W1' }
+                'C:\B\photo.jpg'  = @{ Start = 'S1'; Whole = 'W1' }
+                'C:\C\other.jpg'  = @{ Start = 'S2'; Whole = 'W2' }   # same size, different content
+                'C:\A\video.mp4'  = @{ Start = 'S3'; Whole = 'W3' }
+                'C:\B\video.mp4'  = @{ Start = 'S3'; Whole = 'W4' }   # same start, different end
+                'C:\A\locked.iso' = $null                              # cannot be read
+                'C:\B\locked.iso' = @{ Start = 'S5'; Whole = 'W5' }
+            }
+
+            $script:DupHasher = {
+                param($path, $bytes)
+                $content = $script:DupContent[$path]
+                if ($null -eq $content) { return $null }
+                if ($bytes -gt 0) { $content.Start } else { $content.Whole }
+            }
+
+            $script:DupFiles = @(
+                [pscustomobject] @{ Path = 'C:\A\photo.jpg';  Length = 5MB }
+                [pscustomobject] @{ Path = 'C:\B\photo.jpg';  Length = 5MB }
+                [pscustomobject] @{ Path = 'C:\C\other.jpg';  Length = 5MB }
+                [pscustomobject] @{ Path = 'C:\A\video.mp4';  Length = 90MB }
+                [pscustomobject] @{ Path = 'C:\B\video.mp4';  Length = 90MB }
+                [pscustomobject] @{ Path = 'C:\A\locked.iso'; Length = 700MB }
+                [pscustomobject] @{ Path = 'C:\B\locked.iso'; Length = 700MB }
+                [pscustomobject] @{ Path = 'C:\A\alone.zip';  Length = 12MB }
+            )
+        }
+
+        It 'groups only the files with the same content' {
+            $groups = @(Group-TkDuplicateFile -File $script:DupFiles -Hasher $script:DupHasher)
+
+            $groups.Count    | Should -Be 1
+            $groups[0].Files | Should -Be @('C:\A\photo.jpg', 'C:\B\photo.jpg')
+            $groups[0].Wasted | Should -Be (5MB)
+        }
+
+        It 'tells apart files that only share their first bytes' {
+            $groups = @(Group-TkDuplicateFile -File $script:DupFiles -Hasher $script:DupHasher)
+            @($groups | Where-Object { $_.Files -contains 'C:\A\video.mp4' }).Count | Should -Be 0
+        }
+
+        It 'drops a file it cannot read rather than guess' {
+            $groups = @(Group-TkDuplicateFile -File $script:DupFiles -Hasher $script:DupHasher)
+            @($groups | Where-Object { $_.Files -contains 'C:\B\locked.iso' }).Count | Should -Be 0
+        }
+
+        It 'counts the space every copy after the first takes, most wasteful first' {
+            $groups = @(Group-TkDuplicateFile -Hasher { param($p, $b) 'same' } -File @(
+                [pscustomobject] @{ Path = 'C:\1\a'; Length = 10MB }
+                [pscustomobject] @{ Path = 'C:\2\a'; Length = 10MB }
+                [pscustomobject] @{ Path = 'C:\3\a'; Length = 10MB }
+                [pscustomobject] @{ Path = 'C:\1\b'; Length = 50MB }
+                [pscustomobject] @{ Path = 'C:\2\b'; Length = 50MB }
+            ))
+
+            $groups[0].Wasted | Should -Be (50MB)
+            $groups[1].Wasted | Should -Be (20MB)
+        }
+    }
+
+    It 'sums the duplicates up by the folders that hold them' {
+        $sets = @(Get-TkDuplicateFolderSet -Group @(
+            [pscustomobject] @{ Files = @('C:\Pictures\a.jpg', 'C:\Backup\a.jpg'); Wasted = 3MB }
+            [pscustomobject] @{ Files = @('C:\Pictures\b.jpg', 'C:\Backup\b.jpg'); Wasted = 2MB }
+            [pscustomobject] @{ Files = @('C:\Desktop\c.zip', 'C:\Documents\c.zip'); Wasted = 1MB }
+        ))
+
+        $sets.Count        | Should -Be 2
+        $sets[0].Folders   | Should -Be @('C:\Backup', 'C:\Pictures')
+        $sets[0].Files     | Should -Be 2
+        $sets[0].Wasted    | Should -Be (5MB)
+    }
+
+    Context 'On real files' {
+
+        BeforeAll {
+            $script:DupRoot = Join-Path $TestDrive 'dup'
+            foreach ($folder in @('Pictures', 'Backup', 'Project\.git\lfs', 'Project\node_modules\pkg')) {
+                New-Item -ItemType Directory -Path (Join-Path $script:DupRoot $folder) -Force | Out-Null
+            }
+
+            $same = 'the same content, long enough to pass the minimum size ' * 4
+            Set-Content -LiteralPath (Join-Path $script:DupRoot 'Pictures\photo.jpg')              -Value $same -NoNewline
+            Set-Content -LiteralPath (Join-Path $script:DupRoot 'Backup\photo.jpg')                -Value $same -NoNewline
+            Set-Content -LiteralPath (Join-Path $script:DupRoot 'Project\.git\lfs\object')         -Value $same -NoNewline
+            Set-Content -LiteralPath (Join-Path $script:DupRoot 'Project\node_modules\pkg\index')  -Value $same -NoNewline
+            Set-Content -LiteralPath (Join-Path $script:DupRoot 'Pictures\small.txt')              -Value 'tiny' -NoNewline
+        }
+
+        It 'leaves out small files and the inner folders of tools' {
+            $inventory = Get-TkFileInventory -Path $script:DupRoot -MinimumSize 100
+
+            @($inventory.Files).Count | Should -Be 2
+            @($inventory.Files | Where-Object { $_.Path -match '\\\.git\\|node_modules' }).Count | Should -Be 0
+        }
+
+        It 'skips a file whose content is only in the cloud' {
+            $cloud = Join-Path $script:DupRoot 'Pictures\cloud.jpg'
+            Set-Content -LiteralPath $cloud -Value ('x' * 300) -NoNewline
+            [System.IO.File]::SetAttributes($cloud, [System.IO.FileAttributes]::Offline)
+
+            if (([int] [System.IO.File]::GetAttributes($cloud) -band 0x1000) -eq 0) {
+                Set-ItResult -Skipped -Because 'this file system does not keep the offline attribute'
+                return
+            }
+
+            try {
+                $inventory = Get-TkFileInventory -Path $script:DupRoot -MinimumSize 100
+                $inventory.Skipped | Should -Be 1
+                @($inventory.Files | Where-Object { $_.Path -eq $cloud }).Count | Should -Be 0
+            }
+            finally {
+                [System.IO.File]::SetAttributes($cloud, [System.IO.FileAttributes]::Normal)
+                Remove-Item -LiteralPath $cloud -Force
+            }
+        }
+
+        It 'hashes a whole file and its first bytes' {
+            $file = Join-Path $script:DupRoot 'Pictures\photo.jpg'
+            Get-TkFileHashPart -Path $file           | Should -Be ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash)
+            Get-TkFileHashPart -Path $file -Bytes 10 | Should -Not -Be (Get-TkFileHashPart -Path $file)
+            Get-TkFileHashPart -Path (Join-Path $script:DupRoot 'missing') | Should -BeNullOrEmpty
+        }
+
+        It 'finds the copy end to end, and nothing inside the tool folders' {
+            $report = Get-TkDuplicateFileReport -Path $script:DupRoot -MinimumSize 100
+
+            @($report.Groups).Count  | Should -Be 1
+            $report.Groups[0].Files.Count | Should -Be 2
+            @($report.Sets).Count    | Should -Be 1
+            $report.Wasted           | Should -BeGreaterThan 0
+        }
+    }
+
+    It 'is offered as a headless report' {
+        @(Get-TkHeadlessReport | ForEach-Object { $_.Name }) | Should -Contain 'Duplicates'
+    }
+}
+
 Describe 'Command path (PATH)' {
 
     Context 'Reading the value' {
