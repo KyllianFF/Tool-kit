@@ -2506,6 +2506,68 @@ Describe 'Theme palettes' {
     }
 }
 
+Describe 'Shell header' {
+
+    BeforeAll {
+        Add-Type -AssemblyName PresentationFramework
+        $script:HeaderWindow = [System.Windows.Markup.XamlReader]::Parse((Get-TkMainWindowXaml))
+    }
+
+    It 'writes a short host line: the computer, the edition without the vendor, PowerShell major.minor' {
+
+        $summary = Format-TkHostSummary -ComputerName 'DESKTOP-01' -OSCaption 'Microsoft Windows 11 Pro' -OSBuild '26100' `
+                                        -ShellVersion '5.1.26100.9549' -ShellEdition 'Desktop'
+
+        $dot = [char] 0x00B7
+
+        $summary.Text | Should -Be ('DESKTOP-01  {0}  Windows 11 Pro  {0}  PowerShell 5.1' -f $dot)
+    }
+
+    It 'keeps the full edition, build and PowerShell version in the tooltip' {
+
+        $summary = Format-TkHostSummary -ComputerName 'DESKTOP-01' -OSCaption 'Microsoft Windows 11 Pro' -OSBuild '26100' `
+                                        -ShellVersion '7.5.4' -ShellEdition 'Core'
+
+        $summary.ToolTip | Should -Match 'Microsoft Windows 11 Pro \(build 26100\)'
+        $summary.ToolTip | Should -Match 'PowerShell 7\.5\.4 Core'
+        $summary.Text    | Should -Match 'PowerShell 7\.5$'
+    }
+
+    It 'leaves out an unknown part instead of an empty gap between separators' {
+
+        # Before, an unread edition produced "DESKTOP-01 -  - PowerShell 5.1...".
+        $summary = Format-TkHostSummary -ComputerName 'DESKTOP-01' -OSCaption '' -OSBuild '' `
+                                        -ShellVersion '5.1.26100.9549' -ShellEdition 'Desktop'
+
+        $dot = [char] 0x00B7
+
+        $summary.Text | Should -Be ('DESKTOP-01  {0}  PowerShell 5.1' -f $dot)
+        $summary.Text | Should -Not -Match ('{0}\s+{0}' -f [regex]::Escape([string] $dot))
+    }
+
+    It 'keeps the host line on one line, cut with an ellipsis when it does not fit' {
+
+        $line = $script:HeaderWindow.FindName('HeaderHost')
+
+        $line.TextWrapping | Should -Be ([System.Windows.TextWrapping]::NoWrap)
+        $line.TextTrimming | Should -Be ([System.Windows.TextTrimming]::CharacterEllipsis)
+    }
+
+    It 'moves the theme choice to a switch under Settings, out of the header' {
+
+        $script:HeaderWindow.FindName('ThemeSelect') | Should -BeNullOrEmpty
+
+        $toggle = $script:HeaderWindow.FindName('ThemeToggle')
+        $toggle | Should -BeOfType ([System.Windows.Controls.CheckBox])
+
+        # In the same panel as the Settings entry, right after it.
+        $settings = $script:HeaderWindow.FindName('NavSettings')
+        $panel    = [System.Windows.LogicalTreeHelper]::GetParent($settings)
+
+        $panel.Children.IndexOf($toggle) | Should -Be ($panel.Children.IndexOf($settings) + 1)
+    }
+}
+
 Describe 'Get-TkWellKnownService' {
 
     It 'names port <Port> as <Expected>' -TestCases @(
@@ -2712,7 +2774,8 @@ Describe 'Interface rendering' {
 
             # A code point the font does not carry renders as an empty box.
             # Nothing else in the suite can see that.
-            foreach ($name in @(Get-TkPageName | ForEach-Object { 'Nav{0}' -f $_ })) {
+            # The theme switch sits in the navigation and carries its icon the same way.
+            foreach ($name in @(@(Get-TkPageName | ForEach-Object { 'Nav{0}' -f $_ }) + 'ThemeToggle')) {
 
                 $button = $script:Window.FindName($name)
 

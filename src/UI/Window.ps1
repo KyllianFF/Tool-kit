@@ -1448,6 +1448,60 @@ function Show-TkTableWindow {
 
 <#
 .SYNOPSIS
+    Writes the host line of the header, short, with the details in a tooltip.
+
+.DESCRIPTION
+    The header has room for one short line, so the line carries what tells
+    two machines apart at a glance: the computer, the Windows edition without
+    the vendor name, and the PowerShell major and minor version. The build
+    numbers go in the tooltip. A part that is unknown is left out rather than
+    leaving an empty gap between two separators.
+
+.OUTPUTS
+    PSCustomObject with Text and ToolTip.
+#>
+function Format-TkHostSummary {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()] [AllowEmptyString()] [string] $ComputerName,
+        [Parameter()] [AllowEmptyString()] [string] $OSCaption,
+        [Parameter()] [AllowEmptyString()] [string] $OSBuild,
+        [Parameter()] [AllowEmptyString()] [string] $ShellVersion,
+        [Parameter()] [AllowEmptyString()] [string] $ShellEdition
+    )
+
+    $edition = ($OSCaption -replace '^\s*Microsoft\s+', '').Trim()
+
+    $shortVersion = $ShellVersion
+    $parsed       = $null
+
+    if ([version]::TryParse($ShellVersion, [ref] $parsed)) {
+        $shortVersion = $parsed.ToString(2)
+    }
+
+    $separator = '  {0}  ' -f [char] 0x00B7
+
+    $text = @(
+        $ComputerName
+        $edition
+        $(if ($shortVersion) { 'PowerShell {0}' -f $shortVersion })
+    ) | Where-Object { $_ }
+
+    $tip = @(
+        $ComputerName
+        $(if ($OSCaption) { if ($OSBuild) { '{0} (build {1})' -f $OSCaption, $OSBuild } else { $OSCaption } })
+        $(if ($ShellVersion) { ('PowerShell {0} {1}' -f $ShellVersion, $ShellEdition).Trim() })
+    ) | Where-Object { $_ }
+
+    return [pscustomobject] @{
+        Text    = @($text) -join $separator
+        ToolTip = @($tip) -join [Environment]::NewLine
+    }
+}
+
+<#
+.SYNOPSIS
     Wires the shell: header, navigation and window lifetime.
 #>
 function Initialize-TkShell {
@@ -1466,10 +1520,13 @@ function Initialize-TkShell {
     $hostLabel = Get-TkControl -Name 'HeaderHost'
 
     if ($hostLabel) {
-        $hostLabel.Text = '{0} - {1} - PowerShell {2}' -f $env:COMPUTERNAME, $ctx.OSCaption, $ctx.PSVersion
+        $summary = Format-TkHostSummary -ComputerName $env:COMPUTERNAME -OSCaption $ctx.OSCaption -OSBuild $ctx.OSBuild `
+                                        -ShellVersion $ctx.PSVersion -ShellEdition $ctx.PSEdition
+        $hostLabel.Text    = $summary.Text
+        $hostLabel.ToolTip = $summary.ToolTip
     }
 
-    Initialize-TkThemeSelector
+    Initialize-TkThemeToggle
     Update-TkElevationBadge
     Initialize-TkSearch
 

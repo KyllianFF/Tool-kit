@@ -363,35 +363,33 @@ function Set-TkTheme {
 
 <#
 .SYNOPSIS
-    Fills the theme selector and applies the stored choice.
+    Wires the theme switch under Settings and applies the stored choice.
 
 .DESCRIPTION
     Called once during shell initialisation. The stored theme is applied
     before the window is shown, so there is no flash of the wrong palette.
+
+    The switch is on for the dark theme. It reacts to Click, which a mouse
+    and the Space key raise, and not to Checked: setting IsChecked here to
+    show the stored choice must not count as the user choosing it again.
 #>
-function Initialize-TkThemeSelector {
+function Initialize-TkThemeToggle {
     [CmdletBinding()]
     param()
 
-    $selector = Get-TkControl -Name 'ThemeSelect'
-    $current  = Get-TkThemeName
+    $toggle  = Get-TkControl -Name 'ThemeToggle'
+    $current = Get-TkThemeName
 
-    if ($selector) {
+    if ($toggle) {
 
-        foreach ($name in @('Dark', 'Light')) {
-            [void] $selector.Items.Add($name)
-        }
+        $toggle.IsChecked = ($current -eq 'Dark')
 
-        $selector.SelectedItem = $current
+        $toggle.Add_Click({
 
-        $selector.Add_SelectionChanged({
+            $choice = if ((Get-TkControl -Name 'ThemeToggle').IsChecked) { 'Dark' } else { 'Light' }
 
-            $choice = [string] (Get-TkControl -Name 'ThemeSelect').SelectedItem
-
-            if ($choice) {
-                Set-TkTheme -Name $choice -Persist | Out-Null
-                Set-TkStatus -Text ('{0} theme applied.' -f $choice)
-            }
+            Set-TkTheme -Name $choice -Persist | Out-Null
+            Set-TkStatus -Text ('{0} theme applied.' -f $choice)
         })
     }
 
