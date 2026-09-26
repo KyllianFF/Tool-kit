@@ -251,6 +251,34 @@ function Initialize-TkToolsPage {
         }
     }
 
+    # --- LDAP filter builder ----------------------------------------------
+    $ldapObject = Get-TkControl -Name 'LdapObject'
+    if ($ldapObject) {
+        foreach ($choice in @(Get-TkLdapObjectClass)) { [void] $ldapObject.Items.Add($choice.Name) }
+        $ldapObject.SelectedIndex = 0
+        $ldapObject.Add_SelectionChanged({ Update-TkLdapFromUi })
+    }
+
+    $ldapMatch = Get-TkControl -Name 'LdapMatch'
+    if ($ldapMatch) {
+        foreach ($choice in @('All conditions (AND)', 'Any condition (OR)')) { [void] $ldapMatch.Items.Add($choice) }
+        $ldapMatch.SelectedIndex = 0
+        $ldapMatch.Add_SelectionChanged({ Update-TkLdapFromUi })
+    }
+
+    $ldapPreset = Get-TkControl -Name 'LdapPreset'
+    if ($ldapPreset) {
+        [void] $ldapPreset.Items.Add('Insert a preset...')
+        foreach ($choice in @(Get-TkLdapPreset)) { [void] $ldapPreset.Items.Add($choice.Name) }
+        $ldapPreset.SelectedIndex = 0
+        $ldapPreset.Add_SelectionChanged({ Add-TkLdapPreset })
+    }
+
+    $ldapNegate = Get-TkControl -Name 'LdapNegate'
+    if ($ldapNegate) {
+        $ldapNegate.Add_Click({ Update-TkLdapFromUi })
+    }
+
     Register-TkClick -Name 'BtnGenerateUuid' -Action { Invoke-TkUuidFromUi }
     Register-TkClick -Name 'BtnCopyUuid'     -Action { Copy-TkToolOutput -ControlName 'UuidOutput' }
     Register-TkClick -Name 'BtnDecodeUuid'   -Action { Invoke-TkUuidDecodeFromUi }
@@ -277,6 +305,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'XmlXPath';         Update = { Update-TkXmlFromUi } }
         @{ Name = 'IniEnvInput';      Update = { Update-TkIniEnvFromUi } }
         @{ Name = 'CsvInput';         Update = { Update-TkCsvFromUi } }
+        @{ Name = 'LdapConditions';   Update = { Update-TkLdapFromUi } }
         @{ Name = 'SidInput';         Update = { Update-TkSidFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
@@ -1920,6 +1949,61 @@ function Update-TkCsvFromUi {
 
 <#
 .SYNOPSIS
+    Builds the LDAP filter and its commands from the conditions, as they change.
+#>
+function Update-TkLdapFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'LdapOutput'
+    $box    = Get-TkControl -Name 'LdapConditions'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $match  = if ((Get-TkSelectedText -Name 'LdapMatch') -like 'Any*') { 'Any' } else { 'All' }
+    $negate = [bool] (Get-TkControl -Name 'LdapNegate').IsChecked
+
+    $output.Text = (Format-TkLdapReport -Conditions ([string] $box.Text) -ObjectClass (Get-TkSelectedText -Name 'LdapObject') -Match $match -Negate:$negate) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Drops the chosen preset condition into the LDAP conditions box.
+#>
+function Add-TkLdapPreset {
+    [CmdletBinding()]
+    param()
+
+    $combo = Get-TkControl -Name 'LdapPreset'
+
+    if (-not $combo -or $combo.SelectedIndex -le 0) {
+        return
+    }
+
+    $name = [string] $combo.SelectedItem
+
+    # Back to the placeholder first, so the same preset can be added again and
+    # the re-entry this triggers returns at the guard above.
+    $combo.SelectedIndex = 0
+
+    $preset = @(Get-TkLdapPreset) | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+    $box    = Get-TkControl -Name 'LdapConditions'
+
+    if (-not $preset -or -not $box) {
+        return
+    }
+
+    $existing = [string] $box.Text
+    $prefix   = if ($existing.Length -gt 0 -and -not $existing.EndsWith("`n")) { [Environment]::NewLine } else { '' }
+
+    # AppendText raises TextChanged, which refreshes the output.
+    $box.AppendText($prefix + $preset.Clause + [Environment]::NewLine)
+}
+
+<#
+.SYNOPSIS
     Resolves the pasted SID or account name, as it changes.
 #>
 function Update-TkSidFromUi {
@@ -3110,6 +3194,7 @@ function Get-TkToolEntry {
         (& $tool 'Windows and AD'   'icacls (NTFS)'  'ToolIcacls')
         (& $tool 'Windows and AD'   'SID resolver'   'ToolSid')
         (& $tool 'Windows and AD'   'Event log query'   'ToolEventQuery')
+        (& $tool 'Windows and AD'   'LDAP filter'    'ToolLdap')
     )
 }
 
