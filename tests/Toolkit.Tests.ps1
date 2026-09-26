@@ -7377,6 +7377,104 @@ Describe 'Password strength' {
     }
 }
 
+Describe 'Shared folders' {
+
+    It 'names the groups that reach beyond named accounts' {
+        Get-TkBroadSidName -Sid 'S-1-1-0'                     | Should -Be 'Everyone'
+        Get-TkBroadSidName -Sid 'S-1-5-11'                    | Should -Be 'Authenticated Users'
+        Get-TkBroadSidName -Sid 'S-1-5-32-546'                | Should -Be 'Guests'
+        Get-TkBroadSidName -Sid 'S-1-5-21-1-2-3-513'          | Should -Be 'Domain Users'
+        Get-TkBroadSidName -Sid 'S-1-5-32-544'                | Should -BeNullOrEmpty
+        Get-TkBroadSidName -Sid 'S-1-5-21-1-2-3-1001'         | Should -BeNullOrEmpty
+    }
+
+    It 'names a built-in group in English whatever the language of Windows' {
+        # Translate() would give "BUILTIN\Administrateurs" on a French machine.
+        Get-TkShareSidName -Sid 'S-1-5-32-544' | Should -Be 'Administrators'
+        Get-TkShareSidName -Sid 'S-1-1-0'      | Should -Be 'Everyone'
+    }
+
+    It 'reads Full, Change and Read from a share security descriptor' {
+
+        $rules = @(ConvertFrom-TkShareSddl -Sddl 'O:BAG:S-1-5-21-1-2-3-513D:(A;;FA;;;WD)(A;;0x1301bf;;;S-1-5-21-1-2-3-1004)(A;;0x1200a9;;;AU)(A;;GA;;;BA)')
+
+        $rules.Count | Should -Be 4
+
+        ($rules | Where-Object Sid -eq 'S-1-1-0').Rights    | Should -Be 'Full'
+        ($rules | Where-Object Sid -eq 'S-1-1-0').CanWrite  | Should -BeTrue
+
+        $change = $rules | Where-Object Sid -eq 'S-1-5-21-1-2-3-1004'
+        $change.Rights   | Should -Be 'Change'
+        $change.CanWrite | Should -BeTrue
+
+        $read = $rules | Where-Object Sid -eq 'S-1-5-11'
+        $read.Rights   | Should -Be 'Read'
+        $read.CanWrite | Should -BeFalse
+        $read.CanRead  | Should -BeTrue
+
+        ($rules | Where-Object Sid -eq 'S-1-5-32-544').Rights | Should -Be 'Full'   # generic all
+    }
+
+    It 'returns nothing for an empty or unreadable descriptor' {
+        @(ConvertFrom-TkShareSddl -Sddl '').Count          | Should -Be 0
+        @(ConvertFrom-TkShareSddl -Sddl 'not sddl').Count  | Should -Be 0
+    }
+
+    Context 'Verdict' {
+
+        It 'fails a share a broad group can write through both layers' {
+            $v = Get-TkShareVerdict -Name 'Data' -ShareWrite @('Everyone') -ShareRead @('Everyone') -NtfsWrite @('Everyone') -NtfsRead @('Everyone')
+            $v.Severity | Should -Be 'Fail'
+            $v.Heading  | Should -Match 'Everyone can write'
+        }
+
+        It 'warns when only the share lets a broad group write, and says it can already read' {
+            $v = Get-TkShareVerdict -Name 'Users' -ShareWrite @('Everyone') -ShareRead @('Everyone') -NtfsWrite @() -NtfsRead @('Everyone')
+            $v.Severity | Should -Be 'Warning'
+            $v.Note     | Should -Match 'all that hold them back'
+            $v.Note     | Should -Match 'Everyone can already read'
+        }
+
+        It 'says so when the folder permissions could not be read' {
+            $v = Get-TkShareVerdict -Name 'Data' -ShareWrite @('Everyone') -NtfsReadable $false
+            $v.Note | Should -Match 'could not be read'
+        }
+
+        It 'warns when a broad group can read through both layers' {
+            (Get-TkShareVerdict -Name 'Docs' -ShareRead @('Authenticated Users') -NtfsRead @('Authenticated Users')).Severity | Should -Be 'Warning'
+        }
+
+        It 'warns about a hidden share someone made, and passes one shared with named accounts' {
+            (Get-TkShareVerdict -Name 'Backup$').Heading   | Should -Be 'Hidden share'
+            (Get-TkShareVerdict -Name 'Scans').Severity    | Should -Be 'Pass'
+        }
+
+        It 'treats a default administrative share as information' {
+            (Get-TkShareVerdict -Name 'C$' -DefaultAdmin).Severity | Should -Be 'Info'
+        }
+    }
+
+    It 'wires every investigation in the list to its own function' {
+
+        # The list is wired by position: an entry added without its case would
+        # open nothing, and one added in the middle would open its neighbour's.
+        $markup = Get-TkMainWindowXaml
+        $start  = $markup.IndexOf('x:Name="HuntChoices"')
+        $slice  = $markup.Substring($start, $markup.IndexOf('</ListBox>', $start) - $start)
+        $items  = ([regex]::Matches($slice, 'Style="\{StaticResource ChoiceTitle\}"')).Count
+
+        $body   = (Get-Command -Name 'Initialize-TkThreatHuntingPage').ScriptBlock.ToString()
+        $cases  = @([regex]::Matches($body, '(?m)^\s*(?<index>\d+)\s*\{\s*(?<name>Invoke-Tk\w+FromUi)'))
+
+        $cases.Count | Should -Be $items
+
+        for ($i = 0; $i -lt $cases.Count; $i++) {
+            [int] $cases[$i].Groups['index'].Value | Should -Be $i
+            Get-Command -Name $cases[$i].Groups['name'].Value -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+        }
+    }
+}
+
 Describe 'Restarts and shutdowns' {
 
     Context 'Who asked' {
