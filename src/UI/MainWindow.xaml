@@ -3021,6 +3021,10 @@
                                 <TextBlock Text="INI and .env" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Read a pasted CSV as an aligned table, detect its delimiter, trim cells, drop blank and duplicate rows, and export it as JSON or clean CSV.">
+                                <TextBlock Text="CSV cleaner" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Spell out a serial number, a licence key or a password to dictate with the NATO phonetic alphabet.">
                                 <TextBlock Text="NATO alphabet" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
@@ -3797,6 +3801,41 @@
 
                                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
                                     <TextBox x:Name="IniEnvOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="NoWrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolCsv" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="CSV cleaner" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <TextBox x:Name="CsvInput" Height="120" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste a CSV (comma, semicolon, tab or pipe)" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Delimiter" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="CsvDelimiter" Width="120" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="View" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="CsvView" Width="130" MinHeight="40" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="CsvHeader" Content="First row is a header" IsChecked="True" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="CsvTrim" Content="Trim cells" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="CsvDropBlank" Content="Drop blank rows" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="CsvDropDupes" Content="Drop duplicate rows" VerticalAlignment="Center" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Read on the machine, nothing sent anywhere. Works out the delimiter, parses the quoting so a field can hold the delimiter, a quote or a newline, and lays the rows out in aligned columns. Trim the cells, drop the blank and the duplicate rows, and read the result back as a table, as JSON, or as clean CSV." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="CsvOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="NoWrap" />
                                 </Border>

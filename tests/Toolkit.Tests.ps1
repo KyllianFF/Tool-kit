@@ -5388,6 +5388,78 @@ PLAIN=hello world
     }
 }
 
+Describe 'CSV cleaner' {
+
+    BeforeAll {
+        $script:CsvBlob = @'
+name,role,city
+ Alice , admin , Paris
+Bob,"user, guest",Lyon
+Bob,"user, guest",Lyon
+
+Carol,dev,"Nice
+Riviera"
+'@
+    }
+
+    It 'detects the delimiter' {
+        Get-TkCsvDelimiter -Text $script:CsvBlob | Should -Be ','
+        Get-TkCsvDelimiter -Text "a;b;c`n1;2;3"  | Should -Be ';'
+        Get-TkCsvDelimiter -Text "a`tb`tc`n1`t2`t3" | Should -Be "`t"
+    }
+
+    It 'parses a quoted field that holds the delimiter and a newline' {
+        $rows = @(ConvertFrom-TkCsvText -Text $script:CsvBlob -Delimiter ',')
+
+        $rows[2][1] | Should -Be 'user, guest'
+        $rows[5][2] | Should -Be "Nice`nRiviera"
+    }
+
+    It 'trims, drops blank rows and drops duplicates' {
+        $table = Get-TkCsvTable -Text $script:CsvBlob -Header -Trim -DropBlank -DropDuplicate
+
+        $table.Rows.Count       | Should -Be 3
+        $table.DroppedBlank     | Should -Be 1
+        $table.DroppedDuplicate | Should -Be 1
+        $table.Rows[0][0]       | Should -Be 'Alice'   # trimmed
+        $table.ColumnCount      | Should -Be 3
+    }
+
+    It 'keeps the blanks and duplicates when not asked to clean' {
+        $table = Get-TkCsvTable -Text $script:CsvBlob -Header
+        $table.Rows.Count | Should -Be 5
+    }
+
+    It 'writes JSON keyed by the header' {
+        $json = ConvertTo-TkCsvJson -Text $script:CsvBlob -Header -Trim -DropBlank -DropDuplicate | ConvertFrom-Json
+
+        @($json).Count       | Should -Be 3
+        $json[0].name        | Should -Be 'Alice'
+        $json[1].role        | Should -Be 'user, guest'
+    }
+
+    It 'writes clean CSV back, quoting only what needs it' {
+        $csv = ConvertTo-TkCsvText -Text $script:CsvBlob -Header -Trim -DropBlank -DropDuplicate
+
+        $csv | Should -Match 'name,role,city'
+        $csv | Should -Match '"user, guest"'
+        $csv | Should -Not -Match 'Alice ,'   # the space was trimmed
+    }
+
+    It 'lays a table out with a summary, flattening an in-cell newline' {
+        $report = (Format-TkCsvTable -Text $script:CsvBlob -Header -Trim -DropBlank -DropDuplicate) -join "`n"
+
+        $report | Should -Match 'Delimiter: comma'
+        $report | Should -Match '3 column\(s\), 3 row\(s\)'
+        $report | Should -Not -Match "Nice`nRiviera"   # the newline is flattened
+    }
+
+    It 'prompts on empty input' {
+        (Format-TkCsvTable -Text '') -join "`n" | Should -Match 'Paste a CSV'
+        ConvertTo-TkCsvJson -Text ''            | Should -Be '[]'
+    }
+}
+
 Describe 'Indicator extractor' {
 
     BeforeAll {
