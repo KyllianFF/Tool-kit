@@ -229,6 +229,28 @@ function Initialize-TkToolsPage {
         $iniEnvReveal.Add_Click({ Update-TkIniEnvFromUi })
     }
 
+    # --- CSV cleaner ------------------------------------------------------
+    $csvDelimiter = Get-TkControl -Name 'CsvDelimiter'
+    if ($csvDelimiter) {
+        foreach ($choice in @('Auto', 'Comma', 'Semicolon', 'Tab', 'Pipe')) { [void] $csvDelimiter.Items.Add($choice) }
+        $csvDelimiter.SelectedIndex = 0
+        $csvDelimiter.Add_SelectionChanged({ Update-TkCsvFromUi })
+    }
+
+    $csvView = Get-TkControl -Name 'CsvView'
+    if ($csvView) {
+        foreach ($choice in @('Table', 'JSON', 'Cleaned CSV')) { [void] $csvView.Items.Add($choice) }
+        $csvView.SelectedIndex = 0
+        $csvView.Add_SelectionChanged({ Update-TkCsvFromUi })
+    }
+
+    foreach ($name in @('CsvHeader', 'CsvTrim', 'CsvDropBlank', 'CsvDropDupes')) {
+        $check = Get-TkControl -Name $name
+        if ($check) {
+            $check.Add_Click({ Update-TkCsvFromUi })
+        }
+    }
+
     Register-TkClick -Name 'BtnGenerateUuid' -Action { Invoke-TkUuidFromUi }
     Register-TkClick -Name 'BtnCopyUuid'     -Action { Copy-TkToolOutput -ControlName 'UuidOutput' }
     Register-TkClick -Name 'BtnDecodeUuid'   -Action { Invoke-TkUuidDecodeFromUi }
@@ -254,6 +276,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'XmlInput';         Update = { Update-TkXmlFromUi } }
         @{ Name = 'XmlXPath';         Update = { Update-TkXmlFromUi } }
         @{ Name = 'IniEnvInput';      Update = { Update-TkIniEnvFromUi } }
+        @{ Name = 'CsvInput';         Update = { Update-TkCsvFromUi } }
         @{ Name = 'SidInput';         Update = { Update-TkSidFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
@@ -1866,6 +1889,37 @@ function Update-TkIniEnvFromUi {
 
 <#
 .SYNOPSIS
+    Reads the pasted CSV as a table, JSON or cleaned CSV, as it changes.
+#>
+function Update-TkCsvFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'CsvOutput'
+    $box    = Get-TkControl -Name 'CsvInput'
+
+    if (-not $output -or -not $box) {
+        return
+    }
+
+    $common = @{
+        Text          = [string] $box.Text
+        Delimiter     = Get-TkSelectedText -Name 'CsvDelimiter'
+        Header        = [bool] (Get-TkControl -Name 'CsvHeader').IsChecked
+        Trim          = [bool] (Get-TkControl -Name 'CsvTrim').IsChecked
+        DropBlank     = [bool] (Get-TkControl -Name 'CsvDropBlank').IsChecked
+        DropDuplicate = [bool] (Get-TkControl -Name 'CsvDropDupes').IsChecked
+    }
+
+    switch (Get-TkSelectedText -Name 'CsvView') {
+        'JSON'        { $output.Text = ConvertTo-TkCsvJson @common }
+        'Cleaned CSV' { $output.Text = ConvertTo-TkCsvText @common }
+        default       { $output.Text = (Format-TkCsvTable @common) -join [Environment]::NewLine }
+    }
+}
+
+<#
+.SYNOPSIS
     Resolves the pasted SID or account name, as it changes.
 #>
 function Update-TkSidFromUi {
@@ -3041,6 +3095,7 @@ function Get-TkToolEntry {
         (& $tool 'Text and data'    'Text normalizer' 'ToolTextNormalizer')
         (& $tool 'Text and data'    'XML'            'ToolXml')
         (& $tool 'Text and data'    'INI and .env'   'ToolIniEnv')
+        (& $tool 'Text and data'    'CSV cleaner'    'ToolCsv')
         (& $tool 'Text and data'    'NATO alphabet'  'ToolNato')
         (& $tool 'Text and data'    'Phone numbers'  'ToolPhone')
         (& $tool 'Text and data'    'HTML editor'    'ToolHtmlEditor')
