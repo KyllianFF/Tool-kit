@@ -665,11 +665,6 @@ function Invoke-TkApplyProfileFromUi {
         return
     }
 
-    if (-not (Test-TkIsElevated)) {
-        Set-TkStatus -Text 'Changing an adapter configuration requires an elevated instance.'
-        return
-    }
-
     $confirmed = Confirm-TkAction -Title 'Apply an IP profile' -Message (
         "Apply `"{0}`" to {1}?`n`nThe current addresses, gateway and DNS servers on that adapter are replaced. If your remote session runs over it, you will be disconnected." -f $name, $adapter
     )
@@ -678,24 +673,11 @@ function Invoke-TkApplyProfileFromUi {
         return
     }
 
-    Invoke-TkBackgroundAction -StatusText ('Applying {0} to {1}...' -f $name, $adapter) `
-        -ParameterList @{ alias = $adapter; profileName = $name } `
-        -ScriptBlock {
-            param($alias, $profileName)
-            Set-TkAdapterProfile -InterfaceAlias $alias -Name $profileName -Confirm:$false
-        } `
-        -OnComplete {
-            param($result)
+    $status = if (Test-TkIsElevated) { ('Applying {0} to {1}...' -f $name, $adapter) } else { 'Waiting for administrator consent...' }
 
-            if (@($result.Output) -contains $true) {
-                Set-TkStatus -Text 'Profile applied.'
-            }
-            else {
-                Set-TkStatus -Text 'The profile could not be applied. See the output panel.'
-            }
-
-            Update-TkAdapterList
-        }
+    Start-TkPrivilegedAction -Name 'ApplyProfile' -StatusText $status `
+        -Parameters @{ InterfaceAlias = $adapter; ProfileName = $name } `
+        -OnResult { param($outcome) Update-TkAdapterList }
 }
 
 <#
@@ -782,13 +764,12 @@ function Invoke-TkAddPortProxyFromUi {
         return
     }
 
-    if (-not (Test-TkIsElevated)) {
-        Set-TkStatus -Text 'Adding a port proxy rule requires an elevated instance.'
-        return
-    }
+    $status = if (Test-TkIsElevated) { 'Adding the port proxy...' } else { 'Waiting for administrator consent...' }
 
-    if (Add-TkPortProxy -ListenPort $listenPort -ConnectAddress $address -ConnectPort $connectPort -Confirm:$false) {
-        Set-TkStatus -Text ('Publishing {0} to {1}:{2}' -f $listenPort, $address, $connectPort)
+    Start-TkPrivilegedAction -Name 'AddPortProxy' -StatusText $status -Parameters @{
+        ListenPort     = $listenPort
+        ConnectAddress = $address
+        ConnectPort    = $connectPort
     }
 }
 
@@ -807,12 +788,9 @@ function Invoke-TkRemovePortProxyFromUi {
         return
     }
 
-    if (-not (Test-TkIsElevated)) {
-        Set-TkStatus -Text 'Removing a port proxy rule requires an elevated instance.'
-        return
-    }
+    $status = if (Test-TkIsElevated) { 'Removing the port proxy...' } else { 'Waiting for administrator consent...' }
 
-    if (Remove-TkPortProxy -ListenPort $listenPort -Confirm:$false) {
-        Set-TkStatus -Text ('Port proxy removed on {0}.' -f $listenPort)
+    Start-TkPrivilegedAction -Name 'RemovePortProxy' -StatusText $status -Parameters @{
+        ListenPort = $listenPort
     }
 }

@@ -367,10 +367,11 @@ Describe 'Per-action elevation' {
 
     It 'registers each action with a worker of its own' {
         $actions = @(Get-TkElevatedAction)
+        $names   = @($actions | ForEach-Object { $_.Name })
 
-        ($actions | ForEach-Object { $_.Name }) | Should -Contain 'RestorePoint'
-        ($actions | ForEach-Object { $_.Name }) | Should -Contain 'AddRoute'
-        ($actions | ForEach-Object { $_.Name }) | Should -Contain 'RemoveRoute'
+        foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile')) {
+            $names | Should -Contain $expected
+        }
 
         foreach ($action in $actions) {
             $action.Worker | Should -BeOfType [scriptblock]
@@ -463,6 +464,18 @@ Describe 'Per-action elevation' {
 
         $window = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\Window.ps1') -Raw
         $window | Should -Match 'run their own single UAC prompt'
+
+        # The converted actions must no longer be force-disabled: the disable
+        # map keeps only the three that stay on the restart path.
+        $map = [regex]::Match($window, '(?s)\$controls = @\{(?<body>.*?)\}').Groups['body'].Value
+
+        foreach ($button in @('BtnRestorePoint', 'BtnAddRoute', 'BtnRemoveRoute', 'BtnAddProxy', 'BtnRemoveProxy', 'BtnApplyProfile')) {
+            $map | Should -Not -Match $button
+        }
+
+        foreach ($button in @('BtnVendorTool', 'BtnAutoLogon', 'BtnSwitchPort')) {
+            $map | Should -Match $button
+        }
     }
 }
 

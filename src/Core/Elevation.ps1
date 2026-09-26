@@ -230,6 +230,49 @@ function Get-TkElevatedAction {
                 }
             }
         }
+        [pscustomobject] @{
+            Name   = 'AddPortProxy'
+            Worker = {
+                param($Parameters)
+
+                $ok = Add-TkPortProxy -ListenPort ([int] $Parameters.ListenPort) `
+                                      -ConnectAddress ([string] $Parameters.ConnectAddress) `
+                                      -ConnectPort ([int] $Parameters.ConnectPort) -Confirm:$false
+
+                if ($ok) {
+                    [pscustomobject] @{ Ok = $true;  Message = ('Publishing {0} to {1}:{2}' -f $Parameters.ListenPort, $Parameters.ConnectAddress, $Parameters.ConnectPort) }
+                }
+                else {
+                    [pscustomobject] @{ Ok = $false; Message = ('The port proxy on {0} could not be added.' -f $Parameters.ListenPort) }
+                }
+            }
+        }
+        [pscustomobject] @{
+            Name   = 'RemovePortProxy'
+            Worker = {
+                param($Parameters)
+
+                if (Remove-TkPortProxy -ListenPort ([int] $Parameters.ListenPort) -Confirm:$false) {
+                    [pscustomobject] @{ Ok = $true;  Message = ('Port proxy removed on {0}.' -f $Parameters.ListenPort) }
+                }
+                else {
+                    [pscustomobject] @{ Ok = $false; Message = ('The port proxy on {0} could not be removed.' -f $Parameters.ListenPort) }
+                }
+            }
+        }
+        [pscustomobject] @{
+            Name   = 'ApplyProfile'
+            Worker = {
+                param($Parameters)
+
+                if (Set-TkAdapterProfile -InterfaceAlias ([string] $Parameters.InterfaceAlias) -Name ([string] $Parameters.ProfileName) -Confirm:$false) {
+                    [pscustomobject] @{ Ok = $true;  Message = ('Profile applied: {0} to {1}' -f $Parameters.ProfileName, $Parameters.InterfaceAlias) }
+                }
+                else {
+                    [pscustomobject] @{ Ok = $false; Message = 'The profile could not be applied. See the output panel.' }
+                }
+            }
+        }
     )
 }
 
