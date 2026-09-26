@@ -279,6 +279,22 @@ function Initialize-TkToolsPage {
         $ldapNegate.Add_Click({ Update-TkLdapFromUi })
     }
 
+    # --- WMI / CIM query builder ------------------------------------------
+    $wmiPreset = Get-TkControl -Name 'WmiClassPreset'
+    if ($wmiPreset) {
+        [void] $wmiPreset.Items.Add('Common classes...')
+        foreach ($choice in @(Get-TkWmiClass)) { [void] $wmiPreset.Items.Add($choice.Name) }
+        $wmiPreset.SelectedIndex = 0
+        $wmiPreset.Add_SelectionChanged({ Set-TkWmiClassFromPreset })
+    }
+
+    $wmiMatch = Get-TkControl -Name 'WmiMatch'
+    if ($wmiMatch) {
+        foreach ($choice in @('All conditions (AND)', 'Any condition (OR)')) { [void] $wmiMatch.Items.Add($choice) }
+        $wmiMatch.SelectedIndex = 0
+        $wmiMatch.Add_SelectionChanged({ Update-TkWmiFromUi })
+    }
+
     Register-TkClick -Name 'BtnGenerateUuid' -Action { Invoke-TkUuidFromUi }
     Register-TkClick -Name 'BtnCopyUuid'     -Action { Copy-TkToolOutput -ControlName 'UuidOutput' }
     Register-TkClick -Name 'BtnDecodeUuid'   -Action { Invoke-TkUuidDecodeFromUi }
@@ -306,6 +322,10 @@ function Initialize-TkToolsPage {
         @{ Name = 'IniEnvInput';      Update = { Update-TkIniEnvFromUi } }
         @{ Name = 'CsvInput';         Update = { Update-TkCsvFromUi } }
         @{ Name = 'LdapConditions';   Update = { Update-TkLdapFromUi } }
+        @{ Name = 'WmiClass';         Update = { Update-TkWmiFromUi } }
+        @{ Name = 'WmiNamespace';     Update = { Update-TkWmiFromUi } }
+        @{ Name = 'WmiProperties';    Update = { Update-TkWmiFromUi } }
+        @{ Name = 'WmiConditions';    Update = { Update-TkWmiFromUi } }
         @{ Name = 'SidInput';         Update = { Update-TkSidFromUi } }
     )) {
         $box = Get-TkControl -Name $binding.Name
@@ -2004,6 +2024,57 @@ function Add-TkLdapPreset {
 
 <#
 .SYNOPSIS
+    Builds the CIM and WMI commands from the class, properties and conditions.
+#>
+function Update-TkWmiFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'WmiOutput'
+    $class  = Get-TkControl -Name 'WmiClass'
+
+    if (-not $output -or -not $class) {
+        return
+    }
+
+    $match = if ((Get-TkSelectedText -Name 'WmiMatch') -like 'Any*') { 'Any' } else { 'All' }
+
+    $output.Text = (Format-TkWmiReport `
+        -ClassName  ([string] $class.Text) `
+        -Namespace  ([string] (Get-TkControl -Name 'WmiNamespace').Text) `
+        -Properties ([string] (Get-TkControl -Name 'WmiProperties').Text) `
+        -Conditions ([string] (Get-TkControl -Name 'WmiConditions').Text) `
+        -Match      $match) -join [Environment]::NewLine
+}
+
+<#
+.SYNOPSIS
+    Puts the chosen common class into the WMI class box.
+#>
+function Set-TkWmiClassFromPreset {
+    [CmdletBinding()]
+    param()
+
+    $combo = Get-TkControl -Name 'WmiClassPreset'
+
+    if (-not $combo -or $combo.SelectedIndex -le 0) {
+        return
+    }
+
+    $name = [string] $combo.SelectedItem
+
+    # Back to the placeholder, so the same class can be chosen again.
+    $combo.SelectedIndex = 0
+
+    $box = Get-TkControl -Name 'WmiClass'
+
+    if ($box) {
+        $box.Text = $name
+    }
+}
+
+<#
+.SYNOPSIS
     Resolves the pasted SID or account name, as it changes.
 #>
 function Update-TkSidFromUi {
@@ -3195,6 +3266,7 @@ function Get-TkToolEntry {
         (& $tool 'Windows and AD'   'SID resolver'   'ToolSid')
         (& $tool 'Windows and AD'   'Event log query'   'ToolEventQuery')
         (& $tool 'Windows and AD'   'LDAP filter'    'ToolLdap')
+        (& $tool 'Windows and AD'   'WMI query'      'ToolWmi')
     )
 }
 

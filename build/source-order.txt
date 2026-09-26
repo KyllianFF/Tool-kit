@@ -78,6 +78,7 @@ src/Features/Tools/SecretScanner.ps1
 src/Features/Tools/ConfigFile.ps1
 src/Features/Tools/CsvTool.ps1
 src/Features/Tools/LdapFilter.ps1
+src/Features/Tools/WmiTool.ps1
 src/Features/Tools/DevOpsTools.ps1
 src/Features/Tools/HtmlDocument.ps1
 src/Features/Tools/QrCode.ps1

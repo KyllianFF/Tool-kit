@@ -5388,6 +5388,57 @@ PLAIN=hello world
     }
 }
 
+Describe 'WMI query builder' {
+
+    It 'quotes a string, leaves a number bare, and maps != to <>' {
+        ConvertTo-TkWqlCondition -Line 'State = Running'   | Should -Be "State = 'Running'"
+        ConvertTo-TkWqlCondition -Line 'ProcessId > 1000'  | Should -Be 'ProcessId > 1000'
+        ConvertTo-TkWqlCondition -Line 'StartMode != Auto' | Should -Be "StartMode <> 'Auto'"
+    }
+
+    It 'upper-cases LIKE and keeps the value a string with its wildcard' {
+        ConvertTo-TkWqlCondition -Line 'Name like %chrome%' | Should -Be "Name LIKE '%chrome%'"
+    }
+
+    It 'strips quotes the user typed, then re-quotes' {
+        ConvertTo-TkWqlCondition -Line "Caption = 'Local System'" | Should -Be "Caption = 'Local System'"
+    }
+
+    It 'ignores a blank, a comment and an unparseable line' {
+        ConvertTo-TkWqlCondition -Line ''            | Should -BeNullOrEmpty
+        ConvertTo-TkWqlCondition -Line '# note'      | Should -BeNullOrEmpty
+        ConvertTo-TkWqlCondition -Line 'no operator' | Should -BeNullOrEmpty
+    }
+
+    It 'joins predicates with AND or OR' {
+        Build-TkWqlWhere -Conditions @("A = '1'", "B = '2'") -Match All | Should -Be "A = '1' AND B = '2'"
+        Build-TkWqlWhere -Conditions @("A = '1'", "B = '2'") -Match Any | Should -Be "A = '1' OR B = '2'"
+        Build-TkWqlWhere -Conditions @() -Match All                     | Should -Be ''
+    }
+
+    It 'builds the Get-CimInstance, WQL and wmic forms' {
+        $report = (Format-TkWmiReport -ClassName 'Win32_Service' -Properties 'Name, State' -Conditions 'State = Running' -Match All) -join "`n"
+
+        $report | Should -Match "Get-CimInstance -ClassName Win32_Service -Filter ""State = 'Running'"" -Property Name,State"
+        $report | Should -Match "SELECT Name,State FROM Win32_Service WHERE State = 'Running'"
+        $report | Should -Match "wmic path Win32_Service where ""State = 'Running'"" get Name, State"
+    }
+
+    It 'keeps a non-default namespace in every form, and drops the default' {
+        $custom = (Format-TkWmiReport -ClassName 'AntiVirusProduct' -Namespace 'root\SecurityCenter2') -join "`n"
+        $custom | Should -Match '-Namespace root\\SecurityCenter2'
+        $custom | Should -Match 'wmic /namespace:\\\\root\\SecurityCenter2 path'
+
+        $default = (Format-TkWmiReport -ClassName 'Win32_BIOS' -Namespace 'root\cimv2') -join "`n"
+        $default | Should -Not -Match '-Namespace'
+    }
+
+    It 'prompts when no class is given, and notes an ignored line' {
+        (Format-TkWmiReport -ClassName '') -join "`n" | Should -Match 'Pick or type a CIM class'
+        (Format-TkWmiReport -ClassName 'Win32_Process' -Conditions 'bad') -join "`n" | Should -Match 'Ignored lines:'
+    }
+}
+
 Describe 'LDAP filter builder' {
 
     It 'turns an attribute operator value line into a clause, escaping the value' {
