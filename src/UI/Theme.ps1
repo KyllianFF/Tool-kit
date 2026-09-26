@@ -39,49 +39,58 @@ function Get-TkThemePalette {
         [string] $Name
     )
 
+    # The soft style: a violet accent, surfaces with a faint violet cast, and
+    # the page background shared by the header and the navigation so the
+    # cards carry the structure.
+    #
+    # AccentText is the label on an accent fill, the primary buttons. It is a
+    # colour of its own because the accent is light in the dark theme and dark
+    # in the light one, so no single text colour is legible on both.
     if ($Name -eq 'Dark') {
 
         return @{
-            AppBackground   = '#16181D'
-            Surface         = '#1E2128'
-            SurfaceRaised   = '#262A33'
-            InputBackground = '#12141A'
-            BorderSubtle    = '#333845'
-            TextPrimary     = '#E7EAF0'
-            TextMuted       = '#98A1B2'
-            Accent          = '#4C8DFF'
-            AccentMuted     = '#2A4C8A'
-            Selection       = '#2F3A4F'
-            RowAlternate    = '#252932'
-            Success         = '#3FB950'
-            Warning         = '#D29922'
-            Danger          = '#F85149'
+            AppBackground   = '#15131C'
+            Surface         = '#1E1B27'
+            SurfaceRaised   = '#282433'
+            InputBackground = '#1A1723'
+            BorderSubtle    = '#302B3D'
+            TextPrimary     = '#EDEAF4'
+            TextMuted       = '#A39DB3'
+            Accent          = '#A78BFA'
+            AccentText      = '#1B1030'
+            AccentMuted     = '#3B2F63'
+            Selection       = '#2C2640'
+            RowAlternate    = '#221F2C'
+            Success         = '#4ADE80'
+            Warning         = '#FBBF24'
+            Danger          = '#F87171'
         }
     }
 
     # Light values are chosen for contrast rather than as inverted dark ones.
-    # Accent and AccentMuted are darkened so white text on the primary button
-    # still clears the 4.5:1 contrast ratio, and Success and Warning are
-    # deepened because the dark theme values are unreadable on white.
+    # The accent is deepened so it carries white text on a primary button and
+    # reads as text on white, and Success and Warning are deepened because the
+    # dark theme values are unreadable on white.
     #
     # RowAlternate is the banding on every other table row. It is a colour per
     # theme rather than a transparency, because a transparency that reads as a
     # faint lift on the dark surface reads as dirt on the light one.
     return @{
-        AppBackground   = '#F4F5F7'
+        AppBackground   = '#F5F4FA'
         Surface         = '#FFFFFF'
-        SurfaceRaised   = '#EDEFF3'
-        InputBackground = '#FFFFFF'
-        BorderSubtle    = '#D0D5DD'
-        TextPrimary     = '#1B1F27'
-        TextMuted       = '#5C6675'
-        Accent          = '#1F63D6'
-        AccentMuted     = '#DCE7FB'
-        Selection       = '#E3EBF9'
-        RowAlternate    = '#EFF1F5'
-        Success         = '#1A7F37'
-        Warning         = '#9A6700'
-        Danger          = '#C0342B'
+        SurfaceRaised   = '#F0EEF7'
+        InputBackground = '#FBFAFE'
+        BorderSubtle    = '#E6E3F0'
+        TextPrimary     = '#1E1B2E'
+        TextMuted       = '#6B6680'
+        Accent          = '#6D28D9'
+        AccentText      = '#FFFFFF'
+        AccentMuted     = '#EDE9FE'
+        Selection       = '#EEE9FF'
+        RowAlternate    = '#F7F5FC'
+        Success         = '#15803D'
+        Warning         = '#A16207'
+        Danger          = '#DC2626'
     }
 }
 
@@ -122,13 +131,157 @@ function Get-TkThemeTint {
 
 <#
 .SYNOPSIS
+    Returns the theme in use: the stored choice, or Dark when there is none.
+
+.OUTPUTS
+    System.String: Dark or Light.
+#>
+function Get-TkThemeName {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $ctx = Get-TkContext
+
+    if ($ctx.Settings.ContainsKey('Theme') -and $ctx.Settings['Theme'] -in @('Dark', 'Light')) {
+        return $ctx.Settings['Theme']
+    }
+
+    return 'Dark'
+}
+
+<#
+.SYNOPSIS
+    Paints a window's native title bar dark or light, to match the theme.
+
+.DESCRIPTION
+    WPF draws everything inside a window, but the title bar belongs to Windows,
+    which paints it light whatever the palette underneath. The Desktop Window
+    Manager paints it dark when asked through the immersive dark mode
+    attribute: 20 from Windows 10 2004, 19 on the 1809 to 1909 builds that had
+    it before it was documented. On a build with neither, or when the call
+    fails, the light title bar stays and the window works as before.
+
+    The call needs a small interop type, compiled on first use like the other
+    Windows API calls in the toolkit. A light theme needs nothing until a dark
+    one has been applied, because the title bar starts light: a session that
+    stays light never compiles it.
+
+.PARAMETER Window
+    The window whose title bar to paint.
+
+.PARAMETER Name
+    Dark or Light.
+
+.OUTPUTS
+    System.Boolean: whether the title bar now matches.
+#>
+function Set-TkTitleBarTheme {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Window] $Window,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('Dark', 'Light')]
+        [string] $Name
+    )
+
+    $loaded = [bool] ('TkTitleBar' -as [type])
+
+    if ($Name -eq 'Light' -and -not $loaded) {
+        return $true
+    }
+
+    if (-not $loaded) {
+
+        $source = @'
+using System;
+using System.Runtime.InteropServices;
+
+/// <summary>
+/// The dark title bar of a window. One stateless call to the Desktop Window
+/// Manager, and one to redraw the frame so a change shows at once.
+/// </summary>
+public static class TkTitleBar
+{
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    private const int DarkMode       = 20;
+    private const int DarkModeBefore = 19;
+
+    private const uint SWP_NOSIZE       = 0x0001;
+    private const uint SWP_NOMOVE       = 0x0002;
+    private const uint SWP_NOZORDER     = 0x0004;
+    private const uint SWP_NOACTIVATE   = 0x0010;
+    private const uint SWP_FRAMECHANGED = 0x0020;
+
+    public static bool SetDark(IntPtr hwnd, bool dark)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+
+        int value  = dark ? 1 : 0;
+        int result = DwmSetWindowAttribute(hwnd, DarkMode, ref value, sizeof(int));
+
+        if (result != 0)
+        {
+            result = DwmSetWindowAttribute(hwnd, DarkModeBefore, ref value, sizeof(int));
+        }
+
+        // The frame is otherwise repainted only on the next activation.
+        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                     SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+        return result == 0;
+    }
+
+    /// <summary>1 dark, 0 light, -1 when the attribute cannot be read.</summary>
+    public static int Read(IntPtr hwnd)
+    {
+        int value;
+
+        if (DwmGetWindowAttribute(hwnd, DarkMode, out value, sizeof(int)) == 0) return value;
+        if (DwmGetWindowAttribute(hwnd, DarkModeBefore, out value, sizeof(int)) == 0) return value;
+
+        return -1;
+    }
+}
+'@
+
+        try {
+            Add-Type -TypeDefinition $source -Language CSharp -ErrorAction Stop
+        }
+        catch {
+            Write-TkLog -Level Debug -Category 'UI' -Message ('The title bar colour is not available: {0}' -f $_.Exception.Message)
+            return $false
+        }
+    }
+
+    # A window not shown yet has no handle; EnsureHandle creates it, so the
+    # title bar is right from the first frame instead of flashing light.
+    $handle = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).EnsureHandle()
+
+    return [TkTitleBar]::SetDark($handle, ($Name -eq 'Dark'))
+}
+
+<#
+.SYNOPSIS
     Applies a theme to the open window.
 
 .DESCRIPTION
     Replaces the brush behind every palette key and every tint derived from
-    it. Also fixes up the primary button style, whose foreground has to stay
-    legible on the accent fill in both themes. The navigation highlight needs
-    nothing: Show-TkPage gives it the Selection brush by resource reference.
+    it. The primary buttons need nothing more: their label is the AccentText
+    key, set per theme. Nor does the navigation highlight: Show-TkPage gives
+    it the Selection and Accent brushes by resource reference.
 
     Only what refers to a key follows: an element given the brush object
     itself keeps the old colour. Documents and generated controls use
@@ -186,6 +339,12 @@ function Set-TkTheme {
 
     $ctx.Settings['Theme'] = $Name
 
+    # The native title bars: this window and every window it owns that is
+    # still open, such as a document viewer left beside it.
+    foreach ($target in @($ctx.Window) + @($ctx.Window.OwnedWindows)) {
+        Set-TkTitleBarTheme -Window $target -Name $Name | Out-Null
+    }
+
     # Nothing to repaint in the navigation: its active entry takes the
     # Selection brush by resource reference and follows the new palette by
     # itself. It used to be repainted by showing the last page again, which at
@@ -214,14 +373,8 @@ function Initialize-TkThemeSelector {
     [CmdletBinding()]
     param()
 
-    $ctx      = Get-TkContext
     $selector = Get-TkControl -Name 'ThemeSelect'
-
-    $current = 'Dark'
-
-    if ($ctx.Settings.ContainsKey('Theme') -and $ctx.Settings['Theme'] -in @('Dark', 'Light')) {
-        $current = $ctx.Settings['Theme']
-    }
+    $current  = Get-TkThemeName
 
     if ($selector) {
 

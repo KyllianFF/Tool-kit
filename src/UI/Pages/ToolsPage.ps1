@@ -3631,7 +3631,7 @@ function Initialize-TkRegexCheatSheet {
         $description = New-Object System.Windows.Controls.TextBlock
         $description.Text         = $entry.Description
         $description.TextWrapping = [System.Windows.TextWrapping]::Wrap
-        $description.FontFamily   = New-Object System.Windows.Media.FontFamily('Segoe UI')
+        $description.FontFamily   = New-Object System.Windows.Media.FontFamily('Segoe UI Variable Text, Segoe UI')
         $description.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMuted')
 
         $row = New-Object System.Windows.Controls.DockPanel

@@ -2408,6 +2408,102 @@ Describe 'Theme palettes' {
 
         [math]::Abs($textLuminance - $surfaceLuminance) | Should -BeGreaterThan 120
     }
+
+    It 'keeps every text colour at 4.5:1 or better against what it sits on, in <Theme>' -TestCases @(
+        @{ Theme = 'Dark' }
+        @{ Theme = 'Light' }
+    ) {
+        param($Theme)
+
+        # The WCAG ratio, for the pairs that carry text: body and secondary text
+        # on a card, the accent used as text (document headings, the active
+        # navigation entry), and the label on a primary button's accent fill.
+        $palette = Get-TkThemePalette -Name $Theme
+
+        $relative = {
+            param($hex)
+
+            $channels = foreach ($offset in @(1, 3, 5)) {
+                $c = [Convert]::ToInt32($hex.Substring($offset, 2), 16) / 255
+                if ($c -le 0.03928) { $c / 12.92 } else { [math]::Pow(($c + 0.055) / 1.055, 2.4) }
+            }
+
+            return (0.2126 * $channels[0] + 0.7152 * $channels[1] + 0.0722 * $channels[2])
+        }
+
+        # The comma keeps each pair a pair; without it the four are flattened
+        # into one list of eight names.
+        foreach ($pair in @(
+            , @('TextPrimary', 'Surface')
+            , @('TextMuted',   'Surface')
+            , @('Accent',      'Surface')
+            , @('AccentText',  'Accent')
+        )) {
+            $a = & $relative $palette[$pair[0]]
+            $b = & $relative $palette[$pair[1]]
+
+            $ratio = ([math]::Max($a, $b) + 0.05) / ([math]::Min($a, $b) + 0.05)
+
+            $ratio | Should -BeGreaterOrEqual 4.5 -Because ('{0} on {1}' -f $pair[0], $pair[1])
+        }
+    }
+
+    It 'names the stored theme, and falls back to Dark for anything else' {
+
+        $settings = (Get-TkContext).Settings
+        $held     = $settings['Theme']
+
+        try {
+            $settings['Theme'] = 'Light'
+            Get-TkThemeName | Should -Be 'Light'
+
+            $settings['Theme'] = 'Sepia'
+            Get-TkThemeName | Should -Be 'Dark'
+
+            $settings.Remove('Theme')
+            Get-TkThemeName | Should -Be 'Dark'
+        }
+        finally {
+            if ($null -ne $held) { $settings['Theme'] = $held } else { $settings.Remove('Theme') }
+        }
+    }
+
+    It 'paints the native title bar dark, then light again, on a real window' {
+
+        # Windows owns the title bar, so this is asked of the Desktop Window
+        # Manager and read back from it rather than trusted.
+        Add-Type -AssemblyName PresentationFramework
+        $window = New-Object System.Windows.Window
+
+        try {
+            if (-not (Set-TkTitleBarTheme -Window $window -Name Dark)) {
+                Set-ItResult -Skipped -Because 'this Windows build has no dark title bar'
+                return
+            }
+
+            $handle = (New-Object System.Windows.Interop.WindowInteropHelper($window)).Handle
+
+            [TkTitleBar]::Read($handle) | Should -Be 1
+
+            Set-TkTitleBarTheme -Window $window -Name Light | Should -BeTrue
+            [TkTitleBar]::Read($handle) | Should -Be 0
+        }
+        finally {
+            $window.Close()
+        }
+    }
+
+    It 'declares a default brush in the window for every palette key' {
+
+        # A key the palette sets but the XAML never declares resolves to nothing
+        # until the first theme change, and a control reading it by static
+        # reference fails to load at all.
+        $markup = Get-TkMainWindowXaml
+
+        foreach ($key in (Get-TkThemePalette -Name Dark).Keys) {
+            $markup | Should -Match ('<SolidColorBrush x:Key="{0}"' -f $key) -Because $key
+        }
+    }
 }
 
 Describe 'Get-TkWellKnownService' {
