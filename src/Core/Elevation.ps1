@@ -278,6 +278,36 @@ function Get-TkElevatedAction {
             }
         }
         [pscustomobject] @{
+            Name   = 'OpenThroughputPort'
+            Worker = {
+                param($Parameters)
+
+                $port = [int] $Parameters.Port
+                if ($port -lt 1 -or $port -gt 65535) { $port = 5201 }
+
+                if (Add-TkThroughputFirewallRule -Port $port -Confirm:$false) {
+                    [pscustomobject] @{ Ok = $true;  Message = ('Temporary firewall rule added for TCP {0}.' -f $port) }
+                }
+                else {
+                    [pscustomobject] @{ Ok = $false; Message = 'The firewall rule could not be added. Listening anyway.' }
+                }
+            }
+        }
+        [pscustomobject] @{
+            Name   = 'CloseThroughputPort'
+            Worker = {
+                param($Parameters)
+                $null = $Parameters
+
+                if (Remove-TkThroughputFirewallRule -Confirm:$false) {
+                    [pscustomobject] @{ Ok = $true;  Message = 'Temporary firewall rule removed.' }
+                }
+                else {
+                    [pscustomobject] @{ Ok = $false; Message = ('The firewall rule could not be removed. Remove "{0}" in Windows Firewall.' -f (Get-TkThroughputRuleName)) }
+                }
+            }
+        }
+        [pscustomobject] @{
             Name   = 'ApplyProfile'
             Worker = {
                 param($Parameters)

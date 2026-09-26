@@ -27,6 +27,8 @@ function Initialize-TkNetworkAdminPage {
     Register-TkClick -Name 'BtnMacVendor'      -Action { Invoke-TkMacVendorFromUi }
     Register-TkClick -Name 'BtnNeighbours'     -Action { Invoke-TkNeighbourTableFromUi }
     Register-TkClick -Name 'BtnSwitchPort'     -Action { Invoke-TkSwitchPortFromUi }
+    Register-TkClick -Name 'BtnThroughputTest'   -Action { Invoke-TkThroughputTestFromUi }
+    Register-TkClick -Name 'BtnThroughputListen' -Action { Invoke-TkThroughputListenFromUi }
 
     # --- Configuration ----------------------------------------------------
     Register-TkClick -Name 'BtnApplyProfile'     -Action { Invoke-TkApplyProfileFromUi }
@@ -458,6 +460,171 @@ function Invoke-TkSwitchPortFromUi {
 
             Set-TkOutput -ControlName 'AdminOutput' -Text (Format-TkSwitchDiscoveryText -Discovery $discovery)
         }
+}
+
+<#
+.SYNOPSIS
+    Measures the throughput to another machine where the toolkit is listening.
+#>
+function Invoke-TkThroughputTestFromUi {
+    [CmdletBinding()]
+    param()
+
+    $peerBox    = Get-TkControl -Name 'ThroughputPeer'
+    $secondsBox = Get-TkControl -Name 'ThroughputSeconds'
+    $peer       = if ($peerBox) { $peerBox.Text.Trim() } else { '' }
+    $seconds    = 0
+
+    if ([string]::IsNullOrWhiteSpace($peer)) {
+        Set-TkStatus -Text 'Enter the name or address of the other machine first.'
+        return
+    }
+
+    if (-not $secondsBox -or -not [int]::TryParse($secondsBox.Text.Trim(), [ref] $seconds) -or $seconds -lt 1 -or $seconds -gt 30) {
+        Set-TkStatus -Text 'Seconds must be a whole number from 1 to 30.'
+        return
+    }
+
+    Set-TkOutput -ControlName 'AdminOutput' -Text ('Testing the throughput to {0}: {1} seconds each way...' -f $peer, $seconds)
+
+    Invoke-TkBackgroundAction -StatusText ('Measuring the throughput to {0}...' -f $peer) `
+        -ParameterList @{ peer = $peer; seconds = $seconds } `
+        -ScriptBlock {
+            param($peer, $seconds)
+            Test-TkLanThroughput -ComputerName $peer -Seconds $seconds
+        } `
+        -OnComplete {
+            param($result)
+
+            $test = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Upload'] } | Select-Object -Last 1
+
+            if (-not $test) {
+                Set-TkOutput -ControlName 'AdminOutput' -Text 'No result.'
+                return
+            }
+
+            Set-TkOutput -ControlName 'AdminOutput' -Text (Format-TkThroughputText -Result $test)
+        }
+}
+
+<#
+.SYNOPSIS
+    Waits for a throughput test from another machine, with a temporary firewall rule if needed.
+
+.DESCRIPTION
+    Reads the firewall first: when it is on and no rule allows the test port,
+    the rule is offered, added through one UAC prompt and removed through a
+    second one when the listener stops, so nothing is left open.
+#>
+function Invoke-TkThroughputListenFromUi {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the firewall and the network profile...' `
+        -ScriptBlock { Get-TkThroughputListenContext } `
+        -OnComplete {
+            param($result)
+
+            $context = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['FirewallOn'] } | Select-Object -Last 1
+
+            if (-not $context) {
+                Set-TkOutput -ControlName 'AdminOutput' -Text 'The firewall state could not be read. See the log.'
+                return
+            }
+
+            if (-not $context.FirewallOn -or $context.RuleExists) {
+                Start-TkThroughputListenerFromUi -Context $context
+                return
+            }
+
+            $message = @(
+                'Windows Firewall blocks the incoming test unless a rule allows it.'
+                ''
+                'Add a temporary rule allowing TCP port 5201 from the local subnet, on private and domain networks only? It needs administrator rights, and a second prompt removes it when the test ends.'
+                ''
+                'No listens without the rule, which only works if another rule already allows it.'
+            ) -join [Environment]::NewLine
+
+            $answer = [System.Windows.MessageBox]::Show((Get-TkContext).Window, $message, 'LAN throughput test',
+                                                        [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)
+
+            if ($answer -eq [System.Windows.MessageBoxResult]::Cancel) {
+                return
+            }
+
+            if ($answer -eq [System.Windows.MessageBoxResult]::No) {
+                Start-TkThroughputListenerFromUi -Context $context
+                return
+            }
+
+            $status = if (Test-TkIsElevated) { 'Adding the temporary firewall rule...' } else { 'Waiting for administrator consent...' }
+
+            Start-TkPrivilegedAction -Name 'OpenThroughputPort' -StatusText $status -Parameters @{ Port = 5201 } -OnResult {
+                param($outcome)
+
+                if ($outcome -and $outcome.PSObject.Properties['Cancelled'] -and $outcome.Cancelled) {
+                    return
+                }
+
+                Start-TkThroughputListenerFromUi -Context $context -RemoveRule:([bool] ($outcome -and $outcome.Ok))
+            }.GetNewClosure()
+        }
+}
+
+<#
+.SYNOPSIS
+    Starts the listener and says where the other machine should connect.
+
+.PARAMETER Context
+    From Get-TkThroughputListenContext.
+
+.PARAMETER RemoveRule
+    Removes the temporary firewall rule when the listener stops.
+#>
+function Start-TkThroughputListenerFromUi {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject] $Context,
+
+        [Parameter()]
+        [switch] $RemoveRule
+    )
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('Listening on TCP port 5201 for two minutes at most.')
+    $lines.Add('')
+    $lines.Add('On the other machine, open Network > Admin tools, enter one of these addresses and click Test throughput:')
+
+    foreach ($address in @($Context.Addresses)) {
+        $lines.Add('    ' + $address)
+    }
+
+    if (@($Context.PublicNetworks).Count -gt 0) {
+        $lines.Add('')
+        $lines.Add(('Marked Public: {0}. Windows refuses incoming connections there, and the temporary rule does not apply to it. Mark the network Private in Settings > Network if it is yours.' -f (@($Context.PublicNetworks) -join ', ')))
+    }
+
+    Set-TkOutput -ControlName 'AdminOutput' -Text ($lines -join [Environment]::NewLine)
+
+    $removeRule = [bool] $RemoveRule
+
+    Invoke-TkBackgroundAction -StatusText 'Listening for a throughput test on port 5201, two minutes at most...' `
+        -ScriptBlock { Start-TkThroughputListener -Port 5201 -TimeoutSeconds 120 } `
+        -OnComplete {
+            param($result)
+
+            $listener = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Sessions'] } | Select-Object -Last 1
+
+            if ($listener) {
+                Set-TkOutput -ControlName 'AdminOutput' -Text (Format-TkThroughputListenerText -Result $listener)
+            }
+
+            if ($removeRule) {
+                $status = if (Test-TkIsElevated) { 'Removing the temporary firewall rule...' } else { 'Waiting for administrator consent to remove the firewall rule...' }
+                Start-TkPrivilegedAction -Name 'CloseThroughputPort' -StatusText $status
+            }
+        }.GetNewClosure()
 }
 
 # ---------------------------------------------------------------------------

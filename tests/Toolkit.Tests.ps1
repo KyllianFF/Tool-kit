@@ -369,7 +369,8 @@ Describe 'Per-action elevation' {
         $actions = @(Get-TkElevatedAction)
         $names   = @($actions | ForEach-Object { $_.Name })
 
-        foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile', 'RemoveStoreApps')) {
+        foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile', 'RemoveStoreApps',
+                                  'OpenThroughputPort', 'CloseThroughputPort')) {
             $names | Should -Contain $expected
         }
 
@@ -7639,6 +7640,195 @@ Describe 'Duplicate files' {
 
     It 'is offered as a headless report' {
         @(Get-TkHeadlessReport | ForEach-Object { $_.Name }) | Should -Contain 'Duplicates'
+    }
+}
+
+Describe 'LAN throughput test' {
+
+    <#
+        One toolkit listens, another sends to it and receives from it. The
+        listener is the part exposed to the network, so what it refuses is
+        tested as closely as what it measures. The end to end tests run over
+        the loopback, which the firewall does not filter.
+    #>
+
+    BeforeAll {
+        # The listener runs in a runspace of its own, with the functions it calls.
+        $script:LanFunctions = @(
+            'Start-TkThroughputListener', 'Test-TkLocalNetworkAddress', 'ConvertFrom-TkThroughputRequest',
+            'Read-TkThroughputLine', 'Write-TkThroughputLine', 'Send-TkThroughputData',
+            'Receive-TkThroughputData', 'Get-TkThroughputRate'
+        ) | ForEach-Object { 'function {0} {{{1}}}' -f $_, (Get-Command -Name $_).Definition }
+
+        $script:StartLanListener = {
+            param([int] $Port, [int] $TimeoutSeconds, [int] $MaxSessions)
+
+            $shell = [powershell]::Create()
+            [void] $shell.AddScript(($script:LanFunctions -join [Environment]::NewLine) + [Environment]::NewLine +
+                ('Start-TkThroughputListener -Port {0} -TimeoutSeconds {1} -MaxSessions {2}' -f $Port, $TimeoutSeconds, $MaxSessions))
+
+            $handle = $shell.BeginInvoke()
+
+            # Wait until the port answers, so the test does not race the listener.
+            $clock = [System.Diagnostics.Stopwatch]::StartNew()
+            while ($clock.ElapsedMilliseconds -lt 5000 -and
+                   -not @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Ignore).Count) {
+                Start-Sleep -Milliseconds 50
+            }
+
+            return @{ Shell = $shell; Handle = $handle }
+        }
+
+        $script:StopLanListener = {
+            param($listener)
+            try { return @($listener.Shell.EndInvoke($listener.Handle)) | Select-Object -Last 1 }
+            finally { $listener.Shell.Dispose() }
+        }
+
+        $script:FreeLanPort = {
+            $probe = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+            $probe.Start()
+            $port = $probe.LocalEndpoint.Port
+            $probe.Stop()
+            return $port
+        }
+    }
+
+    It 'accepts only the exact request, within thirty seconds' {
+        (ConvertFrom-TkThroughputRequest -Line 'TKTHRU1 UP 5').Direction    | Should -Be 'UP'
+        (ConvertFrom-TkThroughputRequest -Line 'TKTHRU1 DOWN 30').Seconds   | Should -Be 30
+
+        foreach ($line in @('', $null, 'tkthru1 up 5', 'TKTHRU1 UP 0', 'TKTHRU1 UP 31', 'TKTHRU1 UP 5 extra',
+                            'TKTHRU1 SIDEWAYS 5', 'GET / HTTP/1.1', 'TKTHRU2 UP 5')) {
+            ConvertFrom-TkThroughputRequest -Line $line | Should -BeNullOrEmpty -Because $line
+        }
+    }
+
+    It 'answers only the local network' {
+        foreach ($address in @('127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.254', '192.168.1.20',
+                               '169.254.10.1', '::1', 'fe80::1', 'fd12:3456::1', '::ffff:192.168.1.5')) {
+            Test-TkLocalNetworkAddress -Address $address | Should -BeTrue -Because $address
+        }
+
+        foreach ($address in @('8.8.8.8', '172.32.0.1', '100.64.0.1', '192.169.0.1', '2001:4860::8888',
+                               '::ffff:8.8.8.8', 'not an address', '')) {
+            Test-TkLocalNetworkAddress -Address $address | Should -BeFalse -Because $address
+        }
+    }
+
+    It 'turns bytes over time into megabits per second' {
+        Get-TkThroughputRate -Bytes 125000000 -Milliseconds 1000 | Should -Be 1000
+        Get-TkThroughputRate -Bytes 1000 -Milliseconds 0         | Should -Be 0
+    }
+
+    It 'puts the rate against the link speed, and expects less of Wi-Fi' {
+        (Get-TkThroughputVerdict -Mbps 940 -LinkMbps 1000).Severity           | Should -Be 'Pass'
+        (Get-TkThroughputVerdict -Mbps 400 -LinkMbps 1000).Severity           | Should -Be 'Info'
+        (Get-TkThroughputVerdict -Mbps 90  -LinkMbps 1000).Severity           | Should -Be 'Warning'
+        (Get-TkThroughputVerdict -Mbps 400 -LinkMbps 866 -Wireless).Severity  | Should -Be 'Pass'
+        (Get-TkThroughputVerdict -Mbps 100 -LinkMbps 866 -Wireless).Severity  | Should -Be 'Warning'
+        (Get-TkThroughputVerdict -Mbps 500).Severity                          | Should -Be 'Info'
+        (Get-TkThroughputVerdict -Mbps 0 -LinkMbps 1000).Severity             | Should -Be 'Warning'
+        (Get-TkThroughputVerdict -Mbps 9000 -LinkMbps 1000).Text              | Should -Match 'did not cross it'
+    }
+
+    It 'measures both directions end to end, and the listener stops after the test' {
+        $port     = & $script:FreeLanPort
+        $listener = & $script:StartLanListener $port 30 2
+
+        $test   = Test-TkLanThroughput -ComputerName '127.0.0.1' -Port $port -Seconds 1
+        $served = & $script:StopLanListener $listener
+
+        $test.Error          | Should -BeNullOrEmpty
+        $test.Upload.Mbps    | Should -BeGreaterThan 0
+        $test.Download.Mbps  | Should -BeGreaterThan 0
+        $test.Upload.Bytes   | Should -BeGreaterThan 0
+        $test.SameMachine    | Should -BeTrue
+        Format-TkThroughputText -Result $test | Should -Match 'same machine'
+
+        @($served.Sessions).Count                                   | Should -Be 2
+        @($served.Sessions | ForEach-Object { $_.Direction })       | Should -Be @('UP', 'DOWN')
+        $served.Sessions[0].Bytes                                   | Should -Be $test.Upload.Bytes
+        $served.TimedOut                                            | Should -BeFalse
+        @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Ignore).Count | Should -Be 0
+    }
+
+    It 'closes a connection that is not a test request, and gives up after its time' {
+        $port     = & $script:FreeLanPort
+        $listener = & $script:StartLanListener $port 2 1
+
+        $client = New-Object System.Net.Sockets.TcpClient('127.0.0.1', $port)
+        try {
+            $stream = $client.GetStream()
+            $bytes  = [System.Text.Encoding]::ASCII.GetBytes("GET / HTTP/1.1`n")
+            $stream.Write($bytes, 0, $bytes.Length)
+            $client.ReceiveTimeout = 5000
+            $stream.Read((New-Object byte[] 16), 0, 16) | Should -Be 0
+        }
+        finally {
+            $client.Close()
+        }
+
+        $served = & $script:StopLanListener $listener
+
+        @($served.Sessions).Count | Should -Be 0
+        $served.Refused           | Should -Contain '127.0.0.1'
+        $served.TimedOut          | Should -BeTrue
+    }
+
+    It 'says the other machine is not listening rather than hang' {
+        $test = Test-TkLanThroughput -ComputerName '127.0.0.1' -Port (& $script:FreeLanPort) -Seconds 1
+
+        $test.Error  | Should -Not -BeNullOrEmpty
+        $test.Upload | Should -BeNullOrEmpty
+        Format-TkThroughputText -Result $test | Should -Match 'Listen for a test'
+    }
+
+    Context 'Temporary firewall rule' {
+
+        BeforeEach {
+            $script:RuleCalls = New-Object System.Collections.Generic.List[object]
+
+            # Stand-ins: the real cmdlets must never touch this machine's firewall.
+            function Get-NetFirewallRule {
+                [CmdletBinding()]
+                param($DisplayName)
+                [pscustomobject] @{ DisplayName = $DisplayName }
+            }
+            function Remove-NetFirewallRule {
+                [CmdletBinding()]
+                param([Parameter(ValueFromPipeline)] $InputObject)
+                process { $script:RuleCalls.Add(@{ Removed = $InputObject.DisplayName }) }
+            }
+            function New-NetFirewallRule {
+                [CmdletBinding()]
+                param($DisplayName, $Group, $Direction, $Action, $Protocol, $LocalPort, $RemoteAddress, [Alias('Profile')] $RuleProfile, $Description)
+                $null = $Group, $Description
+                $script:RuleCalls.Add(@{ DisplayName = $DisplayName; Direction = $Direction; Action = $Action; Protocol = $Protocol
+                                        LocalPort = $LocalPort; RemoteAddress = $RemoteAddress; Profile = @($RuleProfile) })
+            }
+        }
+
+        It 'allows one port, from the local subnet, on private and domain networks only' {
+            (Get-Command -Name New-NetFirewallRule).CommandType | Should -Be 'Function'
+
+            Add-TkThroughputFirewallRule -Port 5201 -Confirm:$false | Should -BeTrue
+
+            $rule = $script:RuleCalls | Where-Object { $_.ContainsKey('LocalPort') } | Select-Object -First 1
+            $rule.DisplayName   | Should -Be (Get-TkThroughputRuleName)
+            $rule.Direction     | Should -Be 'Inbound'
+            $rule.Protocol      | Should -Be 'TCP'
+            $rule.LocalPort     | Should -Be 5201
+            $rule.RemoteAddress | Should -Be 'LocalSubnet'
+            $rule.Profile       | Should -Be @('Private', 'Domain')
+        }
+
+        It 'removes the rule by its name' {
+            (Get-Command -Name Remove-NetFirewallRule).CommandType | Should -Be 'Function'
+
+            Remove-TkThroughputFirewallRule -Confirm:$false | Should -BeTrue
+            ($script:RuleCalls | Where-Object { $_.ContainsKey('Removed') }).Removed | Should -Be (Get-TkThroughputRuleName)
+        }
     }
 }
 
