@@ -158,6 +158,7 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Performance';         Show = 'Show-TkPerformanceReport' }
         [pscustomobject] @{ Title = 'Devices';             Show = 'Show-TkDeviceReport' }
         [pscustomobject] @{ Title = 'Crashes';             Show = 'Show-TkStabilityReport' }
+        [pscustomobject] @{ Title = 'Restarts and shutdowns'; Show = 'Show-TkBootHistoryReport' }
         [pscustomobject] @{ Title = 'Wi-Fi';               Show = 'Show-TkWifiReport' }
         [pscustomobject] @{ Title = 'Proxy';               Show = 'Show-TkProxyReport' }
         [pscustomobject] @{ Title = 'Sign-in and management'; Show = 'Show-TkIdentityReport' }
@@ -996,6 +997,125 @@ function Show-TkStabilityReport {
                     -Heading ('{0}{1}' -f $row.Kind, $(if ($row.Source) { ': ' + $row.Source } else { '' })) `
                     -Detail $(if ($row.When) { ([datetime] $row.When).ToString('yyyy-MM-dd HH:mm') } else { '' }) `
                     -Note $row.Detail
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows every start of the last 30 days, how the session before it ended and who asked.
+#>
+function Show-TkBootHistoryReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the restarts and shutdowns...' `
+        -ScriptBlock { Get-TkBootHistory -Days 30 } `
+        -OnComplete {
+            param($result)
+
+            $history = @($result.Output) | Select-Object -First 1
+
+            if (-not $history) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'restarts' -Data $history
+
+            $summary  = $history.Summary
+            $timeline = @($history.Timeline | Where-Object { $_ })
+            # A restart is often off for seconds, which reads better as < 1 min than as 0d 0h 0m.
+            $span     = {
+                param($value)
+                if ($null -eq $value)            { '' }
+                elseif ($value.TotalMinutes -lt 1) { '< 1 min' }
+                else                             { Format-TkTimeSpan -Value $value }
+            }
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Restarts and shutdowns' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                '"Why did my PC restart?" Every start of the last {0} days, how the session before it ended, and which program asked for the restart or the shutdown, read from the System log.' -f $history.Days
+            )
+
+            # --- Now -----------------------------------------------------------
+            if ($history.Current) {
+
+                $fast = $history.Current.StartType -eq 'Fast startup'
+
+                Add-TkSeverityLine -Document $document -Severity 'Info' `
+                    -Heading ('Running since {0}' -f ([datetime] $history.Current.Since).ToString('yyyy-MM-dd HH:mm')) `
+                    -Detail ('up {0}, {1}' -f (& $span $history.Current.Uptime), $history.Current.StartType.ToLowerInvariant()) `
+                    -Note $(if ($fast) { 'This start was Fast Startup: the last shut down hibernated Windows instead of closing it, so it resumed rather than started afresh. Only a restart gives a fresh start.' } else { '' })
+            }
+
+            # --- What ended the sessions ---------------------------------------
+            if ($summary.Unexpected -gt 0) {
+
+                $last = ($timeline | Where-Object { $_.PreviousEnd -in @('Unexpected', 'Blue screen') } | Select-Object -First 1).Started
+
+                Add-TkSeverityLine -Document $document -Severity $(if ($summary.BlueScreens -gt 0) { 'Fail' } else { 'Warning' }) `
+                    -Heading ('{0} session(s) ended with no shutdown' -f $summary.Unexpected) `
+                    -Detail ('{0} blue screen(s), last on {1}' -f $summary.BlueScreens, ([datetime] $last).ToString('yyyy-MM-dd HH:mm')) `
+                    -Note 'The power was lost, the power button was held, or Windows froze or stopped on a blue screen. The Crashes report reads each blue screen and the drivers behind it.'
+            }
+            elseif ($timeline.Count -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' `
+                    -Heading ('Every session in {0} days ended with a shutdown or a restart' -f $history.Days)
+            }
+
+            Add-TkSeverityLine -Document $document -Severity 'Info' `
+                -Heading ('{0} start(s): {1} after a restart, {2} after a shutdown' -f $summary.Starts, $summary.Restarts, $summary.Shutdowns) `
+                -Detail $(if ($history.Wakes -gt 0) { '{0} wake(s) from sleep besides' -f $history.Wakes } else { '' }) `
+                -Note 'A restart is a stop followed by a start within five minutes; a longer time off is a shutdown.'
+
+            if ($summary.FastStartups -gt 0) {
+
+                Add-TkSeverityLine -Document $document -Severity 'Info' `
+                    -Heading ('{0} start(s) resumed from Fast Startup' -f $summary.FastStartups) `
+                    -Note 'With Fast Startup, shutting down hibernates Windows, so the uptime keeps counting across a night off and an update waiting for a restart keeps waiting. "Disable fast start-up", on the Tweaks page, turns it off.'
+            }
+
+            # --- Who asked -----------------------------------------------------
+            $initiators = @($summary.Initiators | Where-Object { $_ })
+
+            if ($initiators.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Who asked for them' -Level 2
+
+                Add-TkTable -Document $document -Column @('Asked by', 'Times', 'Last') `
+                    -Weight @(2.2, 0.5, 1) `
+                    -Row @($initiators | ForEach-Object { , @($_.Name, [string] $_.Count, ([datetime] $_.Last).ToString('yyyy-MM-dd HH:mm')) })
+            }
+
+            # --- Every start -----------------------------------------------------
+            if ($timeline.Count -gt 0) {
+
+                Add-TkHeading -Document $document -Text 'Every start' -Level 2
+                Add-TkParagraph -Document $document -Muted -Text (
+                    'Newest first. Each line is one start and the session that ended just before it. How long each start took is in the Performance report.'
+                )
+
+                Add-TkTable -Document $document `
+                    -Column @('Started', 'Kind of start', 'The session before ended', 'Asked by', 'It had run for', 'Then off for') `
+                    -Weight @(1.4, 0.9, 1.1, 1.6, 0.85, 0.85) `
+                    -Row @($timeline | ForEach-Object {
+                        , @(
+                            ([datetime] $_.Started).ToString('yyyy-MM-dd HH:mm'),
+                            $_.StartType,
+                            $_.PreviousEnd,
+                            $_.By,
+                            (& $span $_.SessionLength),
+                            (& $span $_.OffFor)
+                        )
+                    })
+            }
+            else {
+                Add-TkSeverityLine -Document $document -Severity 'Info' -Heading ('No start recorded in the last {0} days' -f $history.Days) `
+                    -Note 'The System log may have been cleared, or it is too small to keep a month of events.'
             }
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document

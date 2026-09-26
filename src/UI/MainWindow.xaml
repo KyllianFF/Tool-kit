@@ -2560,6 +2560,10 @@
                                             <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Every start of the last 30 days: how the session before it ended, who or what asked for the restart or shutdown, and how long the machine ran and stayed off.">
+                                            <TextBlock Text="Restarts and shutdowns" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Signal, band and channel, link rate, security, how crowded the channel is, and how often the connection dropped.">
                                             <TextBlock Text="Wi-Fi" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
