@@ -261,6 +261,23 @@ function Get-TkElevatedAction {
             }
         }
         [pscustomobject] @{
+            Name   = 'RemoveStoreApps'
+            Worker = {
+                param($Parameters)
+
+                # Remove-TkStoreApp checks every name against the catalogue and
+                # the protected components again, here in the elevated process.
+                $results = @(Remove-TkStoreApp -Name @($Parameters.Names | ForEach-Object { [string] $_ }) -Confirm:$false)
+                $failed  = @($results | Where-Object { -not $_.Ok })
+
+                [pscustomobject] @{
+                    Ok      = ($results.Count -gt 0 -and $failed.Count -eq 0)
+                    Message = if ($failed.Count -eq 0) { '{0} app(s) removed.' -f $results.Count } else { (@($failed | ForEach-Object { $_.Message }) -join ' ') }
+                    Results = $results
+                }
+            }
+        }
+        [pscustomobject] @{
             Name   = 'ApplyProfile'
             Worker = {
                 param($Parameters)

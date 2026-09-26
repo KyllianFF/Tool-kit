@@ -1624,8 +1624,8 @@ function Update-TkPrivilegedControls {
     # as not found. That is what "nothing installs at all" turned out to be.
     # Actions absent here run their own single UAC prompt from a standard user
     # (see Start-TkPrivilegedAction), so they stay enabled: a restore point,
-    # adding or removing a route, publishing or removing a port proxy, and
-    # applying an adapter profile.
+    # adding or removing a route, publishing or removing a port proxy,
+    # applying an adapter profile, and removing Store apps.
     #
     # The three left disabled until the whole toolkit is elevated each have a
     # reason not to take the file-based per-action path: the firmware utility

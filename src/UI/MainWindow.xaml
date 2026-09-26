@@ -1834,6 +1834,98 @@
                                 </Border>
                             </Grid>
                         </TabItem>
+
+                        <!--
+                            The preinstalled apps most people never open. Only the
+                            apps in data/store-apps.json are ever listed or removed:
+                            codecs, language packs, drivers' companion apps and
+                            frameworks never appear here.
+                        -->
+                        <TabItem Header="Store apps">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                           Text="The apps Windows ships that most people never use, and only those: codecs, language packs, drivers' companion apps and the apps Windows needs are never listed. Removing takes an app away for every account, new ones included; it comes back from the Microsoft Store. Needs administrator rights, and asks first." />
+
+                                <Grid Grid.Row="1" Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBox Grid.Column="0" x:Name="StoreAppSearch" Tag="Search the apps" Margin="0,0,10,0" />
+                                    <ComboBox Grid.Column="1" x:Name="StoreAppFilter" Width="200" Margin="0,0,10,0" />
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                        <Button x:Name="BtnRemoveStoreApps"  Content="Remove selected" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE74D;" />
+                                        <Button x:Name="BtnRefreshStoreApps" Content="Refresh"         Style="{StaticResource GlyphButton}" Tag="&#xE72C;" Margin="0" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0" Padding="4">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <StackPanel>
+                                            <TextBlock x:Name="StoreAppStatus" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="12,8,12,4" />
+                                            <ItemsControl x:Name="StoreAppList">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <!-- The same card as the Software and Tweaks lists: the whole row is the toggle. -->
+                                                        <ToggleButton Style="{StaticResource AppCard}"
+                                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+
+                                                                <Border Grid.Column="0" Style="{StaticResource ItemTile}"
+                                                                        Background="{Binding TileBrush}">
+                                                                    <TextBlock Text="{Binding Glyph}" Style="{StaticResource TileGlyph}" />
+                                                                </Border>
+
+                                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <TextBlock Text="{Binding Label}" Style="{StaticResource ItemTitle}" />
+                                                                        <Border CornerRadius="8" Padding="6,1" Margin="10,0,0,0"
+                                                                                Background="{DynamicResource Surface}"
+                                                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                                                            <TextBlock Text="{Binding Badge}" Style="{StaticResource ItemBadge}" />
+                                                                        </Border>
+                                                                    </StackPanel>
+                                                                    <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" Margin="0,3,0,0" />
+                                                                </StackPanel>
+
+                                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="{Binding Version}"
+                                                                               Style="{StaticResource ItemBadge}" FontSize="11"
+                                                                               VerticalAlignment="Center" Margin="12,0,10,0" />
+                                                                    <Path x:Name="SelectedMark" Width="15" Height="15"
+                                                                          Stretch="Uniform" Visibility="Hidden"
+                                                                          Fill="{DynamicResource Accent}"
+                                                                          Data="M 6 11.2 L 1.8 7 L 0.4 8.4 L 6 14 L 18 2 L 16.6 0.6 Z" />
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </ToggleButton>
+
+                                                        <DataTemplate.Triggers>
+                                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                <Setter TargetName="SelectedMark" Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </DataTemplate.Triggers>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+                        </TabItem>
                     </TabControl>
                 </Grid>
 

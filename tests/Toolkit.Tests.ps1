@@ -369,7 +369,7 @@ Describe 'Per-action elevation' {
         $actions = @(Get-TkElevatedAction)
         $names   = @($actions | ForEach-Object { $_.Name })
 
-        foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile')) {
+        foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile', 'RemoveStoreApps')) {
             $names | Should -Contain $expected
         }
 
@@ -7374,6 +7374,125 @@ Describe 'Password strength' {
         param($Log10, $Expected)
 
         Format-TkCrackDuration -Log10Seconds $Log10 | Should -Be $Expected
+    }
+}
+
+Describe 'Store apps' {
+
+    BeforeAll {
+        $script:StoreCatalog = @((Import-TkCatalog -Name 'store-apps').apps)
+    }
+
+    Context 'The catalogue' {
+
+        It 'names each app once, with a label, a known category and a description' {
+            $names = @($script:StoreCatalog | ForEach-Object { $_.name })
+
+            @($names | Sort-Object -Unique).Count | Should -Be $names.Count
+
+            foreach ($entry in $script:StoreCatalog) {
+                $entry.label       | Should -Not -BeNullOrEmpty -Because $entry.name
+                $entry.description | Should -Not -BeNullOrEmpty -Because $entry.name
+                $entry.category    | Should -BeIn @('bloat', 'optional') -Because $entry.name
+            }
+        }
+
+        It 'lists nothing the protected components cover' {
+            foreach ($entry in $script:StoreCatalog) {
+                Test-TkStoreAppRemovable -Name $entry.name -Catalog $script:StoreCatalog | Should -BeTrue -Because $entry.name
+            }
+        }
+    }
+
+    Context 'What may be removed' {
+
+        It 'refuses a protected component even when a list names it' {
+            # The elevated worker checks again; a tampered parameter file must not
+            # be able to take the Store, winget, a codec or the language pack away.
+            foreach ($name in @('Microsoft.WindowsStore', 'Microsoft.DesktopAppInstaller', 'Microsoft.Winget.Source',
+                                'Microsoft.HEVCVideoExtension', 'Microsoft.LanguageExperiencePackfr-FR', 'Microsoft.SecHealthUI',
+                                'Microsoft.VCLibs.140.00', 'Microsoft.WindowsAppRuntime.1.5')) {
+                Test-TkStoreAppRemovable -Name $name -Catalog @([pscustomobject] @{ name = $name }) | Should -BeFalse -Because $name
+            }
+        }
+
+        It 'refuses a name that is not in the catalogue, or not a package name at all' {
+            Test-TkStoreAppRemovable -Name 'Contoso.SomeApp' -Catalog $script:StoreCatalog | Should -BeFalse
+            Test-TkStoreAppRemovable -Name 'a;Remove-Item C:\' -Catalog @([pscustomobject] @{ name = 'a;Remove-Item C:\' }) | Should -BeFalse
+            Test-TkStoreAppRemovable -Name 'Microsoft.BingNews' -Catalog $script:StoreCatalog | Should -BeTrue
+        }
+
+        It 'offers only the installed apps of the catalogue, rarely used ones first' {
+            $installed = @(
+                [pscustomobject] @{ Name = 'Microsoft.BingWeather';                   Version = '4.53.0.0' }
+                [pscustomobject] @{ Name = 'Microsoft.GetHelp';                       Version = '10.2.0.0' }
+                [pscustomobject] @{ Name = 'Microsoft.HEVCVideoExtension';            Version = '2.2.0.0' }
+                [pscustomobject] @{ Name = 'Microsoft.LanguageExperiencePackfr-FR';   Version = '26100.1.1.0' }
+                [pscustomobject] @{ Name = 'Claude';                                  Version = '1.0.0.0' }
+            )
+
+            $items = @(ConvertTo-TkStoreAppItem -Package $installed -Catalog $script:StoreCatalog)
+
+            @($items | ForEach-Object { $_.Name }) | Should -Be @('Microsoft.GetHelp', 'Microsoft.BingWeather')
+            $items[0].Category | Should -Be 'bloat'
+            $items[1].Version  | Should -Be '4.53.0.0'
+        }
+    }
+
+    Context 'Removing' {
+
+        BeforeEach {
+            $script:AppxCalls = New-Object System.Collections.Generic.List[string]
+
+            # Stand-ins for the Appx cmdlets, found first by the functions under
+            # test: nothing is removed from this machine, and nothing is journaled.
+            function Get-AppxPackage { param([string] $Name, [switch] $AllUsers)
+                [pscustomobject] @{ Name = $Name; PackageFullName = "$($Name)_1.0_x64__8wekyb3d8bbwe" } }
+            function Remove-AppxPackage { param([string] $Package, [switch] $AllUsers)
+                if ($Package -like 'Microsoft.MixedReality.Portal*') { throw 'Access is denied.' }
+                $script:AppxCalls.Add("remove $Package all=$AllUsers") }
+            function Get-AppxProvisionedPackage { param([switch] $Online)
+                [pscustomobject] @{ DisplayName = 'Microsoft.BingNews'; PackageName = 'Microsoft.BingNews_1.0_neutral_~_8wekyb3d8bbwe' } }
+            function Remove-AppxProvisionedPackage { param([switch] $Online, [string] $PackageName)
+                $script:AppxCalls.Add("deprovision $PackageName") }
+            function Start-TkOperation { param($Name, $Category) [System.Diagnostics.Stopwatch]::StartNew() }
+            function Stop-TkOperation { param($Name, $Stopwatch, $Category, $Success) }
+
+            # A guard before anything is called: were the stand-ins not the
+            # commands found, the tests would stop here rather than remove a real app.
+            $script:AssertStandIns = {
+                foreach ($command in @('Get-AppxPackage', 'Remove-AppxPackage', 'Get-AppxProvisionedPackage', 'Remove-AppxProvisionedPackage')) {
+                    (Get-Command -Name $command).CommandType | Should -Be 'Function' -Because ('{0} must be the stand-in' -f $command)
+                }
+            }
+        }
+
+        It 'removes a listed app for every account and from the image' {
+            & $script:AssertStandIns
+            $result = @(Remove-TkStoreApp -Name 'Microsoft.BingNews' -Confirm:$false)
+
+            $result[0].Ok | Should -BeTrue
+            $script:AppxCalls | Should -Contain 'remove Microsoft.BingNews_1.0_x64__8wekyb3d8bbwe all=True'
+            $script:AppxCalls | Should -Contain 'deprovision Microsoft.BingNews_1.0_neutral_~_8wekyb3d8bbwe'
+        }
+
+        It 'refuses a protected or unlisted name without touching anything' {
+            & $script:AssertStandIns
+            $result = @(Remove-TkStoreApp -Name 'Microsoft.WindowsStore', 'Contoso.SomeApp' -Confirm:$false)
+
+            @($result | Where-Object { $_.Ok }).Count | Should -Be 0
+            $result[0].Message                        | Should -Match 'Refused'
+            $script:AppxCalls.Count                   | Should -Be 0
+        }
+
+        It 'reports a removal that fails and carries on with the next' {
+            & $script:AssertStandIns
+            $result = @(Remove-TkStoreApp -Name 'Microsoft.MixedReality.Portal', 'Microsoft.BingNews' -Confirm:$false)
+
+            $result[0].Ok      | Should -BeFalse
+            $result[0].Message | Should -Match 'Access is denied'
+            $result[1].Ok      | Should -BeTrue
+        }
     }
 }
 

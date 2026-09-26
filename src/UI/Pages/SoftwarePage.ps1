@@ -302,6 +302,9 @@ function Initialize-TkSoftwarePage {
     Register-TkClick -Name 'BtnCheckUpdates'   -Action { Invoke-TkCheckUpdatesFromUi }
     Register-TkClick -Name 'BtnInstallUpdates' -Action { Invoke-TkInstallUpdatesFromUi }
 
+    # --- Store apps tab ---------------------------------------------------
+    Initialize-TkStoreAppsTab
+
     Update-TkWingetStatusText
 }
 
@@ -707,4 +710,199 @@ function Update-TkInstalledState {
 
             Set-TkStatus -Text ('{0} installed package(s) detected.' -f $installed.Count)
         }
+}
+
+
+<#
+.SYNOPSIS
+    Wires the Store apps tab: the list, its filter and its two buttons.
+
+.DESCRIPTION
+    The apps are read the first time the tab is opened: Get-AppxPackage takes
+    a moment, and most visits to the Software page are for winget.
+#>
+function Initialize-TkStoreAppsTab {
+    [CmdletBinding()]
+    param()
+
+    $script:TkStoreAppItems  = New-Object 'System.Collections.ObjectModel.ObservableCollection[object]'
+    $script:TkStoreAppLoaded = $false
+
+    $list = Get-TkControl -Name 'StoreAppList'
+
+    if ($list) {
+        $list.ItemsSource = $script:TkStoreAppItems
+    }
+
+    $script:TkStoreAppView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($script:TkStoreAppItems)
+    $script:TkStoreAppView.Filter = [Predicate[object]] {
+        param($item)
+        Test-TkStoreAppVisible -Item $item
+    }
+
+    $filter = Get-TkControl -Name 'StoreAppFilter'
+
+    if ($filter) {
+        foreach ($choice in @('All listed apps', 'Rarely used', 'Optional')) { [void] $filter.Items.Add($choice) }
+        $filter.SelectedIndex = 0
+        $filter.Add_SelectionChanged({ $script:TkStoreAppView.Refresh() })
+    }
+
+    $search = Get-TkControl -Name 'StoreAppSearch'
+
+    if ($search) {
+        $search.Add_TextChanged({ $script:TkStoreAppView.Refresh() })
+    }
+
+    Register-TkClick -Name 'BtnRemoveStoreApps'  -Action { Invoke-TkRemoveStoreAppsFromUi }
+    Register-TkClick -Name 'BtnRefreshStoreApps' -Action { Update-TkStoreAppList }
+
+    $tabs = Get-TkControl -Name 'SoftwareTabs'
+
+    if ($tabs) {
+        $tabs.Add_SelectionChanged({
+            param($source, $routed)
+
+            # The event also bubbles up from the lists and boxes inside the tabs.
+            if ($routed.OriginalSource -ne $source) { return }
+
+            $tab = $source.SelectedItem
+
+            if ($tab -and [string] $tab.Header -eq 'Store apps' -and -not $script:TkStoreAppLoaded) {
+                Update-TkStoreAppList
+            }
+        })
+    }
+}
+
+<#
+.SYNOPSIS
+    Decides whether a Store app passes the filter and the search.
+
+.OUTPUTS
+    System.Boolean
+#>
+function Test-TkStoreAppVisible {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        $Item
+    )
+
+    if ($Item.IsSelected) {
+        return $true
+    }
+
+    switch ([string] (Get-TkSelectedText -Name 'StoreAppFilter')) {
+        'Rarely used' { if ($Item.Category -ne 'bloat')    { return $false } }
+        'Optional'    { if ($Item.Category -ne 'optional') { return $false } }
+    }
+
+    $search = Get-TkControl -Name 'StoreAppSearch'
+
+    if ($search -and -not [string]::IsNullOrWhiteSpace($search.Text)) {
+        if (('{0} {1} {2}' -f $Item.Label, $Item.Description, $Item.Name) -notlike ('*{0}*' -f $search.Text.Trim())) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+<#
+.SYNOPSIS
+    Reads the catalogue apps installed for this account into the list.
+#>
+function Update-TkStoreAppList {
+    [CmdletBinding()]
+    param()
+
+    $status = Get-TkControl -Name 'StoreAppStatus'
+
+    if ($status) {
+        $status.Text = 'Reading the installed Store apps...'
+    }
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the Store apps...' `
+        -ScriptBlock { Get-TkStoreApp } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Apps'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            $script:TkStoreAppLoaded = $true
+            $script:TkStoreAppItems.Clear()
+
+            foreach ($app in @($report.Apps)) {
+                $script:TkStoreAppItems.Add([pscustomobject] @{
+                    IsSelected  = $false
+                    Name        = $app.Name
+                    Label       = $app.Label
+                    Category    = $app.Category
+                    Description = $app.Description
+                    Version     = $app.Version
+                    Badge       = if ($app.Category -eq 'bloat') { 'Rarely used' } else { 'Optional' }
+                    Glyph       = [string] [char] 0xE719
+                    TileBrush   = Get-TkTileBrush -Key 'microsoft'
+                })
+            }
+
+            $apps     = @($report.Apps)
+            $rarely   = @($apps | Where-Object { $_.Category -eq 'bloat' }).Count
+            $label    = Get-TkControl -Name 'StoreAppStatus'
+
+            if ($label) {
+                $label.Text = if (-not $report.Available) {
+                    $report.Reason
+                }
+                elseif ($apps.Count -eq 0) {
+                    'None of the apps this toolkit removes is installed for this account.'
+                }
+                else {
+                    '{0} app(s) from the list are installed: {1} rarely used, {2} optional. Tick the ones to remove.' -f $apps.Count, $rarely, ($apps.Count - $rarely)
+                }
+            }
+        }
+}
+
+<#
+.SYNOPSIS
+    Removes the ticked Store apps, after a confirmation and a single UAC prompt.
+#>
+function Invoke-TkRemoveStoreAppsFromUi {
+    [CmdletBinding()]
+    param()
+
+    $selected = @($script:TkStoreAppItems | Where-Object { $_.IsSelected })
+
+    if ($selected.Count -eq 0) {
+        Set-TkStatus -Text 'Tick the apps to remove first.'
+        return
+    }
+
+    $confirmed = Confirm-TkAction -Title 'Remove Store apps' -Message (
+        "Remove {0} app(s) for every account on this PC, new accounts included?`n`n{1}`n`nAn app removed by mistake comes back from the Microsoft Store." -f
+            $selected.Count, ((@($selected | ForEach-Object { $_.Label })) -join ', ')
+    )
+
+    if (-not $confirmed) {
+        return
+    }
+
+    # A standard user gets a single UAC prompt for this action; an elevated
+    # instance runs it in place.
+    $status = if (Test-TkIsElevated) { 'Removing the Store apps...' } else { 'Waiting for administrator consent...' }
+
+    Start-TkPrivilegedAction -Name 'RemoveStoreApps' -StatusText $status -Parameters @{
+        Names = @($selected | ForEach-Object { $_.Name })
+    } -OnResult {
+        param($outcome)
+        $null = $outcome
+        Update-TkStoreAppList
+    }
 }
