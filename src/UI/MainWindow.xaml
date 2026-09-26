@@ -3380,6 +3380,10 @@
                                          ToolTip="Build a WMI query from a class, properties and conditions: as Get-CimInstance with a filter or a query, the WQL, and the old wmic command.">
                                 <TextBlock Text="WMI query" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Build a Windows Firewall rule as New-NetFirewallRule and netsh commands, with the commands that check and remove it, and a warning when it opens more than it seems to.">
+                                <TextBlock Text="Firewall rule" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
                         </ListBox>
 
                         <Grid Grid.Column="1">
@@ -4948,6 +4952,60 @@
                                     <TextBox x:Name="WmiOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="NoWrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolFirewall" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Windows Firewall rule builder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="FwName" Width="320" Margin="0,0,8,8" Text="Allow app from the local subnet" />
+                                            <ComboBox x:Name="FwPreset" Width="260" MinHeight="40" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Direction" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="FwDirection" Width="130" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Action" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="FwAction" Width="110" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Protocol" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="FwProtocol" Width="150" MinHeight="40" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Local port" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="FwLocalPort" Width="130" Margin="0,0,16,8" Text="8080" Tag="Any, or 80, 443, 8000-8080"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <TextBlock Text="Remote port" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="FwRemotePort" Width="130" Margin="0,0,16,8" Tag="Any"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <TextBlock Text="Remote address" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="FwRemoteAddress" Width="220" Margin="0,0,0,8" Text="LocalSubnet" Tag="Any, LocalSubnet, 192.168.1.0/24"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Program" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="FwProgram" Width="360" Margin="0,0,16,8" Tag="Every program, or C:\Program Files\App\app.exe"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <TextBlock Text="Profiles" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <CheckBox x:Name="FwDomain" Content="Domain" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <CheckBox x:Name="FwPrivate" Content="Private" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,8" />
+                                            <CheckBox x:Name="FwPublic" Content="Public" VerticalAlignment="Center" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Ports and addresses are comma separated; a range is written 8000-8080 and a subnet 192.168.1.0/24. An empty field means any. Nothing is applied here: it writes the New-NetFirewallRule and netsh commands, with the ones that check and remove the rule, and warns when the rule is wider than it looks." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="FwOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>
 
