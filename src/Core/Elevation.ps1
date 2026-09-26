@@ -273,6 +273,41 @@ function Get-TkElevatedAction {
                 }
             }
         }
+        [pscustomobject] @{
+            Name   = 'RunFix'
+            Worker = {
+                param($Parameters)
+
+                $definition = Get-TkFix | Where-Object { $_.id -eq ([string] $Parameters.FixId) } | Select-Object -First 1
+
+                if (-not $definition) {
+                    return [pscustomobject] @{ Ok = $false; Message = ('Unknown fix: {0}' -f $Parameters.FixId) }
+                }
+
+                if (Invoke-TkFix -Fix $definition -Confirm:$false) {
+                    [pscustomobject] @{ Ok = $true;  Message = ('Finished: {0}' -f $definition.name) }
+                }
+                else {
+                    [pscustomobject] @{ Ok = $false; Message = ('Failed or partly failed: {0}. See the log for details.' -f $definition.name) }
+                }
+            }
+        }
+        [pscustomobject] @{
+            Name   = 'ApplyTweaks'
+            Worker = {
+                param($Parameters)
+
+                $summary = Invoke-TkTweakBatch -TweakId @($Parameters.TweakIds) -Action ([string] $Parameters.Action) -Confirm:$false
+
+                [pscustomobject] @{
+                    Ok              = $true
+                    Message         = ('{0}: {1} succeeded, {2} failed.' -f $Parameters.Action, $summary.Applied, $summary.Failed)
+                    Applied         = $summary.Applied
+                    Failed          = $summary.Failed
+                    RequiresRestart = [bool] $summary.RequiresRestart
+                }
+            }
+        }
     )
 }
 

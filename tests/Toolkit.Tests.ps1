@@ -369,13 +369,40 @@ Describe 'Per-action elevation' {
         $actions = @(Get-TkElevatedAction)
         $names   = @($actions | ForEach-Object { $_.Name })
 
-        foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile')) {
+        foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile', 'RunFix', 'ApplyTweaks')) {
             $names | Should -Contain $expected
         }
 
         foreach ($action in $actions) {
             $action.Worker | Should -BeOfType [scriptblock]
         }
+    }
+
+    It 'the RunFix worker runs the fix named by its id' {
+
+        Mock Get-TkFix  { @([pscustomobject] @{ id = 'test-fix'; name = 'Test fix' }) }
+        Mock Invoke-TkFix { $true }
+
+        $worker = (@(Get-TkElevatedAction) | Where-Object { $_.Name -eq 'RunFix' }).Worker
+        $result = & $worker @{ FixId = 'test-fix' }
+
+        $result.Ok      | Should -BeTrue
+        $result.Message | Should -Match 'Test fix'
+
+        (& $worker @{ FixId = 'no-such-fix' }).Message | Should -Match 'Unknown fix'
+    }
+
+    It 'the ApplyTweaks worker applies the batch and carries its summary' {
+
+        Mock Invoke-TkTweakBatch { [pscustomobject] @{ Applied = 2; Failed = 1; RequiresRestart = $true } }
+
+        $worker = (@(Get-TkElevatedAction) | Where-Object { $_.Name -eq 'ApplyTweaks' }).Worker
+        $result = & $worker @{ TweakIds = @('a', 'b', 'c'); Action = 'Apply' }
+
+        $result.Applied         | Should -Be 2
+        $result.Failed          | Should -Be 1
+        $result.RequiresRestart | Should -BeTrue
+        $result.Message         | Should -Match 'Apply: 2 succeeded, 1 failed'
     }
 
     It 'runs the named worker and writes its result to the result file' {

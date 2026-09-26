@@ -249,17 +249,6 @@ function Invoke-TkTweakUiAction {
 
     $needsElevation = @($selected | Where-Object { $_.Definition.requiresElevation })
 
-    if ($needsElevation.Count -gt 0 -and -not (Test-TkIsElevated)) {
-
-        Set-TkStatus -Text ('{0} of the selected tweaks need an elevated instance.' -f $needsElevation.Count)
-
-        Write-TkLog -Level Warning -Category 'Tweaks' -Message (
-            'Restart as administrator to apply: {0}' -f (($needsElevation | ForEach-Object { $_.Name }) -join ', ')
-        )
-
-        return
-    }
-
     $highImpact = @($selected | Where-Object { $_.Impact -eq 'High' })
 
     $message = "{0} {1} tweak(s):`n`n{2}" -f $Action, $selected.Count,
@@ -276,6 +265,33 @@ function Invoke-TkTweakUiAction {
     }
 
     $ids = @($selected | ForEach-Object { $_.Id })
+
+    # When some of the selected tweaks need administrator rights, the whole
+    # batch (the restore point included) runs through a single UAC prompt for a
+    # standard user, or in place when already elevated. A selection that only
+    # touches the current user's hive needs no rights and runs in place.
+    if ($needsElevation.Count -gt 0) {
+
+        $status = if (Test-TkIsElevated) { '{0}ing {1} tweak(s)...' -f $Action, $ids.Count } else { 'Waiting for administrator consent...' }
+
+        Start-TkPrivilegedAction -Name 'ApplyTweaks' -StatusText $status `
+            -Parameters @{ TweakIds = $ids; Action = $Action } `
+            -OnResult {
+                param($outcome)
+
+                if ($outcome -and $outcome.RequiresRestart) {
+
+                    Show-TkDialog -Title 'Restart required' -Kind 'Information' -NoticeOnly `
+                        -Message ('One or more of these changes only takes effect after a restart. ' +
+                                  'Nothing is lost in the meantime: the setting is written, the ' +
+                                  'component reading it has not reloaded yet.') | Out-Null
+                }
+
+                Update-TkTweakState
+            }
+
+        return
+    }
 
     Invoke-TkBackgroundAction -StatusText ('{0}ing {1} tweak(s)...' -f $Action, $ids.Count) `
         -ParameterList @{ tweakIds = $ids; verb = $Action } `

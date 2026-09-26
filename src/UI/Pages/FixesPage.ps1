@@ -147,11 +147,6 @@ function Invoke-TkFixFromUi {
         return
     }
 
-    if ($fix.requiresElevation -and -not (Test-TkIsElevated)) {
-        Set-TkStatus -Text ('"{0}" requires an elevated instance.' -f $fix.name)
-        return
-    }
-
     $message = "{0}`n`n{1}`n`nRisk: {2}." -f $fix.name, $fix.description, $fix.risk
 
     if ($fix.requiresRestart) {
@@ -161,6 +156,17 @@ function Invoke-TkFixFromUi {
     $message += "`n`nRun it now?"
 
     if (-not (Confirm-TkAction -Title $fix.name -Message $message)) {
+        return
+    }
+
+    # A fix that needs administrator rights runs through a single UAC prompt for
+    # a standard user, or in place when already elevated. One that does not runs
+    # in the background as before.
+    if ($fix.requiresElevation) {
+
+        $status = if (Test-TkIsElevated) { 'Running: {0}...' -f $fix.name } else { 'Waiting for administrator consent...' }
+
+        Start-TkPrivilegedAction -Name 'RunFix' -StatusText $status -Parameters @{ FixId = $FixId }
         return
     }
 
