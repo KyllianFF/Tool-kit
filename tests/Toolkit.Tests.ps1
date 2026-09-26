@@ -3782,6 +3782,113 @@ Describe 'Search' {
     }
 }
 
+Describe 'Favourites and recent entries' {
+
+    BeforeAll {
+        $script:FavIndex = @(
+            (New-TkSearchEntry -Title 'Network' -Kind 'Page' -Page 'Network')
+            (New-TkSearchEntry -Title 'Tools' -Kind 'Page' -Page 'SecurityTools')
+            (New-TkSearchEntry -Title 'Regex' -Kind 'Tool' -Page 'SecurityTools' -List 'ToolChoices' -Choice 'Regex')
+            (New-TkSearchEntry -Title 'Firewall rule' -Kind 'Tool' -Page 'SecurityTools' -List 'ToolChoices' -Choice 'Firewall rule')
+            (New-TkSearchEntry -Title 'Disk space' -Kind 'Report' -Page 'Diagnostics' -List 'DiagnosticChoices' -Choice 'Disk space')
+        )
+    }
+
+    It 'keeps the newest recent entries first, without repeats' {
+        $recent = @()
+        foreach ($key in @('Tool|Regex', 'Report|Disk space', 'Tool|Regex')) {
+            $recent = @(Add-TkRecentKey -Recent $recent -Key $key)
+        }
+
+        $recent | Should -Be @('Tool|Regex', 'Report|Disk space')
+
+        $many = @()
+        foreach ($n in 1..12) { $many = @(Add-TkRecentKey -Recent $many -Key ('Tool|T{0}' -f $n)) }
+        $many.Count | Should -Be 8
+        $many[0]    | Should -Be 'Tool|T12'
+    }
+
+    It 'stars and unstars a favourite, keeping the order they were chosen in' {
+        $favourites = @(Switch-TkFavouriteKey -Favourites @() -Key 'Tool|Regex')
+        $favourites = @(Switch-TkFavouriteKey -Favourites $favourites -Key 'Report|Disk space')
+        $favourites | Should -Be @('Tool|Regex', 'Report|Disk space')
+
+        @(Switch-TkFavouriteKey -Favourites $favourites -Key 'Tool|Regex') | Should -Be @('Report|Disk space')
+        @(Switch-TkFavouriteKey -Favourites $null -Key 'Tool|Regex')       | Should -Be @('Tool|Regex')
+    }
+
+    It 'opens the palette on the favourites, then the recent entries, then the pages' {
+        $start = @(Get-TkSearchStartList -Index $script:FavIndex `
+                    -Favourites @('Tool|Firewall rule', 'Tool|Renamed since') `
+                    -Recent @('Report|Disk space', 'Tool|Firewall rule', 'Tool|Regex'))
+
+        @($start | ForEach-Object { '{0}:{1}' -f $_.Section, $_.Entry.Title }) | Should -Be @(
+            'Favourite:Firewall rule'
+            'Recent:Disk space'
+            'Recent:Regex'
+            'Page:Network'
+            'Page:Tools'
+        )
+    }
+
+    It 'does not list a starred page twice' {
+        @(Get-TkSearchStartList -Index $script:FavIndex -Favourites @('Page|Network') |
+          ForEach-Object { '{0}:{1}' -f $_.Section, $_.Entry.Title }) | Should -Be @('Favourite:Network', 'Page:Tools')
+    }
+
+    It 'shows only the pages when nothing was starred or opened yet' {
+        @(Get-TkSearchStartList -Index $script:FavIndex -Favourites @() -Recent $null | ForEach-Object { $_.Section } | Select-Object -Unique) |
+            Should -Be @('Page')
+    }
+
+    Context 'Remembered in the settings' {
+
+        BeforeEach {
+            $script:FavSettingsBefore = (Get-TkContext).Settings
+            (Get-TkContext).Settings = @{ Favourites = @(); Recent = @() }
+            $script:FavSaves = 0
+
+            # A stand-in: the tests never write the real settings file.
+            function Save-TkSettings { [CmdletBinding(SupportsShouldProcess)] param() $script:FavSaves++ }
+        }
+
+        AfterEach {
+            (Get-TkContext).Settings = $script:FavSettingsBefore
+        }
+
+        It 'remembers an opened entry, but not a page' {
+            (Get-Command -Name Save-TkSettings).ScriptBlock.ToString() | Should -Match 'FavSaves'
+
+            Register-TkRecentEntry -Entry $script:FavIndex[2]
+            Register-TkRecentEntry -Entry $script:FavIndex[0]
+
+            @((Get-TkContext).Settings['Recent']) | Should -Be @('Tool|Regex')
+            $script:FavSaves | Should -Be 1
+        }
+
+        It 'toggles a favourite and says what it is now' {
+            (Get-Command -Name Save-TkSettings).ScriptBlock.ToString() | Should -Match 'FavSaves'
+
+            Switch-TkFavouriteEntry -Entry $script:FavIndex[3] | Should -BeTrue
+            @((Get-TkContext).Settings['Favourites']) | Should -Be @('Tool|Firewall rule')
+
+            Switch-TkFavouriteEntry -Entry $script:FavIndex[3] | Should -BeFalse
+            @((Get-TkContext).Settings['Favourites']).Count | Should -Be 0
+        }
+    }
+
+    It 'starts with no favourites and nothing recent' {
+        $defaults = & {
+            function Test-Path { [CmdletBinding()] param($LiteralPath) $null = $LiteralPath; $false }
+            $before = (Get-TkContext).Settings
+            try { Import-TkSettings } finally { (Get-TkContext).Settings = $before }
+        }
+
+        @($defaults['Favourites']).Count | Should -Be 0
+        @($defaults['Recent']).Count     | Should -Be 0
+    }
+}
+
 Describe 'Intervention journal' {
 
     BeforeAll {
