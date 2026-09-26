@@ -155,6 +155,7 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Pending reboot';      Show = 'Show-TkRebootStatus' }
         [pscustomobject] @{ Title = 'Storage health';      Show = 'Show-TkStorageHealth' }
         [pscustomobject] @{ Title = 'Disk space';          Show = 'Show-TkDiskSpaceReport' }
+        [pscustomobject] @{ Title = 'Duplicate files';     Show = 'Show-TkDuplicateFileReport' }
         [pscustomobject] @{ Title = 'Performance';         Show = 'Show-TkPerformanceReport' }
         [pscustomobject] @{ Title = 'Devices';             Show = 'Show-TkDeviceReport' }
         [pscustomobject] @{ Title = 'Crashes';             Show = 'Show-TkStabilityReport' }
@@ -998,6 +999,79 @@ function Show-TkStabilityReport {
                     -Heading ('{0}{1}' -f $row.Kind, $(if ($row.Source) { ': ' + $row.Source } else { '' })) `
                     -Detail $(if ($row.When) { ([datetime] $row.When).ToString('yyyy-MM-dd HH:mm') } else { '' }) `
                     -Note $row.Detail
+            }
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows the files that have copies in the account's own folders, and the space the copies take.
+#>
+function Show-TkDuplicateFileReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Looking for duplicate files in your folders, this can take a minute...' `
+        -ScriptBlock { Get-TkDuplicateFileReport } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Groups'] } | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'duplicates' -Data $report
+
+            $groups = @($report.Groups | Where-Object { $_ })
+            $sets   = @($report.Sets | Where-Object { $_ })
+            $profileRoot   = $env:USERPROFILE.TrimEnd('\')
+            $short  = { param($path) if ($path.StartsWith($profileRoot, [System.StringComparison]::OrdinalIgnoreCase)) { '~' + $path.Substring($profileRoot.Length) } else { $path } }
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Duplicate files' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                'Files of 1 MB and more that exist more than once in your folders ({0}), compared by content, not by name. The inner folders of tools such as .git or node_modules are left out, and OneDrive files kept online only are not read. Nothing is deleted.' -f
+                    ((@($report.Folders | ForEach-Object { Split-Path -Path $_ -Leaf })) -join ', ')
+            )
+
+            if ($groups.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No file has a copy in your folders' `
+                    -Detail ('{0} file(s) compared' -f $report.Scanned)
+            }
+            else {
+                Add-TkSeverityLine -Document $document -Severity $(if ($report.Wasted -ge 1GB) { 'Warning' } else { 'Info' }) `
+                    -Heading ('{0} file(s) have copies, which take {1}' -f $groups.Count, (Format-TkBytes -Bytes $report.Wasted)) `
+                    -Detail ('{0} file(s) compared' -f $report.Scanned) `
+                    -Note 'Some copies are kept on purpose, as a backup: a backup on the same disk is lost with the disk, so it is better moved to another drive than simply deleted. Open the folders and keep the copy you want.'
+            }
+
+            if ($report.Truncated) {
+                Add-TkSeverityLine -Document $document -Severity 'Info' -Heading 'The folders hold more files than one report reads' `
+                    -Note 'The comparison stopped at 200,000 files; what is listed is still right, but not complete.'
+            }
+
+            # --- Folders that hold the same files ---------------------------
+            if ($sets.Count -gt 0) {
+                Add-TkHeading -Document $document -Text 'Folders that hold the same files' -Level 2
+                Add-TkTable -Document $document -Column @('Folders', 'Files', 'Extra space') -Weight @(4.2, 0.6, 0.9) `
+                    -Row @($sets | Select-Object -First 15 | ForEach-Object {
+                        , @(((@($_.Folders | ForEach-Object { & $short $_ })) -join '  +  '), [string] $_.Files, (Format-TkBytes -Bytes $_.Wasted))
+                    })
+            }
+
+            # --- The biggest ones --------------------------------------------
+            if ($groups.Count -gt 0) {
+                Add-TkHeading -Document $document -Text 'The biggest duplicates' -Level 2
+                Add-TkTable -Document $document -Column @('File', 'Size', 'Copies', 'In') -Weight @(1.6, 0.7, 0.5, 3) `
+                    -Row @($groups | Select-Object -First 25 | ForEach-Object {
+                        , @((Split-Path -Path $_.Files[0] -Leaf), (Format-TkBytes -Bytes $_.Length), [string] $_.Files.Count,
+                            ((@($_.Files | ForEach-Object { & $short (Split-Path -Path $_ -Parent) })) -join '  +  '))
+                    })
             }
 
             Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
