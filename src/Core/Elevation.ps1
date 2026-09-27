@@ -261,18 +261,22 @@ function Get-TkElevatedAction {
             }
         }
         [pscustomobject] @{
-            Name   = 'RemoveStoreApps'
+            Name   = 'ManagePackages'
             Worker = {
                 param($Parameters)
 
-                # Remove-TkStoreApp checks every name against the catalogue and
-                # the protected components again, here in the elevated process.
-                $results = @(Remove-TkStoreApp -Name @($Parameters.Names | ForEach-Object { [string] $_ }) -Confirm:$false)
+                # Every name is checked again here, in the elevated process; a
+                # Store app goes through Remove-TkStoreApp, which refuses any
+                # name outside the preinstalled apps catalogue.
+                $items = @($Parameters.Items | Where-Object { $_ } | ForEach-Object {
+                    [pscustomobject] @{ Manager = [string] $_.Manager; Operation = [string] $_.Operation; Name = [string] $_.Name; Label = [string] $_.Label }
+                })
+                $results = @(Invoke-TkElevatedPackageAction -Item $items -Confirm:$false)
                 $failed  = @($results | Where-Object { -not $_.Ok })
 
                 [pscustomobject] @{
                     Ok      = ($results.Count -gt 0 -and $failed.Count -eq 0)
-                    Message = if ($failed.Count -eq 0) { '{0} app(s) removed.' -f $results.Count } else { (@($failed | ForEach-Object { $_.Message }) -join ' ') }
+                    Message = if ($failed.Count -eq 0) { '{0} package(s) done with administrator rights.' -f $results.Count } else { '{0} of {1} failed with administrator rights.' -f $failed.Count, $results.Count }
                     Results = $results
                 }
             }

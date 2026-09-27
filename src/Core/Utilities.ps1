@@ -106,7 +106,12 @@ function Invoke-TkProcess {
         [int] $TimeoutSeconds = 600,
 
         [Parameter()]
-        [string] $WorkingDirectory
+        [string] $WorkingDirectory,
+
+        # For a program that writes UTF-8 whatever the console code page, as
+        # winget, pip and npm do; left out, the console code page is used.
+        [Parameter()]
+        [System.Text.Encoding] $OutputEncoding
     )
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -135,6 +140,11 @@ function Invoke-TkProcess {
 
     if ($WorkingDirectory) {
         $psi.WorkingDirectory = $WorkingDirectory
+    }
+
+    if ($OutputEncoding) {
+        $psi.StandardOutputEncoding = $OutputEncoding
+        $psi.StandardErrorEncoding  = $OutputEncoding
     }
 
     $process = New-Object System.Diagnostics.Process
