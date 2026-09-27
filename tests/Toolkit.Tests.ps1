@@ -8253,12 +8253,13 @@ Describe 'Migration' {
     }
 
     It 'plans the copy into a dated folder and skips what OneDrive keeps' {
-        $plan = @(New-TkMigrationCopyPlan -Destination 'E:\' -Label 'Migration-PC-u' -Folder @(
+        # A drive that does not exist: the plan must not touch the disk.
+        $plan = @(New-TkMigrationCopyPlan -Destination 'Q:\' -Label 'Migration-PC-u' -Folder @(
             [pscustomobject] @{ Name = 'Documents'; Path = 'C:\Users\u\Documents'; Bytes = 100; InOneDrive = $false }
             [pscustomobject] @{ Name = 'Desktop'; Path = 'C:\Users\u\OneDrive\Desktop'; Bytes = 50; InOneDrive = $true }
         ))
 
-        $plan[0].Target | Should -Be 'E:\Migration-PC-u\Documents'
+        $plan[0].Target | Should -Be 'Q:\Migration-PC-u\Documents'
         $plan[0].Skip   | Should -BeNullOrEmpty
         $plan[1].Skip   | Should -Be 'kept by OneDrive'
     }

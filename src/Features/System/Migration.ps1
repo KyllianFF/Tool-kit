@@ -462,13 +462,15 @@ function New-TkMigrationCopyPlan {
         [Parameter(Mandatory)] [string] $Label
     )
 
-    $root = Join-Path -Path $Destination.Trim().TrimEnd('\') -ChildPath $Label
+    # Path.Combine, not Join-Path: Join-Path fails on a drive that is not
+    # there, and the plan is worked out before the drive is checked.
+    $root = [System.IO.Path]::Combine($Destination.Trim().TrimEnd('\') + '\', $Label)
 
     return @(foreach ($item in ($Folder | Where-Object { $_ })) {
         [pscustomobject] @{
             Name   = $item.Name
             Source = $item.Path
-            Target = Join-Path -Path $root -ChildPath $item.Name
+            Target = [System.IO.Path]::Combine($root, $item.Name)
             Bytes  = [long] $item.Bytes
             Skip   = $(if ($item.InOneDrive) { 'kept by OneDrive' } else { '' })
         }
@@ -580,7 +582,7 @@ function Export-TkDriverPackage {
         return [pscustomobject] @{ Ok = $false; Message = $problem; Count = 0 }
     }
 
-    $target = Join-Path -Path $Destination.Trim().TrimEnd('\') -ChildPath ('Drivers-{0}-{1:yyyyMMdd}' -f $env:COMPUTERNAME, (Get-Date))
+    $target = [System.IO.Path]::Combine($Destination.Trim().TrimEnd('\') + '\', ('Drivers-{0}-{1:yyyyMMdd}' -f $env:COMPUTERNAME, (Get-Date)))
 
     if (-not $PSCmdlet.ShouldProcess($target, 'Export the drivers')) {
         return [pscustomobject] @{ Ok = $false; Message = 'Cancelled.'; Count = 0 }
