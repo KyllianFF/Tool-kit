@@ -2226,7 +2226,11 @@
                                             <ComboBox x:Name="MigrationProfileTo" MinHeight="40" Margin="0,0,0,12"
                                                       ToolTip="The account that receives them. It must have signed in once, so its profile exists." />
                                             <StackPanel x:Name="MigrationProfileList" Margin="0,0,0,10" />
-                                            <CheckBox x:Name="MigrationProfileMove" Content="Move: delete each source file once its copy is verified" Margin="0,0,0,12"
+                                            <CheckBox x:Name="MigrationProfilePins" Content="Pins: Quick Access, jump lists, taskbar, Start" IsChecked="True" Margin="0,0,0,6"
+                                                      ToolTip="The pins of the source account, copied to the destination account, whose own are saved first. The destination account must be signed out." />
+                                            <CheckBox x:Name="MigrationProfileBookmarks" Content="Browser bookmarks, and an HTML file" IsChecked="True" Margin="0,0,0,6"
+                                                      ToolTip="The bookmarks of Edge, Chrome, Brave and Firefox, merged into a folder of the same browsers of the destination account, and an HTML file on its desktop." />
+                                            <CheckBox x:Name="MigrationProfileMove" Content="Move: delete each source file once verified" Margin="0,0,0,12"
                                                       ToolTip="A source file is deleted only when its copy is read back and its SHA-256 matches. A conflict, a file that failed or one kept online only stays where it was." />
                                             <Button x:Name="BtnMigrationProfileCopy" Content="Copy to the profile" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" />
                                             <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"

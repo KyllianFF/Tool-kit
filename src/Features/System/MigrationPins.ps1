@@ -53,11 +53,14 @@ function Test-TkTaskbandRegFile {
     param(
         [Parameter(Mandatory)]
         [AllowEmptyString()]
-        [string] $Text
+        [string] $Text,
+
+        # The hive the file must stay in: this account, or another account's mounted hive.
+        [Parameter()] [string] $Hive = 'HKEY_CURRENT_USER'
     )
 
     $read = ConvertFrom-TkRegFile -Text $Text
-    $key  = 'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband'
+    $key  = '{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband' -f $Hive.TrimEnd('\')
 
     if (-not $read.HasHeader -or @($read.Errors).Count -gt 0 -or @($read.Entries).Count -eq 0) {
         return $false

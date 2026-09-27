@@ -159,7 +159,10 @@ function New-TkProfileCopyPlan {
         [Parameter()] [AllowEmptyCollection()] [object[]] $Row = @(),
         [Parameter()] [AllowNull()] [object] $SourceProfile,
         [Parameter()] [AllowNull()] [object] $TargetProfile,
-        [Parameter()] [switch] $SkipSourceCheck
+        [Parameter()] [switch] $SkipSourceCheck,
+
+        # Pins or bookmarks are copied too, so no folder at all is fine.
+        [Parameter()] [switch] $AllowNoFolder
     )
 
     $errors = New-Object System.Collections.Generic.List[string]
@@ -201,7 +204,7 @@ function New-TkProfileCopyPlan {
             }
         }
 
-        if ($steps.Count -eq 0 -and $errors.Count -eq 0) {
+        if ($steps.Count -eq 0 -and $errors.Count -eq 0 -and -not $AllowNoFolder) {
             $errors.Add('No folder is selected.')
         }
     }
@@ -557,5 +560,349 @@ function Copy-TkProfileData {
         Ok      = ($results.Count -gt 0 -and $good -eq $results.Count)
         Message = ('{0} of {1} folder(s) {2} to {3} without a problem.' -f $good, $results.Count, $verb, $account)
         Steps   = @($results.ToArray())
+    }
+}
+
+<#
+.SYNOPSIS
+    Moves the key headers of a .reg file from one hive to another.
+
+.DESCRIPTION
+    Pure. Only the [key] lines change: an export read from one account's
+    hive becomes an import into another's. Values are left as they are.
+
+.OUTPUTS
+    System.String
+#>
+function ConvertTo-TkTaskbandHive {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text,
+        [Parameter(Mandatory)] [string] $From,
+        [Parameter(Mandatory)] [string] $To
+    )
+
+    $pattern = '(?im)^\[(-?)' + [regex]::Escape($From.TrimEnd('\')) + '(?=\\|\])'
+    return [regex]::Replace($Text, $pattern, ('[$1' + $To.TrimEnd('\').Replace('$', '$$')))
+}
+
+<#
+.SYNOPSIS
+    Makes the registry of another account readable, loading its hive if it is not.
+
+.DESCRIPTION
+    A signed-in account has its hive under HKEY_USERS\<SID> already. Another
+    one's NTUSER.DAT is loaded with reg load under a name of the toolkit's,
+    and must be unloaded with Dismount-TkUserHive once done.
+
+.OUTPUTS
+    PSCustomObject with Ok, Root (HKEY_USERS\...), Short (HKU\...), Mounted and Error.
+#>
+function Mount-TkUserHive {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)] [pscustomobject] $UserProfile,
+        [Parameter(Mandatory)] [ValidatePattern('^Toolkit-[A-Za-z0-9-]+$')] [string] $MountName
+    )
+
+    if ($UserProfile.Loaded) {
+        return [pscustomobject] @{ Ok = $true; Root = ('HKEY_USERS\{0}' -f $UserProfile.Sid); Short = ('HKU\{0}' -f $UserProfile.Sid); Mounted = $false; Error = '' }
+    }
+
+    $file = [System.IO.Path]::Combine($UserProfile.Path, 'NTUSER.DAT')
+    if (-not $PSCmdlet.ShouldProcess($file, 'Load the registry hive')) {
+        return [pscustomobject] @{ Ok = $false; Root = ''; Short = ''; Mounted = $false; Error = 'Cancelled.' }
+    }
+
+    $run = Invoke-TkProcess -FilePath 'reg.exe' -ArgumentList @('load', ('HKU\{0}' -f $MountName), $file) -TimeoutSeconds 60
+    if ($run.ExitCode -ne 0) {
+        return [pscustomobject] @{ Ok = $false; Root = ''; Short = ''; Mounted = $false; Error = ('its registry could not be loaded ({0})' -f ([string] $run.StandardError).Trim()) }
+    }
+
+    return [pscustomobject] @{ Ok = $true; Root = ('HKEY_USERS\{0}' -f $MountName); Short = ('HKU\{0}' -f $MountName); Mounted = $true; Error = '' }
+}
+
+<#
+.SYNOPSIS
+    Unloads a hive Mount-TkUserHive loaded, trying again while it is busy.
+
+.DESCRIPTION
+    A hive left loaded would make that account sign in to a temporary
+    profile until the machine restarts, so the unload is tried a few times.
+
+.OUTPUTS
+    System.Boolean, true when nothing is left loaded.
+#>
+function Dismount-TkUserHive {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param(
+        [Parameter()] [AllowNull()] [object] $Hive,
+        [Parameter()] [int] $Attempt = 5,
+        [Parameter()] [int] $DelayMilliseconds = 700
+    )
+
+    if (-not $Hive -or -not $Hive.Mounted) { return $true }
+    if (-not $PSCmdlet.ShouldProcess($Hive.Short, 'Unload the registry hive')) { return $false }
+
+    for ($i = 1; $i -le $Attempt; $i++) {
+        [GC]::Collect()
+        [GC]::WaitForPendingFinalizers()
+        $run = Invoke-TkProcess -FilePath 'reg.exe' -ArgumentList @('unload', $Hive.Short) -TimeoutSeconds 60
+        if ($run.ExitCode -eq 0) { return $true }
+        if ($i -lt $Attempt) { Start-Sleep -Milliseconds $DelayMilliseconds }
+    }
+
+    Write-TkLog -Level Error -Category 'Migration' -Message ('The hive {0} could not be unloaded.' -f $Hive.Short)
+    return $false
+}
+
+<#
+.SYNOPSIS
+    Gives files and folders the toolkit wrote in another profile to that account.
+
+.OUTPUTS
+    System.Int32, the number of icacls runs that reported an error.
+#>
+function Set-TkOwnerPath {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([int])]
+    param(
+        [Parameter()] [AllowEmptyCollection()] [string[]] $Path = @(),
+        [Parameter(Mandatory)] [ValidatePattern('^S-1-[0-9-]+$')] [string] $Sid
+    )
+
+    $failed = 0
+    foreach ($item in ($Path | Where-Object { $_ })) {
+        $folder = [System.IO.Directory]::Exists($item)
+        if (-not $folder -and -not [System.IO.File]::Exists($item)) { continue }
+        if (-not $PSCmdlet.ShouldProcess($item, ('Set the owner to {0}' -f $Sid))) { continue }
+        $arguments = @($item.TrimEnd('\'), '/setowner', ('*{0}' -f $Sid)) + $(if ($folder) { @('/T') } else { @() }) + @('/C', '/Q')
+        if ((Invoke-TkProcess -FilePath 'icacls.exe' -ArgumentList $arguments -TimeoutSeconds 0).ExitCode -ne 0) { $failed++ }
+    }
+    return $failed
+}
+
+<#
+.SYNOPSIS
+    Copies the pins of one profile into another: Quick Access, jump lists, taskbar and Start.
+
+.DESCRIPTION
+    Runs in the elevated worker. The destination account must be signed
+    out, or its Explorer would write its own pins back over them. Its pins
+    are saved first to the toolkit data folder. Taskbar shortcuts it already
+    has are kept. The taskbar order (the Taskband key) is read from the
+    source account's registry and written to the destination's, loading
+    either hive when its account is signed out and unloading it after; the
+    .reg text is checked to write that key and nothing else.
+
+.OUTPUTS
+    PSCustomObject with Name, Ok, Text and Log.
+#>
+function Copy-TkProfilePin {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)] [pscustomobject] $SourceProfile,
+        [Parameter(Mandatory)] [pscustomobject] $TargetProfile,
+        [Parameter()] [string] $BackupRoot = (Get-TkContext).DataRoot
+    )
+
+    if ($TargetProfile.Loaded) {
+        return [pscustomobject] @{ Name = 'Pins'; Ok = $false; Log = ''
+                                   Text = ('{0} is signed in: sign it out and copy the pins again, or its Explorer writes its own back.' -f $TargetProfile.Name) }
+    }
+    if (-not $PSCmdlet.ShouldProcess($TargetProfile.Path, 'Copy the pins')) {
+        return [pscustomobject] @{ Name = 'Pins'; Ok = $false; Text = 'Cancelled.'; Log = '' }
+    }
+
+    $at     = { param($userProfile) Get-TkPinLocation -AppData ([System.IO.Path]::Combine($userProfile.Path, 'AppData\Roaming')) -LocalAppData ([System.IO.Path]::Combine($userProfile.Path, 'AppData\Local')) }
+    $from   = & $at $SourceProfile
+    $to     = & $at $TargetProfile
+    $leaf   = Split-Path -Path $TargetProfile.Path -Leaf
+    $backup = [System.IO.Path]::Combine($BackupRoot, ('pins-backup-{0}-{1:yyyyMMdd-HHmmss}' -f $leaf, (Get-Date)))
+    $lines  = New-Object System.Collections.Generic.List[string]
+    $ok     = $true
+    $key    = 'Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband'
+
+    # --- The destination's pins, saved first ------------------------------
+    [void] (Copy-TkPinFile -From $to.Automatic -To ([System.IO.Path]::Combine($backup, 'AutomaticDestinations')) -Filter '*.automaticDestinations-ms')
+    [void] (Copy-TkPinFile -From $to.Custom -To ([System.IO.Path]::Combine($backup, 'CustomDestinations')) -Filter '*.customDestinations-ms')
+    [void] (Copy-TkPinFile -From $to.Taskbar -To ([System.IO.Path]::Combine($backup, 'TaskBar')) -Filter '*.lnk')
+    $targetStart = [System.IO.Path]::Combine($to.Start, 'start2.bin')
+    if ([System.IO.File]::Exists($targetStart)) { [System.IO.File]::Copy($targetStart, [System.IO.Path]::Combine($backup, 'start2.bin'), $true) }
+
+    # --- The files ---------------------------------------------------------
+    $automatic = Copy-TkPinFile -From $from.Automatic -To $to.Automatic -Filter '*.automaticDestinations-ms'
+    $custom    = Copy-TkPinFile -From $from.Custom -To $to.Custom -Filter '*.customDestinations-ms'
+    $taskbar   = Copy-TkPinFile -From $from.Taskbar -To $to.Taskbar -Filter '*.lnk' -KeepExisting
+    $lines.Add(('{0} Quick Access and jump list file(s), {1} taskbar shortcut(s)' -f ($automatic + $custom), $taskbar))
+
+    $sourceStart = [System.IO.Path]::Combine($from.Start, 'start2.bin')
+    if ([System.IO.File]::Exists($sourceStart) -and [System.IO.Directory]::Exists($to.Start)) {
+        [System.IO.File]::Copy($sourceStart, $targetStart, $true)
+        $lines.Add('Start menu pins')
+    }
+    elseif ([System.IO.File]::Exists($sourceStart)) {
+        $lines.Add(('Start menu pins not copied: {0} has not opened its Start menu yet' -f $TargetProfile.Name))
+    }
+
+    # --- The taskbar order, from one registry to the other -----------------
+    $sourceHive = $null
+    $targetHive = $null
+    $exported   = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ('toolkit-taskband-{0}.reg' -f [guid]::NewGuid()))
+    $imported   = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ('toolkit-taskband-{0}.reg' -f [guid]::NewGuid()))
+    try {
+        $sourceHive = Mount-TkUserHive -UserProfile $SourceProfile -MountName 'Toolkit-Source' -Confirm:$false
+        $targetHive = Mount-TkUserHive -UserProfile $TargetProfile -MountName 'Toolkit-Target' -Confirm:$false
+
+        if (-not $sourceHive.Ok -or -not $targetHive.Ok) {
+            $lines.Add(('taskbar order not copied: {0}' -f (@($sourceHive.Error, $targetHive.Error) | Where-Object { $_ } | Select-Object -First 1)))
+        }
+        else {
+            [void] (Invoke-TkProcess -FilePath 'reg.exe' -ArgumentList @('export', ('{0}\{1}' -f $targetHive.Short, $key), ([System.IO.Path]::Combine($backup, 'Taskband.reg')), '/y') -TimeoutSeconds 30)
+            [void] (Invoke-TkProcess -FilePath 'reg.exe' -ArgumentList @('export', ('{0}\{1}' -f $sourceHive.Short, $key), $exported, '/y') -TimeoutSeconds 30)
+
+            if (-not [System.IO.File]::Exists($exported)) {
+                $lines.Add('no taskbar order to copy')
+            }
+            else {
+                $text = ConvertTo-TkTaskbandHive -Text ([System.IO.File]::ReadAllText($exported)) -From $sourceHive.Root -To $targetHive.Root
+                if (Test-TkTaskbandRegFile -Text $text -Hive $targetHive.Root) {
+                    [System.IO.File]::WriteAllText($imported, $text, [System.Text.Encoding]::Unicode)
+                    $run = Invoke-TkProcess -FilePath 'reg.exe' -ArgumentList @('import', $imported) -TimeoutSeconds 30
+                    $lines.Add($(if ($run.ExitCode -eq 0) { 'taskbar order' } else { 'the taskbar order could not be written' }))
+                }
+                else {
+                    $lines.Add('the taskbar order was refused: its .reg text touches more than the taskbar key')
+                }
+            }
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $exported, $imported -Force -ErrorAction SilentlyContinue
+        foreach ($hive in @($sourceHive, $targetHive)) {
+            if (-not (Dismount-TkUserHive -Hive $hive -Confirm:$false)) {
+                $ok = $false
+                $lines.Add(('the registry {0} is still loaded: restart the machine before signing in to that account' -f $hive.Short))
+            }
+        }
+    }
+
+    # --- The copies belong to the destination account -----------------------
+    $owner = Set-TkOwnerPath -Path @($to.Automatic, $to.Custom, $to.Taskbar, $targetStart) -Sid $TargetProfile.Sid -Confirm:$false
+    if ($owner -gt 0) { $ok = $false; $lines.Add('the owner could not be set on some pins') }
+
+    $lines.Add(('its pins before are saved in {0}' -f $backup))
+    return [pscustomobject] @{ Name = 'Pins'; Ok = $ok; Text = ($lines -join '; '); Log = '' }
+}
+
+<#
+.SYNOPSIS
+    Copies the browser bookmarks of one profile into another.
+
+.DESCRIPTION
+    Runs in the elevated worker. The bookmarks of the source account are
+    exported to a temporary folder as for a package, then imported into
+    the destination account's browsers the way a package is: merged into a
+    folder named after the source account, never replacing, with the HTML
+    file on its desktop. The files written belong to the destination
+    account. A browser is only checked for being open when its account is
+    signed in.
+
+.OUTPUTS
+    PSCustomObject[] with Name, Ok, Text and Log.
+#>
+function Copy-TkProfileBookmark {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([pscustomobject[]])]
+    param(
+        [Parameter(Mandatory)] [pscustomobject] $SourceProfile,
+        [Parameter(Mandatory)] [pscustomobject] $TargetProfile
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($TargetProfile.Path, 'Copy the browser bookmarks')) { return @() }
+
+    $roots   = { param($userProfile) @{ LocalAppData = [System.IO.Path]::Combine($userProfile.Path, 'AppData\Local'); AppData = [System.IO.Path]::Combine($userProfile.Path, 'AppData\Roaming') } }
+    $from    = & $roots $SourceProfile
+    $to      = & $roots $TargetProfile
+    $leaf    = Split-Path -Path $SourceProfile.Path -Leaf
+    $desktop = [string] (@(Get-TkProfileFolder -UserProfile $TargetProfile) | Where-Object Key -eq 'Desktop' | Select-Object -First 1).Path
+    $temp    = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ('toolkit-bookmarks-{0}' -f [guid]::NewGuid()))
+    $rows    = New-Object System.Collections.Generic.List[object]
+
+    try {
+        $found = Export-TkMigrationBookmark -Root $temp -Definition @(Get-TkBrowserDefinition @from) -LocalAppData $from.LocalAppData `
+                                            -SkipProcessCheck:(-not $SourceProfile.Loaded) -Confirm:$false
+
+        if (@($found.blocked).Count -gt 0) {
+            $rows.Add([pscustomobject] @{ Name = 'Bookmarks'; Ok = $false; Log = ''
+                                          Text = ('{0} refused access to {1}: export them from the browser (as an HTML file) or use its sync' -f $found.blockedBy, (@($found.blocked) -join ', ')) })
+        }
+        if (@($found.busy).Count -gt 0) {
+            $rows.Add([pscustomobject] @{ Name = 'Bookmarks'; Ok = $false; Log = ''; Text = ('close Firefox in {0} and copy again for {1}' -f $SourceProfile.Name, (@($found.busy) -join ', ')) })
+        }
+        if ($found.duckduckgo) {
+            $rows.Add([pscustomobject] @{ Name = 'Bookmarks: DuckDuckGo'; Ok = $true; Log = ''; Text = 'its own store is not copied: use its Sync and Backup, or import the HTML file' })
+        }
+
+        if (@($found.copied).Count -eq 0) {
+            if ($rows.Count -eq 0) { $rows.Add([pscustomobject] @{ Name = 'Bookmarks'; Ok = $true; Text = 'no browser profile with bookmarks was found'; Log = '' }) }
+        }
+        else {
+            $done = @(Import-TkMigrationBookmark -Root $temp -Computer $leaf -Desktop $desktop -Definition @(Get-TkBrowserDefinition @to) `
+                                                 -SkipProcessCheck:(-not $TargetProfile.Loaded) -Confirm:$false)
+            foreach ($item in $done) {
+                $owner = Set-TkOwnerPath -Path @($item.Created) -Sid $TargetProfile.Sid -Confirm:$false
+                $rows.Add([pscustomobject] @{ Name = ('Bookmarks: {0}' -f $item.Browser); Ok = ($item.Ok -and $owner -eq 0); Text = $item.Text; Log = '' })
+            }
+        }
+    }
+    finally {
+        # The export held another account's bookmarks: it does not outlive the copy.
+        Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    return @($rows.ToArray())
+}
+
+<#
+.SYNOPSIS
+    Runs a copy to another profile: the folders, then the pins and the bookmarks.
+
+.OUTPUTS
+    PSCustomObject with Ok, Message and Steps (Name, Ok, Text, Log).
+#>
+function Invoke-TkProfileCopy {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()] [AllowEmptyCollection()] [object[]] $Step = @(),
+        [Parameter(Mandatory)] [pscustomobject] $SourceProfile,
+        [Parameter(Mandatory)] [pscustomobject] $TargetProfile,
+        [Parameter()] [switch] $Move,
+        [Parameter()] [switch] $Pins,
+        [Parameter()] [switch] $Bookmarks
+    )
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    if (-not $PSCmdlet.ShouldProcess($TargetProfile.Path, 'Copy from another profile')) {
+        return [pscustomobject] @{ Ok = $false; Message = 'Cancelled.'; Steps = @() }
+    }
+
+    if (@($Step | Where-Object { $_ }).Count -gt 0) {
+        $copied = Copy-TkProfileData -Step @($Step) -Sid $TargetProfile.Sid -AccountName $TargetProfile.Name -Move:$Move -Confirm:$false
+        foreach ($item in @($copied.Steps)) { $rows.Add($item) }
+    }
+    if ($Pins) { $rows.Add((Copy-TkProfilePin -SourceProfile $SourceProfile -TargetProfile $TargetProfile -Confirm:$false)) }
+    if ($Bookmarks) { foreach ($item in @(Copy-TkProfileBookmark -SourceProfile $SourceProfile -TargetProfile $TargetProfile -Confirm:$false)) { $rows.Add($item) } }
+
+    $good = @($rows | Where-Object Ok).Count
+    return [pscustomobject] @{
+        Ok      = ($rows.Count -gt 0 -and $good -eq $rows.Count)
+        Message = ('{0} of {1} item(s) done for {2} without a problem.' -f $good, $rows.Count, $TargetProfile.Name)
+        Steps   = @($rows.ToArray())
     }
 }

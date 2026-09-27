@@ -301,12 +301,16 @@ function Get-TkElevatedAction {
                     [pscustomobject] @{ Key = [string] $_.Key; Name = [string] $_.Name; Source = [string] $_.Source; Target = [string] $_.Target }
                 })
 
-                $plan = New-TkProfileCopyPlan -Row $rows -SourceProfile $from -TargetProfile $to
+                $pins      = [bool] $Parameters.Pins
+                $bookmarks = [bool] $Parameters.Bookmarks
+
+                $plan = New-TkProfileCopyPlan -Row $rows -SourceProfile $from -TargetProfile $to -AllowNoFolder:($pins -or $bookmarks)
                 if (@($plan.Errors).Count -gt 0) {
                     [pscustomobject] @{ Ok = $false; Message = (@($plan.Errors) -join ' '); Steps = @() }
                 }
                 else {
-                    Copy-TkProfileData -Step @($plan.Steps) -Sid $to.Sid -AccountName $to.Name -Move:([bool] $Parameters.Move) -Confirm:$false
+                    Invoke-TkProfileCopy -Step @($plan.Steps) -SourceProfile $from -TargetProfile $to -Move:([bool] $Parameters.Move) `
+                                         -Pins:$pins -Bookmarks:$bookmarks -Confirm:$false
                 }
             }
         }
