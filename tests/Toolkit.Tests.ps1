@@ -8178,7 +8178,8 @@ Describe 'Installed apps' {
             $app = New-TkInstalledApp -Name '7-Zip' -Id '7zip.7zip' -Version '24.08' -Available '25.01' -Source 'WinGet' -Manager 'winget'
             $silent = & $script:Plan $app 'Update'
             $silent.Kind | Should -Be 'Run'
-            ($silent.Arguments -join ' ') | Should -Be 'upgrade --id 7zip.7zip --exact --accept-source-agreements --accept-package-agreements --silent --disable-interactivity'
+            # --include-unknown: winget refuses to upgrade a package whose installed version it cannot read without it.
+            ($silent.Arguments -join ' ') | Should -Be 'upgrade --id 7zip.7zip --exact --include-unknown --accept-source-agreements --accept-package-agreements --silent --disable-interactivity'
             ((& $script:Plan $app 'Uninstall' 'Interactive').Arguments -join ' ') | Should -Be 'uninstall --id 7zip.7zip --exact --accept-source-agreements --interactive'
 
             $local = New-TkInstalledApp -Name 'Tool' -Id 'ARP\Machine\X64\Tool' -Version '1' -Available '2' -Source 'Local PC' -Manager 'winget'
@@ -8196,17 +8197,18 @@ Describe 'Installed apps' {
             $plan.Name | Should -Be 'Microsoft.BingNews'
         }
 
-        It 'hands a game to its launcher, and an Epic game to the Epic launcher' {
+        It 'hands a game to its launcher without waiting for it, and an Epic game to the Epic launcher' {
+            # Waiting for steam.exe, which never exits, held the whole batch forever.
             $entry = & $script:AppEntry 'Steam App 990080' 'Hogwarts Legacy' '"C:\Steam\steam.exe" steam://uninstall/990080'
             $game  = New-TkInstalledApp -Name 'Hogwarts Legacy' -Id 'ARP\Machine\X64\Steam App 990080' -Source 'Steam' -Manager 'launcher' -Entry $entry
             $plan  = & $script:Plan $game 'Uninstall'
-            $plan.Kind | Should -Be 'Shell'
+            $plan.Kind | Should -Be 'Handoff'
             $plan.FilePath | Should -Be 'C:\Steam\steam.exe'
             $plan.Arguments | Should -Be 'steam://uninstall/990080'
             (& $script:Plan $game 'Update').Note | Should -Match 'Steam updates its games itself'
 
             $epic = New-TkInstalledApp -Name 'Fortnite' -Id 'Fortnite' -Source 'Epic Games' -Manager 'launcher'
-            (& $script:Plan $epic 'Uninstall').Kind | Should -Be 'Open'
+            (& $script:Plan $epic 'Uninstall').Kind | Should -Be 'Handoff'
         }
 
         It 'uninstalls a program of the uninstall keys silently when it can, and says when it cannot' {
@@ -8254,21 +8256,62 @@ Describe 'Installed apps' {
             function Add-TkJournalEntry { param($Name, $Category, $Detail) $null = $Category; $script:AppJournal = '{0}: {1}' -f $Name, $Detail }
         }
 
-        It 'runs what needs no elevation, and keeps the rest for one elevated batch' {
-            (Get-Command -Name Invoke-TkInstalledAppCommand).ScriptBlock.ToString() | Should -Match 'AppRuns'
+        It 'plans a batch in order, the elevated rows marked for the end, and writes it to the journal' {
+            (Get-Command -Name Add-TkJournalEntry).ScriptBlock.ToString() | Should -Match 'AppJournal'
             $items = @(
                 (New-TkInstalledApp -Name '7-Zip' -Id '7zip.7zip' -Available '25' -Source 'WinGet' -Manager 'winget')
                 (New-TkInstalledApp -Name 'Tool' -Id 'ARP\Machine\X64\Tool' -Source 'Local PC' -Manager 'winget')
                 (New-TkInstalledApp -Name 'git' -Id 'git' -Available '2' -Source 'Chocolatey' -Manager 'choco' -Elevated)
             )
-            $done = Invoke-TkInstalledAppAction -Item $items -Operation 'Update' -Tool $script:AppTool -Confirm:$false
+            $queue = @(New-TkInstalledAppQueue -Item $items -Operation 'Update' -Tool $script:AppTool)
 
-            $script:AppRuns.Count | Should -Be 1
-            @($done.Results.Name) | Should -Be @('7-Zip', 'Tool')
-            ($done.Results | Where-Object Name -eq 'Tool').Ok | Should -BeFalse
-            @($done.Elevated) | Should -HaveCount 1
-            $done.Elevated[0].Manager | Should -Be 'choco'
-            $script:AppJournal | Should -Match '^Installed apps: update'
+            # Not $queue.Item: on an array, Item is its indexer.
+            @($queue | ForEach-Object { $_.Item.Name }) | Should -Be @('7-Zip', 'Tool', 'git')
+            @($queue | ForEach-Object { $_.Plan.Kind }) | Should -Be @('Run', 'None', 'Elevated')
+
+            Write-TkInstalledAppJournal -Operation 'Update' -Result @([pscustomobject] @{ Name = '7-Zip'; Source = 'WinGet'; Ok = $true; Text = 'updated' }) -Confirm:$false
+            $script:AppJournal | Should -Be 'Installed apps: update: 7-Zip (WinGet): updated'
+        }
+
+        It 'says where a batch is: which one runs, for how long, and what is left' {
+            Format-TkInstalledAppProgress -Operation 'Uninstall' -Position 2 -Count 5 -Name 'Old Tool' -Seconds 45 -Done 1 -Failed 0 |
+                Should -Be 'Uninstalling 2 of 5: Old Tool (45 s). 1 done, 0 failed, 3 waiting.'
+            Format-TkInstalledAppProgress -Operation 'Update' -Position 5 -Count 5 -Name 'Git' -Seconds 125 -Done 3 -Failed 1 -Stopping |
+                Should -Be 'Updating 5 of 5: Git (2 min 05 s). 3 done, 1 failed, 0 waiting. Stopping after this one.'
+        }
+
+        It 'waits for what an uninstaller starts, and not for what started before it' {
+            # Inno Setup's uninstaller starts a copy of itself and exits at once.
+            $process = Start-Process -FilePath ([System.IO.Path]::Combine($env:SystemRoot, 'System32\cmd.exe')) -ArgumentList '/c exit 3' -WindowStyle Hidden -PassThru
+            $process.WaitForExit()
+            $polls = @{ Count = 0 }
+            $list = {
+                $polls.Count++
+                $children = @([pscustomobject] @{ ProcessId = 999001; ParentProcessId = 4; CreationDate = (Get-Date).AddYears(-1) })
+                if ($polls.Count -le 2) {
+                    $children += [pscustomobject] @{ ProcessId = 999002; ParentProcessId = $process.Id; CreationDate = Get-Date }
+                    $children += [pscustomobject] @{ ProcessId = 999003; ParentProcessId = 999002; CreationDate = Get-Date }
+                }
+                if ($polls.Count -eq 3) {
+                    $children += [pscustomobject] @{ ProcessId = 999003; ParentProcessId = 999002; CreationDate = Get-Date }
+                }
+                $children
+            }.GetNewClosure()
+
+            $waited = Wait-TkProcessTree -Process $process -PollMilliseconds 10 -ProcessList $list
+            $waited.TimedOut | Should -BeFalse
+            $waited.ExitCode | Should -Be 3
+            $polls.Count | Should -Be 4
+
+            $never = { @([pscustomobject] @{ ProcessId = 999002; ParentProcessId = $process.Id; CreationDate = Get-Date }) }.GetNewClosure()
+            (Wait-TkProcessTree -Process $process -TimeoutSeconds 1 -PollMilliseconds 100 -ProcessList $never).TimedOut | Should -BeTrue
+        }
+
+        It 'reads winget and the other managers as UTF-8, and the rest in the console code page' {
+            (Get-TkProcessOutputEncoding -FilePath 'C:\Users\x\AppData\Local\Microsoft\WindowsApps\winget.exe').WebName | Should -Be 'utf-8'
+            (Get-TkProcessOutputEncoding -FilePath 'C:\Program Files\nodejs\npm.cmd').WebName | Should -Be 'utf-8'
+            Get-TkProcessOutputEncoding -FilePath 'C:\Windows\System32\ipconfig.exe' | Should -BeNullOrEmpty
+            Get-TkProcessOutputEncoding -FilePath 'C:\tools\mywinget-helper.exe' | Should -BeNullOrEmpty
         }
 
         It 'checks every name again with administrator rights, and removes Store apps through the catalogue check' {

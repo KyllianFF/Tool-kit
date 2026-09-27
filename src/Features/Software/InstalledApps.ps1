@@ -191,7 +191,8 @@ function New-TkInstalledApp {
         PackageName  = $PackageName
         LauncherId   = $LauncherId
         StateText    = ''
-        StateFailed  = $false
+        # Waiting, Running, Done, Failed or Handoff: the colour of the result column.
+        StateKind    = ''
     }
 }
 
@@ -555,12 +556,10 @@ function Get-TkInstalledApplication {
 
     $notes  = New-Object System.Collections.Generic.List[string]
     $extra  = New-Object System.Collections.Generic.List[object]
-    # winget, pip, npm, Scoop, .NET and Cargo write UTF-8 whatever the console code page.
-    $utf8   = New-Object System.Text.UTF8Encoding($false)
     $run    = {
         param($file, $arguments, $timeout)
-        $wide = $file -match '(winget|py|python|npm|scoop|dotnet|cargo)(\.exe|\.cmd)?$'
-        if ($wide) { Invoke-TkProcess -FilePath $file -ArgumentList $arguments -TimeoutSeconds $timeout -OutputEncoding $utf8 }
+        $encoding = Get-TkProcessOutputEncoding -FilePath $file
+        if ($encoding) { Invoke-TkProcess -FilePath $file -ArgumentList $arguments -TimeoutSeconds $timeout -OutputEncoding $encoding }
         else { Invoke-TkProcess -FilePath $file -ArgumentList $arguments -TimeoutSeconds $timeout }
     }
     $catalog = @(@((Import-TkCatalog -Name 'store-apps').apps) | ForEach-Object { [string] $_.name })
@@ -681,9 +680,10 @@ function Test-TkInstalledAppId {
 .DESCRIPTION
     Pure. Kind is Run (a hidden process, output read), Shell (a program the
     user sees and may have to confirm, UAC included), Console (a command in
-    a window the user sees), Open (a launcher link), Appx (the Store app of
-    this account), Elevated (through the one UAC prompt of the batch) or
-    None (with the reason in Note).
+    a window the user sees), Handoff (a launcher, started and not waited
+    for, since a launcher does not exit), Appx (the Store app of this
+    account), Elevated (through the one UAC prompt of the batch) or None
+    (with the reason in Note).
 
 .OUTPUTS
     PSCustomObject with Kind, FilePath, Arguments (string[] for Run and
@@ -721,7 +721,7 @@ function Get-TkInstalledAppCommand {
             if (-not $Tool['winget']) { return (& $none 'winget is not installed') }
             if ($Operation -eq 'Update') {
                 if (-not $Item.Available -or $id -match '^(ARP|MSIX)\\') { return (& $none 'no update that winget can install') }
-                $arguments = @('upgrade', '--id', $id, '--exact', '--accept-source-agreements', '--accept-package-agreements')
+                $arguments = @('upgrade', '--id', $id, '--exact', '--include-unknown', '--accept-source-agreements', '--accept-package-agreements')
             }
             else {
                 $arguments = @('uninstall', '--id', $id, '--exact', '--accept-source-agreements')
@@ -732,10 +732,10 @@ function Get-TkInstalledAppCommand {
 
         'launcher' {
             if ($Operation -eq 'Update') { return (& $none ('{0} updates its games itself' -f $Item.Source)) }
-            if ($Item.Source -eq 'Epic Games') { return (& $plan 'Open' 'com.epicgames.launcher://store' @() 'uninstall it from the Epic Games Launcher library') }
+            if ($Item.Source -eq 'Epic Games') { return (& $plan 'Handoff' 'com.epicgames.launcher://store' '' 'handed to the Epic Games Launcher: uninstall it from its library') }
             $command = Split-TkCommandLine -CommandLine ([string] $Item.Entry.UninstallString)
             if (-not $command) { return (& $none ('{0} has no uninstaller registered: use {1}' -f $Item.Name, $Item.Source)) }
-            return (& $plan 'Shell' $command.FilePath $command.Arguments ('{0} opens its own uninstall' -f $Item.Source))
+            return (& $plan 'Handoff' $command.FilePath $command.Arguments ('handed to {0}: confirm the uninstall in its window' -f $Item.Source))
         }
 
         'registry' {
@@ -748,7 +748,7 @@ function Get-TkInstalledAppCommand {
             $line = if ($silent -and $entry.QuietUninstallString) { $entry.QuietUninstallString } else { $entry.UninstallString }
             $command = Split-TkCommandLine -CommandLine ([string] $line)
             if (-not $command) { return (& $none 'no uninstaller is registered') }
-            $note = if ($silent -and -not $entry.QuietUninstallString) { 'no silent uninstaller is registered: its own window opens' } else { '' }
+            $note = if ($silent -and -not $entry.QuietUninstallString) { 'in its own window: no silent uninstaller is registered' } else { '' }
             return (& $plan 'Shell' $command.FilePath $command.Arguments $note)
         }
 
@@ -807,6 +807,90 @@ function Get-TkInstalledAppCommand {
 
 <#
 .SYNOPSIS
+    The encoding a package manager writes in, when it is not the console's.
+
+.DESCRIPTION
+    Pure. winget, pip, npm, Scoop, .NET and Cargo write UTF-8 whatever the
+    console code page; read with the console's, accented names and messages
+    come out garbled.
+
+.OUTPUTS
+    System.Text.Encoding, or $null for the console code page.
+#>
+function Get-TkProcessOutputEncoding {
+    [CmdletBinding()]
+    [OutputType([System.Text.Encoding])]
+    param(
+        [Parameter()] [AllowEmptyString()] [string] $FilePath = ''
+    )
+
+    if ($FilePath -match '(^|\\)(winget|py|python|npm|scoop|dotnet|cargo)(\.exe|\.cmd)?$') { return (New-Object System.Text.UTF8Encoding($false)) }
+    return $null
+}
+
+<#
+.SYNOPSIS
+    Waits for a program and for the programs it started, up to a limit.
+
+.DESCRIPTION
+    Many uninstallers start a copy of themselves and exit at once (Inno
+    Setup does), so waiting for the first process alone reports the
+    uninstall done while it is still running, and the next one starts over
+    it. The processes it started, and theirs, are followed through their
+    parent id; one created before the program is never counted, since an id
+    can be reused. Start-Process -Wait is not used: Windows PowerShell waits
+    there for everything the program started, a launcher included, which
+    never ends.
+
+.PARAMETER ProcessList
+    Returns the running processes with ProcessId, ParentProcessId and
+    CreationDate; for the tests.
+
+.OUTPUTS
+    PSCustomObject with TimedOut and ExitCode.
+#>
+function Wait-TkProcessTree {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)] [System.Diagnostics.Process] $Process,
+        [Parameter()] [int] $TimeoutSeconds = 1800,
+        [Parameter()] [int] $PollMilliseconds = 1500,
+        [Parameter()] [scriptblock] $ProcessList = { @(Get-CimInstance -ClassName Win32_Process -Property ProcessId, ParentProcessId, CreationDate -ErrorAction SilentlyContinue) }
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $started  = try { $Process.StartTime.AddSeconds(-1) } catch { (Get-Date).AddMinutes(-1) }
+    $known    = New-Object 'System.Collections.Generic.HashSet[int]'
+    [void] $known.Add($Process.Id)
+    $timedOut = $true
+
+    while ((Get-Date) -lt $deadline) {
+
+        $alive = -not $Process.HasExited
+        $all   = @(& $ProcessList)
+
+        # Twice over the list, so a grandchild listed before its parent is found too.
+        for ($pass = 0; $pass -lt 2; $pass++) {
+            foreach ($entry in $all) {
+                if ($entry.CreationDate -and $entry.CreationDate -lt $started) { continue }
+                if ($known.Contains([int] $entry.ParentProcessId)) { [void] $known.Add([int] $entry.ProcessId) }
+            }
+        }
+        foreach ($entry in $all) {
+            if ([int] $entry.ProcessId -ne $Process.Id -and $known.Contains([int] $entry.ProcessId)) { $alive = $true }
+        }
+
+        if (-not $alive) { $timedOut = $false; break }
+        Start-Sleep -Milliseconds $PollMilliseconds
+    }
+
+    $code = if ($Process.HasExited) { try { $Process.ExitCode } catch { -1 } } else { -1 }
+    return [pscustomobject] @{ TimedOut = $timedOut; ExitCode = $code }
+}
+
+<#
+.SYNOPSIS
     Runs one planned operation that needs no elevation.
 
 .OUTPUTS
@@ -816,7 +900,8 @@ function Invoke-TkInstalledAppCommand {
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([pscustomobject])]
     param(
-        [Parameter(Mandatory)] [pscustomobject] $Plan
+        [Parameter(Mandatory)] [pscustomobject] $Plan,
+        [Parameter()] [int] $TimeoutSeconds = 1800
     )
 
     $done = { param($ok, $text) [pscustomobject] @{ Ok = [bool] $ok; Text = [string] $text } }
@@ -825,25 +910,29 @@ function Invoke-TkInstalledAppCommand {
     try {
         switch ($Plan.Kind) {
             'Run' {
-                $result = Invoke-TkProcess -FilePath $Plan.FilePath -ArgumentList @($Plan.Arguments) -TimeoutSeconds 1800
+                $encoding = Get-TkProcessOutputEncoding -FilePath $Plan.FilePath
+                $result = if ($encoding) { Invoke-TkProcess -FilePath $Plan.FilePath -ArgumentList @($Plan.Arguments) -TimeoutSeconds $TimeoutSeconds -OutputEncoding $encoding }
+                          else { Invoke-TkProcess -FilePath $Plan.FilePath -ArgumentList @($Plan.Arguments) -TimeoutSeconds $TimeoutSeconds }
+                if ($result.TimedOut) { return (& $done $false ('still running after {0} minutes: stopped' -f [int] ($TimeoutSeconds / 60))) }
                 if ($result.ExitCode -eq 0) { return (& $done $true 'done') }
                 $why = Get-TkFirstLine -Text $(if ($result.StandardError) { [string] $result.StandardError } else { [string] $result.StandardOutput })
                 return (& $done $false ('failed (code {0}) {1}' -f $result.ExitCode, $why).Trim())
             }
-            'Console' {
-                $process = Start-Process -FilePath $Plan.FilePath -ArgumentList @($Plan.Arguments | ForEach-Object { ConvertTo-TkProcessArgument -Value $_ }) -Wait -PassThru
-                return (& $done ($process.ExitCode -eq 0) $(if ($process.ExitCode -eq 0) { 'done' } else { 'ended with code {0}' -f $process.ExitCode }))
-            }
-            'Shell' {
-                $start = @{ FilePath = $Plan.FilePath; Wait = $true; PassThru = $true }
-                if ([string] $Plan.Arguments) { $start['ArgumentList'] = [string] $Plan.Arguments }
+            { $_ -in @('Console', 'Shell') } {
+                $start = @{ FilePath = $Plan.FilePath; PassThru = $true }
+                $arguments = if ($Plan.Kind -eq 'Console') { (@($Plan.Arguments | ForEach-Object { ConvertTo-TkProcessArgument -Value $_ }) -join ' ') } else { [string] $Plan.Arguments }
+                if ($arguments) { $start['ArgumentList'] = $arguments }
                 $process = Start-Process @start
-                $ok = @(0, 1641, 3010) -contains $process.ExitCode
-                return (& $done $ok $(if ($ok) { 'done' } else { 'ended with code {0}' -f $process.ExitCode }))
+                $waited  = Wait-TkProcessTree -Process $process -TimeoutSeconds $TimeoutSeconds
+                if ($waited.TimedOut) { return (& $done $false ('still running after {0} minutes: left running, the next one goes on' -f [int] ($TimeoutSeconds / 60))) }
+                $ok = @(0, 1641, 3010) -contains $waited.ExitCode
+                return (& $done $ok $(if ($ok) { 'done' } else { 'ended with code {0}' -f $waited.ExitCode }))
             }
-            'Open' {
-                Start-Process -FilePath $Plan.FilePath
-                return (& $done $true 'opened')
+            'Handoff' {
+                $start = @{ FilePath = $Plan.FilePath }
+                if ([string] $Plan.Arguments) { $start['ArgumentList'] = [string] $Plan.Arguments }
+                Start-Process @start
+                return (& $done $true 'handed over')
             }
             'Appx' {
                 $packages = @(Get-AppxPackage -Name $Plan.Name -ErrorAction Stop)
@@ -862,57 +951,80 @@ function Invoke-TkInstalledAppCommand {
 
 <#
 .SYNOPSIS
-    Updates or uninstalls the ticked rows that need no elevation, one after the other.
+    Plans each ticked row of a batch, in order, before anything runs.
 
 .DESCRIPTION
-    Sequential on purpose: installers share one Windows Installer mutex.
-    The rows that need administrator rights are returned for one elevated
-    batch instead of being run here.
+    Pure. The window runs the steps one at a time, each in its own
+    background task, so every row can show where it is: waiting, running,
+    done or failed. The rows that need administrator rights are marked for
+    the one elevated batch at the end.
 
 .OUTPUTS
-    PSCustomObject with Results (Name, Source, Ok, Text) and Elevated
-    (Manager, Operation, Name, Label).
+    PSCustomObject[] with Item and Plan.
 #>
-function Invoke-TkInstalledAppAction {
-    [CmdletBinding(SupportsShouldProcess)]
-    [OutputType([pscustomobject])]
+function New-TkInstalledAppQueue {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Item,
         [Parameter(Mandatory)] [ValidateSet('Update', 'Uninstall')] [string] $Operation,
         [Parameter()] [ValidateSet('Silent', 'Interactive')] [string] $Mode = 'Silent',
-        [Parameter()] [hashtable] $Tool = (Get-TkPackageTool)
+        [Parameter()] [hashtable] $Tool = @{}
     )
 
-    $results  = New-Object System.Collections.Generic.List[object]
-    $elevated = New-Object System.Collections.Generic.List[object]
+    return @(foreach ($row in ($Item | Where-Object { $_ })) {
+        [pscustomobject] @{ Item = $row; Plan = (Get-TkInstalledAppCommand -Item $row -Operation $Operation -Mode $Mode -Tool $Tool) }
+    })
+}
 
-    foreach ($row in ($Item | Where-Object { $_ })) {
+<#
+.SYNOPSIS
+    The progress line of a running batch.
 
-        $plan = Get-TkInstalledAppCommand -Item $row -Operation $Operation -Mode $Mode -Tool $Tool
+.DESCRIPTION
+    Pure. "Uninstalling 2 of 5: Name (45 s). 1 done, 0 failed, 3 waiting."
 
-        if ($plan.Kind -eq 'Elevated') {
-            $manager = if ($row.Preinstalled) { 'appx' } else { [string] $row.Manager }
-            $elevated.Add([pscustomobject] @{ Manager = $manager; Operation = $Operation; Name = $plan.Name; Label = $row.Name })
-            continue
-        }
-        if ($plan.Kind -eq 'None') {
-            $results.Add([pscustomobject] @{ Name = $row.Name; Source = $row.Source; Ok = $false; Text = $plan.Note })
-            continue
-        }
-        if (-not $PSCmdlet.ShouldProcess($row.Name, $Operation)) { continue }
+.OUTPUTS
+    System.String
+#>
+function Format-TkInstalledAppProgress {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [ValidateSet('Update', 'Uninstall')] [string] $Operation,
+        [Parameter(Mandatory)] [int] $Position,
+        [Parameter(Mandatory)] [int] $Count,
+        [Parameter()] [AllowEmptyString()] [string] $Name = '',
+        [Parameter()] [int] $Seconds = 0,
+        [Parameter()] [int] $Done = 0,
+        [Parameter()] [int] $Failed = 0,
+        [Parameter()] [switch] $Stopping
+    )
 
-        $done = Invoke-TkInstalledAppCommand -Plan $plan -Confirm:$false
-        $text = if ($plan.Note) { '{0}; {1}' -f $done.Text, $plan.Note } else { $done.Text }
-        $results.Add([pscustomobject] @{ Name = $row.Name; Source = $row.Source; Ok = $done.Ok; Text = $text })
-    }
+    $verb    = if ($Operation -eq 'Update') { 'Updating' } else { 'Uninstalling' }
+    $elapsed = if ($Seconds -ge 60) { '{0} min {1:00} s' -f [math]::Floor($Seconds / 60), ($Seconds % 60) } else { '{0} s' -f $Seconds }
+    $waiting = [math]::Max(0, $Count - $Position)
+    $text    = '{0} {1} of {2}: {3} ({4}). {5} done, {6} failed, {7} waiting.' -f $verb, $Position, $Count, $Name, $elapsed, $Done, $Failed, $waiting
+    if ($Stopping) { $text += ' Stopping after this one.' }
+    return $text
+}
 
-    if ($results.Count -gt 0) {
-        Add-TkJournalEntry -Name ('Installed apps: {0}' -f $Operation.ToLowerInvariant()) -Category 'Software' -Detail (
-            (@($results | ForEach-Object { '{0} ({1}): {2}' -f $_.Name, $_.Source, $_.Text })) -join '; '
-        )
-    }
+<#
+.SYNOPSIS
+    Writes the outcome of a batch to the intervention journal.
+#>
+function Write-TkInstalledAppJournal {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)] [ValidateSet('Update', 'Uninstall')] [string] $Operation,
+        [Parameter()] [AllowEmptyCollection()] [object[]] $Result = @()
+    )
 
-    return [pscustomobject] @{ Results = @($results.ToArray()); Elevated = @($elevated.ToArray()) }
+    if (@($Result).Count -eq 0 -or -not $PSCmdlet.ShouldProcess('journal', 'Write the batch')) { return }
+
+    Add-TkJournalEntry -Name ('Installed apps: {0}' -f $Operation.ToLowerInvariant()) -Category 'Software' -Detail (
+        (@($Result | ForEach-Object { '{0} ({1}): {2}' -f $_.Name, $_.Source, $_.Text })) -join '; '
+    )
 }
 
 <#
