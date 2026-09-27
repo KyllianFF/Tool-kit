@@ -1315,6 +1315,7 @@
                             <Button x:Name="NavSystem"         Content="System"          Style="{StaticResource NavButton}" Tag="&#xEC4E;" />
                             <Button x:Name="NavSoftware"       Content="Software"        Style="{StaticResource NavButton}" Tag="&#xECA5;" />
                             <Button x:Name="NavTweaks"         Content="Tweaks"          Style="{StaticResource NavButton}" Tag="&#xE9E9;" />
+                            <Button x:Name="NavMigration"      Content="Migration"       Style="{StaticResource NavButton}" Tag="&#xE8C8;" />
 
                             <TextBlock Text="TROUBLESHOOTING" Style="{StaticResource NavSection}" />
                             <Button x:Name="NavPlaybooks"      Content="Playbooks"       Style="{StaticResource NavButton}" Tag="&#xE9D9;" />
@@ -2129,6 +2130,69 @@
                 </Grid>
 
                 <!-- ========================= NETWORK ========================= -->
+                <Grid x:Name="PageMigration" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <TextBlock Text="Migration" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                   Text="Before a reinstall or a new PC: what this account uses that does not come back by itself, what the reinstall depends on, and a copy of the personal folders to another drive." />
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Style="{StaticResource Card}">
+                        <WrapPanel>
+                            <Border Style="{StaticResource ActionGroup}" Margin="0,0,12,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="BtnMigrationInventory" Content="What to carry over" Style="{StaticResource GroupedPrimaryButton}"
+                                            ToolTip="Personal folders and their size, network drives with the command that maps them again, printers, PST files, Outlook signatures and browser profiles." />
+                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                    <Button x:Name="BtnMigrationReinstall" Content="Before a reinstall" Style="{StaticResource GroupedButton}"
+                                            ToolTip="Whether Windows reactivates by itself, and which drives are encrypted with BitLocker and need their recovery key kept." />
+                                </StackPanel>
+                            </Border>
+                            <Button x:Name="BtnMigrationProfile" Content="Save installed apps as a profile" Margin="0,0,8,0"
+                                    ToolTip="The catalogue applications installed here, saved as a configuration profile to load on the new machine (Software, Load profile)." />
+                            <Button x:Name="BtnMigrationDrivers" Content="Export drivers"
+                                    ToolTip="Copies the third-party drivers to the destination below with pnputil. Needs administrator rights, through a single UAC prompt." />
+                        </WrapPanel>
+                    </Border>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="320" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,16,0">
+                            <StackPanel>
+                                <TextBlock Text="Copy the personal folders" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                <TextBlock Text="Destination" Style="{StaticResource Muted}" Margin="0,0,0,4" />
+                                <DockPanel Margin="0,0,0,12">
+                                    <Button DockPanel.Dock="Right" x:Name="BtnMigrationBrowse" Content="Browse" Margin="8,0,0,0" />
+                                    <TextBox x:Name="MigrationDestination" Tag="E:\ or \\server\share" />
+                                </DockPanel>
+                                <StackPanel x:Name="MigrationFolderList" Margin="0,0,0,10" />
+                                <Button x:Name="BtnMigrationCopy" Content="Copy" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" />
+                                <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"
+                                           Text="Copied with robocopy into a dated folder, with a log per folder. Nothing is deleted here; folders OneDrive keeps are skipped, and files kept online only are not downloaded." />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                            <RichTextBox x:Name="MigrationOutput" IsReadOnly="True"
+                                         BorderThickness="0" Background="Transparent"
+                                         Foreground="{DynamicResource TextPrimary}"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Disabled"
+                                         IsDocumentEnabled="True" />
+                        </Border>
+                    </Grid>
+                </Grid>
+
                 <Grid x:Name="PageM365" Margin="24,20" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />

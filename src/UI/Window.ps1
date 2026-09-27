@@ -282,7 +282,7 @@ function Get-TkPageName {
     param()
 
     return @(
-        'Dashboard', 'System', 'Software', 'Tweaks',                             # Workstation
+        'Dashboard', 'System', 'Software', 'Tweaks', 'Migration',                # Workstation
         'Playbooks', 'Diagnostics', 'Fixes', 'Network', 'M365', 'Intervention',  # Troubleshooting
         'Security',                                                              # Security
         'SecurityTools',                                                         # Toolbox
