@@ -151,27 +151,27 @@ function Get-TkDiagnosticReport {
     param()
 
     return @(
-        [pscustomobject] @{ Title = 'Full check';          Show = 'Invoke-TkDiagnosticOverview' }
-        [pscustomobject] @{ Title = 'Pending reboot';      Show = 'Show-TkRebootStatus' }
-        [pscustomobject] @{ Title = 'Storage health';      Show = 'Show-TkStorageHealth' }
-        [pscustomobject] @{ Title = 'Disk space';          Show = 'Show-TkDiskSpaceReport' }
-        [pscustomobject] @{ Title = 'Duplicate files';     Show = 'Show-TkDuplicateFileReport' }
-        [pscustomobject] @{ Title = 'Performance';         Show = 'Show-TkPerformanceReport' }
-        [pscustomobject] @{ Title = 'Devices';             Show = 'Show-TkDeviceReport' }
-        [pscustomobject] @{ Title = 'Crashes';             Show = 'Show-TkStabilityReport' }
-        [pscustomobject] @{ Title = 'Restarts and shutdowns'; Show = 'Show-TkBootHistoryReport' }
-        [pscustomobject] @{ Title = 'Wi-Fi';               Show = 'Show-TkWifiReport' }
-        [pscustomobject] @{ Title = 'Proxy';               Show = 'Show-TkProxyReport' }
-        [pscustomobject] @{ Title = 'Sign-in and management'; Show = 'Show-TkIdentityReport' }
-        [pscustomobject] @{ Title = 'Update history';      Show = 'Show-TkUpdateHistory' }
-        [pscustomobject] @{ Title = 'Software support';    Show = 'Show-TkSoftwareLifecycleReport' }
-        [pscustomobject] @{ Title = 'Printing';            Show = 'Show-TkPrintingReport' }
-        [pscustomobject] @{ Title = 'Profiles and policy'; Show = 'Show-TkUserContext' }
-        [pscustomobject] @{ Title = 'Command path (PATH)'; Show = 'Show-TkPathReport' }
-        [pscustomobject] @{ Title = 'Local accounts';     Show = 'Show-TkLocalAccountReport' }
-        [pscustomobject] @{ Title = 'Group Policy';       Show = 'Show-TkGroupPolicyReport' }
-        [pscustomobject] @{ Title = 'Services';           Show = 'Show-TkServiceReport' }
-        [pscustomobject] @{ Title = 'Drivers';            Show = 'Show-TkDriverReport' }
+        [pscustomobject] @{ Title = 'Full check';              Show = 'Invoke-TkDiagnosticOverview' }
+        [pscustomobject] @{ Title = 'Pending reboot';          Show = 'Show-TkRebootStatus' }
+        [pscustomobject] @{ Title = 'Performance';             Show = 'Show-TkPerformanceReport' }
+        [pscustomobject] @{ Title = 'Crashes';                 Show = 'Show-TkStabilityReport' }
+        [pscustomobject] @{ Title = 'Restarts and shutdowns';  Show = 'Show-TkBootHistoryReport' }
+        [pscustomobject] @{ Title = 'Services';                Show = 'Show-TkServiceReport' }
+        [pscustomobject] @{ Title = 'Devices';                 Show = 'Show-TkDeviceReport' }
+        [pscustomobject] @{ Title = 'Drivers';                 Show = 'Show-TkDriverReport' }
+        [pscustomobject] @{ Title = 'Printing';                Show = 'Show-TkPrintingReport' }
+        [pscustomobject] @{ Title = 'Storage health';          Show = 'Show-TkStorageHealth' }
+        [pscustomobject] @{ Title = 'Disk space';              Show = 'Show-TkDiskSpaceReport' }
+        [pscustomobject] @{ Title = 'Duplicate files';         Show = 'Show-TkDuplicateFileReport' }
+        [pscustomobject] @{ Title = 'Wi-Fi';                   Show = 'Show-TkWifiReport' }
+        [pscustomobject] @{ Title = 'Proxy';                   Show = 'Show-TkProxyReport' }
+        [pscustomobject] @{ Title = 'Sign-in and management';  Show = 'Show-TkIdentityReport' }
+        [pscustomobject] @{ Title = 'Local accounts';          Show = 'Show-TkLocalAccountReport' }
+        [pscustomobject] @{ Title = 'Group Policy';            Show = 'Show-TkGroupPolicyReport' }
+        [pscustomobject] @{ Title = 'Profiles and policy';     Show = 'Show-TkUserContext' }
+        [pscustomobject] @{ Title = 'Command path (PATH)';     Show = 'Show-TkPathReport' }
+        [pscustomobject] @{ Title = 'Update history';          Show = 'Show-TkUpdateHistory' }
+        [pscustomobject] @{ Title = 'Software support';        Show = 'Show-TkSoftwareLifecycleReport' }
     )
 }
 

@@ -22,30 +22,59 @@ function Initialize-TkThreatHuntingPage {
     [CmdletBinding()]
     param()
 
+    # Found by title in Get-TkHuntInvestigation, like the reports: the list
+    # is grouped under headings, and wiring it by position would send every
+    # investigation below a heading to its neighbour's function.
     $choices = Get-TkControl -Name 'HuntChoices'
 
     if ($choices) {
 
         $choices.Add_SelectionChanged({
 
-            switch ((Get-TkControl -Name 'HuntChoices').SelectedIndex) {
-                0 { Invoke-TkEventTriageFromUi           ; break }
-                1 { Invoke-TkPersistenceFromUi           ; break }
-                2 { Invoke-TkExposureFromUi              ; break }
-                3 { Invoke-TkCertificateInventoryFromUi  ; break }
-                4 { Invoke-TkUsbHistoryFromUi            ; break }
-                5 { Invoke-TkRdpHistoryFromUi            ; break }
-                6 { Invoke-TkBrowserExtensionFromUi      ; break }
-                7 { Invoke-TkDefenderHistoryFromUi       ; break }
-                8 { Invoke-TkPrivilegeEscalationFromUi   ; break }
-                9 { Invoke-TkShareExposureFromUi         ; break }
-                10 { Invoke-TkWifiProfileFromUi          ; break }
+            $list  = Get-TkControl -Name 'HuntChoices'
+            $title = Get-TkItemTitle -Item $list.SelectedItem
+
+            $investigation = @(Get-TkHuntInvestigation) | Where-Object { $_.Title -eq $title } | Select-Object -First 1
+
+            if ($investigation) {
+                & $investigation.Show
             }
         })
     }
 
     Register-TkClick -Name 'BtnCheckEndpointCerts' -Action { Invoke-TkEndpointCertificateFromUi }
     Register-TkClick -Name 'BtnExportHunt'         -Action { Export-TkHuntReportFromUi }
+}
+
+<#
+.SYNOPSIS
+    The investigations of the Threat hunting list and the function each one runs.
+
+.DESCRIPTION
+    The single table between the entries of the chooser and the code, in the
+    order of the list. A test checks both agree.
+
+.OUTPUTS
+    PSCustomObject[] with Title and Show.
+#>
+function Get-TkHuntInvestigation {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    return @(
+        [pscustomobject] @{ Title = 'Event log triage';           Show = 'Invoke-TkEventTriageFromUi' }
+        [pscustomobject] @{ Title = 'Defender detections';        Show = 'Invoke-TkDefenderHistoryFromUi' }
+        [pscustomobject] @{ Title = 'Remote Desktop history';     Show = 'Invoke-TkRdpHistoryFromUi' }
+        [pscustomobject] @{ Title = 'USB history';                Show = 'Invoke-TkUsbHistoryFromUi' }
+        [pscustomobject] @{ Title = 'Autostart and persistence';  Show = 'Invoke-TkPersistenceFromUi' }
+        [pscustomobject] @{ Title = 'Privilege escalation';       Show = 'Invoke-TkPrivilegeEscalationFromUi' }
+        [pscustomobject] @{ Title = 'Browser extensions';         Show = 'Invoke-TkBrowserExtensionFromUi' }
+        [pscustomobject] @{ Title = 'Network exposure';           Show = 'Invoke-TkExposureFromUi' }
+        [pscustomobject] @{ Title = 'Shared folders';             Show = 'Invoke-TkShareExposureFromUi' }
+        [pscustomobject] @{ Title = 'Saved Wi-Fi networks';       Show = 'Invoke-TkWifiProfileFromUi' }
+        [pscustomobject] @{ Title = 'Certificate inventory';      Show = 'Invoke-TkCertificateInventoryFromUi' }
+    )
 }
 
 <#
