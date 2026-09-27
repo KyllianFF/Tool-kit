@@ -6039,6 +6039,133 @@ Describe 'WMI query builder' {
     }
 }
 
+Describe '.reg and PowerShell converter' {
+
+    BeforeAll {
+        $script:RegSample = @'
+Windows Registry Editor Version 5.00
+
+; a comment
+[HKEY_LOCAL_MACHINE\SOFTWARE\Contoso\App]
+@="Default text"
+"Path"="C:\\Program Files\\App\\"
+"Quote"="say \"hi\""
+"Enabled"=dword:00000001
+"Big"=hex(b):ff,ff,ff,ff,ff,ff,ff,ff
+"Blob"=hex:01,02,\
+  03,ff
+"Expand"=hex(2):25,00,53,00,79,00,73,00,74,00,65,00,6d,00,52,00,6f,00,6f,00,74,00,25,00,00,00
+"Multi"=hex(7):61,00,00,00,62,00,00,00,00,00
+"Old"=-
+
+[-HKEY_CURRENT_USER\Software\Old]
+[HKCU\Software\Short]
+"x"=dword:ffffffff
+'@
+
+        $script:RegKey = { param($e) '{0}|{1}|{2}|{3}|{4}' -f $e.Action, $e.Key, $e.Name, $e.Type, ((@($e.Value)) -join ',') }
+    }
+
+    It 'reads every kind of line a .reg file holds' {
+        $read = ConvertFrom-TkRegFile -Text $script:RegSample
+
+        $read.HasHeader   | Should -BeTrue
+        @($read.Errors).Count | Should -Be 0
+
+        $value = { param($name) ($read.Entries | Where-Object { $_.Action -eq 'Value' -and $_.Name -eq $name }).Value }
+
+        & $value ''       | Should -Be 'Default text'
+        & $value 'Path'   | Should -Be 'C:\Program Files\App\'
+        & $value 'Quote'  | Should -Be 'say "hi"'
+        & $value 'Enabled' | Should -Be 1
+        & $value 'Big'    | Should -Be ([uint64]::MaxValue)
+        & $value 'Blob'   | Should -Be @(1, 2, 3, 255)
+        & $value 'Expand' | Should -Be '%SystemRoot%'
+        & $value 'Multi'  | Should -Be @('a', 'b')
+
+        @($read.Entries | Where-Object Action -eq 'DeleteValue').Name | Should -Be 'Old'
+        @($read.Entries | Where-Object Action -eq 'DeleteKey').Key    | Should -Be 'HKEY_CURRENT_USER\Software\Old'
+        @($read.Entries | Where-Object { $_.Name -eq 'x' }).Key        | Should -Be 'HKEY_CURRENT_USER\Software\Short'
+    }
+
+    It 'names what it cannot read instead of guessing' {
+        $read = ConvertFrom-TkRegFile -Text "[HKEY_LOCAL_MACHINE\A]`r`n`"Q`"=hex(b):01,02`r`n`"N`"=hex(a):00`r`n`"Z`"=text`r`n[NOT_A_ROOT\B]`r`n`"Orphan`"=dword:1"
+
+        $read.HasHeader          | Should -BeFalse
+        @($read.Entries | Where-Object Action -eq 'Value').Count | Should -Be 0
+        @($read.Errors).Count    | Should -Be 5
+        ($read.Errors -join ' ') | Should -Match 'qword without 8 bytes'
+        ($read.Errors -join ' ') | Should -Match 'hex\(a\)'
+        ($read.Errors -join ' ') | Should -Match 'registry root'
+        ($read.Errors -join ' ') | Should -Match 'outside any key'
+    }
+
+    It 'writes PowerShell that never empties an existing key' {
+        $ps = ConvertTo-TkRegPowerShell -Entry (ConvertFrom-TkRegFile -Text $script:RegSample).Entries
+
+        $ps[0] | Should -Be "if (-not (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Contoso\App')) { New-Item -Path 'HKLM:\SOFTWARE\Contoso\App' -Force | Out-Null }"
+        ($ps -join "`n") | Should -Match ([regex]::Escape("-Name 'Enabled' -PropertyType DWord -Value 0x00000001 -Force"))
+        ($ps -join "`n") | Should -Match ([regex]::Escape("-Name 'Quote' -PropertyType String -Value 'say `"hi`"'"))
+        ($ps -join "`n") | Should -Match ([regex]::Escape("Remove-Item -LiteralPath 'HKCU:\Software\Old' -Recurse"))
+
+        foreach ($line in $ps) {
+            $errors = $null
+            [void] [System.Management.Automation.Language.Parser]::ParseInput($line, [ref] $null, [ref] $errors)
+            @($errors).Count | Should -Be 0 -Because $line
+        }
+    }
+
+    It 'writes reg.exe commands with a trailing backslash doubled and the default value as /ve' {
+        $cmd = (ConvertTo-TkRegCommand -Entry (ConvertFrom-TkRegFile -Text $script:RegSample).Entries) -join "`n"
+
+        $cmd | Should -Match ([regex]::Escape('reg add "HKLM\SOFTWARE\Contoso\App" /v "Path" /t REG_SZ /d "C:\Program Files\App\\" /f'))
+        $cmd | Should -Match ([regex]::Escape('reg add "HKLM\SOFTWARE\Contoso\App" /ve /t REG_SZ /d "Default text" /f'))
+        $cmd | Should -Match ([regex]::Escape('/v "Multi" /t REG_MULTI_SZ /d "a\0b" /f'))
+        $cmd | Should -Match ([regex]::Escape('reg delete "HKCU\Software\Old" /f'))
+    }
+
+    It 'goes from .reg to PowerShell and back without losing anything' {
+        $first  = ConvertFrom-TkRegFile -Text $script:RegSample
+        $back   = ConvertFrom-TkRegPowerShell -Script ((ConvertTo-TkRegPowerShell -Entry $first.Entries) -join "`n")
+        $second = ConvertFrom-TkRegFile -Text (ConvertTo-TkRegFileText -Entry $back.Entries)
+
+        @($back.Errors).Count | Should -Be 0
+        (@($second.Entries | ForEach-Object { & $script:RegKey $_ }) -join ';') |
+            Should -Be (@($first.Entries | ForEach-Object { & $script:RegKey $_ }) -join ';')
+    }
+
+    It 'reads PowerShell without running it, and refuses computed values' {
+        $script = @(
+            'Set-ItemProperty -Path HKCU:\Software\X -Name Who -Value $env:USERNAME'
+            "Set-ItemProperty -Path 'HKCU:\Software\X' -Name Evil -Value (Get-Date)"
+            "Set-ItemProperty -Path 'HKCU:\Software\X' -Name Auto -Value 5"
+            "New-ItemProperty 'HKCU:\Software\X' -Name Bytes -Value ([byte[]] (0x0A, 0xFF)) -PropertyType Binary"
+            "Set-ItemProperty -LiteralPath 'Registry::HKEY_USERS\.DEFAULT\X' -Name List -Value @('a', 'b')"
+            "Set-ItemProperty -Path 'C:\Temp' -Name NotRegistry -Value 1"
+        ) -join "`n"
+
+        $read = ConvertFrom-TkRegPowerShell -Script $script
+
+        @($read.Entries | ForEach-Object { & $script:RegKey $_ }) | Should -Be @(
+            'Value|HKEY_CURRENT_USER\Software\X|Auto|REG_DWORD|5'
+            'Value|HKEY_CURRENT_USER\Software\X|Bytes|REG_BINARY|10,255'
+            'Value|HKEY_USERS\.DEFAULT\X|List|REG_MULTI_SZ|a,b'
+        )
+        ($read.Errors -join ' ') | Should -Match 'Line 1: Set-ItemProperty uses a value that is computed'
+        ($read.Errors -join ' ') | Should -Match 'Line 2: Set-ItemProperty uses a value that is computed'
+        ($read.Errors -join ' ') | Should -Match 'Line 6: Set-ItemProperty is not on a registry path'
+    }
+
+    It 'keeps the low 32 bits of a DWord written as 0xFFFFFFFF' {
+        $read = ConvertFrom-TkRegPowerShell -Script "New-ItemProperty -LiteralPath 'HKCU:\X' -Name x -PropertyType DWord -Value 0xFFFFFFFF"
+        $read.Entries[0].Value | Should -Be ([uint32]::MaxValue)
+    }
+
+    It 'says what to paste when the box is empty' {
+        Format-TkRegConversion -Text '' -Direction RegToPowerShell | Should -Match 'Paste the content of a .reg file'
+    }
+}
+
 Describe 'Firewall rule builder' {
 
     BeforeAll {
