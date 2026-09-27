@@ -31,6 +31,7 @@ src/Features/System/Dashboard.ps1
 src/Features/Software/WingetManager.ps1
 src/Features/Software/SoftwareLifecycle.ps1
 src/Features/Software/StoreApps.ps1
+src/Features/Software/InstalledApps.ps1
 src/Features/Software/ConfigProfile.ps1
 src/Features/Tweaks/TweakEngine.ps1
 src/Features/Fixes/SystemFixes.ps1

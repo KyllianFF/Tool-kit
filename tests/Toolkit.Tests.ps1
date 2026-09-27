@@ -369,7 +369,7 @@ Describe 'Per-action elevation' {
         $actions = @(Get-TkElevatedAction)
         $names   = @($actions | ForEach-Object { $_.Name })
 
-        foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile', 'RemoveStoreApps',
+        foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile', 'ManagePackages',
                                   'OpenThroughputPort', 'CloseThroughputPort', 'ExportDrivers', 'CopyToProfile')) {
             $names | Should -Contain $expected
         }
@@ -8042,6 +8042,253 @@ Describe 'Password strength' {
         param($Log10, $Expected)
 
         Format-TkCrackDuration -Log10Seconds $Log10 | Should -Be $Expected
+    }
+}
+
+Describe 'Installed apps' {
+
+    BeforeAll {
+        $script:AppTool = @{ winget = 'C:\winget.exe'; python = 'C:\py.exe'; npm = 'C:\npm.cmd'; choco = 'C:\choco.exe'; powershell = 'C:\ps5.exe'; pwsh = 'C:\pwsh.exe'; scoop = 'C:\scoop.cmd'; dotnet = 'C:\dotnet.exe'; cargo = 'C:\cargo.exe' }
+        $script:AppEntry = {
+            param($key, $name, $uninstall = '', $publisher = '', [switch] $Msi, $quiet = '', $scope = 'Machine', $view = 'X64', $location = '')
+            [pscustomobject] @{ KeyName = $key; Scope = $scope; View = $view; DisplayName = $name; DisplayVersion = '1.0'; Publisher = $publisher
+                                UninstallString = $uninstall; QuietUninstallString = $quiet; InstallLocation = $location; WindowsInstaller = [bool] $Msi
+                                SystemComponent = $false; ParentKeyName = ''; ReleaseType = '' }
+        }
+    }
+
+    Context 'Reading' {
+
+        It 'reads the update column of winget in French as in English' {
+            $french = "Nom           ID                    Version   Disponible  Source`n-------------------------------------------------------------------`nBattle.net    Blizzard.BattleNet    Unknown   1.19.3      winget`n7-Zip         7zip.7zip             24.08                 winget`n"
+            $rows = @(ConvertFrom-TkWingetTable -Text $french)
+            $rows[0].Available | Should -Be '1.19.3'
+            $rows[1].Available | Should -Be ''
+            $english = "Name          Id                    Version   Available   Source`n-------------------------------------------------------------------`nBattle.net    Blizzard.BattleNet    Unknown   1.19.3      winget`n"
+            @(ConvertFrom-TkWingetTable -Text $english)[0].Available | Should -Be '1.19.3'
+        }
+
+        It 'knows the games of each launcher, and not the launchers themselves' {
+            (Resolve-TkLauncherSource -Entry (& $script:AppEntry 'Steam App 990080' 'Hogwarts Legacy' '"C:\Steam\steam.exe" steam://uninstall/990080')).Source | Should -Be 'Steam'
+            (Resolve-TkLauncherSource -Entry (& $script:AppEntry 'Steam App 990080' 'Hogwarts Legacy')).LauncherId | Should -Be '990080'
+            (Resolve-TkLauncherSource -Entry (& $script:AppEntry 'Uplay Install 273' 'Assassin''s Creed IV')).Source | Should -Be 'Ubisoft Connect'
+            (Resolve-TkLauncherSource -Entry (& $script:AppEntry 'Diablo IV' 'Diablo IV' '"C:\Battle.net\Battle.net Launcher.exe" --uid=fenris' 'Blizzard Entertainment')).Source | Should -Be 'Battle.net'
+            (Resolve-TkLauncherSource -Entry (& $script:AppEntry 'GTAV' 'Grand Theft Auto V' '"C:\Rockstar Games\Launcher\uninstall.exe" -uninstall=gta5' 'Rockstar Games')).Source | Should -Be 'Rockstar Games'
+            (Resolve-TkLauncherSource -Entry (& $script:AppEntry 'Witcher_is1' 'The Witcher 3' 'C:\GOG Games\unins000.exe' 'GOG.com')).Source | Should -Be 'GOG'
+            Resolve-TkLauncherSource -Entry (& $script:AppEntry 'Battle.net' 'Battle.net' '"C:\Battle.net\Battle.net Launcher.exe" --uninstall' 'Blizzard Entertainment') | Should -BeNullOrEmpty
+            Resolve-TkLauncherSource -Entry (& $script:AppEntry 'Rockstar Games Launcher' 'Rockstar Games Launcher' 'C:\x.exe' 'Rockstar Games') | Should -BeNullOrEmpty
+            Resolve-TkLauncherSource -Entry (& $script:AppEntry '7-Zip' '7-Zip' 'C:\7z\uninstall.exe' 'Igor Pavlov') | Should -BeNullOrEmpty
+            Resolve-TkLauncherSource -Entry $null | Should -BeNullOrEmpty
+        }
+
+        It 'builds the list on winget''s, with its sources, the games and the preinstalled apps' {
+            $winget = @(
+                [pscustomobject] @{ Name = '7-Zip'; Id = '7zip.7zip'; Version = '24.08'; Available = '25.01'; Source = 'winget' }
+                [pscustomobject] @{ Name = 'Spotify'; Id = '9NCBCSZSJRSB'; Version = '1.2'; Available = ''; Source = 'msstore' }
+                [pscustomobject] @{ Name = 'Hogwarts Legacy'; Id = 'ARP\Machine\X64\Steam App 990080'; Version = 'Unknown'; Available = ''; Source = '' }
+                [pscustomobject] @{ Name = 'Old Tool'; Id = 'ARP\User\X64\OldTool'; Version = '2.0'; Available = ''; Source = '' }
+                [pscustomobject] @{ Name = 'Microsoft News'; Id = 'MSIX\Microsoft.BingNews_4.1.0_x64__8wekyb3d8bbwe'; Version = '4.1'; Available = ''; Source = '' }
+                [pscustomobject] @{ Name = 'Photos'; Id = 'MSIX\Microsoft.Windows.Photos_2025.1_x64__8wekyb3d8bbwe'; Version = '2025.1'; Available = ''; Source = '' }
+            )
+            $entries = @(
+                (& $script:AppEntry 'Steam App 990080' 'Hogwarts Legacy' '"C:\Steam\steam.exe" steam://uninstall/990080')
+                (& $script:AppEntry 'OldTool' 'Old Tool' 'C:\OldTool\uninst.exe' -scope 'User')
+            )
+            $epic  = @([pscustomobject] @{ Name = 'Fortnite'; AppName = 'Fortnite'; Version = '30.1' }, [pscustomobject] @{ Name = '7-Zip'; AppName = 'dup'; Version = '1' })
+            $extra = @(New-TkInstalledApp -Name 'requests' -Id 'requests' -Version '2.31' -Source 'pip' -Manager 'pip')
+
+            $items = @(ConvertTo-TkInstalledApp -WingetRow $winget -Entry $entries -EpicGame $epic -Extra $extra -Preinstalled @('Microsoft.BingNews'))
+            $row   = { param($name) $items | Where-Object Name -eq $name }
+
+            @($items.Name) | Should -Be @('7-Zip', 'Fortnite', 'Hogwarts Legacy', 'Microsoft News', 'Old Tool', 'Photos', 'requests', 'Spotify')
+            (& $row '7-Zip').Source | Should -Be 'WinGet'
+            (& $row '7-Zip').Available | Should -Be '25.01'
+            (& $row 'Spotify').Source | Should -Be 'Microsoft Store'
+            (& $row 'Hogwarts Legacy').Source | Should -Be 'Steam'
+            (& $row 'Hogwarts Legacy').Manager | Should -Be 'launcher'
+            (& $row 'Hogwarts Legacy').Version | Should -Be ''
+            (& $row 'Old Tool').Source | Should -Be 'Local PC'
+            (& $row 'Old Tool').Entry.UninstallString | Should -Be 'C:\OldTool\uninst.exe'
+            (& $row 'Microsoft News').Preinstalled | Should -BeTrue
+            (& $row 'Microsoft News').PackageName | Should -Be 'Microsoft.BingNews'
+            (& $row 'Photos').Preinstalled | Should -BeFalse
+            (& $row 'Fortnite').Source | Should -Be 'Epic Games'
+            (& $row 'requests').Source | Should -Be 'pip'
+        }
+
+        It 'reads the uninstall keys and the Store apps when winget is not there' {
+            $system  = & $script:AppEntry 'Driver' 'Driver helper'; $system.SystemComponent = $true
+            $update  = & $script:AppEntry 'KB1' 'Update for X'; $update.ParentKeyName = 'X'
+            $entries = @((& $script:AppEntry '{11111111-2222-3333-4444-555555555555}' 'Tool' -Msi), $system, $update, (& $script:AppEntry 'Steam App 1' 'Game' 'steam.exe steam://uninstall/1'))
+            $store   = @([pscustomobject] @{ Name = 'Solitaire'; Package = 'Microsoft.MicrosoftSolitaireCollection'; Family = 'Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe'; Version = '4.1' })
+
+            $items = @(ConvertTo-TkInstalledApp -Entry $entries -StoreApp $store -Preinstalled @('Microsoft.MicrosoftSolitaireCollection'))
+            @($items.Name) | Should -Be @('Game', 'Solitaire', 'Tool')
+            ($items | Where-Object Name -eq 'Tool').Manager | Should -Be 'registry'
+            ($items | Where-Object Name -eq 'Solitaire').Manager | Should -Be 'appx'
+            ($items | Where-Object Name -eq 'Solitaire').Preinstalled | Should -BeTrue
+            ($items | Where-Object Name -eq 'Game').Source | Should -Be 'Steam'
+        }
+
+        It 'reads what each package manager prints' {
+            $pip = @(ConvertFrom-TkPipList -Json '[{"name":"requests","version":"2.31.0"},{"name":"pip","version":"24.0"}]' -OutdatedJson '[{"name":"requests","version":"2.31.0","latest_version":"2.32.3"}]')
+            $pip[0].Available | Should -Be '2.32.3'
+            $pip[1].Available | Should -Be ''
+            @(ConvertFrom-TkPipList -Json 'not json').Count | Should -Be 0
+
+            $npm = @(ConvertFrom-TkNpmList -Json '{"dependencies":{"typescript":{"version":"5.4.0"},"@angular/cli":{"version":"17.0.0"}}}' -OutdatedJson '{"typescript":{"current":"5.4.0","latest":"5.6.2"}}')
+            @($npm.Id) | Should -Be @('typescript', '@angular/cli')
+            $npm[0].Available | Should -Be '5.6.2'
+            @(ConvertFrom-TkNpmList -Json '').Count | Should -Be 0
+
+            $choco = @(ConvertFrom-TkChocoList -Text "chocolatey|2.7.1`r`n7zip|24.8.0`r`nChocolatey v2.7.1" -Outdated "7zip|24.8.0|25.1.0|false")
+            @($choco.Id) | Should -Be @('chocolatey', '7zip')
+            $choco[1].Available | Should -Be '25.1.0'
+            $choco[1].Elevated | Should -BeTrue
+
+            @(ConvertFrom-TkScoopExport -Json '{"buckets":[],"apps":[{"Name":"git","Version":"2.45.0","Source":"main"}]}').Id | Should -Be 'git'
+            $dotnet = @(ConvertFrom-TkDotnetToolList -Text "Package Id      Version      Commands`n-------------------------------------`ndotnet-ef       8.0.4        dotnet-ef`n")
+            $dotnet[0].Id | Should -Be 'dotnet-ef'
+            $dotnet[0].Version | Should -Be '8.0.4'
+            @(ConvertFrom-TkCargoList -Text "ripgrep v14.1.0:`n    rg`nbat v0.24.0 (C:\src\bat):`n    bat`n").Id | Should -Be @('ripgrep', 'bat')
+
+            $modules = @(ConvertFrom-TkPowerShellModuleList -Json '[{"Name":"Pester","Version":"5.5.0","Available":"5.6.1","AllUsers":false},{"Name":"Az","Version":"12.0","Available":"","AllUsers":true}]' -Edition '7')
+            $modules[0].Source | Should -Be 'PowerShell 7'
+            $modules[0].Available | Should -Be '5.6.1'
+            $modules[1].Elevated | Should -BeTrue
+        }
+    }
+
+    Context 'Planning an operation' {
+
+        BeforeAll {
+            $script:Plan = { param($item, $operation, $mode = 'Silent') Get-TkInstalledAppCommand -Item $item -Operation $operation -Mode $mode -Tool $script:AppTool }
+        }
+
+        It 'splits a registry command line into the program and its arguments' {
+            $split = Split-TkCommandLine -CommandLine '"C:\Program Files\X\uninst.exe" /S /v'
+            $split.FilePath | Should -Be 'C:\Program Files\X\uninst.exe'
+            $split.Arguments | Should -Be '/S /v'
+            (Split-TkCommandLine -CommandLine 'C:\Program Files\Y\unins000.exe /SILENT').FilePath | Should -Be 'C:\Program Files\Y\unins000.exe'
+            (Split-TkCommandLine -CommandLine 'MsiExec.exe /X{AAAA}').Arguments | Should -Be '/X{AAAA}'
+            Split-TkCommandLine -CommandLine '' | Should -BeNullOrEmpty
+        }
+
+        It 'updates and uninstalls through winget, silently or in the installer''s window' {
+            $app = New-TkInstalledApp -Name '7-Zip' -Id '7zip.7zip' -Version '24.08' -Available '25.01' -Source 'WinGet' -Manager 'winget'
+            $silent = & $script:Plan $app 'Update'
+            $silent.Kind | Should -Be 'Run'
+            ($silent.Arguments -join ' ') | Should -Be 'upgrade --id 7zip.7zip --exact --accept-source-agreements --accept-package-agreements --silent --disable-interactivity'
+            ((& $script:Plan $app 'Uninstall' 'Interactive').Arguments -join ' ') | Should -Be 'uninstall --id 7zip.7zip --exact --accept-source-agreements --interactive'
+
+            $local = New-TkInstalledApp -Name 'Tool' -Id 'ARP\Machine\X64\Tool' -Version '1' -Available '2' -Source 'Local PC' -Manager 'winget'
+            (& $script:Plan $local 'Update').Kind | Should -Be 'None'
+            ((& $script:Plan $local 'Uninstall').Arguments)[2] | Should -Be 'ARP\Machine\X64\Tool'
+
+            $bad = New-TkInstalledApp -Name 'Bad' -Id 'a" & calc' -Source 'WinGet' -Manager 'winget'
+            (& $script:Plan $bad 'Uninstall').Kind | Should -Be 'None'
+        }
+
+        It 'removes a preinstalled Windows app for every account, through the elevated batch' {
+            $news = New-TkInstalledApp -Name 'Microsoft News' -Id 'MSIX\Microsoft.BingNews_4_x64__8wekyb3d8bbwe' -Source 'Microsoft Store' -Manager 'winget' -PackageName 'Microsoft.BingNews' -Preinstalled -Elevated
+            $plan = & $script:Plan $news 'Uninstall'
+            $plan.Kind | Should -Be 'Elevated'
+            $plan.Name | Should -Be 'Microsoft.BingNews'
+        }
+
+        It 'hands a game to its launcher, and an Epic game to the Epic launcher' {
+            $entry = & $script:AppEntry 'Steam App 990080' 'Hogwarts Legacy' '"C:\Steam\steam.exe" steam://uninstall/990080'
+            $game  = New-TkInstalledApp -Name 'Hogwarts Legacy' -Id 'ARP\Machine\X64\Steam App 990080' -Source 'Steam' -Manager 'launcher' -Entry $entry
+            $plan  = & $script:Plan $game 'Uninstall'
+            $plan.Kind | Should -Be 'Shell'
+            $plan.FilePath | Should -Be 'C:\Steam\steam.exe'
+            $plan.Arguments | Should -Be 'steam://uninstall/990080'
+            (& $script:Plan $game 'Update').Note | Should -Match 'Steam updates its games itself'
+
+            $epic = New-TkInstalledApp -Name 'Fortnite' -Id 'Fortnite' -Source 'Epic Games' -Manager 'launcher'
+            (& $script:Plan $epic 'Uninstall').Kind | Should -Be 'Open'
+        }
+
+        It 'uninstalls a program of the uninstall keys silently when it can, and says when it cannot' {
+            $msi = New-TkInstalledApp -Name 'Tool' -Id 'x' -Source 'Local PC' -Manager 'registry' -Entry (& $script:AppEntry '{11111111-2222-3333-4444-555555555555}' 'Tool' 'MsiExec.exe /X{11111111-2222-3333-4444-555555555555}' -Msi)
+            $plan = & $script:Plan $msi 'Uninstall'
+            $plan.FilePath | Should -Be 'msiexec.exe'
+            $plan.Arguments | Should -Be '/x {11111111-2222-3333-4444-555555555555} /qn /norestart'
+            (& $script:Plan $msi 'Uninstall' 'Interactive').Arguments | Should -Be '/x {11111111-2222-3333-4444-555555555555}'
+
+            $quiet = New-TkInstalledApp -Name 'Q' -Id 'q' -Source 'Local PC' -Manager 'registry' -Entry (& $script:AppEntry 'Q' 'Q' '"C:\Q\un.exe"' -quiet '"C:\Q\un.exe" /S')
+            (& $script:Plan $quiet 'Uninstall').Arguments | Should -Be '/S'
+            $loud = New-TkInstalledApp -Name 'L' -Id 'l' -Source 'Local PC' -Manager 'registry' -Entry (& $script:AppEntry 'L' 'L' '"C:\L\un.exe"')
+            (& $script:Plan $loud 'Uninstall').Note | Should -Match 'no silent uninstaller'
+        }
+
+        It 'runs the package managers, in a window of their own in manual mode, and Chocolatey elevated' {
+            $pip = New-TkInstalledApp -Name 'requests' -Id 'requests' -Source 'pip' -Manager 'pip'
+            ((& $script:Plan $pip 'Uninstall').Arguments -join ' ') | Should -Be '-m pip uninstall requests -y'
+            $manual = & $script:Plan $pip 'Uninstall' 'Interactive'
+            $manual.Kind | Should -Be 'Console'
+            ($manual.Arguments -join ' ') | Should -Be '-m pip uninstall requests'
+            ((& $script:Plan (New-TkInstalledApp -Name '@angular/cli' -Id '@angular/cli' -Source 'npm' -Manager 'npm') 'Update').Arguments -join ' ') | Should -Be 'install -g @angular/cli@latest'
+
+            $choco = New-TkInstalledApp -Name '7zip' -Id '7zip' -Source 'Chocolatey' -Manager 'choco' -Elevated
+            (& $script:Plan $choco 'Update').Kind | Should -Be 'Elevated'
+
+            $module = New-TkInstalledApp -Name 'Pester' -Id 'Pester' -Source 'PowerShell 7' -Manager 'powershell7'
+            $plan = & $script:Plan $module 'Update'
+            $plan.FilePath | Should -Be 'C:\pwsh.exe'
+            $plan.Arguments[-1] | Should -Be "Update-Module -Name 'Pester' -Force"
+            (& $script:Plan (New-TkInstalledApp -Name 'x' -Id "a';calc;'" -Source 'PowerShell 7' -Manager 'powershell7') 'Update').Kind | Should -Be 'None'
+        }
+    }
+
+    Context 'Running' {
+
+        BeforeEach {
+            $script:AppRuns   = New-Object System.Collections.Generic.List[object]
+            $script:AppRemove = New-Object System.Collections.Generic.List[string]
+
+            # Stand-ins: nothing is updated, uninstalled or journaled for real.
+            function Invoke-TkInstalledAppCommand { param($Plan) $script:AppRuns.Add($Plan); [pscustomobject] @{ Ok = $true; Text = 'done' } }
+            function Invoke-TkProcess { param($FilePath, $ArgumentList, $TimeoutSeconds) $null = $TimeoutSeconds; $script:AppRuns.Add(('{0} {1}' -f $FilePath, ($ArgumentList -join ' '))); [pscustomobject] @{ ExitCode = 0; StandardOutput = ''; StandardError = '' } }
+            function Remove-TkStoreApp { param($Name) $script:AppRemove.Add(@($Name)[0]); [pscustomobject] @{ Name = @($Name)[0]; Ok = $true; Message = 'removed.' } }
+            function Add-TkJournalEntry { param($Name, $Category, $Detail) $null = $Category; $script:AppJournal = '{0}: {1}' -f $Name, $Detail }
+        }
+
+        It 'runs what needs no elevation, and keeps the rest for one elevated batch' {
+            (Get-Command -Name Invoke-TkInstalledAppCommand).ScriptBlock.ToString() | Should -Match 'AppRuns'
+            $items = @(
+                (New-TkInstalledApp -Name '7-Zip' -Id '7zip.7zip' -Available '25' -Source 'WinGet' -Manager 'winget')
+                (New-TkInstalledApp -Name 'Tool' -Id 'ARP\Machine\X64\Tool' -Source 'Local PC' -Manager 'winget')
+                (New-TkInstalledApp -Name 'git' -Id 'git' -Available '2' -Source 'Chocolatey' -Manager 'choco' -Elevated)
+            )
+            $done = Invoke-TkInstalledAppAction -Item $items -Operation 'Update' -Tool $script:AppTool -Confirm:$false
+
+            $script:AppRuns.Count | Should -Be 1
+            @($done.Results.Name) | Should -Be @('7-Zip', 'Tool')
+            ($done.Results | Where-Object Name -eq 'Tool').Ok | Should -BeFalse
+            @($done.Elevated) | Should -HaveCount 1
+            $done.Elevated[0].Manager | Should -Be 'choco'
+            $script:AppJournal | Should -Match '^Installed apps: update'
+        }
+
+        It 'checks every name again with administrator rights, and removes Store apps through the catalogue check' {
+            (Get-Command -Name Invoke-TkProcess).ScriptBlock.ToString() | Should -Match 'AppRuns'
+            $results = @(Invoke-TkElevatedPackageAction -Tool $script:AppTool -Confirm:$false -Item @(
+                [pscustomobject] @{ Manager = 'choco'; Operation = 'Update'; Name = 'git'; Label = 'git' }
+                [pscustomobject] @{ Manager = 'choco'; Operation = 'Uninstall'; Name = 'git & calc'; Label = 'evil' }
+                [pscustomobject] @{ Manager = 'appx'; Operation = 'Uninstall'; Name = 'Microsoft.BingNews'; Label = 'Microsoft News' }
+                [pscustomobject] @{ Manager = 'winget'; Operation = 'Uninstall'; Name = 'x'; Label = 'x' }
+                [pscustomobject] @{ Manager = 'powershell5'; Operation = 'Uninstall'; Name = 'Az'; Label = 'Az' }
+            ))
+
+            $script:AppRuns | Should -Contain 'C:\choco.exe upgrade git -y --no-progress'
+            $script:AppRuns | Should -Contain "C:\ps5.exe -NoProfile -NonInteractive -Command Uninstall-Module -Name 'Az' -AllVersions -Force"
+            @($script:AppRemove) | Should -Be @('Microsoft.BingNews')
+            ($results | Where-Object Name -eq 'evil').Ok | Should -BeFalse
+            ($results | Where-Object Name -eq 'x').Ok | Should -BeFalse
+            ($results | Where-Object Name -eq 'Microsoft News').Source | Should -Be 'Microsoft Store'
+            ($results | Where-Object Name -eq 'Az').Source | Should -Be 'PowerShell 5'
+        }
     }
 }
 

@@ -602,11 +602,18 @@ function ConvertFrom-TkWingetTable {
             continue
         }
 
+        # The header is in the display language: Available is Disponible in
+        # French, Verfuegbar (with an umlaut) in German, Disponibile in Italian.
+        $available = ''
+        foreach ($column in @($columns | ForEach-Object Name)) {
+            if ($column -match '^(Available|Disponible|Verf.gbar|Disponibile|Beschikbaar|Dost.pne)$') { $available = $values[$column]; break }
+        }
+
         $rows += [pscustomobject]@{
             Name      = $name
             Id        = $id
             Version   = $values['Version']
-            Available = $values['Available']
+            Available = $available
             Source    = $values['Source']
         }
     }
