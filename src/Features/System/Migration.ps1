@@ -192,11 +192,15 @@ function Get-TkUserFolderSize {
 
     $oneDrive = Get-TkOneDriveRoot
 
-    return @(foreach ($folder in (Get-TkPersonalFolder)) {
+    # Named after the Windows folder, not after the folder on disk: a
+    # Documents moved into OneDrive is still Documents, which is what the
+    # import maps back.
+    return @(foreach ($known in @(Get-TkKnownFolder | Where-Object Exists)) {
+        $folder    = $known.Path
         $inventory = Get-TkFileInventory -Path $folder -MinimumSize 0 -ExcludeFolder @() -MaxFiles 300000
 
         [pscustomobject] @{
-            Name       = Split-Path -Path $folder -Leaf
+            Name       = $known.Key
             Path       = $folder
             Bytes      = [long] (@($inventory.Files) | Measure-Object -Property Length -Sum).Sum
             Files      = @($inventory.Files).Count

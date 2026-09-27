@@ -8164,6 +8164,144 @@ Describe 'Store apps' {
     }
 }
 
+Describe 'Migration package and import' {
+
+    It 'names the personal folders by their Windows key' {
+        @(Get-TkKnownFolder | ForEach-Object Key) | Should -Be @('Desktop', 'Documents', 'Pictures', 'Videos', 'Music', 'Downloads')
+        @(Get-TkKnownFolder | Where-Object { -not $_.Path }).Count | Should -Be 0
+    }
+
+    It 'writes what each folder became in the manifest' {
+        $plan = @(
+            [pscustomobject] @{ Name = 'Documents'; Source = 'C:\Users\u\Documents'; Target = 'E:\M\Documents'; Bytes = 10; Skip = '' }
+            [pscustomobject] @{ Name = 'Desktop'; Source = 'C:\Users\u\OneDrive\Desktop'; Target = 'E:\M\Desktop'; Bytes = 5; Skip = 'kept by OneDrive' }
+            [pscustomobject] @{ Name = 'Pictures'; Source = 'C:\Users\u\Pictures'; Target = 'E:\M\Pictures'; Bytes = 7; Skip = '' }
+        )
+        $manifest = New-TkMigrationManifest -Plan $plan -Result @([pscustomobject] @{ Name = 'Documents'; Ok = $true }, [pscustomobject] @{ Name = 'Pictures'; Ok = $false }) -Computer 'OLD' -User 'u'
+
+        $manifest.schema | Should -Be 'toolkit-migration'
+        @($manifest.folders | ForEach-Object { '{0}={1}' -f $_.key, $_.status }) | Should -Be @('Documents=copied', 'Desktop=skipped: kept by OneDrive', 'Pictures=incomplete')
+    }
+
+    Context 'Reading a package' {
+
+        BeforeEach {
+            $script:PkgRoot = Join-Path $TestDrive ('pkg-{0}' -f [guid]::NewGuid())
+            foreach ($name in @('Documents', 'Desktop', 'Extra')) { New-Item -ItemType Directory -Path (Join-Path $script:PkgRoot $name) -Force | Out-Null }
+        }
+
+        It 'reads the folders the manifest names, and nothing outside the package' {
+            $manifest = [ordered] @{
+                schema = 'toolkit-migration'; schemaVersion = 1; computer = 'OLD'; user = 'u'; created = '2026-09-27 10:00'
+                folders = @(
+                    [ordered] @{ key = 'Documents'; folder = 'Documents'; bytes = 12 }
+                    [ordered] @{ key = 'Desktop'; folder = '..\..\Windows'; bytes = 1 }
+                    [ordered] @{ key = 'Nonsense'; folder = 'Extra'; bytes = 3 }
+                    [ordered] @{ key = 'Music'; folder = 'Missing'; bytes = 3 }
+                )
+            }
+            [System.IO.File]::WriteAllText((Join-Path $script:PkgRoot 'migration.json'), ($manifest | ConvertTo-Json -Depth 4))
+
+            $package = Read-TkMigrationPackage -Path $script:PkgRoot
+
+            $package.Error        | Should -BeNullOrEmpty
+            $package.FromManifest | Should -BeTrue
+            $package.Computer     | Should -Be 'OLD'
+            @($package.Folders | ForEach-Object { '{0}|{1}|{2}' -f $_.Key, $_.Name, $_.Bytes }) | Should -Be @('Documents|Documents|12', '|Extra|3')
+        }
+
+        It 'reads a package with no manifest by its folder names' {
+            $package = Read-TkMigrationPackage -Path $script:PkgRoot
+
+            $package.FromManifest | Should -BeFalse
+            @($package.Folders | Sort-Object Name | ForEach-Object { '{0}|{1}' -f $_.Key, $_.Name }) | Should -Be @('Desktop|Desktop', 'Documents|Documents', '|Extra')
+        }
+
+        It 'refuses what is not a package' {
+            [System.IO.File]::WriteAllText((Join-Path $script:PkgRoot 'migration.json'), 'not json')
+            (Read-TkMigrationPackage -Path $script:PkgRoot).Error | Should -Match 'not valid JSON'
+
+            [System.IO.File]::WriteAllText((Join-Path $script:PkgRoot 'migration.json'), '{"schema":"something-else"}')
+            (Read-TkMigrationPackage -Path $script:PkgRoot).Error | Should -Match 'not a toolkit migration manifest'
+
+            (Read-TkMigrationPackage -Path (Join-Path $TestDrive 'nowhere')).Error | Should -Match 'Choose the folder'
+        }
+    }
+
+    It 'finds the cloud folders of this account' {
+        $existing = @('C:\Users\u\OneDrive - Contoso', 'C:\Users\u\iCloudDrive', 'G:\My Drive', 'D:\Dropbox (Contoso)')
+        $roots = @(Get-TkCloudRoot -UserProfile 'C:\Users\u' -LocalAppData 'C:\Users\u\AppData\Local' `
+            -OneDrive @('C:\Users\u\OneDrive - Contoso', 'C:\Users\u\OneDrive - Contoso') -DriveRoot @('C:\', 'G:\') `
+            -FolderExists { param($path) $existing -contains $path }.GetNewClosure() `
+            -ReadText { param($path) if ($path -like '*Dropbox\info.json') { '{"business":{"path":"D:\\Dropbox (Contoso)"}}' } else { '' } })
+
+        @($roots | ForEach-Object { '{0}={1}' -f $_.Name, $_.Path }) | Should -Be @(
+            'OneDrive - Contoso=C:\Users\u\OneDrive - Contoso'
+            'iCloud Drive=C:\Users\u\iCloudDrive'
+            'Google Drive=G:\My Drive'
+            'Dropbox (business)=D:\Dropbox (Contoso)'
+        )
+    }
+
+    It 'plans the import, leaving out cleared folders and refusing unsafe destinations' {
+        $package = [pscustomobject] @{ Root = 'E:\Migration-OLD'; Folders = @(
+            [pscustomobject] @{ Key = 'Documents'; Name = 'Documents'; Source = 'E:\Migration-OLD\Documents'; Bytes = 1 }
+            [pscustomobject] @{ Key = 'Desktop'; Name = 'Desktop'; Source = 'E:\Migration-OLD\Desktop'; Bytes = 1 }
+            [pscustomobject] @{ Key = 'Pictures'; Name = 'Pictures'; Source = 'E:\Migration-OLD\Pictures'; Bytes = 1 }
+            [pscustomobject] @{ Key = 'Music'; Name = 'Music'; Source = 'E:\Migration-OLD\Music'; Bytes = 1 }
+        ) }
+        $drives = { param($root) $root -in @('C:\', 'E:\') }
+
+        $plan = New-TkMigrationImportPlan -Package $package -DriveExists $drives -Target @{
+            Documents = 'C:\Users\n\OneDrive\Documents'
+            Desktop   = ''
+            Pictures  = 'E:\Migration-OLD\Pictures\inside'
+            Music     = 'C:\Users\n\OneDrive\documents\'
+        }
+
+        @($plan.Steps | ForEach-Object { '{0}->{1}' -f $_.Name, $_.Target }) | Should -Be @('Documents->C:\Users\n\OneDrive\Documents')
+        ($plan.Errors -join ' | ') | Should -Match 'Pictures: The destination is inside'
+        ($plan.Errors -join ' | ') | Should -Match 'Documents and Music go to the same folder'
+    }
+
+    Context 'Importing' {
+
+        BeforeEach {
+            $script:ImpBase   = Join-Path $TestDrive ('imp-{0}' -f [guid]::NewGuid())
+            $script:ImpSource = Join-Path $script:ImpBase 'pkg\Documents'
+            $script:ImpTarget = Join-Path $script:ImpBase 'new\Documents'
+            New-Item -ItemType Directory -Path (Join-Path $script:ImpSource 'Sub'), $script:ImpTarget -Force | Out-Null
+
+            Set-Content -LiteralPath (Join-Path $script:ImpSource 'same.txt') -Value 'same'
+            Set-Content -LiteralPath (Join-Path $script:ImpSource 'changed.txt') -Value 'from the old PC'
+            Set-Content -LiteralPath (Join-Path $script:ImpSource 'Sub\new.txt') -Value 'new'
+            Copy-Item -LiteralPath (Join-Path $script:ImpSource 'same.txt') -Destination $script:ImpTarget
+            Set-Content -LiteralPath (Join-Path $script:ImpTarget 'changed.txt') -Value 'edited on the new PC, and longer'
+        }
+
+        It 'tells new, identical and conflicting files apart' {
+            $check = Find-TkMigrationConflict -Source $script:ImpSource -Target $script:ImpTarget
+
+            $check.New  | Should -Be 1
+            $check.Same | Should -Be 1
+            @($check.Conflicts | ForEach-Object { Split-Path -Path $_.Target -Leaf }) | Should -Be @('changed.txt')
+        }
+
+        It 'copies only what is missing and never overwrites, and journals it' {
+            function Add-TkJournalEntry { param($Name, $Category, $Detail) $null = $Category; $script:ImportJournal = '{0}: {1}' -f $Name, $Detail }
+            (Get-Command -Name Add-TkJournalEntry).ScriptBlock.ToString() | Should -Match 'ImportJournal'
+
+            $step = [pscustomobject] @{ Name = 'Documents'; Key = 'Documents'; Source = $script:ImpSource; Target = $script:ImpTarget; Bytes = 1 }
+            $done = @(Import-TkMigrationFolder -Step @($step) -LogFolder $script:ImpBase -Confirm:$false)
+
+            $done[0].Ok | Should -BeTrue
+            Get-Content -LiteralPath (Join-Path $script:ImpTarget 'changed.txt') | Should -Be 'edited on the new PC, and longer'
+            Test-Path -LiteralPath (Join-Path $script:ImpTarget 'Sub\new.txt') | Should -BeTrue
+            $script:ImportJournal | Should -Match '^Migration package imported: Documents'
+        }
+    }
+}
+
 Describe 'Migration' {
 
     It 'keeps the real printers and says how each comes back' {

@@ -22,6 +22,7 @@ src/Features/System/WindowsUpdate.ps1
 src/Features/System/VendorSupport.ps1
 src/Features/System/UpdateCheck.ps1
 src/Features/System/Migration.ps1
+src/Features/System/MigrationPackage.ps1
 src/Features/System/Dashboard.ps1
 src/Features/Software/WingetManager.ps1
 src/Features/Software/SoftwareLifecycle.ps1
