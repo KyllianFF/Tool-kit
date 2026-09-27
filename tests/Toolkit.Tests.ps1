@@ -8164,6 +8164,163 @@ Describe 'Store apps' {
     }
 }
 
+Describe 'Microsoft 365' {
+
+    Context 'Endpoints' {
+
+        It 'lists well formed endpoints for every workload' {
+            $catalog = Import-TkCatalog -Name 'm365-endpoints'
+
+            @($catalog.workloads).Count | Should -BeGreaterThan 4
+            foreach ($workload in $catalog.workloads) {
+                $workload.name   | Should -Not -BeNullOrEmpty
+                $workload.impact | Should -Not -BeNullOrEmpty
+                foreach ($endpoint in $workload.endpoints) {
+                    $endpoint.host | Should -Match '^[a-z0-9{}.-]+$' -Because $workload.id
+                    [int] $endpoint.port | Should -BeIn @(443, 587)
+                }
+            }
+        }
+
+        It 'puts the tenant in, and leaves its endpoints out without one' {
+            $without = @(Get-TkM365Endpoint)
+            $with    = @(Get-TkM365Endpoint -Tenant 'Contoso.sharepoint.com')
+
+            @($without | Where-Object { $_.Host -match 'sharepoint' }).Count | Should -Be 0
+            @($with | Where-Object { $_.Host -match 'sharepoint' } | ForEach-Object Host) | Should -Be @('contoso.sharepoint.com', 'contoso-my.sharepoint.com')
+            @($with | Where-Object { $_.Host -match '\{' }).Count | Should -Be 0
+        }
+
+        It 'accepts a tenant name and nothing else' {
+            foreach ($name in @('', 'contoso', 'contoso-eu', 'contoso.onmicrosoft.com')) { Test-TkM365TenantName -Tenant $name | Should -BeTrue -Because $name }
+            foreach ($name in @('conto so', '-contoso', 'contoso/../x', ('a' * 70))) { Test-TkM365TenantName -Tenant $name | Should -BeFalse -Because $name }
+        }
+    }
+
+    Context 'Verdicts' {
+
+        BeforeAll {
+            $script:M365Row = {
+                param($workload, $hostName, $resolved, $connected)
+                [pscustomobject] @{ Workload = $workload; Name = "$workload name"; Impact = 'It breaks.'; Host = $hostName; Port = 443; Resolved = $resolved; Connected = $connected }
+            }
+        }
+
+        It 'passes a workload whose every endpoint answered, and warns about one partly reachable' {
+            $verdicts = @(ConvertTo-TkM365Verdict -Result @(
+                (& $script:M365Row 'signin' 'a' $true $true), (& $script:M365Row 'signin' 'b' $true $true)
+                (& $script:M365Row 'teams' 'c' $true $true), (& $script:M365Row 'teams' 'd' $true $false)
+            ))
+
+            ($verdicts | Where-Object Workload -eq 'signin').Severity | Should -Be 'Pass'
+            $teams = $verdicts | Where-Object Workload -eq 'teams'
+            $teams.Severity | Should -Be 'Warning'
+            $teams.Detail   | Should -Be 'd:443'
+            $teams.Note     | Should -Match 'firewall or a web filter'
+        }
+
+        It 'fails a workload nothing reaches, and names DNS or the proxy as the cause' {
+            $dns = @(ConvertTo-TkM365Verdict -Result @((& $script:M365Row 'x' 'e' $false $false)))[0]
+            $dns.Severity | Should -Be 'Fail'
+            $dns.Note     | Should -Match 'do not resolve'
+
+            $proxy = @(ConvertTo-TkM365Verdict -Result @((& $script:M365Row 'x' 'e' $true $false)) -ProxySet $true)[0]
+            $proxy.Note | Should -Match 'proxy is set'
+        }
+
+        It 'tells Microsoft''s certificate chain from one a proxy made up' {
+            (ConvertTo-TkM365TlsVerdict -HostName 'login.microsoftonline.com' -Root 'CN=DigiCert Global Root G2, OU=www.digicert.com, O=DigiCert Inc, C=US').Severity | Should -Be 'Pass'
+
+            $inspected = ConvertTo-TkM365TlsVerdict -HostName 'login.microsoftonline.com' -Root 'CN=Zscaler Root CA, OU=Zscaler Inc., O=Zscaler Inc., C=US'
+            $inspected.Severity | Should -Be 'Warning'
+            $inspected.Detail   | Should -Be 'Zscaler Inc.'
+
+            (ConvertTo-TkM365TlsVerdict -HostName 'x' -Root '').Severity | Should -Be 'Info'
+        }
+    }
+
+    Context 'Teams media path' {
+
+        It 'builds a STUN binding request' {
+            $id      = [byte[]] (1..12)
+            $request = New-TkStunRequest -TransactionId $id
+
+            $request.Length | Should -Be 20
+            $request[0..3]  | Should -Be @(0, 1, 0, 0)
+            $request[4..7]  | Should -Be @(0x21, 0x12, 0xA4, 0x42)
+            $request[8..19] | Should -Be $id
+        }
+
+        It 'accepts only the success answer to that request' {
+            $request = New-TkStunRequest -TransactionId ([byte[]] (1..12))
+
+            $answer = [byte[]] $request.Clone(); $answer[0] = 0x01; $answer[1] = 0x01
+            Test-TkStunResponse -Response $answer -Request $request | Should -BeTrue
+
+            $other = [byte[]] $answer.Clone(); $other[19] = 0xFF
+            Test-TkStunResponse -Response $other -Request $request | Should -BeFalse
+
+            $failure = [byte[]] $answer.Clone(); $failure[1] = 0x11
+            Test-TkStunResponse -Response $failure -Request $request | Should -BeFalse
+
+            Test-TkStunResponse -Response ([byte[]] (1, 1)) -Request $request | Should -BeFalse
+        }
+    }
+
+    Context 'Apps and accounts' {
+
+        BeforeAll {
+            $script:M365State = {
+                param([hashtable] $Office = @{}, [object[]] $Identities = @(), [hashtable] $OneDrive = @{}, [hashtable] $Teams = @{}, [hashtable] $Outlook = @{})
+                $o = @{ Installed = $true; ClickToRun = $true; Version = '16.0.1'; Channel = 'Current Channel'; Products = 'O365ProPlusRetail'; Platform = 'x64'; UpdatesEnabled = '' }
+                foreach ($k in $Office.Keys) { $o[$k] = $Office[$k] }
+                $d = @{ Installed = $true; Running = $true; Version = '25.1'; Accounts = @([pscustomobject] @{ Email = 'u@contoso.com'; Folder = 'C:\Users\u\OneDrive - Contoso'; Business = $true }); BackedUp = @('Desktop', 'Documents', 'Pictures') }
+                foreach ($k in $OneDrive.Keys) { $d[$k] = $OneDrive[$k] }
+                $t = @{ New = '25.1.1'; Classic = $false }; foreach ($k in $Teams.Keys) { $t[$k] = $Teams[$k] }
+                $l = @{ New = ''; Classic = $true }; foreach ($k in $Outlook.Keys) { $l[$k] = $Outlook[$k] }
+                [pscustomobject] @{ Office = [pscustomobject] $o; Identities = $Identities; OneDrive = [pscustomobject] $d; Teams = [pscustomobject] $t; Outlook = [pscustomobject] $l }
+            }
+            $script:M365Headings = { param($state) @(ConvertTo-TkM365ClientFinding -State $state | ForEach-Object { '{0}:{1}' -f $_.Severity, $_.Heading }) -join ' | ' }
+        }
+
+        It 'passes a machine set up the usual way' {
+            $state = & $script:M365State -Identities @([pscustomobject] @{ Email = 'u@contoso.com'; Kind = 'Work or school' })
+            $text  = & $script:M365Headings $state
+
+            $text | Should -Match 'Pass:Microsoft 365 apps 16.0.1'
+            $text | Should -Match 'Pass:OneDrive running'
+            $text | Should -Match 'Pass:Desktop, Documents and Pictures are backed up'
+            $text | Should -Not -Match 'Warning'
+        }
+
+        It 'warns about what goes wrong with Office, OneDrive and Teams' {
+            $state = & $script:M365State -Office @{ UpdatesEnabled = 'False' } `
+                -Identities @([pscustomobject] @{ Email = 'a@contoso.com'; Kind = 'Work or school' }, [pscustomobject] @{ Email = 'b@fabrikam.com'; Kind = 'Work or school' }) `
+                -OneDrive @{ Running = $false; BackedUp = @('Desktop') } -Teams @{ Classic = $true } -Outlook @{ New = '1.2025' }
+            $text = & $script:M365Headings $state
+
+            $text | Should -Match 'Warning:Office updates are turned off'
+            $text | Should -Match 'Warning:Several work accounts in Office'
+            $text | Should -Match 'Warning:OneDrive not running'
+            $text | Should -Match 'Info:Not backed up by OneDrive: Documents, Pictures'
+            $text | Should -Match 'Warning:Classic Teams is still installed'
+            $text | Should -Match 'Info:Both the new and the classic Outlook'
+        }
+
+        It 'says when Office is missing or comes from an MSI' {
+            (& $script:M365Headings (& $script:M365State -Office @{ Installed = $false; ClickToRun = $false })) | Should -Match 'Info:Microsoft 365 apps are not installed'
+            (& $script:M365Headings (& $script:M365State -Office @{ ClickToRun = $false }))                   | Should -Match 'Info:Office installed from an MSI'
+        }
+
+        It 'names the Office update channels' {
+            Get-TkOfficeChannelName -CdnBaseUrl 'http://officecdn.microsoft.com/pr/492350f6-3a01-4f97-b9c0-c7c6ddf67d60' | Should -Be 'Current Channel'
+            Get-TkOfficeChannelName -CdnBaseUrl 'http://officecdn.microsoft.com/pr/7ffbc6bf-bc32-4f92-8982-f9dd17fd3114' | Should -Be 'Semi-Annual Enterprise Channel'
+            Get-TkOfficeChannelName -CdnBaseUrl 'http://example/other' | Should -Be 'another channel'
+            Get-TkOfficeChannelName -CdnBaseUrl '' | Should -Be ''
+        }
+    }
+}
+
 Describe 'Event log search' {
 
     It 'reads event ids and ranges, within the 23 Windows accepts' {
@@ -10322,7 +10479,7 @@ Describe 'Dashboard and pages' {
 
             # The page list is the one declaration of what the navigation holds
             # and in which order; the markup has to agree with it.
-            $order = @([regex]::Matches($script:Markup, 'x:Name="Nav(?<name>[A-Za-z]+)"') |
+            $order = @([regex]::Matches($script:Markup, 'x:Name="Nav(?<name>[A-Za-z0-9]+)"') |
                        ForEach-Object { $_.Groups['name'].Value })
 
             ($order -join ',') | Should -Be (@(Get-TkPageName) -join ',')

@@ -161,6 +161,9 @@ function Import-TkSettings {
 
         # Off until the user turns it on: the check is a network request.
         CheckForUpdates       = $false
+
+        # The tenant name the Microsoft 365 page tests SharePoint with.
+        M365Tenant            = ''
     }
 
     if (Test-Path -LiteralPath $ctx.SettingsFile) {
