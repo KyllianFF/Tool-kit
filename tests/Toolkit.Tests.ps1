@@ -8336,6 +8336,273 @@ Describe 'Migration applications' {
     }
 }
 
+Describe 'Migration pins and bookmarks' {
+
+    BeforeAll {
+        # A mozLz4 file made of one literal run: what the decoder must read back.
+        function script:New-TestMozLz4 {
+            param([string] $Text)
+            $data  = [System.Text.Encoding]::UTF8.GetBytes($Text)
+            $bytes = New-Object System.Collections.Generic.List[byte]
+            $bytes.AddRange([System.Text.Encoding]::ASCII.GetBytes("mozLz40`0"))
+            $bytes.AddRange([BitConverter]::GetBytes([uint32] $data.Length))
+            if ($data.Length -ge 15) {
+                $bytes.Add(0xF0)
+                $rest = $data.Length - 15
+                while ($rest -ge 255) { $bytes.Add(255); $rest -= 255 }
+                $bytes.Add([byte] $rest)
+            }
+            else { $bytes.Add([byte] ($data.Length -shl 4)) }
+            $bytes.AddRange($data)
+            return , $bytes.ToArray()
+        }
+
+        $script:TaskbandHeader = "Windows Registry Editor Version 5.00`r`n`r`n"
+        $script:TaskbandKey    = 'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband'
+
+        $script:ChromeJson = '{"checksum":"x","roots":{"bookmark_bar":{"children":[{"id":"5","name":"Mine","type":"url","url":"https://mine.example","guid":"g1","date_added":"1"}],"id":"1","name":"Bar","type":"folder"},"other":{"children":[],"id":"2","name":"Other","type":"folder"},"synced":{"children":[],"id":"3","name":"Mobile","type":"folder"}},"version":1}'
+        $script:OldChromeJson = '{"roots":{"bookmark_bar":{"children":[{"id":"9","name":"Old <b>&","type":"url","url":"https://old.example/?a=1&b=2","date_added":"7"},{"id":"10","name":"Folder","type":"folder","children":[{"id":"11","name":"Deep","type":"url","url":"https://deep.example"}]}],"id":"1","name":"Bar","type":"folder"},"other":{"children":[],"id":"2","type":"folder"},"synced":{"children":[],"id":"3","type":"folder"}},"version":1}'
+        $script:FirefoxJson = '{"title":"","type":"text/x-moz-place-container","root":"placesRoot","children":[{"title":"menu","type":"text/x-moz-place-container","children":[{"title":"Wiki","type":"text/x-moz-place","uri":"https://wiki.example"},{"type":"text/x-moz-place-separator"}]},{"title":"toolbar","type":"text/x-moz-place-container","children":[{"title":"Docs","type":"text/x-moz-place-container","children":[{"title":"Learn","type":"text/x-moz-place","uri":"https://learn.example"}]}]},{"title":"unfiled","type":"text/x-moz-place-container","children":[]}]}'
+    }
+
+    Context 'mozLz4' {
+
+        It 'reads a literal run followed by a copy that overlaps itself' {
+            $block = [byte[]] @(0x6D, 0x6F, 0x7A, 0x4C, 0x7A, 0x34, 0x30, 0x00, 12, 0, 0, 0, 0x35, 0x61, 0x62, 0x63, 0x03, 0x00)
+            ConvertFrom-TkMozLz4 -Bytes $block | Should -Be 'abcabcabcabc'
+        }
+
+        It 'reads a literal run longer than fifteen bytes' {
+            $text = 'x' * 300 + '{"end":true}'
+            ConvertFrom-TkMozLz4 -Bytes (New-TestMozLz4 -Text $text) | Should -Be $text
+        }
+
+        It 'refuses a copy from before the start, and a file that is not mozLz4' {
+            $damaged = [byte[]] @(0x6D, 0x6F, 0x7A, 0x4C, 0x7A, 0x34, 0x30, 0x00, 8, 0, 0, 0, 0x10, 0x61, 0x05, 0x00)
+            { ConvertFrom-TkMozLz4 -Bytes $damaged } | Should -Throw '*damaged*'
+            { ConvertFrom-TkMozLz4 -Bytes ([System.Text.Encoding]::ASCII.GetBytes('{"not":"lz4"}')) } | Should -Throw '*Not a mozLz4*'
+        }
+    }
+
+    Context 'Reading and writing bookmarks' {
+
+        It 'reads the Chromium roots that hold something, with their folders' {
+            $nodes = @(ConvertFrom-TkChromiumBookmark -Json $script:OldChromeJson)
+            @($nodes.Title) | Should -Be @('Bookmarks bar')
+            @($nodes[0].Children.Title) | Should -Be @('Old <b>&', 'Folder')
+            $nodes[0].Children[1].Children[0].Url | Should -Be 'https://deep.example'
+        }
+
+        It 'reads a Firefox backup, naming its roots and dropping separators' {
+            $nodes = @(ConvertFrom-TkFirefoxBookmark -Json $script:FirefoxJson)
+            @($nodes.Title) | Should -Be @('Bookmarks menu', 'Bookmarks toolbar')
+            @($nodes[0].Children).Count | Should -Be 1
+            $nodes[1].Children[0].Children[0].Title | Should -Be 'Learn'
+        }
+
+        It 'writes an HTML file with every title and address escaped' {
+            $html = ConvertTo-TkBookmarkHtml -Group @([pscustomobject] @{ Title = 'Brave - Default'; Nodes = @(ConvertFrom-TkChromiumBookmark -Json $script:OldChromeJson) })
+            $html | Should -Match '^<!DOCTYPE NETSCAPE-Bookmark-file-1>'
+            $html | Should -Match ([regex]::Escape('<A HREF="https://old.example/?a=1&amp;b=2">Old &lt;b&gt;&amp;</A>'))
+            $html | Should -Match ([regex]::Escape('<H3>Brave - Default</H3>'))
+            $html | Should -Not -Match '<b>'
+        }
+
+        It 'merges into a folder of its own, with fresh ids, and leaves the rest alone' {
+            $merged = Merge-TkChromiumBookmark -TargetJson $script:ChromeJson -SourceJson $script:OldChromeJson -FolderName 'Imported from OLD' | ConvertFrom-Json
+
+            $merged.PSObject.Properties['checksum'] | Should -BeNullOrEmpty
+            @($merged.roots.bookmark_bar.children.name) | Should -Be @('Mine')
+            $folder = @($merged.roots.other.children)[0]
+            $folder.name | Should -Be 'Imported from OLD'
+
+            $ids = New-Object System.Collections.Generic.List[int]
+            $walk = $null
+            $walk = { param($node) $ids.Add([int] $node.id); foreach ($child in @($node.children)) { if ($child) { & $walk $child } } }
+            & $walk $folder
+            @($ids | Where-Object { $_ -le 5 }).Count | Should -Be 0
+            @($ids | Sort-Object -Unique).Count | Should -Be $ids.Count
+            @($folder.children)[0].children.name | Should -Contain 'Old <b>&'
+        }
+    }
+
+    Context 'The taskbar key' {
+
+        It 'accepts a file that writes the taskbar key alone' {
+            $text = $script:TaskbandHeader + "[$($script:TaskbandKey)]`r`n""Favorites""=hex:00,ff`r`n""FavoritesVersion""=dword:00000003`r`n"
+            Test-TkTaskbandRegFile -Text $text | Should -BeTrue
+        }
+
+        It 'refuses another key, a lookalike, a deletion and a file without header' {
+            $run = 'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run'
+            Test-TkTaskbandRegFile -Text ($script:TaskbandHeader + "[$($script:TaskbandKey)]`r`n""Favorites""=hex:00`r`n`r`n[$run]`r`n""Evil""=""cmd.exe""`r`n") | Should -BeFalse
+            Test-TkTaskbandRegFile -Text ($script:TaskbandHeader + "[$($script:TaskbandKey)2]`r`n""Favorites""=hex:00`r`n") | Should -BeFalse
+            Test-TkTaskbandRegFile -Text ($script:TaskbandHeader + "[-$($script:TaskbandKey)]`r`n") | Should -BeFalse
+            Test-TkTaskbandRegFile -Text "[$($script:TaskbandKey)]`r`n""Favorites""=hex:00`r`n" | Should -BeFalse
+            Test-TkTaskbandRegFile -Text '' | Should -BeFalse
+        }
+    }
+
+    Context 'Putting the pins back' {
+
+        BeforeEach {
+            $script:PinBase = Join-Path $TestDrive ('pins-{0}' -f [guid]::NewGuid())
+            $script:PinHere = [pscustomobject] @{
+                Automatic   = Join-Path $script:PinBase 'here\Automatic'
+                Custom      = Join-Path $script:PinBase 'here\Custom'
+                Taskbar     = Join-Path $script:PinBase 'here\TaskBar'
+                TaskbandKey = 'HKCU\Software\Toolkit-Test-Only'
+                Start       = Join-Path $script:PinBase 'here\Start'
+            }
+            $package = Join-Path $script:PinBase 'pkg'
+            foreach ($dir in @($script:PinHere.Automatic, $script:PinHere.Taskbar, $script:PinHere.Start, "$package\pins\AutomaticDestinations", "$package\pins\TaskBar")) {
+                New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            }
+            Set-Content -LiteralPath (Join-Path $script:PinHere.Automatic 'mine.automaticDestinations-ms') -Value 'here'
+            Set-Content -LiteralPath (Join-Path $script:PinHere.Taskbar 'App.lnk') -Value 'here'
+            Set-Content -LiteralPath (Join-Path $script:PinHere.Start 'start2.bin') -Value 'here'
+            Set-Content -LiteralPath "$package\pins\AutomaticDestinations\old.automaticDestinations-ms" -Value 'old'
+            Set-Content -LiteralPath "$package\pins\TaskBar\App.lnk" -Value 'old'
+            Set-Content -LiteralPath "$package\pins\TaskBar\New.lnk" -Value 'old'
+            Set-Content -LiteralPath "$package\pins\start2.bin" -Value 'old'
+            $script:PinPackage = $package
+
+            $script:PinCalls = New-Object System.Collections.Generic.List[string]
+            $script:PinShell = New-Object System.Collections.Generic.List[string]
+
+            # Stand-ins: no registry, no Explorer, no journal.
+            function Invoke-TkProcess {
+                param($FilePath, $ArgumentList, $TimeoutSeconds)
+                $null = $TimeoutSeconds
+                $script:PinCalls.Add(('{0} {1}' -f $FilePath, ($ArgumentList -join ' ')))
+                [pscustomobject] @{ ExitCode = 0; StandardOutput = ''; StandardError = '' }
+            }
+            function Add-TkJournalEntry { param($Name, $Category, $Detail) $null = $Category; $script:PinJournal = '{0}: {1}' -f $Name, $Detail }
+        }
+
+        It 'saves the pins here first, keeps the taskbar shortcuts here, and restarts the shell' {
+            (Get-Command -Name Invoke-TkProcess).ScriptBlock.ToString() | Should -Match 'PinCalls'
+            (Get-Command -Name Add-TkJournalEntry).ScriptBlock.ToString() | Should -Match 'PinJournal'
+            [System.IO.File]::WriteAllText("$($script:PinPackage)\pins\Taskband.reg", ($script:TaskbandHeader + "[$($script:TaskbandKey)]`r`n""Favorites""=hex:00`r`n"))
+
+            $done = Import-TkMigrationPin -Root $script:PinPackage -SourceProfile 'C:\Users\OldName' -BackupRoot (Join-Path $script:PinBase 'data') -Location $script:PinHere `
+                                          -StopShell { $script:PinShell.Add('stop') } -StartShell { $script:PinShell.Add('start') } -Confirm:$false
+
+            $done.Ok | Should -BeTrue
+            @($script:PinShell) | Should -Be @('stop', 'start')
+            Get-Content -LiteralPath (Join-Path $done.Backup 'AutomaticDestinations\mine.automaticDestinations-ms') | Should -Be 'here'
+            Get-Content -LiteralPath (Join-Path $done.Backup 'start2.bin') | Should -Be 'here'
+
+            Get-Content -LiteralPath (Join-Path $script:PinHere.Taskbar 'App.lnk') | Should -Be 'here'
+            Get-Content -LiteralPath (Join-Path $script:PinHere.Taskbar 'New.lnk') | Should -Be 'old'
+            Get-Content -LiteralPath (Join-Path $script:PinHere.Automatic 'old.automaticDestinations-ms') | Should -Be 'old'
+            Get-Content -LiteralPath (Join-Path $script:PinHere.Start 'start2.bin') | Should -Be 'old'
+
+            $script:PinCalls[0] | Should -Match '^reg\.exe export HKCU\\Software\\Toolkit-Test-Only '
+            $script:PinCalls[1] | Should -Match '^reg\.exe import .*pins\\Taskband\.reg$'
+            ($done.Lines -join ' ') | Should -Match 'OldName'
+            $script:PinJournal | Should -Match '^Migration pins put back'
+        }
+
+        It 'does not import a taskbar file that writes another key' {
+            (Get-Command -Name Invoke-TkProcess).ScriptBlock.ToString() | Should -Match 'PinCalls'
+            $run = 'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run'
+            [System.IO.File]::WriteAllText("$($script:PinPackage)\pins\Taskband.reg", ($script:TaskbandHeader + "[$run]`r`n""Evil""=""cmd.exe""`r`n"))
+
+            $done = Import-TkMigrationPin -Root $script:PinPackage -BackupRoot (Join-Path $script:PinBase 'data') -Location $script:PinHere `
+                                          -StopShell { $script:PinShell.Add('stop') } -StartShell { $script:PinShell.Add('start') } -Confirm:$false
+
+            @($script:PinCalls | Where-Object { $_ -match ' import ' }).Count | Should -Be 0
+            ($done.Lines -join ' ') | Should -Match 'refused'
+        }
+
+        It 'lists the pins of a package without a manifest' {
+            $package = Read-TkMigrationPackage -Path $script:PinPackage
+            $package.Error         | Should -BeNullOrEmpty
+            $package.Pins.Taskbar  | Should -Be 2
+            $package.Pins.Start    | Should -BeTrue
+        }
+    }
+
+    Context 'Carrying the bookmarks' {
+
+        BeforeEach {
+            $script:BmBase = Join-Path $TestDrive ('bm-{0}' -f [guid]::NewGuid())
+            $old = Join-Path $script:BmBase 'old'
+            $script:BmOld = @(
+                [pscustomobject] @{ Name = 'Chrome';  Kind = 'Chromium'; Root = "$old\Chrome";  File = 'Bookmarks';     Process = 'toolkit-test-no-such-process' }
+                [pscustomobject] @{ Name = 'Firefox'; Kind = 'Firefox';  Root = "$old\Firefox"; File = 'places.sqlite'; Process = 'toolkit-test-no-such-process' }
+            )
+            New-Item -ItemType Directory -Path "$old\Chrome\Default", "$old\Chrome\System Profile", "$old\Firefox\ab12.default-release\bookmarkbackups" -Force | Out-Null
+            [System.IO.File]::WriteAllText("$old\Chrome\Default\Bookmarks", $script:OldChromeJson)
+            [System.IO.File]::WriteAllBytes("$old\Firefox\ab12.default-release\places.sqlite", [byte[]] @(1, 2, 3))
+            [System.IO.File]::WriteAllBytes("$old\Firefox\ab12.default-release\bookmarkbackups\bookmarks-2026-09-27.jsonlz4", (New-TestMozLz4 -Text $script:FirefoxJson))
+
+            $new = Join-Path $script:BmBase 'new'
+            $script:BmNew = @(
+                [pscustomobject] @{ Name = 'Chrome';  Kind = 'Chromium'; Root = "$new\Chrome";  File = 'Bookmarks';     Process = 'toolkit-test-no-such-process' }
+                [pscustomobject] @{ Name = 'Firefox'; Kind = 'Firefox';  Root = "$new\Firefox"; File = 'places.sqlite'; Process = 'toolkit-test-no-such-process' }
+            )
+            New-Item -ItemType Directory -Path "$new\Chrome\Default", "$new\Firefox\zz99.default-release", "$new\Desktop" -Force | Out-Null
+            [System.IO.File]::WriteAllText("$new\Chrome\Default\Bookmarks", $script:ChromeJson)
+            [System.IO.File]::WriteAllBytes("$new\Firefox\zz99.default-release\places.sqlite", [byte[]] @(9, 9))
+            Set-Content -LiteralPath "$new\Desktop\Bookmarks from OLD.html" -Value 'mine'
+            $script:BmDesktop = "$new\Desktop"
+
+            function Add-TkJournalEntry { param($Name, $Category, $Detail) $null = $Category; $script:BmJournal = '{0}: {1}' -f $Name, $Detail }
+        }
+
+        It 'copies each profile and writes one HTML file for every browser' {
+            $root    = Join-Path $script:BmBase 'pkg'
+            $section = Export-TkMigrationBookmark -Root $root -Definition $script:BmOld -Confirm:$false
+
+            @($section.copied) | Should -Be @('Chrome - Default', 'Firefox - ab12.default-release')
+            @($section.blocked).Count | Should -Be 0
+            $section.html | Should -Be 'bookmarks\bookmarks.html'
+            Test-Path -LiteralPath "$root\bookmarks\Firefox\ab12.default-release\bookmarks.jsonlz4" | Should -BeTrue
+            $html = [System.IO.File]::ReadAllText("$root\bookmarks\bookmarks.html")
+            $html | Should -Match 'https://deep\.example'
+            $html | Should -Match 'https://learn\.example'
+
+            $read = Read-TkMigrationBookmark -Root $root -Definition $script:BmOld
+            @($read.Files | ForEach-Object { '{0}/{1}' -f $_.Browser, $_.Profile }) | Should -Be @('Chrome/Default', 'Firefox/ab12.default-release')
+        }
+
+        It 'merges Chromium after a backup, never replaces Firefox, and never overwrites on the desktop' {
+            (Get-Command -Name Add-TkJournalEntry).ScriptBlock.ToString() | Should -Match 'BmJournal'
+            $root = Join-Path $script:BmBase 'pkg'
+            [void] (Export-TkMigrationBookmark -Root $root -Definition $script:BmOld -Confirm:$false)
+
+            $done = @(Import-TkMigrationBookmark -Root $root -Computer 'OLD' -Desktop $script:BmDesktop -Definition $script:BmNew -Confirm:$false)
+
+            $chrome = "$($script:BmNew[0].Root)\Default"
+            ($done | Where-Object Browser -eq 'Chrome (Default)').Ok | Should -BeTrue
+            @(Get-ChildItem -LiteralPath $chrome -Filter 'Bookmarks.toolkit-*.bak').Count | Should -Be 1
+            $merged = [System.IO.File]::ReadAllText("$chrome\Bookmarks") | ConvertFrom-Json
+            @($merged.roots.bookmark_bar.children.name) | Should -Be @('Mine')
+            @($merged.roots.other.children)[0].name | Should -Match '^Imported from OLD'
+
+            ($done | Where-Object Browser -eq 'Firefox (ab12.default-release)').Ok | Should -BeFalse
+            [System.IO.File]::ReadAllBytes("$($script:BmNew[1].Root)\zz99.default-release\places.sqlite") | Should -Be @(9, 9)
+
+            Get-Content -LiteralPath "$($script:BmDesktop)\Bookmarks from OLD.html" | Should -Be 'mine'
+            Test-Path -LiteralPath "$($script:BmDesktop)\Bookmarks from OLD (2).html" | Should -BeTrue
+            $script:BmJournal | Should -Match '^Migration bookmarks imported'
+        }
+
+        It 'skips a browser that is open' {
+            $root = Join-Path $script:BmBase 'pkg'
+            [void] (Export-TkMigrationBookmark -Root $root -Definition $script:BmOld -Confirm:$false)
+            $running = @($script:BmNew | ForEach-Object { $copy = $_.PSObject.Copy(); $copy.Process = (Get-Process -Id $PID).ProcessName; $copy })
+
+            $done = @(Import-TkMigrationBookmark -Root $root -Computer 'OLD' -Desktop $script:BmDesktop -Definition $running -Confirm:$false)
+
+            ($done | Where-Object Browser -eq 'Chrome (Default)').Text | Should -Match 'is open'
+            [System.IO.File]::ReadAllText("$($script:BmNew[0].Root)\Default\Bookmarks") | Should -Be $script:ChromeJson
+        }
+    }
+}
+
 Describe 'Migration package and import' {
 
     It 'names the personal folders by their Windows key' {

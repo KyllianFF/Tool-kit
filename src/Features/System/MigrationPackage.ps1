@@ -187,7 +187,7 @@ function Read-TkMigrationPackage {
     )
 
     $root   = $Path.Trim().TrimEnd('\')
-    $failed   = { param($message) [pscustomobject] @{ Root = $root; Computer = ''; User = ''; Created = ''; FromManifest = $false; Folders = @(); Applications = $null; Error = $message } }
+    $failed   = { param($message) [pscustomobject] @{ Root = $root; Computer = ''; User = ''; Created = ''; FromManifest = $false; Folders = @(); Applications = $null; Pins = $null; Bookmarks = $null; Error = $message } }
     $reserved = Get-TkMigrationReservedFolder
 
     if (-not $root -or -not (Test-Path -LiteralPath $root -PathType Container)) {
@@ -227,7 +227,9 @@ function Read-TkMigrationPackage {
 
         return [pscustomobject] @{
             Root = $root; Computer = [string] $data.computer; User = [string] $data.user; Created = [string] $data.created
-            FromManifest = $true; Folders = @($folders); Applications = (Read-TkMigrationApplication -Root $root); Error = ''
+            FromManifest = $true; Folders = @($folders); Applications = (Read-TkMigrationApplication -Root $root)
+            Pins = (Read-TkMigrationPin -Root $root -SourceProfile $(if ($data.PSObject.Properties['pins']) { [string] $data.pins.sourceProfile } else { '' }))
+            Bookmarks = (Read-TkMigrationBookmark -Root $root); Error = ''
         }
     }
 
@@ -238,12 +240,14 @@ function Read-TkMigrationPackage {
     }
 
     $applications = Read-TkMigrationApplication -Root $root
+    $pins         = Read-TkMigrationPin -Root $root
+    $bookmarks    = Read-TkMigrationBookmark -Root $root
 
-    if (@($folders).Count -eq 0 -and -not $applications) {
+    if (@($folders).Count -eq 0 -and -not $applications -and -not $pins -and -not $bookmarks) {
         return (& $failed 'The folder holds nothing to import.')
     }
 
-    return [pscustomobject] @{ Root = $root; Computer = ''; User = ''; Created = ''; FromManifest = $false; Folders = @($folders); Applications = $applications; Error = '' }
+    return [pscustomobject] @{ Root = $root; Computer = ''; User = ''; Created = ''; FromManifest = $false; Folders = @($folders); Applications = $applications; Pins = $pins; Bookmarks = $bookmarks; Error = '' }
 }
 
 <#

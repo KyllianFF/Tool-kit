@@ -340,10 +340,13 @@ function Invoke-TkMigrationCopyFromUi {
     param()
 
     $ticked = @((Get-TkControl -Name 'MigrationFolderList').Children | Where-Object { $_.IsChecked } | ForEach-Object { [string] $_.Tag })
-    $apps   = [bool] (Get-TkControl -Name 'MigrationIncludeApps').IsChecked
+    $apps      = [bool] (Get-TkControl -Name 'MigrationIncludeApps').IsChecked
+    $pins      = [bool] (Get-TkControl -Name 'MigrationIncludePins').IsChecked
+    $bookmarks = [bool] (Get-TkControl -Name 'MigrationIncludeBookmarks').IsChecked
+    $extras    = $apps -or $pins -or $bookmarks
 
-    if ($ticked.Count -eq 0 -and -not $apps) {
-        Set-TkStatus -Text 'Tick the folders to copy, or the applications, first.'
+    if ($ticked.Count -eq 0 -and -not $extras) {
+        Set-TkStatus -Text 'Tick the folders to copy, or what else to carry over, first.'
         return
     }
 
@@ -375,7 +378,7 @@ function Invoke-TkMigrationCopyFromUi {
             $copy  = @($plan | Where-Object { -not $_.Skip })
             $total = [long] ($copy | Measure-Object -Property Bytes -Sum).Sum
 
-            if ($copy.Count -eq 0 -and -not $apps) {
+            if ($copy.Count -eq 0 -and -not $extras) {
                 Set-TkStatus -Text 'Nothing to copy: every folder ticked is kept by OneDrive.'
                 return
             }
@@ -387,6 +390,8 @@ function Invoke-TkMigrationCopyFromUi {
 
             $lines = @($plan | ForEach-Object { if ($_.Skip) { '- {0}: skipped, {1}' -f $_.Name, $_.Skip } else { '- {0}: {1}' -f $_.Name, (Format-TkBytes -Bytes $_.Bytes) } })
             if ($apps) { $lines += '- Applications: the full list, and a winget file to reinstall them' }
+            if ($pins) { $lines += '- Pins: Quick Access, jump lists, taskbar and Start' }
+            if ($bookmarks) { $lines += '- Browser bookmarks, and an HTML file (close Firefox first)' }
             $message = "Copy to {0}\{1}:`n`n{2}`n`nTotal {3}{4}. Nothing is deleted from this machine; files kept online only by OneDrive are not downloaded." -f `
                 $destination.TrimEnd('\'), $label, ($lines -join "`n"), (Format-TkBytes -Bytes $total),
                 $(if ($measure.Free -ge 0) { ', {0} free at the destination' -f (Format-TkBytes -Bytes $measure.Free) } else { '' })
@@ -396,15 +401,33 @@ function Invoke-TkMigrationCopyFromUi {
             }
 
             Invoke-TkBackgroundAction -StatusText 'Copying the user folders, this can take a while...' `
-                -ParameterList @{ plan = $plan; root = [System.IO.Path]::Combine($destination.TrimEnd('\') + '\', $label); apps = $apps } `
+                -ParameterList @{ plan = $plan; root = [System.IO.Path]::Combine($destination.TrimEnd('\') + '\', $label); apps = $apps; pins = $pins; bookmarks = $bookmarks } `
                 -ScriptBlock {
-                    param($plan, $root, $apps)
+                    param($plan, $root, $apps, $pins, $bookmarks)
                     $copied  = @(Copy-TkMigrationFolder -Plan @($plan | Where-Object { $_ }) -Confirm:$false)
                     $section = @{}
                     if ($apps) {
                         $section['applications'] = Export-TkMigrationApplication -Root $root -Confirm:$false
                         $copied += [pscustomobject] @{ Name = 'Applications'; Ok = [bool] $section['applications'].list
                                                        Text = ('{0} listed, {1} in the winget file' -f $section['applications'].total, $section['applications'].winget); Log = '' }
+                    }
+                    if ($pins) {
+                        $section['pins'] = Export-TkMigrationPin -Root $root -Confirm:$false
+                        $copied += [pscustomobject] @{ Name = 'Pins'; Ok = [bool] ($section['pins'].jumpLists -or $section['pins'].taskbar)
+                                                       Text = ('Quick Access {0}, {1} jump list file(s), {2} taskbar shortcut(s), Start {3}' -f $(if ($section['pins'].quickAccess) { 'yes' } else { 'no' }),
+                                                                $section['pins'].jumpLists, $section['pins'].taskbar, $(if ($section['pins'].start) { 'yes' } else { 'no' })); Log = '' }
+                    }
+                    if ($bookmarks) {
+                        $section['bookmarks'] = Export-TkMigrationBookmark -Root $root -Confirm:$false
+                        $found = $section['bookmarks']
+                        $note  = @()
+                        if (@($found.copied).Count -gt 0) { $note += '{0} profile(s) copied: {1}' -f @($found.copied).Count, (@($found.copied) -join ', ') }
+                        if ($found.html) { $note += 'bookmarks.html written for any browser' }
+                        if (@($found.blocked).Count -gt 0) { $note += '{0} refused access to {1}: export the bookmarks from the browser itself (as an HTML file) or use its sync, or ask for an exception for the toolkit' -f $found.blockedBy, (@($found.blocked) -join ', ') }
+                        if (@($found.busy).Count -gt 0) { $note += 'close Firefox and export again for {0}' -f (@($found.busy) -join ', ') }
+                        if ($found.duckduckgo) { $note += 'DuckDuckGo keeps its bookmarks in its own store, which is not copied: use its Sync and Backup' }
+                        if ($note.Count -eq 0) { $note += 'no browser profile with bookmarks was found' }
+                        $copied += [pscustomobject] @{ Name = 'Bookmarks'; Ok = (@($found.copied).Count -gt 0 -and @($found.blocked).Count -eq 0); Text = ($note -join '; '); Log = '' }
                     }
                     [void] (Save-TkMigrationManifest -Root $root -Plan @($plan | Where-Object { $_ }) -Result $copied -Section $section -Confirm:$false)
                     $copied
@@ -415,14 +438,14 @@ function Invoke-TkMigrationCopyFromUi {
                     $rows = @($copied.Output | Where-Object { $_ -and $_.PSObject.Properties['Ok'] })
 
                     $document = New-TkFlowDocument
-                    Add-TkHeading -Document $document -Text 'User folders copied' -Level 1
+                    Add-TkHeading -Document $document -Text 'Copied to the package' -Level 1
 
                     foreach ($row in $rows) {
                         Add-TkSeverityLine -Document $document -Severity $(if ($row.Ok) { 'Pass' } else { 'Warning' }) -Heading $row.Name -Detail $row.Text -Note $row.Log
                     }
 
                     Set-TkDocument -ControlName 'MigrationOutput' -Document $document
-                    Set-TkStatus -Text ('{0} of {1} folder(s) copied without error.' -f @($rows | Where-Object Ok).Count, $rows.Count)
+                    Set-TkStatus -Text ('{0} of {1} item(s) copied without error.' -f @($rows | Where-Object Ok).Count, $rows.Count)
                 }
         }.GetNewClosure()
 }
@@ -552,6 +575,28 @@ function Invoke-TkReadMigrationPackageFromUi {
         $appsNote.Visibility = [System.Windows.Visibility]::Collapsed
     }
 
+    $pinsBox = Get-TkControl -Name 'MigrationImportPins'
+    if ($package.Pins) {
+        $pinsBox.Content    = 'Pins ({0} jump list file(s), {1} taskbar)' -f ($package.Pins.Automatic + $package.Pins.Custom), $package.Pins.Taskbar
+        $pinsBox.IsChecked  = $true
+        $pinsBox.Visibility = [System.Windows.Visibility]::Visible
+    }
+    else {
+        $pinsBox.IsChecked  = $false
+        $pinsBox.Visibility = [System.Windows.Visibility]::Collapsed
+    }
+
+    $bookmarksBox = Get-TkControl -Name 'MigrationImportBookmarks'
+    if ($package.Bookmarks -and (@($package.Bookmarks.Files).Count -gt 0 -or $package.Bookmarks.Html)) {
+        $bookmarksBox.Content    = 'Bookmarks ({0} browser profile(s))' -f @($package.Bookmarks.Files).Count
+        $bookmarksBox.IsChecked  = $true
+        $bookmarksBox.Visibility = [System.Windows.Visibility]::Visible
+    }
+    else {
+        $bookmarksBox.IsChecked  = $false
+        $bookmarksBox.Visibility = [System.Windows.Visibility]::Collapsed
+    }
+
     $from = if ($package.FromManifest) { 'from {0} ({1}), {2}' -f $package.Computer, $package.User, $package.Created } else { 'without a manifest: folders matched by name' }
     Set-TkStatus -Text ('{0} folder(s) in the package, {1}.' -f @($package.Folders).Count, $from)
 }
@@ -604,8 +649,12 @@ function Invoke-TkMigrationImportFromUi {
     $wingetFile = if ($reinstall) { [string] $package.Applications.Winget } else { '' }
     $manualApps = if ($package.Applications) { @($package.Applications.Applications | Where-Object { $_.Reinstall -eq 'By hand' }) } else { @() }
 
-    if (@($plan.Steps).Count -eq 0 -and -not $reinstall) {
-        Set-TkStatus -Text 'Every destination is empty and no application is to be reinstalled: there is nothing to import.'
+    $putPins      = [bool] ((Get-TkControl -Name 'MigrationImportPins').IsChecked) -and $package.Pins
+    $putBookmarks = [bool] ((Get-TkControl -Name 'MigrationImportBookmarks').IsChecked) -and $package.Bookmarks
+    $computer     = if ($package.Computer) { $package.Computer } else { 'the old PC' }
+
+    if (@($plan.Steps).Count -eq 0 -and -not $reinstall -and -not $putPins -and -not $putBookmarks) {
+        Set-TkStatus -Text 'Nothing is selected to import.'
         return
     }
 
@@ -629,6 +678,8 @@ function Invoke-TkMigrationImportFromUi {
             $conflicts = @($checks | ForEach-Object { $_.Conflicts })
 
             if ($wingetFile) { $lines += ('- Applications: winget import of {0} package(s), as you, which can take a while' -f $package.Applications.WingetCount) }
+            if ($putPins) { $lines += '- Pins: the ones here are saved first; Explorer restarts and its windows close' }
+            if ($putBookmarks) { $lines += '- Bookmarks: merged into a folder of each browser, which must be closed; the HTML file goes on the desktop' }
             $message = "Import into this machine:`n`n{0}`n`nOnly the new files are copied. {1}" -f ($lines -join "`n"),
                 $(if ($conflicts.Count -gt 0) { '{0} file(s) exist here with other content: they are kept as they are, and listed.' -f $conflicts.Count } else { 'No file here is touched.' })
 
@@ -637,13 +688,22 @@ function Invoke-TkMigrationImportFromUi {
             }
 
             Invoke-TkBackgroundAction -StatusText 'Importing, this can take a while...' `
-                -ParameterList @{ steps = @($plan.Steps); wingetFile = $wingetFile } `
+                -ParameterList @{ steps = @($plan.Steps); wingetFile = $wingetFile; root = $package.Root; putPins = [bool] $putPins; sourceProfile = $(if ($package.Pins) { [string] $package.Pins.SourceProfile } else { '' }); putBookmarks = [bool] $putBookmarks; computer = $computer } `
                 -ScriptBlock {
-                    param($steps, $wingetFile)
+                    param($steps, $wingetFile, $root, $putPins, $sourceProfile, $putBookmarks, $computer)
                     if (@($steps).Count -gt 0) { Import-TkMigrationFolder -Step $steps -Confirm:$false }
                     if ($wingetFile) {
                         $reinstalled = Invoke-TkWingetImport -Path $wingetFile -Confirm:$false
                         [pscustomobject] @{ Name = 'Applications (winget)'; Ok = $reinstalled.Ok; Text = $reinstalled.Text; Log = '' }
+                    }
+                    if ($putPins) {
+                        $put = Import-TkMigrationPin -Root $root -SourceProfile $sourceProfile -Confirm:$false
+                        [pscustomobject] @{ Name = 'Pins'; Ok = $put.Ok; Text = (@($put.Lines) -join ' '); Log = '' }
+                    }
+                    if ($putBookmarks) {
+                        foreach ($merged in @(Import-TkMigrationBookmark -Root $root -Computer $computer -Confirm:$false)) {
+                            [pscustomobject] @{ Name = ('Bookmarks: {0}' -f $merged.Browser); Ok = $merged.Ok; Text = $merged.Text; Log = '' }
+                        }
                     }
                 } `
                 -OnComplete {
