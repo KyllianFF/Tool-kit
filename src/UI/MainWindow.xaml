@@ -1497,7 +1497,7 @@
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="System" Style="{StaticResource Heading}" />
                                 <TextBlock Style="{StaticResource Muted}"
-                                           Text="Machine identity read from SMBIOS, operating system state and platform security posture. Everything on this page is read only and works without elevation." />
+                                           Text="Machine identity read from SMBIOS, operating system state, platform security posture and Windows Update. Everything here reads only and works without elevation, except installing updates, which asks first." />
                             </StackPanel>
 
                             <!--
@@ -1669,6 +1669,27 @@
                                 </UniformGrid>
                             </StackPanel>
                         </Border>
+
+                        <!--
+                            Windows Update belongs to the machine, not to the applications:
+                            it moved here from Software. Checking reads only; installing
+                            needs administrator rights and asks first.
+                        -->
+                        <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Windows Update" Style="{StaticResource SubHeading}" Margin="0,0,0,10" />
+                                <WrapPanel Margin="0,0,0,10">
+                                    <Button x:Name="BtnCheckUpdates"   Content="Check for updates" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
+                                    <Button x:Name="BtnInstallUpdates" Content="Install selected"  Style="{StaticResource GlyphButton}" Tag="&#xE896;" Margin="0,0,16,0" />
+                                    <TextBlock x:Name="UpdateStatus" Style="{StaticResource Muted}" VerticalAlignment="Center" TextWrapping="Wrap"
+                                               Text="Checking reads only. Installing changes the machine, needs administrator rights, and asks first." />
+                                </WrapPanel>
+                                <StackPanel x:Name="UpdateList" Margin="4,0,4,0">
+                                    <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                               Text="Select Check for updates to ask Windows Update what is available. Nothing is downloaded or installed until you choose updates and confirm." />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -1687,7 +1708,7 @@
                         <StackPanel Grid.Column="0">
                             <TextBlock Text="Software" Style="{StaticResource Heading}" />
                             <TextBlock x:Name="WingetStatusText" Style="{StaticResource Muted}"
-                                       Text="Applications through winget, from the official Microsoft source; and the updates Windows Update has for this machine." />
+                                       Text="Applications to install through winget, from the official Microsoft source, and the applications installed on this machine." />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
                             <Button x:Name="BtnSaveConfigProfileSoftware" Content="Save profile" Style="{StaticResource GlyphButton}" Tag="&#xE74E;"
@@ -1698,7 +1719,7 @@
                     </Grid>
 
                     <TabControl Grid.Row="1" x:Name="SoftwareTabs" Background="Transparent" BorderThickness="0" Margin="0,14,0,0">
-                        <TabItem Header="Applications">
+                        <TabItem Header="Install Apps">
                             <Grid Margin="0,16,0,0">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
@@ -1826,31 +1847,6 @@
                             </ItemsControl>
                         </ScrollViewer>
                     </Border>
-                            </Grid>
-                        </TabItem>
-
-                        <TabItem Header="Windows Update">
-                            <Grid Margin="0,16,0,0">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                                    <Button x:Name="BtnCheckUpdates"   Content="Check for updates" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" />
-                                    <Button x:Name="BtnInstallUpdates" Content="Install selected"  Style="{StaticResource GlyphButton}" Tag="&#xE896;" Margin="0,0,16,0" />
-                                    <TextBlock x:Name="UpdateStatus" Style="{StaticResource Muted}" VerticalAlignment="Center"
-                                               Text="Checking reads only. Installing changes the machine, needs administrator rights, and asks first." />
-                                </StackPanel>
-
-                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0" Padding="4">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                        <StackPanel x:Name="UpdateList" Margin="8">
-                                            <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
-                                                       Text="Select Check for updates to ask Windows Update what is available. Nothing is downloaded or installed until you choose updates and confirm." />
-                                        </StackPanel>
-                                    </ScrollViewer>
-                                </Border>
                             </Grid>
                         </TabItem>
 
