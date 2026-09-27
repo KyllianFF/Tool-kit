@@ -2897,9 +2897,14 @@ Describe 'Interface rendering' {
         ) {
             param($Name)
 
-            $list = $script:Window.FindName($Name)
+            $list    = $script:Window.FindName($Name)
+            $heading = $script:Window.FindResource('ChoiceGroup')
+            $entries = @($list.Items | Where-Object { -not [object]::ReferenceEquals($_.Style, $heading) })
 
-            foreach ($item in $list.Items) {
+            # A group heading explains nothing and cannot be chosen.
+            $entries.Count | Should -BeGreaterThan 1
+
+            foreach ($item in $entries) {
                 $item.ToolTip | Should -Not -BeNullOrEmpty
             }
         }
@@ -8719,23 +8724,32 @@ Describe 'Shared folders' {
         }
     }
 
-    It 'wires every investigation in the list to its own function' {
+    It 'runs an investigation for every entry of the list, in the same order' {
 
-        # The list is wired by position: an entry added without its case would
-        # open nothing, and one added in the middle would open its neighbour's.
+        # Found by title: the list is grouped under headings, which wiring by
+        # position would have shifted onto the wrong function.
         $markup = Get-TkMainWindowXaml
         $start  = $markup.IndexOf('x:Name="HuntChoices"')
         $slice  = $markup.Substring($start, $markup.IndexOf('</ListBox>', $start) - $start)
-        $items  = ([regex]::Matches($slice, 'Style="\{StaticResource ChoiceTitle\}"')).Count
+        $titles = @([regex]::Matches($slice, 'Text="(?<title>[^"]+)" Style="\{StaticResource ChoiceTitle\}"') |
+                    ForEach-Object { $_.Groups['title'].Value })
 
-        $body   = (Get-Command -Name 'Initialize-TkThreatHuntingPage').ScriptBlock.ToString()
-        $cases  = @([regex]::Matches($body, '(?m)^\s*(?<index>\d+)\s*\{\s*(?<name>Invoke-Tk\w+FromUi)'))
+        ($titles -join ',') | Should -Be ((@(Get-TkHuntInvestigation) | ForEach-Object { $_.Title }) -join ',')
 
-        $cases.Count | Should -Be $items
+        foreach ($investigation in (Get-TkHuntInvestigation)) {
+            Get-Command -Name $investigation.Show -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty -Because $investigation.Title
+        }
+    }
 
-        for ($i = 0; $i -lt $cases.Count; $i++) {
-            [int] $cases[$i].Groups['index'].Value | Should -Be $i
-            Get-Command -Name $cases[$i].Groups['name'].Value -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+    It 'groups both long lists under headings that cannot be selected' {
+        $markup = Get-TkMainWindowXaml
+
+        foreach ($name in @('DiagnosticChoices', 'HuntChoices')) {
+            $start = $markup.IndexOf(('x:Name="{0}"' -f $name))
+            $slice = $markup.Substring($start, $markup.IndexOf('</ListBox>', $start) - $start)
+
+            ([regex]::Matches($slice, 'StaticResource ChoiceGroup\}')).Count | Should -BeGreaterThan 2 -Because $name
+            $slice.TrimStart().IndexOf('ChoiceGroup') | Should -BeLessThan $slice.IndexOf('ChoiceTitle') -Because ('{0} opens on a heading' -f $name)
         }
     }
 }

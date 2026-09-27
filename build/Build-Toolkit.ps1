@@ -456,4 +456,6 @@ $manifest = [ordered] @{
     published = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
 }
 
-Set-Content -LiteralPath ($OutputPath + '.version.json') -Value ($manifest | ConvertTo-Json) -Encoding ASCII
+# LF, as .gitattributes stores it, so a build leaves no line-ending change behind.
+[System.IO.File]::WriteAllText(($OutputPath + '.version.json'), ((($manifest | ConvertTo-Json) -replace "`r`n", "`n") + "`n"),
+                               (New-Object System.Text.UTF8Encoding($false)))

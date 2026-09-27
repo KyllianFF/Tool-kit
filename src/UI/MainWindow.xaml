@@ -2683,6 +2683,9 @@
                                     <ListBox x:Name="DiagnosticChoices" Background="Transparent" BorderThickness="0"
                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                              ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="OVERVIEW" Style="{StaticResource ChoiceGroupTitle}" />
+                                        </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Every check below, in order.">
                                             <TextBlock Text="Full check" Style="{StaticResource ChoiceTitle}" />
@@ -2690,6 +2693,43 @@
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="All six places Windows records one, including the invisible ones.">
                                             <TextBlock Text="Pending reboot" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="STABILITY AND PERFORMANCE" Style="{StaticResource ChoiceGroupTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="What uses the processor, memory and disks right now, the programs that start with Windows, and how long start up takes and what slows it.">
+                                            <TextBlock Text="Performance" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Blue screens with their stop code explained and the drivers registered before them, hard resets, and repeated application faults.">
+                                            <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Every start of the last 30 days: how the session before it ended, who or what asked for the restart or shutdown, and how long the machine ran and stayed off.">
+                                            <TextBlock Text="Restarts and shutdowns" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="The Windows services: how each starts, the account it runs as, and which automatic services failed to start.">
+                                            <TextBlock Text="Services" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="HARDWARE AND DEVICES" Style="{StaticResource ChoiceGroupTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Every device Device Manager flags, with its problem code explained and what to try.">
+                                            <TextBlock Text="Devices" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="The third-party and unsigned drivers, with their provider, version, date and signature.">
+                                            <TextBlock Text="Drivers" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Spooler, printers, ports, drivers and queue depth.">
+                                            <TextBlock Text="Printing" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="STORAGE" Style="{StaticResource ChoiceGroupTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Reliability counters joined to free space, with SSD wear.">
@@ -2703,21 +2743,8 @@
                                                      ToolTip="Files that exist more than once in your own folders, compared by content, grouped by the folders that hold them, with the space the copies take. Nothing is deleted.">
                                             <TextBlock Text="Duplicate files" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="What uses the processor, memory and disks right now, the programs that start with Windows, and how long start up takes and what slows it.">
-                                            <TextBlock Text="Performance" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Every device Device Manager flags, with its problem code explained and what to try.">
-                                            <TextBlock Text="Devices" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Blue screens with their stop code explained and the drivers registered before them, hard resets, and repeated application faults.">
-                                            <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Every start of the last 30 days: how the session before it ended, who or what asked for the restart or shutdown, and how long the machine ran and stayed off.">
-                                            <TextBlock Text="Restarts and shutdowns" Style="{StaticResource ChoiceTitle}" />
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="NETWORK" Style="{StaticResource ChoiceGroupTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Signal, band and channel, link rate, security, how crowded the channel is, and how often the connection dropped.">
@@ -2727,29 +2754,12 @@
                                                      ToolTip="The proxy applications, services and command line tools each use, whether it answers, and what automatic detection finds.">
                                             <TextBlock Text="Proxy" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="ACCOUNTS AND POLICY" Style="{StaticResource ChoiceGroupTitle}" />
+                                        </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Domain, Microsoft Entra and Intune: how the device is joined, its single sign-on token, the domain controller and clock, and the MDM.">
                                             <TextBlock Text="Sign-in and management" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Through the update session, so driver and feature updates appear.">
-                                            <TextBlock Text="Update history" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Whether this Windows release and the installed programs still receive security fixes, and what to move to when they do not.">
-                                            <TextBlock Text="Software support" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Spooler, printers, ports, drivers and queue depth.">
-                                            <TextBlock Text="Printing" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Profile sizes, mapped drives and logon timing. The domain is under Sign-in and management.">
-                                            <TextBlock Text="Profiles and policy" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="The system and user PATH: folders a standard account can change or create in the system PATH, setx copies, missing and repeated entries, and commands two folders provide.">
-                                            <TextBlock Text="Command path (PATH)" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="The local users and groups: who can sign in, whose password never expires or is not required, and who is a local administrator.">
@@ -2760,12 +2770,23 @@
                                             <TextBlock Text="Group Policy" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="The Windows services: how each starts, the account it runs as, and which automatic services failed to start.">
-                                            <TextBlock Text="Services" Style="{StaticResource ChoiceTitle}" />
+                                                     ToolTip="Profile sizes, mapped drives and logon timing. The domain is under Sign-in and management.">
+                                            <TextBlock Text="Profiles and policy" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="The third-party and unsigned drivers, with their provider, version, date and signature.">
-                                            <TextBlock Text="Drivers" Style="{StaticResource ChoiceTitle}" />
+                                                     ToolTip="The system and user PATH: folders a standard account can change or create in the system PATH, setx copies, missing and repeated entries, and commands two folders provide.">
+                                            <TextBlock Text="Command path (PATH)" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="SOFTWARE AND UPDATES" Style="{StaticResource ChoiceGroupTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Through the update session, so driver and feature updates appear.">
+                                            <TextBlock Text="Update history" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Whether this Windows release and the installed programs still receive security fixes, and what to move to when they do not.">
+                                            <TextBlock Text="Software support" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                     </ListBox>
                                 </DockPanel>
@@ -3107,41 +3128,46 @@
                                     <ListBox x:Name="HuntChoices" Background="Transparent" BorderThickness="0"
                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                              ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="LOGS AND HISTORY" Style="{StaticResource ChoiceGroupTitle}" />
+                                        </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Failed logons, lockouts, services installed, logs cleared.">
                                             <TextBlock Text="Event log triage" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Run keys, services, tasks and WMI subscriptions, signature checked.">
-                                            <TextBlock Text="Autostart and persistence" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Listening sockets joined to the inbound firewall policy.">
-                                            <TextBlock Text="Network exposure" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Machine and user stores: expiry, SHA-1, weak keys.">
-                                            <TextBlock Text="Certificate inventory" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Every USB storage device ever connected, with its serial and, when elevated, when it was last plugged in.">
-                                            <TextBlock Text="USB history" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="Who connected in with Remote Desktop and from which address, and the servers this account connected out to.">
-                                            <TextBlock Text="Remote Desktop history" Style="{StaticResource ChoiceTitle}" />
-                                        </ListBoxItem>
-                                        <ListBoxItem Style="{StaticResource ReportChoice}"
-                                                     ToolTip="The extensions in Chrome, Edge, Brave and Firefox, with the permissions that reach the most flagged.">
-                                            <TextBlock Text="Browser extensions" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="What Windows Defender has caught, with each threat named and what was done about it.">
                                             <TextBlock Text="Defender detections" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Who connected in with Remote Desktop and from which address, and the servers this account connected out to.">
+                                            <TextBlock Text="Remote Desktop history" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Every USB storage device ever connected, with its serial and, when elevated, when it was last plugged in.">
+                                            <TextBlock Text="USB history" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="PERSISTENCE AND PRIVILEGE" Style="{StaticResource ChoiceGroupTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Run keys, services, tasks and WMI subscriptions, signature checked.">
+                                            <TextBlock Text="Autostart and persistence" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Local privilege escalation: unquoted service paths, AlwaysInstallElevated, a clear-text autologon password, IFEO debuggers, and the credentials stored on the machine.">
                                             <TextBlock Text="Privilege escalation" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="The extensions in Chrome, Edge, Brave and Firefox, with the permissions that reach the most flagged.">
+                                            <TextBlock Text="Browser extensions" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                            <TextBlock Text="EXPOSURE" Style="{StaticResource ChoiceGroupTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Listening sockets joined to the inbound firewall policy.">
+                                            <TextBlock Text="Network exposure" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="What this PC shares on the network and who can reach it: share and folder permissions together, a broad group that can write flagged, hidden shares.">
@@ -3150,6 +3176,10 @@
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="The Wi-Fi networks this PC remembers: open ones it joins by itself, WEP, WPA or TKIP, and hidden networks it calls out for.">
                                             <TextBlock Text="Saved Wi-Fi networks" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Machine and user stores: expiry, SHA-1, weak keys.">
+                                            <TextBlock Text="Certificate inventory" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                     </ListBox>
                                 </DockPanel>
