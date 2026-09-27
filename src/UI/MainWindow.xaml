@@ -3318,6 +3318,14 @@
                                          ToolTip="Check the MX, SPF, DKIM and DMARC records of a domain, and count the DNS lookups its SPF record needs.">
                                 <TextBlock Text="Mail DNS records" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Write the SPF record of a domain: its own servers, addresses, the mail services it uses, and what happens to everyone else, with the 10-lookup limit checked.">
+                                <TextBlock Text="SPF record" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Write the DMARC record of a domain: the policy, the subdomains, the reports and the alignment, with the rollout explained.">
+                                <TextBlock Text="DMARC record" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                 <TextBlock Text="WEB AND CERTIFICATES" Style="{StaticResource ChoiceGroupTitle}" />
                             </ListBoxItem>
@@ -5167,6 +5175,91 @@
                                     <TextBox x:Name="RegConvertOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="NoWrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolSpfBuilder" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="SPF record builder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Domain" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SpfDomain" Width="240" Margin="0,0,16,8" Tag="contoso.com" />
+                                            <CheckBox x:Name="SpfUseMx" Content="Its MX servers send mail" IsChecked="True" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="SpfUseA" Content="Its own address sends mail" VerticalAlignment="Center" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Includes" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SpfIncludes" Width="360" Margin="0,0,8,8" Tag="spf.protection.outlook.com, _spf.google.com"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <ComboBox x:Name="SpfService" Width="220" MinHeight="40" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Addresses" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="SpfAddresses" Width="360" Margin="0,0,16,8" Tag="203.0.113.10, 198.51.100.0/28, 2001:db8::25"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <TextBlock Text="Everyone else" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="SpfAll" Width="250" MinHeight="40" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <Button x:Name="BtnCopySpf" Content="Copy the record" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" />
+                                            <Button x:Name="BtnCountSpfLookups" Content="Count through the includes"
+                                                    ToolTip="Asks DNS for the SPF record of every include and adds up the lookups a receiver would make. Receivers stop at 10." />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="SpfOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolDmarcBuilder" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="DMARC record builder" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Domain" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="DmarcDomain" Width="240" Margin="0,0,16,8" Tag="contoso.com" />
+                                            <TextBlock Text="Policy" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="DmarcPolicy" Width="230" MinHeight="40" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Subdomains" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="DmarcSubPolicy" Width="190" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Applies to (%)" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="DmarcPercent" Width="70" Margin="0,0,0,8" Text="100" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Aggregate reports to" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="DmarcRua" Width="420" Margin="0,0,0,8" Tag="dmarc@contoso.com" />
+                                        </WrapPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Failure reports to" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="DmarcRuf" Width="300" Margin="0,0,16,8" Tag="optional" />
+                                            <CheckBox x:Name="DmarcStrictDkim" Content="Strict DKIM alignment" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                            <CheckBox x:Name="DmarcStrictSpf" Content="Strict SPF alignment" VerticalAlignment="Center" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <Button x:Name="BtnCopyDmarc" Content="Copy the record" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="DmarcOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>
 

@@ -6039,6 +6039,113 @@ Describe 'WMI query builder' {
     }
 }
 
+Describe 'SPF and DMARC builders' {
+
+    Context 'SPF' {
+
+        It 'writes the record in the order receivers read it, and reads it back' {
+            $spf = New-TkSpfRecord -Domain 'Contoso.com.' -UseMx -Address '203.0.113.10, 2001:db8::25' -Include 'include:spf.protection.outlook.com, _spf.google.com, spf.protection.outlook.com' -All '-all'
+
+            $spf.Name   | Should -Be 'contoso.com'
+            $spf.Record | Should -Be 'v=spf1 mx ip4:203.0.113.10 ip6:2001:db8::25 include:spf.protection.outlook.com include:_spf.google.com -all'
+            $spf.Lookups | Should -Be 3
+            (ConvertFrom-TkSpfRecord -Text $spf.Record).Valid | Should -BeTrue
+            @($spf.Errors).Count | Should -Be 0
+        }
+
+        It 'refuses what is not an address, a range or a domain' {
+            foreach ($case in @(
+                @{ Address = '300.1.1.1' }, @{ Address = '10.0.0.0/33' }, @{ Address = 'mail.contoso.com' },
+                @{ Include = 'not a domain' }, @{ Domain = '' }
+            )) {
+                $fields = @{ Domain = 'contoso.com' }
+                foreach ($key in $case.Keys) { $fields[$key] = $case[$key] }
+                $spf = New-TkSpfRecord @fields
+                @($spf.Errors).Count | Should -BeGreaterThan 0 -Because ($case.Values -join ',')
+                $spf.Record | Should -BeNullOrEmpty
+            }
+        }
+
+        It 'refuses a record that needs more than 10 lookups by itself' {
+            $includes = (1..11 | ForEach-Object { 'spf{0}.example.com' -f $_ }) -join ','
+            $spf = New-TkSpfRecord -Domain 'contoso.com' -Include $includes
+
+            ($spf.Errors -join ' ') | Should -Match '11 DNS lookups'
+            $spf.Record | Should -BeNullOrEmpty
+        }
+
+        It 'warns about a record that protects nothing, or a range too wide' {
+            ((New-TkSpfRecord -Domain 'contoso.com' -UseMx -All '?all').Warnings -join ' ') | Should -Match 'protects nothing'
+            ((New-TkSpfRecord -Domain 'contoso.com' -Address '10.0.0.0/8').Warnings -join ' ')  | Should -Match 'very large range'
+            ((New-TkSpfRecord -Domain 'contoso.com').Notes -join ' ')                          | Should -Match 'sends no mail at all'
+            (New-TkSpfRecord -Domain 'contoso.com').Record                                      | Should -Be 'v=spf1 -all'
+        }
+
+        It 'counts the lookups of a draft through its includes' {
+            $dns = @{
+                'a.example.com' = @('v=spf1 include:b.example.com ip4:192.0.2.1 -all')
+                'b.example.com' = @('v=spf1 a mx -all')
+                'c.example.com' = @('v=spf1 ip4:198.51.100.0/24 -all')
+            }
+            $resolver = { param($name, $type) $null = $type; @($dns[$name]) }.GetNewClosure()
+
+            $count = Measure-TkSpfDraftLookup -Record 'v=spf1 mx include:a.example.com include:c.example.com -all' -Resolver $resolver
+
+            # mx + include a + include c = 3 here; a costs 1 (include b); b costs 2 (a, mx).
+            $count.Lookups | Should -Be 6
+            @($count.PerInclude | ForEach-Object { '{0}={1}' -f $_.Name, $_.Lookups }) | Should -Be @('a.example.com=4', 'c.example.com=1')
+        }
+
+        It 'offers only well formed service includes' {
+            foreach ($service in (Get-TkSpfService)) {
+                Test-TkMailDomainName -Name $service.Include | Should -BeTrue -Because $service.Name
+            }
+        }
+    }
+
+    Context 'DMARC' {
+
+        It 'writes the record and reads it back' {
+            $dmarc = New-TkDmarcRecord -Domain 'contoso.com' -Policy 'quarantine' -SubdomainPolicy 'reject' -Percent 50 `
+                -AggregateReport 'dmarc@contoso.com, mailto:reports@contoso.com' -StrictDkim
+
+            $dmarc.Name   | Should -Be '_dmarc.contoso.com'
+            $dmarc.Record | Should -Be 'v=DMARC1; p=quarantine; sp=reject; pct=50; rua=mailto:dmarc@contoso.com,mailto:reports@contoso.com; adkim=s'
+
+            $read = ConvertFrom-TkDmarcRecord -Text $dmarc.Record
+            $read.Valid           | Should -BeTrue
+            $read.SubdomainPolicy | Should -Be 'reject'
+            $read.Percent         | Should -Be 50
+        }
+
+        It 'leaves out what equals the default' {
+            (New-TkDmarcRecord -Domain 'contoso.com' -Policy 'reject' -SubdomainPolicy 'reject' -AggregateReport 'd@contoso.com').Record |
+                Should -Be 'v=DMARC1; p=reject; rua=mailto:d@contoso.com'
+        }
+
+        It 'explains an outside report address, and adds fo=1 with failure reports' {
+            $dmarc = New-TkDmarcRecord -Domain 'contoso.com' -AggregateReport 'agg@vendor.example' -FailureReport 'ruf@contoso.com'
+
+            $dmarc.Record | Should -Match 'ruf=mailto:ruf@contoso.com; fo=1'
+            ($dmarc.Notes -join ' ') | Should -Match ([regex]::Escape('contoso.com._report._dmarc.vendor.example'))
+        }
+
+        It 'warns where the rollout goes wrong' {
+            ((New-TkDmarcRecord -Domain 'contoso.com' -Policy 'none').Warnings -join ' ')   | Should -Match 'nobody sees'
+            ((New-TkDmarcRecord -Domain 'contoso.com' -Policy 'reject').Warnings -join ' ') | Should -Match 'nothing tells you'
+            ((New-TkDmarcRecord -Domain 'contoso.com' -Policy 'reject' -SubdomainPolicy 'none' -AggregateReport 'd@contoso.com').Warnings -join ' ') |
+                Should -Match 'subdomain open to spoofing'
+        }
+
+        It 'refuses a bad address, domain or percentage' {
+            @((New-TkDmarcRecord -Domain 'contoso.com' -AggregateReport 'not-an-address').Errors).Count | Should -Be 1
+            @((New-TkDmarcRecord -Domain 'contoso' ).Errors).Count                                      | Should -Be 1
+            @((New-TkDmarcRecord -Domain 'contoso.com' -Percent 0).Errors).Count                          | Should -Be 1
+            (Format-TkMailRecord -Built (New-TkDmarcRecord -Domain '')) | Should -Match '^Fix first:'
+        }
+    }
+}
+
 Describe '.reg and PowerShell converter' {
 
     BeforeAll {
