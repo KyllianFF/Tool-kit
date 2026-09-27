@@ -129,6 +129,21 @@ function Invoke-TkMigrationInventoryFromUi {
                         $(if ($_.InOneDrive) { 'OneDrive: sign in on the new machine' } else { 'This disk only: copy it' }))
                 })
 
+            # --- Applications -----------------------------------------------------
+            $applications = @($inventory.Applications)
+            $count        = Measure-TkApplicationInventory -Application $applications
+            Add-TkHeading -Document $document -Text 'Applications' -Level 2
+            Add-TkParagraph -Document $document -Muted -Text (
+                '{0} application(s): {1} come back with winget, {2} from the Microsoft Store, {3} with Windows itself, {4} by hand. The export writes the whole list and a winget file for the new machine.' -f
+                    $count.Total, $count.Winget, $count.Store, $count.Inbox, $count.Manual)
+            $manual = @($applications | Where-Object Reinstall -eq 'By hand')
+            if ($manual.Count -gt 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Warning' -Heading ('{0} application(s) to reinstall by hand' -f $manual.Count) `
+                    -Note 'winget does not know them: keep their installer, and their licence key or account, before the old machine goes.'
+                Add-TkTable -Document $document -Column @('Application', 'Version', 'Publisher') -Weight @(2.4, 1, 1.6) `
+                    -Row @($manual | ForEach-Object { , @($_.Name, $_.Version, $_.Publisher) })
+            }
+
             # --- Drives and printers --------------------------------------------
             $drives = @($inventory.Drives)
             Add-TkHeading -Document $document -Text 'Network drives' -Level 2
@@ -325,9 +340,10 @@ function Invoke-TkMigrationCopyFromUi {
     param()
 
     $ticked = @((Get-TkControl -Name 'MigrationFolderList').Children | Where-Object { $_.IsChecked } | ForEach-Object { [string] $_.Tag })
+    $apps   = [bool] (Get-TkControl -Name 'MigrationIncludeApps').IsChecked
 
-    if ($ticked.Count -eq 0) {
-        Set-TkStatus -Text 'Tick the folders to copy first.'
+    if ($ticked.Count -eq 0 -and -not $apps) {
+        Set-TkStatus -Text 'Tick the folders to copy, or the applications, first.'
         return
     }
 
@@ -359,7 +375,7 @@ function Invoke-TkMigrationCopyFromUi {
             $copy  = @($plan | Where-Object { -not $_.Skip })
             $total = [long] ($copy | Measure-Object -Property Bytes -Sum).Sum
 
-            if ($copy.Count -eq 0) {
+            if ($copy.Count -eq 0 -and -not $apps) {
                 Set-TkStatus -Text 'Nothing to copy: every folder ticked is kept by OneDrive.'
                 return
             }
@@ -370,6 +386,7 @@ function Invoke-TkMigrationCopyFromUi {
             }
 
             $lines = @($plan | ForEach-Object { if ($_.Skip) { '- {0}: skipped, {1}' -f $_.Name, $_.Skip } else { '- {0}: {1}' -f $_.Name, (Format-TkBytes -Bytes $_.Bytes) } })
+            if ($apps) { $lines += '- Applications: the full list, and a winget file to reinstall them' }
             $message = "Copy to {0}\{1}:`n`n{2}`n`nTotal {3}{4}. Nothing is deleted from this machine; files kept online only by OneDrive are not downloaded." -f `
                 $destination.TrimEnd('\'), $label, ($lines -join "`n"), (Format-TkBytes -Bytes $total),
                 $(if ($measure.Free -ge 0) { ', {0} free at the destination' -f (Format-TkBytes -Bytes $measure.Free) } else { '' })
@@ -379,11 +396,17 @@ function Invoke-TkMigrationCopyFromUi {
             }
 
             Invoke-TkBackgroundAction -StatusText 'Copying the user folders, this can take a while...' `
-                -ParameterList @{ plan = $plan } `
+                -ParameterList @{ plan = $plan; root = [System.IO.Path]::Combine($destination.TrimEnd('\') + '\', $label); apps = $apps } `
                 -ScriptBlock {
-                    param($plan)
-                    $copied = @(Copy-TkMigrationFolder -Plan $plan -Confirm:$false)
-                    [void] (Save-TkMigrationManifest -Plan $plan -Result $copied -Confirm:$false)
+                    param($plan, $root, $apps)
+                    $copied  = @(Copy-TkMigrationFolder -Plan @($plan | Where-Object { $_ }) -Confirm:$false)
+                    $section = @{}
+                    if ($apps) {
+                        $section['applications'] = Export-TkMigrationApplication -Root $root -Confirm:$false
+                        $copied += [pscustomobject] @{ Name = 'Applications'; Ok = [bool] $section['applications'].list
+                                                       Text = ('{0} listed, {1} in the winget file' -f $section['applications'].total, $section['applications'].winget); Log = '' }
+                    }
+                    [void] (Save-TkMigrationManifest -Root $root -Plan @($plan | Where-Object { $_ }) -Result $copied -Section $section -Confirm:$false)
                     $copied
                 } `
                 -OnComplete {
@@ -510,6 +533,25 @@ function Invoke-TkReadMigrationPackageFromUi {
     Set-TkImportState -Package $package -Row @($rows) -Confirm:$false
     (Get-TkControl -Name 'MigrationCloudTarget').SelectedIndex = 0
 
+    $appsBox  = Get-TkControl -Name 'MigrationImportApps'
+    $appsNote = Get-TkControl -Name 'MigrationImportAppsNote'
+    $packageApps = $package.Applications
+
+    if ($packageApps) {
+        $manual = @($packageApps.Applications | Where-Object { $_.Reinstall -eq 'By hand' }).Count
+        $appsBox.Content    = 'Reinstall the {0} application(s) winget knows' -f $packageApps.WingetCount
+        $appsBox.IsChecked  = [bool] $packageApps.Winget
+        $appsBox.IsEnabled  = [bool] $packageApps.Winget
+        $appsBox.Visibility = [System.Windows.Visibility]::Visible
+        $appsNote.Text       = '{0} other application(s) come back by hand; the import report lists them.' -f $manual
+        $appsNote.Visibility = [System.Windows.Visibility]::Visible
+    }
+    else {
+        $appsBox.IsChecked   = $false
+        $appsBox.Visibility  = [System.Windows.Visibility]::Collapsed
+        $appsNote.Visibility = [System.Windows.Visibility]::Collapsed
+    }
+
     $from = if ($package.FromManifest) { 'from {0} ({1}), {2}' -f $package.Computer, $package.User, $package.Created } else { 'without a manifest: folders matched by name' }
     Set-TkStatus -Text ('{0} folder(s) in the package, {1}.' -f @($package.Folders).Count, $from)
 }
@@ -558,8 +600,12 @@ function Invoke-TkMigrationImportFromUi {
         return
     }
 
-    if (@($plan.Steps).Count -eq 0) {
-        Set-TkStatus -Text 'Every destination is empty: there is nothing to import.'
+    $reinstall = [bool] ((Get-TkControl -Name 'MigrationImportApps').IsChecked) -and $package.Applications -and $package.Applications.Winget
+    $wingetFile = if ($reinstall) { [string] $package.Applications.Winget } else { '' }
+    $manualApps = if ($package.Applications) { @($package.Applications.Applications | Where-Object { $_.Reinstall -eq 'By hand' }) } else { @() }
+
+    if (@($plan.Steps).Count -eq 0 -and -not $reinstall) {
+        Set-TkStatus -Text 'Every destination is empty and no application is to be reinstalled: there is nothing to import.'
         return
     }
 
@@ -582,6 +628,7 @@ function Invoke-TkMigrationImportFromUi {
             })
             $conflicts = @($checks | ForEach-Object { $_.Conflicts })
 
+            if ($wingetFile) { $lines += ('- Applications: winget import of {0} package(s), as you, which can take a while' -f $package.Applications.WingetCount) }
             $message = "Import into this machine:`n`n{0}`n`nOnly the new files are copied. {1}" -f ($lines -join "`n"),
                 $(if ($conflicts.Count -gt 0) { '{0} file(s) exist here with other content: they are kept as they are, and listed.' -f $conflicts.Count } else { 'No file here is touched.' })
 
@@ -590,10 +637,14 @@ function Invoke-TkMigrationImportFromUi {
             }
 
             Invoke-TkBackgroundAction -StatusText 'Importing, this can take a while...' `
-                -ParameterList @{ steps = @($plan.Steps) } `
+                -ParameterList @{ steps = @($plan.Steps); wingetFile = $wingetFile } `
                 -ScriptBlock {
-                    param($steps)
-                    Import-TkMigrationFolder -Step $steps -Confirm:$false
+                    param($steps, $wingetFile)
+                    if (@($steps).Count -gt 0) { Import-TkMigrationFolder -Step $steps -Confirm:$false }
+                    if ($wingetFile) {
+                        $reinstalled = Invoke-TkWingetImport -Path $wingetFile -Confirm:$false
+                        [pscustomobject] @{ Name = 'Applications (winget)'; Ok = $reinstalled.Ok; Text = $reinstalled.Text; Log = '' }
+                    }
                 } `
                 -OnComplete {
                     param($imported)
@@ -617,8 +668,15 @@ function Invoke-TkMigrationImportFromUi {
                             })
                     }
 
+                    if ($manualApps.Count -gt 0) {
+                        Add-TkHeading -Document $document -Text ('To reinstall by hand: {0} application(s)' -f $manualApps.Count) -Level 2
+                        Add-TkParagraph -Document $document -Muted -Text 'winget does not know these; install them from their publisher, with their licence.'
+                        Add-TkTable -Document $document -Column @('Application', 'Version', 'Publisher') -Weight @(2.4, 1, 1.6) `
+                            -Row @($manualApps | ForEach-Object { , @([string] $_.Name, [string] $_.Version, [string] $_.Publisher) })
+                    }
+
                     Set-TkDocument -ControlName 'MigrationOutput' -Document $document
-                    Set-TkStatus -Text ('{0} of {1} folder(s) imported without error.' -f @($rows | Where-Object Ok).Count, $rows.Count)
+                    Set-TkStatus -Text ('{0} of {1} step(s) done without error.' -f @($rows | Where-Object Ok).Count, $rows.Count)
                 }.GetNewClosure()
         }.GetNewClosure()
 }

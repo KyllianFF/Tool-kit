@@ -76,7 +76,8 @@ function New-TkMigrationManifest {
         [Parameter()] [AllowEmptyCollection()] [object[]] $Plan = @(),
         [Parameter()] [AllowEmptyCollection()] [object[]] $Result = @(),
         [Parameter()] [string] $Computer = $env:COMPUTERNAME,
-        [Parameter()] [string] $User = $env:USERNAME
+        [Parameter()] [string] $User = $env:USERNAME,
+        [Parameter()] [hashtable] $Section = @{}
     )
 
     $folders = foreach ($step in ($Plan | Where-Object { $_ })) {
@@ -90,7 +91,7 @@ function New-TkMigrationManifest {
         }
     }
 
-    return [ordered] @{
+    $manifest = [ordered] @{
         schema        = 'toolkit-migration'
         schemaVersion = 1
         computer      = $Computer
@@ -98,6 +99,27 @@ function New-TkMigrationManifest {
         created       = (Get-Date).ToString('yyyy-MM-dd HH:mm')
         folders       = @($folders)
     }
+
+    foreach ($name in ($Section.Keys | Sort-Object)) {
+        $manifest[$name] = $Section[$name]
+    }
+
+    return $manifest
+}
+
+<#
+.SYNOPSIS
+    The folder names a package keeps for itself, never offered as personal folders.
+
+.OUTPUTS
+    System.String[]
+#>
+function Get-TkMigrationReservedFolder {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+
+    return @('apps', 'pins', 'bookmarks')
 }
 
 <#
@@ -111,23 +133,22 @@ function Save-TkMigrationManifest {
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([string])]
     param(
-        [Parameter(Mandatory)] [object[]] $Plan,
-        [Parameter()] [AllowEmptyCollection()] [object[]] $Result = @()
+        [Parameter(Mandatory)] [string] $Root,
+        [Parameter()] [AllowEmptyCollection()] [object[]] $Plan = @(),
+        [Parameter()] [AllowEmptyCollection()] [object[]] $Result = @(),
+        [Parameter()] [hashtable] $Section = @{}
     )
 
-    $first = @($Plan | Where-Object { $_ }) | Select-Object -First 1
-    if (-not $first) { return '' }
-
-    $root = Split-Path -Path $first.Target -Parent
-    $path = [System.IO.Path]::Combine($root, 'migration.json')
+    $path = [System.IO.Path]::Combine($Root, 'migration.json')
 
     if (-not $PSCmdlet.ShouldProcess($path, 'Write the migration manifest')) {
         return ''
     }
 
-    $manifest = New-TkMigrationManifest -Plan $Plan -Result $Result
+    $manifest = New-TkMigrationManifest -Plan $Plan -Result $Result -Section $Section
 
     try {
+        New-Item -ItemType Directory -Path $Root -Force | Out-Null
         [System.IO.File]::WriteAllText($path, ($manifest | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
         return $path
     }
@@ -153,7 +174,8 @@ function Save-TkMigrationManifest {
 
 .OUTPUTS
     PSCustomObject with Root, Computer, User, Created, FromManifest, Folders
-    (Key, Name, Source, Bytes) and Error.
+    (Key, Name, Source, Bytes), Applications (from Read-TkMigrationApplication,
+    or $null) and Error.
 #>
 function Read-TkMigrationPackage {
     [CmdletBinding()]
@@ -165,7 +187,8 @@ function Read-TkMigrationPackage {
     )
 
     $root   = $Path.Trim().TrimEnd('\')
-    $failed = { param($message) [pscustomobject] @{ Root = $root; Computer = ''; User = ''; Created = ''; FromManifest = $false; Folders = @(); Error = $message } }
+    $failed   = { param($message) [pscustomobject] @{ Root = $root; Computer = ''; User = ''; Created = ''; FromManifest = $false; Folders = @(); Applications = $null; Error = $message } }
+    $reserved = Get-TkMigrationReservedFolder
 
     if (-not $root -or -not (Test-Path -LiteralPath $root -PathType Container)) {
         return (& $failed 'Choose the folder of the package: the one the export created, named Migration-<PC>-<user>-<date>.')
@@ -189,7 +212,7 @@ function Read-TkMigrationPackage {
 
         $folders = foreach ($entry in @($data.folders)) {
             $name = [string] $entry.folder
-            if ($name -notmatch '^[A-Za-z0-9 ._-]{1,64}$' -or $name -match '^\.+$') { continue }
+            if ($name -notmatch '^[A-Za-z0-9 ._-]{1,64}$' -or $name -match '^\.+$' -or $reserved -contains $name) { continue }
 
             $source = [System.IO.Path]::Combine($root, $name)
             if (-not (Test-Path -LiteralPath $source -PathType Container)) { continue }
@@ -204,20 +227,23 @@ function Read-TkMigrationPackage {
 
         return [pscustomobject] @{
             Root = $root; Computer = [string] $data.computer; User = [string] $data.user; Created = [string] $data.created
-            FromManifest = $true; Folders = @($folders); Error = ''
+            FromManifest = $true; Folders = @($folders); Applications = (Read-TkMigrationApplication -Root $root); Error = ''
         }
     }
 
     $folders = foreach ($directory in (Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
+        if ($reserved -contains $directory.Name) { continue }
         $key = @($keys | Where-Object { $_ -eq $directory.Name }) | Select-Object -First 1
         [pscustomobject] @{ Key = [string] $key; Name = $directory.Name; Source = $directory.FullName; Bytes = [long] -1 }
     }
 
-    if (@($folders).Count -eq 0) {
-        return (& $failed 'The folder holds no folder to import.')
+    $applications = Read-TkMigrationApplication -Root $root
+
+    if (@($folders).Count -eq 0 -and -not $applications) {
+        return (& $failed 'The folder holds nothing to import.')
     }
 
-    return [pscustomobject] @{ Root = $root; Computer = ''; User = ''; Created = ''; FromManifest = $false; Folders = @($folders); Error = '' }
+    return [pscustomobject] @{ Root = $root; Computer = ''; User = ''; Created = ''; FromManifest = $false; Folders = @($folders); Applications = $applications; Error = '' }
 }
 
 <#
