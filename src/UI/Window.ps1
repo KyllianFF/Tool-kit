@@ -282,10 +282,11 @@ function Get-TkPageName {
     param()
 
     return @(
-        'Dashboard', 'System', 'Software', 'Tweaks', 'Fixes', 'Intervention',   # Workstation
-        'Playbooks', 'Diagnostics', 'Network',                 # Troubleshooting
-        'Security', 'SecurityTools',                           # Security
-        'Knowledge', 'VendorCommands',                         # Reference
+        'Dashboard', 'System', 'Software', 'Tweaks',                             # Workstation
+        'Playbooks', 'Diagnostics', 'Fixes', 'Network', 'Intervention',          # Troubleshooting
+        'Security',                                                              # Security
+        'SecurityTools',                                                         # Toolbox
+        'Knowledge', 'VendorCommands',                                           # Reference
         'Settings'
     )
 }
