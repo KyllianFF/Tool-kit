@@ -1909,8 +1909,27 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <TextBlock Grid.Row="1" x:Name="InstalledAppStatus" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="2,0,0,8"
-                                           Text="Open this tab to read every application of the machine: winget, the Microsoft Store, the local PC, the game launchers and the package managers." />
+                                <StackPanel Grid.Row="1">
+                                    <TextBlock x:Name="InstalledAppStatus" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="2,0,0,8"
+                                               Text="Open this tab to read every application of the machine: winget, the Microsoft Store, the local PC, the game launchers and the package managers." />
+                                    <!-- Shown while a batch runs: where it is, what runs now, and a way to stop after the current one. -->
+                                    <Border x:Name="InstalledAppProgress" Style="{StaticResource Card}" Margin="0,0,0,10" Padding="14,10" Visibility="Collapsed">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" x:Name="InstalledAppProgressText" Style="{StaticResource ItemTitle}" FontWeight="Normal"
+                                                           TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                                <Button Grid.Column="1" x:Name="BtnStopInstalledApps" Content="Stop after this one" Style="{StaticResource GlyphButton}" Tag="&#xE71A;" Margin="0"
+                                                        ToolTip="Lets the application running now finish, and runs no other one." />
+                                            </Grid>
+                                            <ProgressBar x:Name="InstalledAppProgressBar" Height="6" Minimum="0" Maximum="1" BorderThickness="0"
+                                                         Foreground="{DynamicResource Accent}" Background="{DynamicResource SurfaceRaised}" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
 
                                 <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0" Padding="4">
                                     <Grid>
@@ -1991,8 +2010,18 @@
                                                         <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                             <Setter TargetName="Row" Property="Background" Value="{DynamicResource Selection}" />
                                                         </DataTrigger>
-                                                        <DataTrigger Binding="{Binding StateFailed}" Value="True">
+                                                        <DataTrigger Binding="{Binding StateKind}" Value="Failed">
                                                             <Setter TargetName="State" Property="Foreground" Value="{DynamicResource Danger}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StateKind}" Value="Running">
+                                                            <Setter TargetName="State" Property="Foreground" Value="{DynamicResource Accent}" />
+                                                            <Setter TargetName="State" Property="FontWeight" Value="SemiBold" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StateKind}" Value="Waiting">
+                                                            <Setter TargetName="State" Property="Foreground" Value="{DynamicResource TextMuted}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StateKind}" Value="Handoff">
+                                                            <Setter TargetName="State" Property="Foreground" Value="{DynamicResource Warning}" />
                                                         </DataTrigger>
                                                     </DataTemplate.Triggers>
                                                 </DataTemplate>

@@ -662,6 +662,20 @@ function Initialize-TkInstalledAppsTab {
     Register-TkClick -Name 'BtnUninstallInstalledApps' -Action { Invoke-TkInstalledAppActionFromUi -Operation 'Uninstall' }
     Register-TkClick -Name 'BtnRefreshInstalledApps'   -Action { Update-TkInstalledAppList }
 
+    # A batch runs one application at a time; the clock redraws where it is.
+    $script:TkAppQueue      = $null
+    $script:TkAppQueueTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:TkAppQueueTimer.Interval = [TimeSpan]::FromSeconds(1)
+    $script:TkAppQueueTimer.Add_Tick({ Update-TkInstalledAppProgress })
+
+    Register-TkClick -Name 'BtnStopInstalledApps' -Action {
+        if ($script:TkAppQueue -and -not $script:TkAppQueue.Finished) {
+            $script:TkAppQueue.Stop = $true
+            (Get-TkControl -Name 'BtnStopInstalledApps').IsEnabled = $false
+            Update-TkInstalledAppProgress
+        }
+    }
+
     $tabs = Get-TkControl -Name 'SoftwareTabs'
     if ($tabs) {
         $tabs.Add_SelectionChanged({
@@ -803,7 +817,27 @@ function Update-TkInstalledAppList {
 
 <#
 .SYNOPSIS
-    Shows the outcome of each operation on its row.
+    Shows a state on a row: Waiting, Running, Done, Failed or Handoff, with its text.
+#>
+function Set-TkInstalledAppState {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)] $Item,
+        [Parameter(Mandatory)] [ValidateSet('Waiting', 'Running', 'Done', 'Failed', 'Handoff')] [string] $Kind,
+        [Parameter()] [AllowEmptyString()] [string] $Text = ''
+    )
+
+    if (-not $PSCmdlet.ShouldProcess([string] $Item.Name, 'Show the state')) { return }
+
+    $Item.StateKind = $Kind
+    $Item.StateText = $Text
+    if ($Kind -in @('Done', 'Handoff')) { $Item.IsSelected = $false }
+    $script:TkInstalledAppView.Refresh()
+}
+
+<#
+.SYNOPSIS
+    Shows the outcome of the elevated operations on their rows.
 #>
 function Set-TkInstalledAppResult {
     [CmdletBinding(SupportsShouldProcess)]
@@ -815,28 +849,25 @@ function Set-TkInstalledAppResult {
 
     foreach ($outcome in ($Result | Where-Object { $_ })) {
         foreach ($item in @($script:TkInstalledAppItems | Where-Object { $_.Name -eq $outcome.Name -and $_.Source -eq $outcome.Source })) {
-            $item.StateText   = [string] $outcome.Text
-            $item.StateFailed = -not [bool] $outcome.Ok
-            if ($outcome.Ok) { $item.IsSelected = $false }
+            Set-TkInstalledAppState -Item $item -Kind $(if ($outcome.Ok) { 'Done' } else { 'Failed' }) -Text ([string] $outcome.Text) -Confirm:$false
         }
     }
-    $script:TkInstalledAppView.Refresh()
 }
 
 <#
 .SYNOPSIS
     Updates or uninstalls the ticked rows, after a confirmation.
-
-.DESCRIPTION
-    The rows that need no elevation run first, one after the other, as the
-    signed-in user. The ones that need administrator rights follow in one
-    elevated batch, through a single UAC prompt.
 #>
 function Invoke-TkInstalledAppActionFromUi {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] [ValidateSet('Update', 'Uninstall')] [string] $Operation
     )
+
+    if ($script:TkAppQueue -and -not $script:TkAppQueue.Finished) {
+        Set-TkStatus -Text 'A batch is already running: wait for it, or stop it after the current application.'
+        return
+    }
 
     $selected = @($script:TkInstalledAppItems | Where-Object { $_.IsSelected })
     if ($selected.Count -eq 0) {
@@ -862,10 +893,10 @@ function Invoke-TkInstalledAppActionFromUi {
     $lines   = @($selected | Select-Object -First 25 | ForEach-Object { '- {0}  ({1}{2})' -f $_.Name, $_.Source, $(if ($_.Available -and $Operation -eq 'Update') { ', to ' + $_.Available } else { '' }) })
     if ($selected.Count -gt 25) { $lines += '- ... and {0} more' -f ($selected.Count - 25) }
 
-    $message = "{0} {1} application(s), {2}:`n`n{3}" -f $verb, $selected.Count, $(if ($mode -eq 'Silent') { 'silently' } else { 'each in its own window' }), ($lines -join "`n")
+    $message = "{0} {1} application(s), one after the other, {2}:`n`n{3}" -f $verb, $selected.Count, $(if ($mode -eq 'Silent') { 'silently' } else { 'each in its own window' }), ($lines -join "`n")
     if ($skipped.Count -gt 0) { $message += "`n`n{0} ticked row(s) without a known update are left out." -f $skipped.Count }
     $games = @($selected | Where-Object Manager -eq 'launcher').Count
-    if ($Operation -eq 'Uninstall' -and $games -gt 0) { $message += "`n`n{0} game(s) belong to a launcher, which opens its own uninstall." -f $games }
+    if ($Operation -eq 'Uninstall' -and $games -gt 0) { $message += "`n`n{0} game(s) are handed to their launcher, which asks in its own window; the list goes on meanwhile." -f $games }
     $admin = @($selected | Where-Object { $_.Elevated -or ($_.Preinstalled -and $Operation -eq 'Uninstall') }).Count
     if ($admin -gt 0) { $message += "`n`n{0} need administrator rights: one UAC prompt, after the others." -f $admin }
     if (@($selected | Where-Object { $_.Preinstalled -and $Operation -eq 'Uninstall' }).Count -gt 0) {
@@ -874,32 +905,293 @@ function Invoke-TkInstalledAppActionFromUi {
 
     if (-not (Confirm-TkAction -Title ('{0} applications' -f $verb) -Message $message)) { return }
 
-    Invoke-TkBackgroundAction -StatusText ('{0}: {1} application(s), one after the other...' -f $verb, $selected.Count) `
-        -ParameterList @{ items = $selected; operation = $Operation; mode = $mode } `
-        -ScriptBlock {
-            param($items, $operation, $mode)
-            Invoke-TkInstalledAppAction -Item $items -Operation $operation -Mode $mode -Confirm:$false
-        } `
-        -OnComplete {
-            param($result)
+    Start-TkInstalledAppQueue -Item $selected -Operation $Operation -Mode $mode -Confirm:$false
+}
 
-            $outcome = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Results'] } | Select-Object -First 1
-            if (-not $outcome) { return }
+<#
+.SYNOPSIS
+    Starts a batch: every row waiting, then one application at a time.
 
-            Set-TkInstalledAppResult -Result @($outcome.Results) -Confirm:$false
-            $good = @($outcome.Results | Where-Object Ok).Count
-            Set-TkStatus -Text ('{0} of {1} done. Refresh to read the list again.' -f $good, @($outcome.Results).Count)
+.DESCRIPTION
+    Each application runs in a background task of its own, and the next
+    starts when it ends, so the rows show where the batch is and the Stop
+    button can end it between two applications.
+#>
+function Start-TkInstalledAppQueue {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)] [object[]] $Item,
+        [Parameter(Mandatory)] [ValidateSet('Update', 'Uninstall')] [string] $Operation,
+        [Parameter()] [ValidateSet('Silent', 'Interactive')] [string] $Mode = 'Silent'
+    )
 
-            if (@($outcome.Elevated).Count -gt 0) {
-                $status = if (Test-TkIsElevated) { 'Running the operations that need administrator rights...' } else { 'Waiting for administrator consent...' }
-                Start-TkPrivilegedAction -Name 'ManagePackages' -StatusText $status -Parameters @{
-                    Items = @($outcome.Elevated | ForEach-Object { @{ Manager = $_.Manager; Operation = $_.Operation; Name = $_.Name; Label = $_.Label } })
-                } -OnResult {
-                    param($elevated)
-                    if ($elevated -and $elevated.PSObject.Properties['Results']) { Set-TkInstalledAppResult -Result @($elevated.Results) -Confirm:$false }
-                }
-            }
+    if (-not $PSCmdlet.ShouldProcess('installed apps', $Operation)) { return }
+
+    $steps = @(New-TkInstalledAppQueue -Item $Item -Operation $Operation -Mode $Mode -Tool (Get-TkPackageTool))
+
+    $script:TkAppQueue = [pscustomobject] @{
+        Steps       = $steps
+        Index       = 0
+        Operation   = $Operation
+        Results     = New-Object System.Collections.Generic.List[object]
+        Elevated    = New-Object System.Collections.Generic.List[object]
+        Stop        = $false
+        Finished    = $false
+        Current     = ''
+        ItemStarted = Get-Date
+        Done        = 0
+        Failed      = 0
+        Handed      = 0
+        Phase       = 'Running'
+    }
+
+    foreach ($step in $steps) {
+        $waiting = if ($step.Plan.Kind -eq 'Elevated') { 'waiting for administrator rights' } else { 'waiting' }
+        Set-TkInstalledAppState -Item $step.Item -Kind 'Waiting' -Text $waiting -Confirm:$false
+    }
+
+    Set-TkInstalledAppBusy -Busy $true -Confirm:$false
+    Step-TkInstalledAppQueue
+}
+
+<#
+.SYNOPSIS
+    Starts the next application of the batch, or ends the batch.
+#>
+function Step-TkInstalledAppQueue {
+    [CmdletBinding()]
+    param()
+
+    $queue = $script:TkAppQueue
+    $verb  = if ($queue.Operation -eq 'Update') { 'updating' } else { 'uninstalling' }
+
+    while ($queue.Index -lt $queue.Steps.Count -and -not $queue.Stop) {
+
+        $step = $queue.Steps[$queue.Index]
+
+        if ($step.Plan.Kind -eq 'Elevated') {
+            $queue.Elevated.Add($step)
+            $queue.Index++
+            continue
         }
+
+        if ($step.Plan.Kind -eq 'None') {
+            Set-TkInstalledAppState -Item $step.Item -Kind 'Failed' -Text ('not run: {0}' -f $step.Plan.Note) -Confirm:$false
+            $queue.Results.Add([pscustomobject] @{ Name = $step.Item.Name; Source = $step.Item.Source; Ok = $false; Text = $step.Plan.Note })
+            $queue.Failed++
+            $queue.Index++
+            continue
+        }
+
+        $queue.Current     = [string] $step.Item.Name
+        $queue.ItemStarted = Get-Date
+        Set-TkInstalledAppState -Item $step.Item -Kind 'Running' -Text ('{0}...' -f $verb) -Confirm:$false
+        Update-TkInstalledAppProgress
+
+        Invoke-TkBackgroundAction -StatusText ('{0} {1}...' -f (Get-Culture).TextInfo.ToTitleCase($verb), $step.Item.Name) `
+            -ParameterList @{ plan = $step.Plan } `
+            -ScriptBlock {
+                param($plan)
+                Invoke-TkInstalledAppCommand -Plan $plan -Confirm:$false
+            } `
+            -OnComplete {
+                param($result)
+                Complete-TkInstalledAppStep -Result $result
+            }
+        return
+    }
+
+    Complete-TkInstalledAppQueue
+}
+
+<#
+.SYNOPSIS
+    Records how the application that just ran ended, and starts the next.
+#>
+function Complete-TkInstalledAppStep {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Result
+    )
+
+    $queue   = $script:TkAppQueue
+    $step    = $queue.Steps[$queue.Index]
+    $outcome = @($Result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Ok'] } | Select-Object -Last 1
+
+    if (-not $outcome) {
+        $why = if (@($Result.Errors).Count -gt 0) { [string] @($Result.Errors)[0] } else { 'no result came back' }
+        $outcome = [pscustomobject] @{ Ok = $false; Text = $why }
+    }
+
+    $kind = if (-not $outcome.Ok) { 'Failed' } elseif ($step.Plan.Kind -eq 'Handoff') { 'Handoff' } else { 'Done' }
+    $word = if ($queue.Operation -eq 'Update') { 'updated' } else { 'removed' }
+    $text = switch ($kind) {
+        'Handoff' { [string] $step.Plan.Note }
+        'Done'    { if ($step.Plan.Note) { '{0} ({1})' -f $word, $step.Plan.Note } else { $word } }
+        default   { [string] $outcome.Text }
+    }
+
+    Set-TkInstalledAppState -Item $step.Item -Kind $kind -Text $text -Confirm:$false
+    $queue.Results.Add([pscustomobject] @{ Name = $step.Item.Name; Source = $step.Item.Source; Ok = [bool] $outcome.Ok; Text = $text })
+    switch ($kind) { 'Failed' { $queue.Failed++ } 'Handoff' { $queue.Handed++ } default { $queue.Done++ } }
+
+    $queue.Index++
+    Step-TkInstalledAppQueue
+}
+
+<#
+.SYNOPSIS
+    Ends the batch: what was not run, the journal, then the elevated part if any.
+#>
+function Complete-TkInstalledAppQueue {
+    [CmdletBinding()]
+    param()
+
+    $queue = $script:TkAppQueue
+
+    if ($queue.Stop) {
+        for ($i = $queue.Index; $i -lt $queue.Steps.Count; $i++) {
+            Set-TkInstalledAppState -Item $queue.Steps[$i].Item -Kind 'Waiting' -Text 'not run: stopped' -Confirm:$false
+        }
+        foreach ($step in $queue.Elevated) {
+            Set-TkInstalledAppState -Item $step.Item -Kind 'Waiting' -Text 'not run: stopped' -Confirm:$false
+        }
+        $queue.Elevated.Clear()
+    }
+
+    Write-TkInstalledAppJournal -Operation $queue.Operation -Result $queue.Results.ToArray() -Confirm:$false
+
+    if ($queue.Elevated.Count -eq 0) {
+        Stop-TkInstalledAppQueue
+        return
+    }
+
+    $queue.Phase       = 'Elevated'
+    $queue.ItemStarted = Get-Date
+    foreach ($step in $queue.Elevated) {
+        Set-TkInstalledAppState -Item $step.Item -Kind 'Running' -Text 'running with administrator rights...' -Confirm:$false
+    }
+    Update-TkInstalledAppProgress
+
+    $status = if (Test-TkIsElevated) { 'Running the operations that need administrator rights...' } else { 'Waiting for administrator consent...' }
+    Start-TkPrivilegedAction -Name 'ManagePackages' -StatusText $status -Parameters @{
+        Items = @($queue.Elevated | ForEach-Object {
+            @{ Manager = $(if ($_.Item.Preinstalled) { 'appx' } else { [string] $_.Item.Manager }); Operation = $queue.Operation; Name = $_.Plan.Name; Label = $_.Item.Name }
+        })
+    } -OnResult {
+        param($elevated)
+        Complete-TkInstalledAppElevated -Outcome $elevated
+    }
+}
+
+<#
+.SYNOPSIS
+    Shows the outcome of the elevated part, a cancelled UAC prompt included, and ends the batch.
+#>
+function Complete-TkInstalledAppElevated {
+    [CmdletBinding()]
+    param(
+        [Parameter()] [AllowNull()] $Outcome
+    )
+
+    $queue   = $script:TkAppQueue
+    $results = if ($Outcome -and $Outcome.PSObject.Properties['Results']) { @($Outcome.Results) } else { @() }
+
+    if ($results.Count -gt 0) {
+        Set-TkInstalledAppResult -Result $results -Confirm:$false
+        foreach ($item in $results) { if ($item.Ok) { $queue.Done++ } else { $queue.Failed++ } }
+        Write-TkInstalledAppJournal -Operation $queue.Operation -Result $results -Confirm:$false
+    }
+    else {
+        $why = if ($Outcome -and $Outcome.Message) { [string] $Outcome.Message } else { 'administrator rights were not granted' }
+        foreach ($step in $queue.Elevated) {
+            Set-TkInstalledAppState -Item $step.Item -Kind 'Failed' -Text ('not run: {0}' -f $why) -Confirm:$false
+            $queue.Failed++
+        }
+    }
+
+    Stop-TkInstalledAppQueue
+}
+
+<#
+.SYNOPSIS
+    Ends the batch and says how it went.
+#>
+function Stop-TkInstalledAppQueue {
+    [CmdletBinding()]
+    param()
+
+    $queue = $script:TkAppQueue
+    $queue.Finished = $true
+    $queue.Phase    = 'Finished'
+
+    $verb = if ($queue.Operation -eq 'Update') { 'Updates' } else { 'Uninstalls' }
+    $text = '{0} finished: {1} done, {2} failed' -f $verb, $queue.Done, $queue.Failed
+    if ($queue.Handed -gt 0) { $text += ', {0} handed to a launcher (finish them in its window)' -f $queue.Handed }
+    if ($queue.Stop) { $text += ', the rest stopped' }
+    $text += '. Refresh to read the list again.'
+
+    Set-TkInstalledAppBusy -Busy $false -Confirm:$false
+    $label = Get-TkControl -Name 'InstalledAppProgressText'
+    if ($label) { $label.Text = $text }
+    $bar = Get-TkControl -Name 'InstalledAppProgressBar'
+    if ($bar) { $bar.Value = 1 }
+    Set-TkStatus -Text $text
+}
+
+<#
+.SYNOPSIS
+    Shows or ends the running state of the tab: progress panel, buttons, clock.
+#>
+function Set-TkInstalledAppBusy {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)] [bool] $Busy
+    )
+
+    if (-not $PSCmdlet.ShouldProcess('installed apps', 'Show the running state')) { return }
+
+    foreach ($name in @('BtnUpdateInstalledApps', 'BtnUninstallInstalledApps', 'BtnRefreshInstalledApps')) {
+        $button = Get-TkControl -Name $name
+        if ($button) { $button.IsEnabled = -not $Busy }
+    }
+
+    $stop = Get-TkControl -Name 'BtnStopInstalledApps'
+    if ($stop) {
+        $stop.IsEnabled  = $Busy
+        $stop.Visibility = if ($Busy) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    }
+
+    $panel = Get-TkControl -Name 'InstalledAppProgress'
+    if ($panel) { $panel.Visibility = [System.Windows.Visibility]::Visible }
+
+    if ($Busy) { $script:TkAppQueueTimer.Start() } else { $script:TkAppQueueTimer.Stop() }
+}
+
+<#
+.SYNOPSIS
+    Redraws the progress line and bar; called every second while a batch runs.
+#>
+function Update-TkInstalledAppProgress {
+    [CmdletBinding()]
+    param()
+
+    $queue = $script:TkAppQueue
+    if (-not $queue -or $queue.Finished) { return }
+
+    $seconds = [int] ((Get-Date) - $queue.ItemStarted).TotalSeconds
+    $text = if ($queue.Phase -eq 'Elevated') {
+        '{0} application(s) with administrator rights ({1} s): accept the UAC prompt if it is waiting. {2} done, {3} failed so far.' -f $queue.Elevated.Count, $seconds, $queue.Done, $queue.Failed
+    }
+    else {
+        Format-TkInstalledAppProgress -Operation $queue.Operation -Position ([math]::Min($queue.Index + 1, $queue.Steps.Count)) -Count $queue.Steps.Count `
+                                      -Name $queue.Current -Seconds $seconds -Done ($queue.Done + $queue.Handed) -Failed $queue.Failed -Stopping:$queue.Stop
+    }
+
+    $label = Get-TkControl -Name 'InstalledAppProgressText'
+    if ($label) { $label.Text = $text }
+    $bar = Get-TkControl -Name 'InstalledAppProgressBar'
+    if ($bar -and $queue.Steps.Count -gt 0) { $bar.Value = $queue.Index / $queue.Steps.Count }
 }
 
 # ---------------------------------------------------------------------------
