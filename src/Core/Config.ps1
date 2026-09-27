@@ -158,6 +158,9 @@ function Import-TkSettings {
         # was opened last, newest first.
         Favourites            = @()
         Recent                = @()
+
+        # Off until the user turns it on: the check is a network request.
+        CheckForUpdates       = $false
     }
 
     if (Test-Path -LiteralPath $ctx.SettingsFile) {

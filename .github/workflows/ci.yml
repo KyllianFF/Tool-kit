@@ -113,3 +113,4 @@ jobs:
           path: |
             dist/toolkit.ps1
             dist/toolkit.ps1.sha256
+            dist/toolkit.ps1.version.json

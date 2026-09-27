@@ -3889,6 +3889,125 @@ Describe 'Favourites and recent entries' {
     }
 }
 
+Describe 'Window markup' {
+
+    It 'gives every control a name no other control has' {
+        # Names inside a template or a style live in a scope of their own.
+        $xml       = [xml] (Get-TkMainWindowXaml)
+        $xamlSpace = 'http://schemas.microsoft.com/winfx/2006/xaml'
+        $scope     = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+        $scope.AddNamespace('p', 'http://schemas.microsoft.com/winfx/2006/xaml/presentation')
+        $scope.AddNamespace('x', $xamlSpace)
+
+        $names = @($xml.SelectNodes('//*[@x:Name][not(ancestor::p:ControlTemplate) and not(ancestor::p:DataTemplate) and not(ancestor::p:Style)]', $scope) |
+                   ForEach-Object { $_.GetAttribute('Name', $xamlSpace) })
+
+        $names.Count | Should -BeGreaterThan 100
+
+        @($names | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name }) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Update check' {
+
+    BeforeAll {
+        $script:GoodManifest = [pscustomobject] @{
+            version = '1.0.0'; commit = 'cc0d962'; published = '2026-09-27'
+            sha256  = '0D838B3C8BFE0229F5291884CC5BABC9C432AD74E65387FEFAFF4E83086E2BB6'
+        }
+    }
+
+    It 'keeps a well formed manifest and refuses anything else' {
+        $read = ConvertFrom-TkBuildManifest -Manifest $script:GoodManifest
+        $read.Commit    | Should -Be 'cc0d962'
+        $read.Published | Should -Be '2026-09-27'
+
+        ConvertFrom-TkBuildManifest -Manifest $null | Should -BeNullOrEmpty
+
+        foreach ($change in @(
+            @{ commit = 'dev' }, @{ commit = 'cc0d962; rm' }, @{ version = '1.0.0 beta' },
+            @{ sha256 = 'abc' }, @{ version = '' }
+        )) {
+            $bad = $script:GoodManifest.PSObject.Copy()
+            foreach ($key in $change.Keys) { $bad.$key = $change[$key] }
+            ConvertFrom-TkBuildManifest -Manifest $bad | Should -BeNullOrEmpty -Because ($change.Keys -join ',')
+        }
+
+        $undated = $script:GoodManifest.PSObject.Copy()
+        $undated.published = 'yesterday'
+        (ConvertFrom-TkBuildManifest -Manifest $undated).Published | Should -Be ''
+    }
+
+    It 'compares this copy with the published build' {
+        $published = ConvertFrom-TkBuildManifest -Manifest $script:GoodManifest
+
+        (Compare-TkToolkitBuild -RunningVersion '1.0.0' -RunningCommit 'cc0d962' -Published $published).Status | Should -Be 'UpToDate'
+        (Compare-TkToolkitBuild -RunningVersion '1.0.0' -RunningCommit 'cc0d962a1b2c' -Published $published).Status | Should -Be 'UpToDate'
+        (Compare-TkToolkitBuild -RunningVersion '1.0.0' -RunningCommit '6b3ff73' -Published $published).Status | Should -Be 'UpdateAvailable'
+        (Compare-TkToolkitBuild -RunningVersion '1.1.0' -RunningCommit '6b3ff73' -Published $published).Status | Should -Be 'Newer'
+        (Compare-TkToolkitBuild -RunningVersion '1.0.0' -RunningCommit 'dev' -Published $published).Status     | Should -Be 'Development'
+
+        $unknown = Compare-TkToolkitBuild -RunningVersion '1.0.0' -RunningCommit '6b3ff73' -Published $null -Reason 'GitHub could not be reached'
+        $unknown.Status | Should -Be 'Unknown'
+        $unknown.Text   | Should -Match 'GitHub could not be reached'
+    }
+
+    Context 'Asking GitHub' {
+
+        BeforeEach {
+            $script:UpdateCommitBefore = (Get-TkContext).Commit
+            (Get-TkContext).Commit = '6b3ff73'
+            $script:UpdateCalls = New-Object System.Collections.Generic.List[string]
+        }
+
+        AfterEach {
+            (Get-TkContext).Commit = $script:UpdateCommitBefore
+        }
+
+        It 'reads only the manifest, and reports a newer build' {
+            function Invoke-RestMethod { [CmdletBinding()] param($Uri, $TimeoutSec, [switch] $UseBasicParsing, $Headers) $null = $TimeoutSec, $UseBasicParsing, $Headers; $script:UpdateCalls.Add($Uri); $script:GoodManifest }
+            (Get-Command -Name Invoke-RestMethod).CommandType | Should -Be 'Function'
+
+            $check = Test-TkToolkitUpdate
+
+            $check.Status | Should -Be 'UpdateAvailable'
+            $script:UpdateCalls | Should -Be @('https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1.version.json')
+        }
+
+        It 'says the check did not complete when GitHub cannot be reached' {
+            function Invoke-RestMethod { [CmdletBinding()] param($Uri, $TimeoutSec, [switch] $UseBasicParsing, $Headers) $null = $Uri, $TimeoutSec, $UseBasicParsing, $Headers; throw 'No such host is known.' }
+
+            $check = Test-TkToolkitUpdate
+
+            $check.Status | Should -Be 'Unknown'
+            $check.Text   | Should -Match 'GitHub could not be reached'
+        }
+    }
+
+    It 'publishes a manifest that describes the committed build' {
+        $dist     = Join-Path $script:RepositoryRoot 'dist'
+        $manifest = Get-Content -LiteralPath (Join-Path $dist 'toolkit.ps1.version.json') -Raw | ConvertFrom-Json
+        $build    = Join-Path $dist 'toolkit.ps1'
+
+        $read = ConvertFrom-TkBuildManifest -Manifest $manifest
+        $read        | Should -Not -BeNullOrEmpty
+        $read.Sha256 | Should -Be (Get-FileHash -LiteralPath $build -Algorithm SHA256).Hash
+
+        $stamp = Select-String -LiteralPath $build -Pattern "^\`$script:TkAppCommit\s+=\s+'([^']+)'" | Select-Object -Last 1
+        $stamp.Matches[0].Groups[1].Value | Should -Be $read.Commit
+    }
+
+    It 'is off until the user turns it on' {
+        $defaults = & {
+            function Test-Path { [CmdletBinding()] param($LiteralPath) $null = $LiteralPath; $false }
+            $before = (Get-TkContext).Settings
+            try { Import-TkSettings } finally { (Get-TkContext).Settings = $before }
+        }
+
+        $defaults['CheckForUpdates'] | Should -BeFalse
+    }
+}
+
 Describe 'Intervention journal' {
 
     BeforeAll {
