@@ -288,6 +288,19 @@ function Initialize-TkToolsPage {
         $wmiPreset.Add_SelectionChanged({ Set-TkWmiClassFromPreset })
     }
 
+    # --- .reg and PowerShell -----------------------------------------------
+    $regDirection = Get-TkControl -Name 'RegConvertDirection'
+    if ($regDirection) {
+        [void] $regDirection.Items.Add('.reg file to PowerShell and reg.exe')
+        [void] $regDirection.Items.Add('PowerShell to a .reg file')
+        $regDirection.SelectedIndex = 0
+        $regDirection.Add_SelectionChanged({ Update-TkRegConvertFromUi })
+    }
+
+    Register-TkClick -Name 'BtnOpenRegFile'   -Action { Open-TkRegFileFromUi }
+    Register-TkClick -Name 'BtnCopyRegResult' -Action { Copy-TkToolOutput -ControlName 'RegConvertOutput' }
+    Register-TkClick -Name 'BtnSaveRegFile'   -Action { Save-TkRegFileFromUi }
+
     # --- Firewall rule builder --------------------------------------------
     foreach ($combo in @(
         @{ Name = 'FwDirection'; Items = @('Inbound', 'Outbound') }
@@ -357,6 +370,7 @@ function Initialize-TkToolsPage {
         @{ Name = 'WmiProperties';    Update = { Update-TkWmiFromUi } }
         @{ Name = 'WmiConditions';    Update = { Update-TkWmiFromUi } }
         @{ Name = 'FwName';           Update = { Update-TkFirewallRuleFromUi } }
+        @{ Name = 'RegConvertInput';  Update = { Update-TkRegConvertFromUi } }
         @{ Name = 'FwLocalPort';      Update = { Update-TkFirewallRuleFromUi } }
         @{ Name = 'FwRemotePort';     Update = { Update-TkFirewallRuleFromUi } }
         @{ Name = 'FwRemoteAddress';  Update = { Update-TkFirewallRuleFromUi } }
@@ -2059,6 +2073,98 @@ function Add-TkLdapPreset {
 
 <#
 .SYNOPSIS
+    Converts the pasted .reg file or PowerShell, in the chosen direction.
+#>
+function Update-TkRegConvertFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'RegConvertOutput'
+    $source = Get-TkControl -Name 'RegConvertInput'
+
+    if (-not $output -or -not $source) {
+        return
+    }
+
+    $direction = if ((Get-TkControl -Name 'RegConvertDirection').SelectedIndex -eq 1) { 'PowerShellToReg' } else { 'RegToPowerShell' }
+
+    $output.Text = Format-TkRegConversion -Text ([string] $source.Text) -Direction $direction
+}
+
+<#
+.SYNOPSIS
+    Loads a .reg file into the converter.
+
+.DESCRIPTION
+    regedit writes .reg files in UTF-16; File.ReadAllText reads the byte
+    order mark and decodes either that or UTF-8.
+#>
+function Open-TkRegFileFromUi {
+    [CmdletBinding()]
+    param()
+
+    $dialog = New-Object Microsoft.Win32.OpenFileDialog
+    $dialog.Title  = 'Open a .reg file'
+    $dialog.Filter = 'Registration files (*.reg)|*.reg|All files (*.*)|*.*'
+
+    if (-not $dialog.ShowDialog((Get-TkContext).Window)) {
+        return
+    }
+
+    try {
+        if ((Get-Item -LiteralPath $dialog.FileName -ErrorAction Stop).Length -gt 2MB) {
+            Set-TkStatus -Text 'The file is larger than 2 MB, which is not a .reg file worth converting by hand.'
+            return
+        }
+
+        (Get-TkControl -Name 'RegConvertDirection').SelectedIndex = 0
+        (Get-TkControl -Name 'RegConvertInput').Text = [System.IO.File]::ReadAllText($dialog.FileName)
+    }
+    catch {
+        Set-TkStatus -Text ('The file could not be read: {0}' -f $_.Exception.Message)
+    }
+}
+
+<#
+.SYNOPSIS
+    Saves the .reg file built from PowerShell, in the UTF-16 regedit writes.
+#>
+function Save-TkRegFileFromUi {
+    [CmdletBinding()]
+    param()
+
+    if ((Get-TkControl -Name 'RegConvertDirection').SelectedIndex -ne 1) {
+        Set-TkStatus -Text 'Choose "PowerShell to a .reg file" first: Save as .reg saves the .reg built from PowerShell.'
+        return
+    }
+
+    $parsed = ConvertFrom-TkRegPowerShell -Script ([string] (Get-TkControl -Name 'RegConvertInput').Text)
+
+    if (@($parsed.Entries).Count -eq 0) {
+        Set-TkStatus -Text 'There is nothing to save: no registry command with literal values was found.'
+        return
+    }
+
+    $dialog = New-Object Microsoft.Win32.SaveFileDialog
+    $dialog.Title    = 'Save as .reg'
+    $dialog.Filter   = 'Registration files (*.reg)|*.reg'
+    $dialog.FileName = 'settings.reg'
+
+    if (-not $dialog.ShowDialog((Get-TkContext).Window)) {
+        return
+    }
+
+    try {
+        [System.IO.File]::WriteAllText($dialog.FileName, (ConvertTo-TkRegFileText -Entry $parsed.Entries), [System.Text.Encoding]::Unicode)
+        Set-TkStatus -Text ('Saved to {0}. Nothing was imported: open it with regedit to apply it.' -f $dialog.FileName)
+    }
+    catch {
+        Set-TkStatus -Text ('The file could not be written: {0}' -f $_.Exception.Message)
+    }
+}
+
+<#
+.SYNOPSIS
     Builds the firewall rule commands from the form.
 #>
 function Update-TkFirewallRuleFromUi {
@@ -3381,6 +3487,7 @@ function Get-TkToolEntry {
         (& $tool 'Windows commands'     'Event log query'        'ToolEventQuery')
         (& $tool 'Windows commands'     'WMI query'              'ToolWmi')
         (& $tool 'Windows commands'     'Firewall rule'          'ToolFirewall')
+        (& $tool 'Windows commands'     '.reg and PowerShell'    'ToolRegConvert')
     )
 }
 

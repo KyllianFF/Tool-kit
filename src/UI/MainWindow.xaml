@@ -3506,6 +3506,10 @@
                                          ToolTip="Build a Windows Firewall rule as New-NetFirewallRule and netsh commands, with the commands that check and remove it, and a warning when it opens more than it seems to.">
                                 <TextBlock Text="Firewall rule" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Turn a .reg file into PowerShell and reg.exe commands, or PowerShell registry commands back into a .reg file. Nothing is written to the registry.">
+                                <TextBlock Text=".reg and PowerShell" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
                         </ListBox>
 
                         <Grid Grid.Column="1">
@@ -5130,6 +5134,39 @@
                                     <TextBox x:Name="FwOutput" Style="{StaticResource Mono}" IsReadOnly="True"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="ToolRegConvert" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text=".reg and PowerShell" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Convert" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="RegConvertDirection" Width="300" MinHeight="40" Margin="0,0,16,8" />
+                                            <Button x:Name="BtnOpenRegFile" Content="Open a .reg file" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnCopyRegResult" Content="Copy the result" Margin="0,0,8,8" />
+                                            <Button x:Name="BtnSaveRegFile" Content="Save as .reg" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <TextBox x:Name="RegConvertInput" Height="170" Margin="0,0,0,8"
+                                                 AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                 Tag="Paste a .reg file, or PowerShell registry commands" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Nothing is written to the registry. A .reg file becomes PowerShell and reg.exe commands; PowerShell becomes a .reg file, read with the parser and never run, so only literal values are taken and anything computed is named instead. A key is created only if it is missing: New-Item -Force on an existing key would empty it." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <TextBox x:Name="RegConvertOutput" Style="{StaticResource Mono}" IsReadOnly="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True" TextWrapping="NoWrap" />
                                 </Border>
                             </Grid>
 
