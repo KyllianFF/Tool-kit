@@ -48,6 +48,8 @@ function Initialize-TkDiagnosticsPage {
 
     Register-TkClick -Name 'BtnSupportBundle' -Action { Invoke-TkSupportBundleFromUi }
 
+    Initialize-TkEventSearchTab
+
 }
 
 <#
@@ -1754,4 +1756,230 @@ function Export-TkDiagnosticReport {
             'The report could not be written: {0}' -f $_.Exception.Message
         )
     }
+}
+
+# ---------------------------------------------------------------------------
+# Event log search
+# ---------------------------------------------------------------------------
+
+# The rows of the last search, for the CSV export.
+$script:TkLastEventRows = @()
+
+<#
+.SYNOPSIS
+    Keeps the rows of the last search for the export.
+
+.DESCRIPTION
+    A function rather than an assignment in the completion block: that block
+    runs as a closure, where $script: is not this file's scope.
+#>
+function Set-TkLastEventRow {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [object[]] $Row = @()
+    )
+
+    if ($PSCmdlet.ShouldProcess('last event search', 'Remember')) {
+        $script:TkLastEventRows = @($Row)
+    }
+}
+
+<#
+.SYNOPSIS
+    Fills the choices of the Event logs tab and wires its buttons.
+#>
+function Initialize-TkEventSearchTab {
+    [CmdletBinding()]
+    param()
+
+    # A list of common logs that fills the text box, which takes any name:
+    # the house ComboBox template has no text field to type into.
+    $preset = Get-TkControl -Name 'EventSearchLogPreset'
+    if ($preset) {
+        [void] $preset.Items.Add('Common logs...')
+        foreach ($name in @(Get-TkEventLogChoice)) { [void] $preset.Items.Add($name) }
+        $preset.SelectedIndex = 0
+        $preset.Add_SelectionChanged({
+            $combo = Get-TkControl -Name 'EventSearchLogPreset'
+            if ($combo.SelectedIndex -gt 0) {
+                (Get-TkControl -Name 'EventSearchLog').Text = [string] $combo.SelectedItem
+                $combo.SelectedIndex = 0
+            }
+        })
+    }
+
+    $period = Get-TkControl -Name 'EventSearchPeriod'
+    if ($period) {
+        foreach ($choice in @(Get-TkEventPeriodChoice)) { [void] $period.Items.Add($choice.Label) }
+        $period.SelectedIndex = 1
+    }
+
+    $level = Get-TkControl -Name 'EventSearchLevel'
+    if ($level) {
+        foreach ($choice in @(Get-TkEventLevelChoice)) { [void] $level.Items.Add($choice.Label) }
+        $level.SelectedIndex = 0
+    }
+
+    Register-TkClick -Name 'BtnSearchEvents'  -Action { Invoke-TkEventSearchFromUi }
+    Register-TkClick -Name 'BtnExportEvents'  -Action { Export-TkEventSearchFromUi }
+    Register-TkClick -Name 'BtnRunEventQuery' -Action { Invoke-TkEventQueryRunFromTools }
+
+    foreach ($name in @('EventSearchLog', 'EventSearchIds', 'EventSearchProvider', 'EventSearchContains')) {
+        $box = Get-TkControl -Name $name
+        if ($box) {
+            $box.Add_KeyDown({
+                param($source, $keyArgs)
+                $null = $source
+                if ($keyArgs.Key -eq [System.Windows.Input.Key]::Enter) { Invoke-TkEventSearchFromUi }
+            })
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Runs the search in the Event logs tab and lists what it finds.
+#>
+function Invoke-TkEventSearchFromUi {
+    [CmdletBinding()]
+    param()
+
+    $log = ([string] (Get-TkControl -Name 'EventSearchLog').Text).Trim()
+
+    if (-not $log) {
+        Set-TkStatus -Text 'Pick or type a log first.'
+        return
+    }
+
+    $ids = ConvertFrom-TkEventIdList -Value ([string] (Get-TkControl -Name 'EventSearchIds').Text)
+
+    if ($ids.Error) {
+        Set-TkStatus -Text $ids.Error
+        return
+    }
+
+    $periodLabel = [string] (Get-TkControl -Name 'EventSearchPeriod').SelectedItem
+    $levelLabel  = [string] (Get-TkControl -Name 'EventSearchLevel').SelectedItem
+    $hours       = [int] (@(Get-TkEventPeriodChoice | Where-Object { $_.Label -eq $periodLabel }) + [pscustomobject] @{ Hours = 24 })[0].Hours
+    $level       = [int] (@(Get-TkEventLevelChoice | Where-Object { $_.Label -eq $levelLabel }) + [pscustomobject] @{ Value = 0 })[0].Value
+
+    $parameters = @{
+        log      = $log
+        ids      = @($ids.Ids)
+        level    = $level
+        provider = [string] (Get-TkControl -Name 'EventSearchProvider').Text
+        hours    = $hours
+        contains = [string] (Get-TkControl -Name 'EventSearchContains').Text
+    }
+
+    Invoke-TkBackgroundAction -StatusText ('Searching {0}...' -f $log) -ParameterList $parameters `
+        -ScriptBlock {
+            param($log, $ids, $level, $provider, $hours, $contains)
+            Search-TkEventLog -Log $log -Id $ids -Level $level -Provider $provider -SinceHours $hours -Contains $contains
+        } `
+        -OnComplete {
+            param($result)
+
+            $search = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Rows'] } | Select-Object -Last 1
+
+            if (-not $search) {
+                return
+            }
+
+            $rows = @($search.Rows | Where-Object { $_ })
+            Set-TkLastEventRow -Row $rows -Confirm:$false
+
+            $document = New-TkFlowDocument
+            Add-TkHeading -Document $document -Text $search.Log -Level 1
+
+            if ($search.Error) {
+                Add-TkSeverityLine -Document $document -Severity 'Warning' -Heading $search.Error
+            }
+            elseif ($rows.Count -eq 0) {
+                Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'No event matches this search'
+            }
+            else {
+                $note = if ($search.Truncated) { ' The search stopped at the first {0} events read; narrow it to see older ones.' -f $search.Scanned } else { '' }
+                Add-TkParagraph -Document $document -Muted -Text ('{0} event(s), newest first.{1} Export CSV keeps the whole message of each one.' -f $rows.Count, $note)
+
+                Add-TkTable -Document $document -Column @('Time', 'Level', 'ID', 'Source', 'Message') -Weight @(1.1, 0.7, 0.5, 1.4, 4.3) `
+                    -Row @($rows | ForEach-Object {
+                        , @(([datetime] $_.Time).ToString('yyyy-MM-dd HH:mm:ss'), $_.Level, [string] $_.Id, $_.Provider, $_.Summary)
+                    })
+            }
+
+            Set-TkDocument -ControlName 'EventSearchOutput' -Document $document
+            Set-TkStatus -Text ('{0} event(s) found in {1}.' -f $rows.Count, $search.Log)
+        }
+}
+
+<#
+.SYNOPSIS
+    Saves the events of the last search as CSV, whole messages included.
+#>
+function Export-TkEventSearchFromUi {
+    [CmdletBinding()]
+    param()
+
+    if (@($script:TkLastEventRows).Count -eq 0) {
+        Set-TkStatus -Text 'Run a search that finds events first.'
+        return
+    }
+
+    $dialog = New-Object Microsoft.Win32.SaveFileDialog
+    $dialog.Title    = 'Export the events'
+    $dialog.Filter   = 'CSV file (*.csv)|*.csv'
+    $dialog.FileName = 'events.csv'
+
+    if (-not $dialog.ShowDialog((Get-TkContext).Window)) {
+        return
+    }
+
+    try {
+        $script:TkLastEventRows | Select-Object Time, Level, Id, Provider, Message |
+            Export-Csv -LiteralPath $dialog.FileName -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+        Set-TkStatus -Text ('{0} event(s) exported to {1}' -f @($script:TkLastEventRows).Count, $dialog.FileName)
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Events' -Message ('The events could not be exported: {0}' -f $_.Exception.Message)
+    }
+}
+
+<#
+.SYNOPSIS
+    Takes the query written in Tools, Event log query, and runs it in Diagnostics.
+#>
+function Invoke-TkEventQueryRunFromTools {
+    [CmdletBinding()]
+    param()
+
+    $text = { param($name) $control = Get-TkControl -Name $name; if ($control) { [string] $control.Text } else { '' } }
+
+    $log = (& $text 'EventQueryLog').Trim()
+    if (-not $log) {
+        Set-TkStatus -Text 'Type a log name first.'
+        return
+    }
+
+    # The builder takes any number of hours; the search offers fixed periods,
+    # so the shortest one that covers them is used.
+    $hoursText = (& $text 'EventQueryHours').Trim()
+    $hours     = if ($hoursText -match '^\d+$') { [int] $hoursText } else { 0 }
+    $periods   = @(Get-TkEventPeriodChoice)
+    $period    = if ($hours -le 0) { $periods | Where-Object { $_.Hours -eq 0 } | Select-Object -First 1 }
+                 else { @($periods | Where-Object { $_.Hours -ge $hours } | Sort-Object Hours) + @($periods | Where-Object { $_.Hours -eq 0 }) | Select-Object -First 1 }
+
+    Show-TkPage -Name 'Diagnostics'
+    [void] (Select-TkTab -TabControlName 'DiagnosticsTabs' -Header 'Event logs')
+
+    (Get-TkControl -Name 'EventSearchLog').Text      = $log
+    (Get-TkControl -Name 'EventSearchIds').Text      = & $text 'EventQueryIds'
+    (Get-TkControl -Name 'EventSearchProvider').Text = & $text 'EventQueryProvider'
+    (Get-TkControl -Name 'EventSearchContains').Text = & $text 'EventQueryContains'
+    (Get-TkControl -Name 'EventSearchPeriod').SelectedItem = $period.Label
+    (Get-TkControl -Name 'EventSearchLevel').SelectedItem  = [string] (Get-TkControl -Name 'EventQueryLevel').SelectedItem
+
+    Invoke-TkEventSearchFromUi
 }
