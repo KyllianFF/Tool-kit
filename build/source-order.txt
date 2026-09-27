@@ -95,6 +95,7 @@ src/Features/Tools/DevOpsTools.ps1
 src/Features/Tools/HtmlDocument.ps1
 src/Features/Tools/QrCode.ps1
 src/Features/Tools/MailTools.ps1
+src/Features/Tools/MailRecordBuilder.ps1
 src/Features/Tools/CertificateTools.ps1
 src/Features/Tools/AdminDecoders.ps1
 src/Features/Tools/EventQuery.ps1

@@ -288,6 +288,53 @@ function Initialize-TkToolsPage {
         $wmiPreset.Add_SelectionChanged({ Set-TkWmiClassFromPreset })
     }
 
+    # --- SPF and DMARC builders --------------------------------------------
+    $spfService = Get-TkControl -Name 'SpfService'
+    if ($spfService) {
+        [void] $spfService.Items.Add('Add a mail service...')
+        foreach ($service in @(Get-TkSpfService)) { [void] $spfService.Items.Add($service.Name) }
+        $spfService.SelectedIndex = 0
+        $spfService.Add_SelectionChanged({ Add-TkSpfServiceFromUi })
+    }
+
+    $spfAll = Get-TkControl -Name 'SpfAll'
+    if ($spfAll) {
+        foreach ($choice in @('-all   fail them', '~all   soft fail (while testing)', '?all   neutral (protects nothing)')) { [void] $spfAll.Items.Add($choice) }
+        $spfAll.SelectedIndex = 1
+        $spfAll.Add_SelectionChanged({ Update-TkSpfFromUi })
+    }
+
+    $dmarcPolicy = Get-TkControl -Name 'DmarcPolicy'
+    if ($dmarcPolicy) {
+        foreach ($choice in @('none   watch and report', 'quarantine   to spam', 'reject   refuse')) { [void] $dmarcPolicy.Items.Add($choice) }
+        $dmarcPolicy.SelectedIndex = 0
+        $dmarcPolicy.Add_SelectionChanged({ Update-TkDmarcFromUi })
+    }
+
+    $dmarcSub = Get-TkControl -Name 'DmarcSubPolicy'
+    if ($dmarcSub) {
+        foreach ($choice in @('Same as the domain', 'none', 'quarantine', 'reject')) { [void] $dmarcSub.Items.Add($choice) }
+        $dmarcSub.SelectedIndex = 0
+        $dmarcSub.Add_SelectionChanged({ Update-TkDmarcFromUi })
+    }
+
+    foreach ($name in @('SpfUseMx', 'SpfUseA')) {
+        $box = Get-TkControl -Name $name
+        if ($box) { $box.Add_Click({ Update-TkSpfFromUi }) }
+    }
+
+    foreach ($name in @('DmarcStrictDkim', 'DmarcStrictSpf')) {
+        $box = Get-TkControl -Name $name
+        if ($box) { $box.Add_Click({ Update-TkDmarcFromUi }) }
+    }
+
+    Register-TkClick -Name 'BtnCopySpf'         -Action { Copy-TkMailRecordFromUi -Kind 'Spf' }
+    Register-TkClick -Name 'BtnCopyDmarc'       -Action { Copy-TkMailRecordFromUi -Kind 'Dmarc' }
+    Register-TkClick -Name 'BtnCountSpfLookups' -Action { Measure-TkSpfLookupFromUi }
+
+    Update-TkSpfFromUi
+    Update-TkDmarcFromUi
+
     # --- .reg and PowerShell -----------------------------------------------
     $regDirection = Get-TkControl -Name 'RegConvertDirection'
     if ($regDirection) {
@@ -371,6 +418,13 @@ function Initialize-TkToolsPage {
         @{ Name = 'WmiConditions';    Update = { Update-TkWmiFromUi } }
         @{ Name = 'FwName';           Update = { Update-TkFirewallRuleFromUi } }
         @{ Name = 'RegConvertInput';  Update = { Update-TkRegConvertFromUi } }
+        @{ Name = 'SpfDomain';        Update = { Update-TkSpfFromUi } }
+        @{ Name = 'SpfIncludes';      Update = { Update-TkSpfFromUi } }
+        @{ Name = 'SpfAddresses';     Update = { Update-TkSpfFromUi } }
+        @{ Name = 'DmarcDomain';      Update = { Update-TkDmarcFromUi } }
+        @{ Name = 'DmarcRua';         Update = { Update-TkDmarcFromUi } }
+        @{ Name = 'DmarcRuf';         Update = { Update-TkDmarcFromUi } }
+        @{ Name = 'DmarcPercent';     Update = { Update-TkDmarcFromUi } }
         @{ Name = 'FwLocalPort';      Update = { Update-TkFirewallRuleFromUi } }
         @{ Name = 'FwRemotePort';     Update = { Update-TkFirewallRuleFromUi } }
         @{ Name = 'FwRemoteAddress';  Update = { Update-TkFirewallRuleFromUi } }
@@ -2073,6 +2127,181 @@ function Add-TkLdapPreset {
 
 <#
 .SYNOPSIS
+    Builds the SPF record from the form.
+
+.OUTPUTS
+    PSCustomObject from New-TkSpfRecord, or $null when the form is not there.
+#>
+function Get-TkSpfFromUi {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    $domain = Get-TkControl -Name 'SpfDomain'
+    if (-not $domain) { return $null }
+
+    $all = switch ((Get-TkControl -Name 'SpfAll').SelectedIndex) { 0 { '-all' } 2 { '?all' } default { '~all' } }
+
+    return (New-TkSpfRecord -Domain ([string] $domain.Text) `
+        -UseMx:([bool] (Get-TkControl -Name 'SpfUseMx').IsChecked) `
+        -UseA:([bool] (Get-TkControl -Name 'SpfUseA').IsChecked) `
+        -Address ([string] (Get-TkControl -Name 'SpfAddresses').Text) `
+        -Include ([string] (Get-TkControl -Name 'SpfIncludes').Text) `
+        -All $all)
+}
+
+<#
+.SYNOPSIS
+    Shows the SPF record as the form is filled.
+#>
+function Update-TkSpfFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'SpfOutput'
+    $built  = Get-TkSpfFromUi
+
+    if ($output -and $built) {
+        $output.Text = Format-TkMailRecord -Built $built
+    }
+}
+
+<#
+.SYNOPSIS
+    Builds the DMARC record from the form.
+
+.OUTPUTS
+    PSCustomObject from New-TkDmarcRecord, or $null when the form is not there.
+#>
+function Get-TkDmarcFromUi {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    $domain = Get-TkControl -Name 'DmarcDomain'
+    if (-not $domain) { return $null }
+
+    $policy    = @('none', 'quarantine', 'reject')[[math]::Max(0, (Get-TkControl -Name 'DmarcPolicy').SelectedIndex)]
+    $subIndex  = (Get-TkControl -Name 'DmarcSubPolicy').SelectedIndex
+    $subPolicy = if ($subIndex -gt 0) { @('', 'none', 'quarantine', 'reject')[$subIndex] } else { '' }
+
+    $percentText = ([string] (Get-TkControl -Name 'DmarcPercent').Text).Trim()
+    $percent     = if ($percentText -match '^\d{1,3}$') { [int] $percentText } else { 0 }
+
+    return (New-TkDmarcRecord -Domain ([string] $domain.Text) -Policy $policy -SubdomainPolicy $subPolicy -Percent $percent `
+        -AggregateReport ([string] (Get-TkControl -Name 'DmarcRua').Text) `
+        -FailureReport ([string] (Get-TkControl -Name 'DmarcRuf').Text) `
+        -StrictDkim:([bool] (Get-TkControl -Name 'DmarcStrictDkim').IsChecked) `
+        -StrictSpf:([bool] (Get-TkControl -Name 'DmarcStrictSpf').IsChecked))
+}
+
+<#
+.SYNOPSIS
+    Shows the DMARC record as the form is filled.
+#>
+function Update-TkDmarcFromUi {
+    [CmdletBinding()]
+    param()
+
+    $output = Get-TkControl -Name 'DmarcOutput'
+    $built  = Get-TkDmarcFromUi
+
+    if ($output -and $built) {
+        $output.Text = Format-TkMailRecord -Built $built
+    }
+}
+
+<#
+.SYNOPSIS
+    Adds the include of the chosen mail service to the SPF includes.
+#>
+function Add-TkSpfServiceFromUi {
+    [CmdletBinding()]
+    param()
+
+    $combo = Get-TkControl -Name 'SpfService'
+
+    if (-not $combo -or $combo.SelectedIndex -le 0) {
+        return
+    }
+
+    $service = @(Get-TkSpfService)[$combo.SelectedIndex - 1]
+    $combo.SelectedIndex = 0
+
+    $box     = Get-TkControl -Name 'SpfIncludes'
+    $current = @(([string] $box.Text) -split '[,;\s]+' | Where-Object { $_ })
+
+    if ($current -notcontains $service.Include) {
+        $box.Text = (@($current) + $service.Include) -join ', '
+    }
+}
+
+<#
+.SYNOPSIS
+    Copies the SPF or DMARC record value, alone, to the clipboard.
+#>
+function Copy-TkMailRecordFromUi {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Spf', 'Dmarc')]
+        [string] $Kind
+    )
+
+    $built = if ($Kind -eq 'Spf') { Get-TkSpfFromUi } else { Get-TkDmarcFromUi }
+
+    if (-not $built -or -not $built.Record) {
+        Set-TkStatus -Text 'There is no record to copy yet: fix what the panel lists first.'
+        return
+    }
+
+    [System.Windows.Clipboard]::SetText($built.Record)
+    Set-TkStatus -Text ('Copied the {0} record for {1}.' -f $Kind.ToUpperInvariant(), $built.Name)
+}
+
+<#
+.SYNOPSIS
+    Counts the DNS lookups of the draft SPF record through its includes.
+#>
+function Measure-TkSpfLookupFromUi {
+    [CmdletBinding()]
+    param()
+
+    $built = Get-TkSpfFromUi
+
+    if (-not $built -or -not $built.Record) {
+        Set-TkStatus -Text 'Fix the record first.'
+        return
+    }
+
+    Invoke-TkBackgroundAction -StatusText 'Asking DNS for the SPF record of every include...' `
+        -ParameterList @{ record = $built.Record } `
+        -ScriptBlock {
+            param($record)
+            Measure-TkSpfDraftLookup -Record $record -Resolver { param($name, $type) Resolve-TkMailDnsRecord -Name $name -Type $type }
+        } `
+        -OnComplete {
+            param($result)
+
+            $count  = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Lookups'] } | Select-Object -Last 1
+            $output = Get-TkControl -Name 'SpfOutput'
+
+            if (-not $count -or -not $output) {
+                return
+            }
+
+            $lines = New-Object System.Collections.Generic.List[string]
+            $lines.Add('')
+            $lines.Add(('DNS lookups a receiver makes: {0} of the 10 allowed{1}' -f $count.Lookups, $(if ($count.Lookups -gt 10) { ' - TOO MANY: receivers treat the record as an error.' } elseif ($count.Lookups -ge 8) { ' - close to the limit.' } else { '.' })))
+            foreach ($include in @($count.PerInclude)) { $lines.Add(('  include:{0,-34} {1} lookup(s)' -f $include.Name, $include.Lookups)) }
+            foreach ($problem in @($count.Errors)) { $lines.Add(('  Problem: {0}' -f $problem)) }
+
+            $output.Text = (Format-TkMailRecord -Built (Get-TkSpfFromUi)) + [Environment]::NewLine + ($lines -join [Environment]::NewLine)
+        }
+}
+
+<#
+.SYNOPSIS
     Converts the pasted .reg file or PowerShell, in the chosen direction.
 #>
 function Update-TkRegConvertFromUi {
@@ -3446,6 +3675,8 @@ function Get-TkToolEntry {
         (& $tool 'E-mail'               'Safe Links'             'ToolSafeLinks')
         (& $tool 'E-mail'               'E-mail headers'         'ToolMailHeaders')
         (& $tool 'E-mail'               'Mail DNS records'       'ToolMailDns')
+        (& $tool 'E-mail'               'SPF record'             'ToolSpfBuilder')
+        (& $tool 'E-mail'               'DMARC record'           'ToolDmarcBuilder')
         (& $tool 'Web and certificates' 'Certificates'           'ToolCertificates')
         (& $tool 'Web and certificates' 'HTTP headers'           'ToolHttpHeaders')
         (& $tool 'Web and certificates' 'URL parser'             'ToolUrlParser')
