@@ -1675,11 +1675,23 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0">
-                        <TextBlock Text="Software" Style="{StaticResource Heading}" />
-                        <TextBlock x:Name="WingetStatusText" Style="{StaticResource Muted}"
-                                   Text="Applications through winget, from the official Microsoft source; and the updates Windows Update has for this machine." />
-                    </StackPanel>
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Software" Style="{StaticResource Heading}" />
+                            <TextBlock x:Name="WingetStatusText" Style="{StaticResource Muted}"
+                                       Text="Applications through winget, from the official Microsoft source; and the updates Windows Update has for this machine." />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                            <Button x:Name="BtnSaveConfigProfileSoftware" Content="Save profile" Style="{StaticResource GlyphButton}" Tag="&#xE74E;"
+                                    ToolTip="Save the applications ticked on Software and the tweaks ticked on Tweaks to a profile file, to tick them again on another machine." />
+                            <Button x:Name="BtnLoadConfigProfileSoftware" Content="Load profile" Style="{StaticResource GlyphButton}" Tag="&#xE8E5;" Margin="0"
+                                    ToolTip="Tick the applications and tweaks of a saved profile. Nothing is installed or applied until you use Install selected or Apply selected." />
+                        </StackPanel>
+                    </Grid>
 
                     <TabControl Grid.Row="1" x:Name="SoftwareTabs" Background="Transparent" BorderThickness="0" Margin="0,14,0,0">
                         <TabItem Header="Applications">
@@ -1940,11 +1952,23 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0">
-                        <TextBlock Text="Tweaks" Style="{StaticResource Heading}" />
-                        <TextBlock Style="{StaticResource Muted}"
-                                   Text="Every tweak declares both the applied state and the state to restore, so each one can be reverted. A system restore point is created before a batch is applied." />
-                    </StackPanel>
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Tweaks" Style="{StaticResource Heading}" />
+                            <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                       Text="Every tweak declares both the applied state and the state to restore, so each one can be reverted. A system restore point is created before a batch is applied." />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                            <Button x:Name="BtnSaveConfigProfileTweaks" Content="Save profile" Style="{StaticResource GlyphButton}" Tag="&#xE74E;"
+                                    ToolTip="Save the applications ticked on Software and the tweaks ticked on Tweaks to a profile file, to tick them again on another machine." />
+                            <Button x:Name="BtnLoadConfigProfileTweaks" Content="Load profile" Style="{StaticResource GlyphButton}" Tag="&#xE8E5;" Margin="0"
+                                    ToolTip="Tick the applications and tweaks of a saved profile. Nothing is installed or applied until you use Install selected or Apply selected." />
+                        </StackPanel>
+                    </Grid>
 
                     <Grid Grid.Row="1" Margin="0,14,0,10">
                         <Grid.ColumnDefinitions>

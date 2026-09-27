@@ -305,6 +305,14 @@ function Initialize-TkSoftwarePage {
     # --- Store apps tab ---------------------------------------------------
     Initialize-TkStoreAppsTab
 
+    # --- Configuration profiles -------------------------------------------
+    # The same two buttons head the Software and the Tweaks pages: a profile
+    # covers both lists.
+    foreach ($page in @('Software', 'Tweaks')) {
+        Register-TkClick -Name ('BtnSaveConfigProfile{0}' -f $page) -Action { Save-TkConfigProfileFromUi }
+        Register-TkClick -Name ('BtnLoadConfigProfile{0}' -f $page) -Action { Import-TkConfigProfileFromUi }
+    }
+
     Update-TkWingetStatusText
 }
 
@@ -905,4 +913,114 @@ function Invoke-TkRemoveStoreAppsFromUi {
         $null = $outcome
         Update-TkStoreAppList
     }
+}
+
+# ---------------------------------------------------------------------------
+# Configuration profiles
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Saves the ticked applications and tweaks to a profile file.
+#>
+function Save-TkConfigProfileFromUi {
+    [CmdletBinding()]
+    param()
+
+    $applications = @($script:TkApplicationItems | Where-Object { $_ -and $_.IsSelected } | ForEach-Object { [string] $_.Id })
+    $tweaks       = @($script:TkTweakItems | Where-Object { $_ -and $_.IsSelected } | ForEach-Object { [string] $_.Id })
+
+    if ($applications.Count -eq 0 -and $tweaks.Count -eq 0) {
+        Set-TkStatus -Text 'Tick applications on Software or tweaks on Tweaks first: the profile saves what is ticked.'
+        return
+    }
+
+    $dialog = New-Object Microsoft.Win32.SaveFileDialog
+    $dialog.Title            = 'Save a configuration profile'
+    $dialog.Filter           = 'Toolkit profile (*.json)|*.json'
+    $dialog.FileName         = 'workstation-profile.json'
+    $dialog.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
+
+    if (-not $dialog.ShowDialog((Get-TkContext).Window)) {
+        return
+    }
+
+    $name    = [System.IO.Path]::GetFileNameWithoutExtension($dialog.FileName)
+    $configProfile = New-TkConfigProfile -Name $name -ApplicationId $applications -TweakId $tweaks
+
+    try {
+        [System.IO.File]::WriteAllText($dialog.FileName, ($configProfile | ConvertTo-Json -Depth 4),
+                                       (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Profiles' -Message ('The profile could not be written: {0}' -f $_.Exception.Message)
+        return
+    }
+
+    Add-TkJournalEntry -Name 'Configuration profile saved' -Category 'Software' -Detail (
+        '{0}: {1} application(s), {2} tweak(s)' -f $dialog.FileName, $applications.Count, $tweaks.Count
+    )
+
+    Set-TkStatus -Text ('Profile saved: {0} application(s) and {1} tweak(s) in {2}' -f $applications.Count, $tweaks.Count, $dialog.FileName)
+}
+
+<#
+.SYNOPSIS
+    Ticks the applications and tweaks of a saved profile.
+
+.DESCRIPTION
+    Only ticks: installing and applying stay on their own buttons, with their
+    confirmation and their elevation. What the catalogues of this toolkit do
+    not know is left out and named.
+#>
+function Import-TkConfigProfileFromUi {
+    [CmdletBinding()]
+    param()
+
+    $dialog = New-Object Microsoft.Win32.OpenFileDialog
+    $dialog.Title            = 'Load a configuration profile'
+    $dialog.Filter           = 'Toolkit profile (*.json)|*.json|All files (*.*)|*.*'
+    $dialog.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
+
+    if (-not $dialog.ShowDialog((Get-TkContext).Window)) {
+        return
+    }
+
+    try {
+        if ((Get-Item -LiteralPath $dialog.FileName -ErrorAction Stop).Length -gt 256KB) {
+            Set-TkStatus -Text 'The file is too large to be a toolkit profile.'
+            return
+        }
+
+        $text = [System.IO.File]::ReadAllText($dialog.FileName)
+    }
+    catch {
+        Set-TkStatus -Text ('The profile could not be read: {0}' -f $_.Exception.Message)
+        return
+    }
+
+    $configProfile = Read-TkConfigProfile -Json $text `
+        -KnownApplication @($script:TkApplicationItems | ForEach-Object { [string] $_.Id }) `
+        -KnownTweak @($script:TkTweakItems | ForEach-Object { [string] $_.Id })
+
+    if ($configProfile.Error) {
+        Show-TkDialog -Title 'Load profile' -Kind 'Warning' -NoticeOnly -Message $configProfile.Error | Out-Null
+        return
+    }
+
+    $ticked = Set-TkConfigProfileSelection -ConfigProfile $configProfile `
+        -ApplicationItem @($script:TkApplicationItems) -TweakItem @($script:TkTweakItems) -Confirm:$false
+
+    if ($script:TkApplicationView) { $script:TkApplicationView.Refresh() }
+    if ($script:TkTweakView)       { $script:TkTweakView.Refresh() }
+
+    $message = ('Profile "{0}": {1} application(s) ticked on Software and {2} tweak(s) ticked on Tweaks.' -f $configProfile.Name, $ticked.Applications, $ticked.Tweaks) +
+               "`n`nNothing is installed or applied yet: review the ticks, then use Install selected and Apply selected."
+
+    if (@($configProfile.Unknown).Count -gt 0) {
+        $message += "`n`nLeft out, unknown to this toolkit: {0}." -f (@($configProfile.Unknown) -join ', ')
+    }
+
+    Show-TkDialog -Title 'Profile loaded' -Kind 'Information' -NoticeOnly -Message $message | Out-Null
+    Set-TkStatus -Text ('Profile loaded: {0} application(s), {1} tweak(s) ticked.' -f $ticked.Applications, $ticked.Tweaks)
 }

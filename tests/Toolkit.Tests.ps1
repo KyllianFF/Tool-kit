@@ -3908,6 +3908,91 @@ Describe 'Window markup' {
     }
 }
 
+Describe 'Configuration profiles' {
+
+    BeforeAll {
+        $script:ProfileApps   = @('7zip', 'vscode', 'firefox')
+        $script:ProfileTweaks = @('show-file-extensions', 'disable-widgets')
+    }
+
+    It 'saves catalogue identifiers and nothing else' {
+        $saved = New-TkConfigProfile -Name ' Accounting ' -ApplicationId @('7zip', '7zip', '', 'vscode') -TweakId @('disable-widgets')
+
+        $saved.schema       | Should -Be 'toolkit-config-profile'
+        $saved.name         | Should -Be 'Accounting'
+        $saved.applications | Should -Be @('7zip', 'vscode')
+        $saved.tweaks       | Should -Be @('disable-widgets')
+        @($saved.Keys)      | Should -Be @('schema', 'schemaVersion', 'name', 'created', 'toolkit', 'applications', 'tweaks')
+    }
+
+    It 'reads back what it saved' {
+        $json = New-TkConfigProfile -Name 'Lab' -ApplicationId @('firefox', '7zip') -TweakId @('show-file-extensions') | ConvertTo-Json -Depth 4
+        $read = Read-TkConfigProfile -Json $json -KnownApplication $script:ProfileApps -KnownTweak $script:ProfileTweaks
+
+        $read.Error        | Should -BeNullOrEmpty
+        $read.Name         | Should -Be 'Lab'
+        $read.Applications | Should -Be @('firefox', '7zip')
+        $read.Tweaks       | Should -Be @('show-file-extensions')
+        @($read.Unknown).Count | Should -Be 0
+    }
+
+    It 'leaves out and names what the catalogues do not know, whatever it looks like' {
+        $json = @{
+            schema       = 'toolkit-config-profile'
+            applications = @('7zip', 'VSCode', 'notepad++; Remove-Item C:\ -Recurse', ('x' * 120), 'unknown-app')
+            tweaks       = @('disable-widgets', 'HKLM:\SOFTWARE\Evil')
+        } | ConvertTo-Json
+
+        $read = Read-TkConfigProfile -Json $json -KnownApplication $script:ProfileApps -KnownTweak $script:ProfileTweaks
+
+        $read.Applications   | Should -Be @('7zip')
+        $read.Tweaks         | Should -Be @('disable-widgets')
+        @($read.Unknown).Count | Should -Be 5
+        ($read.Unknown -join ' ') | Should -Match 'application "VSCode"'
+        ($read.Unknown -join ' ') | Should -Match 'tweak "HKLM'
+        ($read.Unknown -join ' ') | Should -Match '\.\.\."'
+    }
+
+    It 'refuses a file that is not a profile it can read' {
+        foreach ($case in @(
+            @{ Json = 'not json at all';                                           Error = 'not valid JSON' }
+            @{ Json = '[1, 2, 3]';                                                 Error = 'not a toolkit configuration profile' }
+            @{ Json = '{"schema":"something-else","applications":["7zip"]}';       Error = 'not a toolkit configuration profile' }
+            @{ Json = '{"schema":"toolkit-config-profile","schemaVersion":2}';      Error = 'newer toolkit' }
+            @{ Json = ('{"schema":"toolkit-config-profile","name":"' + ('a' * 300KB) + '"}'); Error = 'too large' }
+        )) {
+            $read = Read-TkConfigProfile -Json $case.Json -KnownApplication $script:ProfileApps -KnownTweak $script:ProfileTweaks
+            $read.Error | Should -Match $case.Error
+            @($read.Applications).Count | Should -Be 0
+        }
+    }
+
+    It 'ticks the profile and unticks everything else' {
+        $apps   = @($script:ProfileApps | ForEach-Object { [pscustomobject] @{ Id = $_; IsSelected = ($_ -eq 'vscode') } })
+        $tweaks = @($script:ProfileTweaks | ForEach-Object { [pscustomobject] @{ Id = $_; IsSelected = $true } })
+        $chosen = [pscustomobject] @{ Applications = @('7zip', 'firefox'); Tweaks = @('disable-widgets') }
+
+        $ticked = Set-TkConfigProfileSelection -ConfigProfile $chosen -ApplicationItem $apps -TweakItem $tweaks -Confirm:$false
+
+        $ticked.Applications | Should -Be 2
+        $ticked.Tweaks       | Should -Be 1
+        @($apps | Where-Object IsSelected | ForEach-Object Id)   | Should -Be @('7zip', 'firefox')
+        @($tweaks | Where-Object IsSelected | ForEach-Object Id) | Should -Be @('disable-widgets')
+    }
+
+    It 'accepts every identifier of the real catalogues' {
+        $appIds   = @((Import-TkCatalog -Name 'applications').applications | ForEach-Object { [string] $_.id })
+        $tweakIds = @((Import-TkCatalog -Name 'tweaks').tweaks | ForEach-Object { [string] $_.id })
+
+        $json = New-TkConfigProfile -Name 'All' -ApplicationId $appIds -TweakId $tweakIds | ConvertTo-Json -Depth 4
+        $read = Read-TkConfigProfile -Json $json -KnownApplication $appIds -KnownTweak $tweakIds
+
+        @($read.Unknown).Count  | Should -Be 0
+        $read.Applications.Count | Should -Be $appIds.Count
+        $read.Tweaks.Count       | Should -Be $tweakIds.Count
+    }
+}
+
 Describe 'Update check' {
 
     BeforeAll {
