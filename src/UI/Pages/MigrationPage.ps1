@@ -2,8 +2,8 @@
     Toolkit - UI / Migration page
 
     Wires the page: what to carry over, what a reinstall depends on, the
-    installed applications saved as a profile, the driver export and the copy
-    of the user folders. The readers draw a document in the output, like the
+    installed applications saved as a profile, the driver export, the copy
+    of the user folders, and their copy into another profile of this machine. The readers draw a document in the output, like the
     reports; the copy asks first, with the sizes and the free space.
 #>
 
@@ -50,6 +50,20 @@ function Initialize-TkMigrationPage {
     Register-TkClick -Name 'BtnMigrationDrivers'   -Action { Invoke-TkDriverExportFromUi }
     Register-TkClick -Name 'BtnMigrationBrowse'    -Action { Select-TkMigrationDestination }
     Register-TkClick -Name 'BtnMigrationCopy'      -Action { Invoke-TkMigrationCopyFromUi }
+
+    # The profiles are read the first time their tab is opened, not at start.
+    $tabs = Get-TkControl -Name 'MigrationTabs'
+    if ($tabs) {
+        $tabs.Add_SelectionChanged({
+            param($source, $changeArgs)
+            if ($changeArgs.OriginalSource -eq $source) { Initialize-TkProfileChoice }
+        })
+    }
+    foreach ($name in @('MigrationProfileFrom', 'MigrationProfileTo')) {
+        $combo = Get-TkControl -Name $name
+        if ($combo) { $combo.Add_SelectionChanged({ Update-TkProfileRow }) }
+    }
+    Register-TkClick -Name 'BtnMigrationProfileCopy' -Action { Invoke-TkProfileCopyFromUi }
 }
 
 <#
@@ -739,4 +753,211 @@ function Invoke-TkMigrationImportFromUi {
                     Set-TkStatus -Text ('{0} of {1} step(s) done without error.' -f @($rows | Where-Object Ok).Count, $rows.Count)
                 }.GetNewClosure()
         }.GetNewClosure()
+}
+
+
+# ---------------------------------------------------------------------------
+# Another profile
+# ---------------------------------------------------------------------------
+
+# The profiles in the two boxes, in their order, and the folder rows.
+$script:TkProfileChoices = @()
+$script:TkProfileRows    = @()
+
+<#
+.SYNOPSIS
+    Keeps the profiles listed and the folder rows, for the copy.
+#>
+function Set-TkProfileCopyState {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter()] [AllowEmptyCollection()] [object[]] $Choice = @(),
+        [Parameter()] [AllowEmptyCollection()] [object[]] $Row = @()
+    )
+
+    if ($PSCmdlet.ShouldProcess('profile copy', 'Remember the profiles and rows')) {
+        $script:TkProfileChoices = @($Choice)
+        $script:TkProfileRows    = @($Row)
+    }
+}
+
+<#
+.SYNOPSIS
+    Fills the two profile boxes the first time the tab is opened.
+#>
+function Initialize-TkProfileChoice {
+    [CmdletBinding()]
+    param()
+
+    if (@($script:TkProfileChoices).Count -gt 0) { return }
+
+    $tabs = Get-TkControl -Name 'MigrationTabs'
+    if (-not $tabs -or -not $tabs.SelectedItem -or [string] $tabs.SelectedItem.Header -ne 'Another profile') { return }
+
+    $profiles = @(Get-TkLocalProfile)
+    Set-TkProfileCopyState -Choice $profiles -Confirm:$false
+
+    $from = Get-TkControl -Name 'MigrationProfileFrom'
+    $to   = Get-TkControl -Name 'MigrationProfileTo'
+
+    foreach ($userProfile in $profiles) {
+        $mark  = if ($userProfile.Current) { '   (you)' } elseif ($userProfile.Loaded) { '   (signed in)' } else { '' }
+        $label = '{0}{1}' -f $userProfile.Name, $mark
+        [void] $from.Items.Add($label)
+        [void] $to.Items.Add($label)
+    }
+
+    if ($profiles.Count -lt 2) {
+        Set-TkStatus -Text 'This machine has one user profile: the other account must sign in once, so its profile exists.'
+    }
+
+    $current = [array]::IndexOf(@($profiles | ForEach-Object Current), $true)
+    $from.SelectedIndex = [math]::Max(0, $current)
+    $to.SelectedIndex   = if ($profiles.Count -gt 1) { @(0..($profiles.Count - 1) | Where-Object { $_ -ne $from.SelectedIndex })[0] } else { -1 }
+
+    Update-TkProfileRow
+}
+
+<#
+.SYNOPSIS
+    Draws a row for each personal folder of the source profile, with where it goes.
+
+.DESCRIPTION
+    Without administrator rights the window cannot look inside another
+    profile, so every folder is listed; the elevated worker skips the ones
+    that do not exist.
+#>
+function Update-TkProfileRow {
+    [CmdletBinding()]
+    param()
+
+    $list = Get-TkControl -Name 'MigrationProfileList'
+    if (-not $list) { return }
+    $list.Children.Clear()
+
+    $choices = @($script:TkProfileChoices)
+    $fromAt  = (Get-TkControl -Name 'MigrationProfileFrom').SelectedIndex
+    $toAt    = (Get-TkControl -Name 'MigrationProfileTo').SelectedIndex
+
+    if ($fromAt -lt 0 -or $toAt -lt 0 -or $fromAt -ge $choices.Count -or $toAt -ge $choices.Count) {
+        Set-TkProfileCopyState -Choice $choices -Confirm:$false
+        return
+    }
+
+    $from    = $choices[$fromAt]
+    $targets = @{}
+    foreach ($folder in @(Get-TkProfileFolder -UserProfile $choices[$toAt])) { $targets[$folder.Key] = $folder.Path }
+
+    $readable = try { [void] [System.IO.Directory]::EnumerateFileSystemEntries($from.Path).GetEnumerator().MoveNext(); $true } catch { $false }
+
+    $rows = foreach ($folder in @(Get-TkProfileFolder -UserProfile $from)) {
+
+        if ($readable -and -not $folder.Exists) { continue }
+
+        $check = New-Object System.Windows.Controls.CheckBox
+        $check.Content   = $folder.Key
+        $check.IsChecked = $true
+        $check.ToolTip   = $folder.Path
+        $check.Margin    = New-Object System.Windows.Thickness(0, 0, 0, 4)
+
+        $box = New-Object System.Windows.Controls.TextBox
+        $box.Text    = [string] $targets[$folder.Key]
+        $box.Tag     = 'Where it goes, inside the destination profile'
+        $box.ToolTip = 'If OneDrive backs up the folders of that account, pick its OneDrive folder instead.'
+
+        $browse = New-Object System.Windows.Controls.Button
+        $browse.Content = 'Browse'
+        $browse.Margin  = New-Object System.Windows.Thickness(8, 0, 0, 0)
+        $browse.Tag     = $box
+        $browse.Add_Click({
+            param($source, $clickArgs)
+            $null = $clickArgs
+            $picked = Select-TkFolderPath -Description 'Where this folder goes, inside the destination profile.' -Start ([string] $source.Tag.Text)
+            if ($picked) { $source.Tag.Text = $picked }
+        })
+
+        $line = New-Object System.Windows.Controls.DockPanel
+        [System.Windows.Controls.DockPanel]::SetDock($browse, [System.Windows.Controls.Dock]::Right)
+        [void] $line.Children.Add($browse)
+        [void] $line.Children.Add($box)
+
+        $row = New-Object System.Windows.Controls.StackPanel
+        $row.Margin = New-Object System.Windows.Thickness(0, 0, 0, 10)
+        [void] $row.Children.Add($check)
+        [void] $row.Children.Add($line)
+        [void] $list.Children.Add($row)
+
+        [pscustomobject] @{ Key = $folder.Key; Name = $folder.Key; Source = $folder.Path; Check = $check; Box = $box }
+    }
+
+    Set-TkProfileCopyState -Choice $choices -Row @($rows) -Confirm:$false
+}
+
+<#
+.SYNOPSIS
+    Copies or moves the ticked folders into the other profile, through the elevated worker.
+#>
+function Invoke-TkProfileCopyFromUi {
+    [CmdletBinding()]
+    param()
+
+    $choices = @($script:TkProfileChoices)
+    $fromAt  = (Get-TkControl -Name 'MigrationProfileFrom').SelectedIndex
+    $toAt    = (Get-TkControl -Name 'MigrationProfileTo').SelectedIndex
+    $from    = if ($fromAt -ge 0 -and $fromAt -lt $choices.Count) { $choices[$fromAt] } else { $null }
+    $to      = if ($toAt -ge 0 -and $toAt -lt $choices.Count) { $choices[$toAt] } else { $null }
+
+    $rows = @($script:TkProfileRows | Where-Object { $_.Check.IsChecked } | ForEach-Object {
+        [pscustomobject] @{ Key = $_.Key; Name = $_.Name; Source = $_.Source; Target = ([string] $_.Box.Text).Trim() }
+    })
+
+    $plan = New-TkProfileCopyPlan -Row $rows -SourceProfile $from -TargetProfile $to -SkipSourceCheck:(-not (Test-TkIsElevated))
+    if (@($plan.Errors).Count -gt 0) {
+        Set-TkStatus -Text (@($plan.Errors) -join ' ')
+        return
+    }
+
+    $move    = [bool] (Get-TkControl -Name 'MigrationProfileMove').IsChecked
+    $verb    = if ($move) { 'Move' } else { 'Copy' }
+    $lines   = @($plan.Steps | ForEach-Object { '- {0}: {1}  ->  {2}' -f $_.Name, $_.Source, $_.Target })
+    $message = "{0} from {1} to {2}:`n`n{3}`n`nOnly the files missing at the destination are copied; nothing there is overwritten. The copies take the permissions of the folder they land in and belong to {2}." -f `
+        $verb, $from.Name, $to.Name, ($lines -join "`n")
+
+    if ($move) {
+        $message += "`n`nMove: each source file is deleted only once its copy is read back and its SHA-256 matches. A conflict, a file that failed and a file kept online only stay in {0}." -f $from.Path
+    }
+    if ($from.Loaded -and -not $from.Current) {
+        $message += "`n`n{0} is signed in: files it has open are skipped. Sign it out first for a complete copy." -f $from.Name
+    }
+
+    if (-not (Confirm-TkAction -Title ('{0} to another profile' -f $verb) -Message $message)) {
+        return
+    }
+
+    $status  = if (Test-TkIsElevated) { 'Copying to the other profile, this can take a while...' } else { 'Waiting for administrator consent...' }
+    $account = $to.Name
+
+    Start-TkPrivilegedAction -Name 'CopyToProfile' -StatusText $status -Parameters @{
+        SourceSid = $from.Sid
+        TargetSid = $to.Sid
+        Move      = $move
+        Steps     = @($plan.Steps | ForEach-Object { @{ Key = $_.Key; Name = $_.Name; Source = $_.Source; Target = $_.Target } })
+    } -OnResult {
+        param($outcome)
+
+        if (-not $outcome) { return }
+
+        $document = New-TkFlowDocument
+        Add-TkHeading -Document $document -Text ('{0} to {1}' -f $(if ($move) { 'Moved' } else { 'Copied' }), $account) -Level 1
+
+        $steps = @($outcome.PSObject.Properties['Steps'] | ForEach-Object { $_.Value } | Where-Object { $_ })
+        if ($steps.Count -eq 0) {
+            Add-TkSeverityLine -Document $document -Severity 'Warning' -Heading ([string] $outcome.Message)
+        }
+        foreach ($step in $steps) {
+            Add-TkSeverityLine -Document $document -Severity $(if ($step.Ok) { 'Pass' } else { 'Warning' }) -Heading ([string] $step.Name) -Detail ([string] $step.Text) -Note ([string] $step.Log)
+        }
+
+        Set-TkDocument -ControlName 'MigrationOutput' -Document $document
+    }.GetNewClosure()
 }

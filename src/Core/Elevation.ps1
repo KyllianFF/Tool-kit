@@ -288,6 +288,29 @@ function Get-TkElevatedAction {
             }
         }
         [pscustomobject] @{
+            Name   = 'CopyToProfile'
+            Worker = {
+                param($Parameters)
+
+                # The profiles and every path are checked again here, in the
+                # elevated process, against the profiles Windows lists.
+                $profiles = @(Get-TkLocalProfile)
+                $from     = @($profiles | Where-Object Sid -eq ([string] $Parameters.SourceSid)) | Select-Object -First 1
+                $to       = @($profiles | Where-Object Sid -eq ([string] $Parameters.TargetSid)) | Select-Object -First 1
+                $rows     = @($Parameters.Steps | Where-Object { $_ } | ForEach-Object {
+                    [pscustomobject] @{ Key = [string] $_.Key; Name = [string] $_.Name; Source = [string] $_.Source; Target = [string] $_.Target }
+                })
+
+                $plan = New-TkProfileCopyPlan -Row $rows -SourceProfile $from -TargetProfile $to
+                if (@($plan.Errors).Count -gt 0) {
+                    [pscustomobject] @{ Ok = $false; Message = (@($plan.Errors) -join ' '); Steps = @() }
+                }
+                else {
+                    Copy-TkProfileData -Step @($plan.Steps) -Sid $to.Sid -AccountName $to.Name -Move:([bool] $Parameters.Move) -Confirm:$false
+                }
+            }
+        }
+        [pscustomobject] @{
             Name   = 'OpenThroughputPort'
             Worker = {
                 param($Parameters)
