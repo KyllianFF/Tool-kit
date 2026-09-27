@@ -1321,6 +1321,7 @@
                             <Button x:Name="NavDiagnostics"    Content="Diagnostics"     Style="{StaticResource NavButton}" Tag="&#xE95E;" />
                             <Button x:Name="NavFixes"          Content="Fixes"           Style="{StaticResource NavButton}" Tag="&#xE90F;" />
                             <Button x:Name="NavNetwork"        Content="Network"         Style="{StaticResource NavButton}" Tag="&#xEC26;" />
+                            <Button x:Name="NavM365"           Content="Microsoft 365"   Style="{StaticResource NavButton}" Tag="&#xE753;" />
                             <Button x:Name="NavIntervention"   Content="Intervention"    Style="{StaticResource NavButton}" Tag="&#xE70F;" />
 
                             <TextBlock Text="SECURITY" Style="{StaticResource NavSection}" />
@@ -2128,6 +2129,55 @@
                 </Grid>
 
                 <!-- ========================= NETWORK ========================= -->
+                <Grid x:Name="PageM365" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <TextBlock Text="Microsoft 365" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                   Text="Whether this machine reaches every part of Microsoft 365, and how Office, OneDrive, Teams and Outlook are set up for this account. The join state and Intune are in Diagnostics, Sign-in and management." />
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <WrapPanel Margin="0,0,0,4">
+                                <TextBlock Text="Tenant" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                <TextBox x:Name="M365Tenant" Width="220" Margin="0,0,16,8" Tag="contoso"
+                                         ToolTip="The first part of contoso.sharepoint.com, to test SharePoint and OneDrive too. Optional; remembered." />
+                                <Border Style="{StaticResource ActionGroup}" Margin="0,0,0,8">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="BtnM365Connectivity" Content="Test the connection" Style="{StaticResource GroupedPrimaryButton}"
+                                                ToolTip="Resolves and opens every endpoint Microsoft publishes for sign-in, Exchange, SharePoint and OneDrive, Teams, Office activation and Intune; checks for TLS inspection; sends one STUN request to a Teams relay." />
+                                        <Rectangle Style="{StaticResource GroupDivider}" />
+                                        <Button x:Name="BtnM365Clients" Content="Read the apps and accounts" Style="{StaticResource GroupedButton}"
+                                                ToolTip="Office version and channel, the accounts Office knows, OneDrive and its folder backup, new or classic Teams and Outlook." />
+                                    </StackPanel>
+                                </Border>
+                            </WrapPanel>
+                            <WrapPanel>
+                                <TextBlock Text="Related" VerticalAlignment="Center" Style="{StaticResource Muted}" Margin="0,0,8,0" />
+                                <Button x:Name="BtnM365FixOffice" Content="Reset the Office activation" Margin="0,0,8,0" />
+                                <Button x:Name="BtnM365FixTeams" Content="Clear the Teams cache" Margin="0,0,8,0" />
+                                <Button x:Name="BtnM365FixOneDrive" Content="Reset OneDrive" Margin="0,0,8,0" />
+                                <Button x:Name="BtnM365Identity" Content="Sign-in and management report" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0">
+                        <RichTextBox x:Name="M365Output" IsReadOnly="True"
+                                     BorderThickness="0" Background="Transparent"
+                                     Foreground="{DynamicResource TextPrimary}"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Disabled"
+                                     IsDocumentEnabled="True" />
+                    </Border>
+                </Grid>
+
                 <Grid x:Name="PageNetwork" Margin="24,20" Visibility="Collapsed">
                     <TabControl x:Name="NetworkTabs" Background="Transparent" BorderThickness="0">
 

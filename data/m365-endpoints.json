@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "description": "Microsoft 365 endpoints the connectivity test reaches, by workload. Taken from Microsoft's published list (Office 365 URLs and IP address ranges, worldwide); {tenant} is replaced by the tenant name typed on the page. Only TCP ports are listed; Teams media over UDP is tested separately with a STUN request.",
+  "tlsRoots": [ "DigiCert", "Microsoft", "Baltimore", "GlobalSign" ],
+  "teamsRelay": { "host": "worldaz.tr.teams.microsoft.com", "port": 3478 },
+  "workloads": [
+    {
+      "id": "signin",
+      "name": "Sign-in (Microsoft Entra ID)",
+      "impact": "Nothing signs in: Outlook, Teams and OneDrive keep asking for the password or stay offline.",
+      "endpoints": [
+        { "host": "login.microsoftonline.com", "port": 443 },
+        { "host": "login.microsoft.com", "port": 443 },
+        { "host": "aadcdn.msftauth.net", "port": 443 },
+        { "host": "graph.microsoft.com", "port": 443 }
+      ]
+    },
+    {
+      "id": "exchange",
+      "name": "Exchange Online and Outlook",
+      "impact": "Outlook stays disconnected or cannot find the mailbox (autodiscover).",
+      "endpoints": [
+        { "host": "outlook.office365.com", "port": 443 },
+        { "host": "outlook.office.com", "port": 443 },
+        { "host": "autodiscover-s.outlook.com", "port": 443 },
+        { "host": "smtp.office365.com", "port": 587, "note": "Only for devices and apps that send by SMTP (a scanner, a script)." }
+      ]
+    },
+    {
+      "id": "sharepoint",
+      "name": "SharePoint and OneDrive",
+      "impact": "OneDrive stops syncing and SharePoint sites do not open.",
+      "endpoints": [
+        { "host": "{tenant}.sharepoint.com", "port": 443 },
+        { "host": "{tenant}-my.sharepoint.com", "port": 443 },
+        { "host": "oneclient.sfx.ms", "port": 443 },
+        { "host": "g.live.com", "port": 443 }
+      ]
+    },
+    {
+      "id": "teams",
+      "name": "Teams",
+      "impact": "Teams does not load, or chats load but calls fail.",
+      "endpoints": [
+        { "host": "teams.microsoft.com", "port": 443 },
+        { "host": "teams.cloud.microsoft", "port": 443 },
+        { "host": "statics.teams.cdn.office.net", "port": 443 }
+      ]
+    },
+    {
+      "id": "apps",
+      "name": "Office apps, activation and updates",
+      "impact": "Office shows as unlicensed, cannot activate, or never updates.",
+      "endpoints": [
+        { "host": "officeclient.microsoft.com", "port": 443 },
+        { "host": "config.office.com", "port": 443 },
+        { "host": "officecdn.microsoft.com", "port": 443 },
+        { "host": "www.office.com", "port": 443 }
+      ]
+    },
+    {
+      "id": "intune",
+      "name": "Intune and device registration",
+      "impact": "The device cannot enrol, and policies and apps from Intune stop arriving.",
+      "endpoints": [
+        { "host": "enterpriseregistration.windows.net", "port": 443 },
+        { "host": "enrollment.manage.microsoft.com", "port": 443 },
+        { "host": "manage.microsoft.com", "port": 443 }
+      ]
+    }
+  ]
+}
