@@ -8164,6 +8164,178 @@ Describe 'Store apps' {
     }
 }
 
+Describe 'Migration applications' {
+
+    It 'says how every application comes back' {
+        $rows = @(ConvertTo-TkApplicationInventory `
+            -Program @(
+                [pscustomobject] @{ Name = '7-Zip 24.08 (x64)'; Version = '24.08'; Publisher = 'Igor Pavlov' }
+                [pscustomobject] @{ Name = 'Spotify'; Version = '1.2'; Publisher = 'Spotify AB' }
+                [pscustomobject] @{ Name = 'Old CAD Suite'; Version = '9'; Publisher = 'CAD Inc' }
+                [pscustomobject] @{ Name = 'old cad suite'; Version = '9'; Publisher = 'CAD Inc' }
+            ) `
+            -StoreApp @(
+                [pscustomobject] @{ Name = 'Calculator'; Version = '11'; Publisher = 'Microsoft Corporation'; Inbox = $true }
+                [pscustomobject] @{ Name = 'Dolby Access'; Version = '3'; Publisher = 'Dolby'; Inbox = $false }
+            ) `
+            -WingetRow @(
+                [pscustomobject] @{ Name = '7-Zip 24.08 (x64)'; Id = '7zip.7zip'; Version = '24.08'; Source = 'winget' }
+                [pscustomobject] @{ Name = 'Spotify'; Id = '9NCBCSZSJRSB'; Version = '1.2'; Source = 'msstore' }
+                [pscustomobject] @{ Name = 'Calculator'; Id = 'MSIX\Microsoft.WindowsCalculator_11'; Version = '11'; Source = '' }
+                [pscustomobject] @{ Name = 'ripgrep'; Id = 'BurntSushi.ripgrep.MSVC'; Version = '14'; Source = 'winget' }
+            ))
+
+        @($rows | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.Name, $_.Kind, $_.Reinstall, $_.WingetId }) | Should -Be @(
+            '7-Zip 24.08 (x64)|Program|winget|7zip.7zip'
+            'Calculator|Store app|Comes with Windows|'
+            'Dolby Access|Store app|Microsoft Store|'
+            'Old CAD Suite|Program|By hand|'
+            'ripgrep|winget package|winget|BurntSushi.ripgrep.MSVC'
+            'Spotify|Program|Microsoft Store (winget)|9NCBCSZSJRSB'
+        )
+
+        $count = Measure-TkApplicationInventory -Application $rows
+        '{0}/{1}/{2}/{3}/{4}' -f $count.Total, $count.Winget, $count.Store, $count.Manual, $count.Inbox | Should -Be '6/3/1/1/1'
+    }
+
+    It 'finds in the catalogue what winget list did not connect to a source' {
+        $catalog = @(
+            [pscustomobject] @{ Name = 'Brave'; PackageId = 'Brave.Brave' }
+            [pscustomobject] @{ Name = 'Mozilla Firefox'; PackageId = 'Mozilla.Firefox' }
+            [pscustomobject] @{ Name = 'Git'; PackageId = 'Git.Git' }
+        )
+        $rows = @(ConvertTo-TkApplicationInventory -Catalog $catalog -WingetRow @(
+            [pscustomobject] @{ Name = 'Brave'; Id = 'ARP\User\X64\BraveSoftware Brave-Browser'; Version = '1'; Source = '' }
+        ) -Program @(
+            [pscustomobject] @{ Name = 'Brave'; Version = '1'; Publisher = 'Brave' }
+            [pscustomobject] @{ Name = 'Mozilla Firefox (x64 fr)'; Version = '130'; Publisher = 'Mozilla' }
+            [pscustomobject] @{ Name = 'GitHub Desktop'; Version = '3'; Publisher = 'GitHub' }
+        ))
+
+        @($rows | ForEach-Object { '{0}|{1}|{2}' -f $_.Name, $_.Reinstall, $_.WingetId }) | Should -Be @(
+            'Brave|winget (catalogue)|Brave.Brave'
+            'GitHub Desktop|By hand|'
+            'Mozilla Firefox (x64 fr)|winget (catalogue)|Mozilla.Firefox'
+        )
+        (Measure-TkApplicationInventory -Application $rows).Winget | Should -Be 2
+    }
+
+    It 'adds the catalogue ids to the winget source of the export file, once' {
+        $file = Join-Path $TestDrive ('winget-{0}.json' -f [guid]::NewGuid())
+        [System.IO.File]::WriteAllText($file, '{"Sources":[{"Packages":[{"PackageIdentifier":"7zip.7zip"}],"SourceDetails":{"Name":"winget","Identifier":"Microsoft.Winget.Source_8wekyb3d8bbwe","Argument":"https://cdn.winget.microsoft.com/cache","Type":"Microsoft.PreIndexed.Package"}},{"Packages":[{"PackageIdentifier":"9NCBCSZSJRSB"}],"SourceDetails":{"Name":"msstore"}}]}')
+
+        Add-TkWingetExportPackage -Path $file -Id @('Brave.Brave', '7zip.7zip', 'Brave.Brave', 'bad id; rm') -Confirm:$false | Should -Be 1
+
+        $data = [System.IO.File]::ReadAllText($file) | ConvertFrom-Json
+        @(($data.Sources | Where-Object { $_.SourceDetails.Name -eq 'winget' }).Packages.PackageIdentifier) | Should -Be @('7zip.7zip', 'Brave.Brave')
+        @(($data.Sources | Where-Object { $_.SourceDetails.Name -eq 'msstore' }).Packages.PackageIdentifier) | Should -Be @('9NCBCSZSJRSB')
+
+        $fresh = Join-Path $TestDrive ('fresh-{0}.json' -f [guid]::NewGuid())
+        Add-TkWingetExportPackage -Path $fresh -Id @('Git.Git') -Confirm:$false | Should -Be 1
+        (([System.IO.File]::ReadAllText($fresh) | ConvertFrom-Json).Sources[0].SourceDetails.Name) | Should -Be 'winget'
+    }
+
+    It 'knows the Store apps that come with Windows' {
+        Test-TkInboxStoreApp -Name 'Microsoft.WindowsCalculator' -Catalog @() | Should -BeTrue
+        Test-TkInboxStoreApp -Name 'Microsoft.BingNews' -Catalog @('Microsoft.BingNews') | Should -BeTrue
+        Test-TkInboxStoreApp -Name 'SpotifyAB.SpotifyMusic' -Catalog @('Microsoft.BingNews') | Should -BeFalse
+        Test-TkInboxStoreApp -Name '' -Catalog @() | Should -BeFalse
+    }
+
+    Context 'In a package' {
+
+        BeforeEach {
+            $script:AppRoot = Join-Path $TestDrive ('apps-{0}' -f [guid]::NewGuid())
+            New-Item -ItemType Directory -Path (Join-Path $script:AppRoot 'apps'), (Join-Path $script:AppRoot 'Documents') -Force | Out-Null
+            @(
+                [pscustomobject] @{ Name = 'Old CAD Suite'; Version = '9'; Publisher = 'CAD Inc'; Kind = 'Program'; Reinstall = 'By hand'; WingetId = '' }
+                [pscustomobject] @{ Name = '7-Zip'; Version = '24'; Publisher = 'Igor Pavlov'; Kind = 'Program'; Reinstall = 'winget'; WingetId = '7zip.7zip' }
+            ) | Export-Csv -LiteralPath (Join-Path $script:AppRoot 'apps\applications.csv') -NoTypeInformation -Encoding UTF8
+            [System.IO.File]::WriteAllText((Join-Path $script:AppRoot 'apps\winget.json'),
+                '{"Sources":[{"Packages":[{"PackageIdentifier":"7zip.7zip"},{"PackageIdentifier":"Git.Git"}]},{"Packages":[{"PackageIdentifier":"9NCBCSZSJRSB"}]}]}')
+        }
+
+        It 'reads the list and the winget file, from their fixed names' {
+            $read = Read-TkMigrationApplication -Root $script:AppRoot
+
+            @($read.Applications).Count | Should -Be 2
+            $read.WingetCount           | Should -Be 3
+            $read.Winget                | Should -Be (Join-Path $script:AppRoot 'apps\winget.json')
+
+            [System.IO.File]::WriteAllText((Join-Path $script:AppRoot 'apps\winget.json'), 'broken')
+            (Read-TkMigrationApplication -Root $script:AppRoot).Winget | Should -Be ''
+            Read-TkMigrationApplication -Root (Join-Path $TestDrive 'none') | Should -BeNullOrEmpty
+        }
+
+        It 'never offers the apps folder as a personal folder, and imports a package of applications only' {
+            $package = Read-TkMigrationPackage -Path $script:AppRoot
+            @($package.Folders | ForEach-Object Name) | Should -Be @('Documents')
+            $package.Applications.WingetCount | Should -Be 3
+
+            Remove-Item -LiteralPath (Join-Path $script:AppRoot 'Documents') -Recurse
+            $only = Read-TkMigrationPackage -Path $script:AppRoot
+            $only.Error | Should -BeNullOrEmpty
+            @($only.Folders).Count | Should -Be 0
+        }
+    }
+
+    It 'adds the sections of the steps to the manifest' {
+        $manifest = New-TkMigrationManifest -Section @{ applications = [ordered] @{ total = 3; list = 'apps\applications.csv' } }
+        $manifest.applications.total | Should -Be 3
+        @($manifest.Keys)[-1]        | Should -Be 'applications'
+    }
+
+    Context 'winget' {
+
+        BeforeEach {
+            $script:WingetCalls = New-Object System.Collections.Generic.List[string]
+
+            # Stand-ins: nothing is installed or listed for real.
+            function Invoke-TkProcess {
+                param($FilePath, $ArgumentList, $TimeoutSeconds)
+                $null = $TimeoutSeconds
+                $script:WingetCalls.Add(('{0} {1}' -f $FilePath, ($ArgumentList -join ' ')))
+                if ($ArgumentList[0] -eq 'export') { [System.IO.File]::WriteAllText($ArgumentList[2], '{"Sources":[]}') }
+                [pscustomobject] @{ ExitCode = 0; StandardOutput = ''; StandardError = '' }
+            }
+            function Add-TkJournalEntry { param($Name, $Category, $Detail) $null = $Name, $Category, $Detail; $script:WingetJournal = $true }
+            function Get-TkApplicationInventory {
+                [pscustomobject] @{ WingetAvailable = $true; Applications = @(
+                    [pscustomobject] @{ Name = 'Old CAD Suite'; Version = '9'; Publisher = 'CAD Inc'; Kind = 'Program'; Reinstall = 'By hand'; WingetId = '' }
+                ) }
+            }
+        }
+
+        It 'writes the list and the winget export into the package' {
+            (Get-Command -Name Invoke-TkProcess).ScriptBlock.ToString() | Should -Match 'WingetCalls'
+            $root = Join-Path $TestDrive ('export-{0}' -f [guid]::NewGuid())
+
+            $section = Export-TkMigrationApplication -Root $root -Confirm:$false
+
+            $section.total      | Should -Be 1
+            $section.manual     | Should -Be 1
+            $section.wingetFile | Should -Be 'apps\winget.json'
+            (Import-Csv -LiteralPath (Join-Path $root 'apps\applications.csv')).Name | Should -Be 'Old CAD Suite'
+            $script:WingetCalls[0] | Should -Match '^winget export -o .*apps\\winget\.json --accept-source-agreements'
+        }
+
+        It 'reinstalls with winget import as the user, and only from a winget.json' {
+            (Get-Command -Name Invoke-TkProcess).ScriptBlock.ToString() | Should -Match 'WingetCalls'
+            $file = Join-Path $TestDrive 'winget.json'
+            [System.IO.File]::WriteAllText($file, '{}')
+
+            (Get-Command -Name Add-TkJournalEntry).ScriptBlock.ToString() | Should -Match 'WingetJournal'
+            (Invoke-TkWingetImport -Path $file -Confirm:$false).Ok | Should -BeTrue
+            $script:WingetCalls[0] | Should -Match '^winget import -i .*winget\.json --ignore-unavailable --ignore-versions --accept-package-agreements'
+
+            $other = Join-Path $TestDrive 'other.json'
+            [System.IO.File]::WriteAllText($other, '{}')
+            (Invoke-TkWingetImport -Path $other -Confirm:$false).Ok | Should -BeFalse
+            $script:WingetCalls.Count | Should -Be 1
+        }
+    }
+}
+
 Describe 'Migration package and import' {
 
     It 'names the personal folders by their Windows key' {

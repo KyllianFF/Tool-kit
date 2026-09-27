@@ -2177,7 +2177,9 @@
                                                 <Button DockPanel.Dock="Right" x:Name="BtnMigrationBrowse" Content="Browse" Margin="8,0,0,0" />
                                                 <TextBox x:Name="MigrationDestination" Tag="E:\ or \\server\share" />
                                             </DockPanel>
-                                            <StackPanel x:Name="MigrationFolderList" Margin="0,0,0,10" />
+                                            <StackPanel x:Name="MigrationFolderList" Margin="0,0,0,6" />
+                                            <CheckBox x:Name="MigrationIncludeApps" Content="Applications: the full list and a winget file" IsChecked="True" Margin="0,0,0,12"
+                                                      ToolTip="Writes every application of this machine, with how each comes back, and a winget export to reinstall what winget knows on the new machine." />
                                             <Button x:Name="BtnMigrationCopy" Content="Copy" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" />
                                             <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"
                                                        Text="Copied with robocopy into a dated package, with a log per folder and a migration.json the import reads. Nothing is deleted here; folders OneDrive keeps are skipped, and files kept online only are not downloaded." />
@@ -2197,6 +2199,9 @@
                                             <ComboBox x:Name="MigrationCloudTarget" MinHeight="40" Margin="0,0,0,12"
                                                       ToolTip="Sets every destination below at once: the Windows folders of this account, or the same folders inside a cloud folder found on this machine." />
                                             <StackPanel x:Name="MigrationImportList" Margin="0,0,0,10" />
+                                            <CheckBox x:Name="MigrationImportApps" Visibility="Collapsed" Margin="0,0,0,4"
+                                                      ToolTip="Runs winget import with the package's winget file, as the signed-in user. Applications no longer available are skipped; the latest version is installed." />
+                                            <TextBlock x:Name="MigrationImportAppsNote" Style="{StaticResource Muted}" TextWrapping="Wrap" Visibility="Collapsed" Margin="0,0,0,12" />
                                             <Button x:Name="BtnMigrationImport" Content="Import" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" />
                                             <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"
                                                        Text="Nothing on this machine is overwritten: a file that is already there with other content is kept, and listed as a conflict. Clear a destination to leave that folder out." />

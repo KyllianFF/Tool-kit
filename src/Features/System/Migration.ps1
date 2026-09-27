@@ -376,10 +376,11 @@ function Get-TkMigrationInventory {
     $printers = @(try { Get-Printer -ErrorAction Stop | Select-Object Name, Type, PortName, DriverName } catch { @() })
 
     return [pscustomobject] @{
-        Drives   = @(Get-TkMappedDrive)
-        Printers = @(ConvertTo-TkPrinterCarryOver -Printer $printers)
-        UserData = Get-TkMigrationUserData
-        Folders  = @(Get-TkUserFolderSize)
+        Drives       = @(Get-TkMappedDrive)
+        Printers     = @(ConvertTo-TkPrinterCarryOver -Printer $printers)
+        UserData     = Get-TkMigrationUserData
+        Folders      = @(Get-TkUserFolderSize)
+        Applications = @((Get-TkApplicationInventory).Applications)
     }
 }
 
