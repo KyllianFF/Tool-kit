@@ -370,7 +370,7 @@ Describe 'Per-action elevation' {
         $names   = @($actions | ForEach-Object { $_.Name })
 
         foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile', 'RemoveStoreApps',
-                                  'OpenThroughputPort', 'CloseThroughputPort', 'ExportDrivers')) {
+                                  'OpenThroughputPort', 'CloseThroughputPort', 'ExportDrivers', 'CopyToProfile')) {
             $names | Should -Contain $expected
         }
 
@@ -8599,6 +8599,310 @@ Describe 'Migration pins and bookmarks' {
 
             ($done | Where-Object Browser -eq 'Chrome (Default)').Text | Should -Match 'is open'
             [System.IO.File]::ReadAllText("$($script:BmNew[0].Root)\Default\Bookmarks") | Should -Be $script:ChromeJson
+        }
+    }
+}
+
+Describe 'Migration to another profile' {
+
+    BeforeAll {
+        $script:MySid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    }
+
+    Context 'Profiles and their folders' {
+
+        It 'keeps the user profiles whose folder exists, named, sorted, with the current one marked' {
+            $instances = @(
+                [pscustomobject] @{ SID = 'S-1-5-18'; LocalPath = 'C:\Windows\system32\config\systemprofile'; Special = $true; Loaded = $true }
+                [pscustomobject] @{ SID = 'S-1-5-21-1-2-3-1002'; LocalPath = 'C:\Users\zoe'; Special = $false; Loaded = $false }
+                [pscustomobject] @{ SID = 'S-1-5-21-1-2-3-1001'; LocalPath = 'C:\Users\adam\'; Special = $false; Loaded = $true }
+                [pscustomobject] @{ SID = 'S-1-5-21-1-2-3-1003'; LocalPath = 'C:\Users\gone'; Special = $false; Loaded = $false }
+                [pscustomobject] @{ SID = 'S-1-12-1-9-8-7-6'; LocalPath = 'C:\Users\cloud'; Special = $false; Loaded = $false }
+            )
+            $found = @(ConvertTo-TkLocalProfile -Instance $instances -CurrentSid 'S-1-5-21-1-2-3-1001' `
+                            -Exists { param($path) $path -ne 'C:\Users\gone' } `
+                            -Resolve { param($sid) if ($sid -like '*-1001') { 'PC\adam' } else { '' } })
+
+            @($found.Name) | Should -Be @('cloud', 'PC\adam', 'zoe')
+            ($found | Where-Object Current).Path | Should -Be 'C:\Users\adam'
+            ($found | Where-Object Name -eq 'zoe').Loaded | Should -BeFalse
+        }
+
+        It 'reads that account''s %USERPROFILE%, keeps a OneDrive folder, and falls back on anything else' {
+            $shell = [pscustomobject] @{
+                Desktop       = '%userprofile%\Desktop'
+                Personal      = 'C:\Users\zoe\OneDrive - Contoso\Documents'
+                'My Pictures' = '%OneDrive%\Pictures'
+            }
+            $folders = @(ConvertTo-TkProfileFolder -ProfilePath 'C:\Users\zoe' -ShellFolder $shell)
+
+            @($folders.Key) | Should -Be @('Desktop', 'Documents', 'Pictures', 'Videos', 'Music', 'Downloads')
+            ($folders | Where-Object Key -eq 'Desktop').Path   | Should -Be 'C:\Users\zoe\Desktop'
+            ($folders | Where-Object Key -eq 'Documents').Path | Should -Be 'C:\Users\zoe\OneDrive - Contoso\Documents'
+            ($folders | Where-Object Key -eq 'Pictures').Path  | Should -Be 'C:\Users\zoe\Pictures'
+            ($folders | Where-Object Key -eq 'Downloads').Path | Should -Be 'C:\Users\zoe\Downloads'
+            (@(ConvertTo-TkProfileFolder -ProfilePath 'C:\Users\zoe') | Where-Object Key -eq 'Music').Path | Should -Be 'C:\Users\zoe\Music'
+        }
+
+        It 'reads a profile it may not open as folders of unknown state, without failing' {
+            # Without administrator rights another profile is denied; Test-Path threw there.
+            $locked = Join-Path $TestDrive ('locked-{0}' -f [guid]::NewGuid())
+            New-Item -ItemType Directory -Path (Join-Path $locked 'Documents') -Force | Out-Null
+            $me   = New-Object System.Security.Principal.SecurityIdentifier($script:MySid)
+            $acl  = Get-Acl -LiteralPath $locked
+            $deny = New-Object System.Security.AccessControl.FileSystemAccessRule($me, 'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Deny')
+            $acl.AddAccessRule($deny)
+            Set-Acl -LiteralPath $locked -AclObject $acl
+            try {
+                # As in the window, where every error stops.
+                $ErrorActionPreference = 'Stop'
+                $folders = @(Get-TkProfileFolder -UserProfile ([pscustomobject] @{ Sid = 'S-1-5-21-1-2-3-4'; Path = $locked }))
+                $folders.Count | Should -Be 6
+            }
+            finally {
+                $ErrorActionPreference = 'Continue'
+                $acl = Get-Acl -LiteralPath $locked
+                [void] $acl.RemoveAccessRule($deny)
+                Set-Acl -LiteralPath $locked -AclObject $acl
+            }
+        }
+    }
+
+    Context 'The plan' {
+
+        BeforeEach {
+            $script:PlanBase = Join-Path $TestDrive ('plan-{0}' -f [guid]::NewGuid())
+            $script:OldUser  = [pscustomobject] @{ Sid = 'S-1-5-21-1-2-3-1001'; Path = (Join-Path $script:PlanBase 'old'); Name = 'old' }
+            $script:NewUser  = [pscustomobject] @{ Sid = 'S-1-5-21-1-2-3-1002'; Path = (Join-Path $script:PlanBase 'new'); Name = 'new' }
+            New-Item -ItemType Directory -Path (Join-Path $script:OldUser.Path 'Documents'), (Join-Path $script:OldUser.Path 'Desktop') -Force | Out-Null
+            $script:PlanRow = { param($key, $target, $source = (Join-Path $script:OldUser.Path $key)) [pscustomobject] @{ Key = $key; Name = $key; Source = $source; Target = $target } }
+        }
+
+        It 'keeps the rows with a destination inside the other profile' {
+            $plan = New-TkProfileCopyPlan -SourceProfile $script:OldUser -TargetProfile $script:NewUser -Row @(
+                (& $script:PlanRow 'Documents' (Join-Path $script:NewUser.Path 'Documents'))
+                (& $script:PlanRow 'Desktop' '')
+            )
+            @($plan.Errors).Count | Should -Be 0
+            @($plan.Steps.Key)    | Should -Be @('Documents')
+        }
+
+        It 'refuses the same profile, a destination elsewhere, a relative path, a source elsewhere or missing' {
+            (New-TkProfileCopyPlan -SourceProfile $script:OldUser -TargetProfile $script:OldUser -Row @()).Errors | Should -Match 'same'
+            (New-TkProfileCopyPlan -SourceProfile $null -TargetProfile $script:NewUser -Row @()).Errors | Should -Match 'Pick'
+            (New-TkProfileCopyPlan -SourceProfile $script:OldUser -TargetProfile $script:NewUser -Row @()).Errors | Should -Match 'No folder'
+
+            $wrong = New-TkProfileCopyPlan -SourceProfile $script:OldUser -TargetProfile $script:NewUser -Row @(
+                (& $script:PlanRow 'Documents' 'C:\Elsewhere\Documents')
+                (& $script:PlanRow 'Desktop' 'Desktop')
+                (& $script:PlanRow 'Music' (Join-Path $script:NewUser.Path 'Music') 'C:\Windows')
+                (& $script:PlanRow 'Videos' (Join-Path $script:NewUser.Path 'Videos'))
+            )
+            @($wrong.Steps).Count | Should -Be 0
+            $wrong.Errors[0] | Should -Match 'must be inside the profile'
+            $wrong.Errors[1] | Should -Match 'full path'
+            $wrong.Errors[2] | Should -Match 'is not inside the profile'
+            $wrong.Errors[3] | Should -Match 'does not exist'
+
+            $window = New-TkProfileCopyPlan -SourceProfile $script:OldUser -TargetProfile $script:NewUser -SkipSourceCheck -Row @(
+                (& $script:PlanRow 'Videos' (Join-Path $script:NewUser.Path 'Videos'))
+            )
+            @($window.Errors).Count | Should -Be 0
+        }
+
+        It 'refuses a destination inside a source' {
+            $nested = [pscustomobject] @{ Sid = 'S-1-5-21-1-2-3-1003'; Path = (Join-Path $script:OldUser.Path 'Documents\nested'); Name = 'nested' }
+            $plan = New-TkProfileCopyPlan -SourceProfile $script:OldUser -TargetProfile $nested -Row @(
+                (& $script:PlanRow 'Documents' (Join-Path $nested.Path 'Documents'))
+            )
+            $plan.Errors | Should -Match 'overlap'
+        }
+    }
+
+    Context 'Copying' {
+
+        BeforeEach {
+            $script:CopyBase   = Join-Path $TestDrive ('copy-{0}' -f [guid]::NewGuid())
+            $script:CopySource = Join-Path $script:CopyBase 'old\Documents'
+            $script:CopyTarget = Join-Path $script:CopyBase 'new\Documents'
+            New-Item -ItemType Directory -Path (Join-Path $script:CopySource 'Sub\Deeper'), (Join-Path $script:CopySource 'Both'), (Join-Path $script:CopyTarget 'Both') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $script:CopySource 'new.txt') -Value 'new'
+            Set-Content -LiteralPath (Join-Path $script:CopySource 'Sub\Deeper\deep.txt') -Value 'deep'
+            Set-Content -LiteralPath (Join-Path $script:CopySource 'Both\loose.txt') -Value 'loose'
+            Set-Content -LiteralPath (Join-Path $script:CopySource 'same.txt') -Value 'same'
+            Set-Content -LiteralPath (Join-Path $script:CopySource 'conflict.txt') -Value 'old version'
+            Copy-Item -LiteralPath (Join-Path $script:CopySource 'same.txt') -Destination $script:CopyTarget
+            Set-Content -LiteralPath (Join-Path $script:CopyTarget 'conflict.txt') -Value 'the new account''s version'
+
+            $script:ProcessCalls = New-Object System.Collections.Generic.List[object]
+
+            # Stand-ins: robocopy copies what is missing, as /XC /XN /XO does; nothing else runs.
+            function Invoke-TkProcess {
+                param($FilePath, $ArgumentList, $TimeoutSeconds)
+                $null = $TimeoutSeconds
+                $script:ProcessCalls.Add([pscustomobject] @{ File = $FilePath; Arguments = @($ArgumentList) })
+                if ($FilePath -eq 'robocopy.exe') {
+                    $from = (Get-Item -LiteralPath $ArgumentList[0]).FullName
+                    $to   = $ArgumentList[1]
+                    foreach ($file in (Get-ChildItem -LiteralPath $from -Recurse -File)) {
+                        $there = Join-Path $to $file.FullName.Substring($from.Length)
+                        if (-not (Test-Path -LiteralPath $there)) {
+                            New-Item -ItemType Directory -Path (Split-Path $there -Parent) -Force | Out-Null
+                            Copy-Item -LiteralPath $file.FullName -Destination $there
+                        }
+                    }
+                    return [pscustomobject] @{ ExitCode = $script:RobocopyExit; StandardOutput = ''; StandardError = '' }
+                }
+                [pscustomobject] @{ ExitCode = 0; StandardOutput = ''; StandardError = '' }
+            }
+            function Add-TkJournalEntry { param($Name, $Category, $Detail) $null = $Category; $script:ProfileJournal = '{0}: {1}' -f $Name, $Detail }
+            $script:RobocopyExit = 1
+        }
+
+        It 'sorts the files, and names what the copy creates and nothing else' {
+            $items = Get-TkProfileCopyItem -Source $script:CopySource -Target $script:CopyTarget
+
+            @($items.New | Sort-Object) | Should -Be @('Both\loose.txt', 'new.txt', 'Sub\Deeper\deep.txt')
+            @($items.Same)              | Should -Be @('same.txt')
+            @($items.Conflict)          | Should -Be @('conflict.txt')
+            @($items.NewRoot)           | Should -Be @('Sub')
+            @($items.Loose | Sort-Object) | Should -Be @('Both\loose.txt', 'new.txt')
+            $items.TargetExisted        | Should -BeTrue
+
+            $fresh = Get-TkProfileCopyItem -Source $script:CopySource -Target (Join-Path $script:CopyBase 'new\Elsewhere')
+            @($fresh.NewRoot) | Should -Be @('')
+            @($fresh.Loose).Count | Should -Be 0
+        }
+
+        It 'leaves out a file kept online only' {
+            $cloudFile = Join-Path $script:CopySource 'online.txt'
+            Set-Content -LiteralPath $cloudFile -Value 'in the cloud'
+            [System.IO.File]::SetAttributes($cloudFile, [System.IO.FileAttributes]::Offline)
+            if (-not ([System.IO.File]::GetAttributes($cloudFile) -band [System.IO.FileAttributes]::Offline)) {
+                Set-ItResult -Skipped -Because 'this file system does not keep the offline attribute'
+                return
+            }
+            $items = Get-TkProfileCopyItem -Source $script:CopySource -Target $script:CopyTarget
+            $items.Online | Should -Be 1
+            $items.New    | Should -Not -Contain 'online.txt'
+        }
+
+        It 'gives the new folders, and the new files in existing folders, to the destination account' {
+            (Get-Command -Name Invoke-TkProcess).ScriptBlock.ToString() | Should -Match 'ProcessCalls'
+            $items = Get-TkProfileCopyItem -Source $script:CopySource -Target $script:CopyTarget
+            & (Get-Command Invoke-TkProcess) -FilePath 'robocopy.exe' -ArgumentList @($script:CopySource, $script:CopyTarget) -TimeoutSeconds 0 | Out-Null
+            $script:ProcessCalls.Clear()
+
+            Set-TkCopiedOwner -Target $script:CopyTarget -Item $items -Sid 'S-1-5-21-1-2-3-1002' -Confirm:$false | Should -Be 0
+
+            $calls = @($script:ProcessCalls | ForEach-Object { ($_.Arguments -join ' ').Replace($script:CopyTarget, '<t>') })
+            $calls | Should -Contain '<t>\Sub /setowner *S-1-5-21-1-2-3-1002 /T /C /Q'
+            $calls | Should -Contain '<t>\new.txt /setowner *S-1-5-21-1-2-3-1002 /C /Q'
+            $calls | Should -Contain '<t>\Both\loose.txt /setowner *S-1-5-21-1-2-3-1002 /C /Q'
+            $calls.Count | Should -Be 3
+            { Set-TkCopiedOwner -Target $script:CopyTarget -Item $items -Sid 'Everyone' -Confirm:$false } | Should -Throw
+        }
+
+        It 'moves only the files whose copy matches, and keeps the rest' {
+            $items = Get-TkProfileCopyItem -Source $script:CopySource -Target $script:CopyTarget
+            & (Get-Command Invoke-TkProcess) -FilePath 'robocopy.exe' -ArgumentList @($script:CopySource, $script:CopyTarget) -TimeoutSeconds 0 | Out-Null
+
+            # A copy damaged after the copy, and one that never arrived.
+            Set-Content -LiteralPath (Join-Path $script:CopyTarget 'new.txt') -Value 'damaged'
+            Set-Content -LiteralPath (Join-Path $script:CopySource 'late.txt') -Value 'late'
+            [System.IO.File]::SetAttributes((Join-Path $script:CopySource 'same.txt'), [System.IO.FileAttributes]::ReadOnly)
+
+            $gone = Remove-TkVerifiedSource -Source $script:CopySource -Target $script:CopyTarget -Relative (@($items.New) + @($items.Same) + @('late.txt')) -Confirm:$false
+
+            $gone.Moved | Should -Be 3
+            $gone.Kept  | Should -Be 2
+            ($gone.Reasons -join ' ') | Should -Match 'new\.txt: the copy differs'
+            ($gone.Reasons -join ' ') | Should -Match 'late\.txt: not at the destination'
+            Test-Path -LiteralPath (Join-Path $script:CopySource 'new.txt')      | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $script:CopySource 'conflict.txt') | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $script:CopySource 'same.txt')     | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $script:CopySource 'Sub')          | Should -BeFalse
+            Test-Path -LiteralPath $script:CopySource                            | Should -BeTrue
+        }
+
+        It 'deletes nothing when the source and the destination overlap' {
+            $inside = Join-Path $script:CopySource 'Sub'
+            $gone = Remove-TkVerifiedSource -Source $script:CopySource -Target $inside -Relative @('new.txt') -Confirm:$false
+            $gone.Moved | Should -Be 0
+            Test-Path -LiteralPath (Join-Path $script:CopySource 'new.txt') | Should -BeTrue
+        }
+
+        It 'copies, sets the owner, checks the access, moves, and journals it' {
+            (Get-Command -Name Add-TkJournalEntry).ScriptBlock.ToString() | Should -Match 'ProfileJournal'
+            $step = [pscustomobject] @{ Key = 'Documents'; Name = 'Documents'; Source = $script:CopySource; Target = $script:CopyTarget }
+
+            $done = Copy-TkProfileData -Step @($step) -Sid $script:MySid -AccountName 'PC\new' -Move -LogFolder $script:CopyBase -Confirm:$false
+
+            $done.Steps[0].Text | Should -Match '3 new file\(s\), 1 already there; 1 conflict\(s\) left alone'
+            $done.Steps[0].Text | Should -Match 'owner set to PC\\new; PC\\new has access'
+            $done.Steps[0].Text | Should -Match 'moved 4 file\(s\) after a SHA-256 check, 1 kept at the source'
+            $done.Ok | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $script:CopySource 'conflict.txt') | Should -BeTrue
+            Get-Content -LiteralPath (Join-Path $script:CopyTarget 'conflict.txt') | Should -Be 'the new account''s version'
+            $robocopy = @($script:ProcessCalls | Where-Object File -eq 'robocopy.exe')[0].Arguments
+            foreach ($flag in @('/COPY:DAT', '/XC', '/XN', '/XO', '/XJ', '/XA:O', '/B')) { $robocopy | Should -Contain $flag }
+            $robocopy | Should -Not -Contain '/COPYALL'
+            $robocopy | Should -Not -Contain '/SEC'
+            $script:ProfileJournal | Should -Match '^Profile data moved to PC\\new'
+        }
+
+        It 'deletes nothing at the source when robocopy reports errors' {
+            $script:RobocopyExit = 8
+            $step = [pscustomobject] @{ Key = 'Documents'; Name = 'Documents'; Source = $script:CopySource; Target = $script:CopyTarget }
+
+            $done = Copy-TkProfileData -Step @($step) -Sid $script:MySid -Move -LogFolder $script:CopyBase -Confirm:$false
+
+            $done.Ok | Should -BeFalse
+            $done.Steps[0].Text | Should -Match 'nothing deleted at the source'
+            Test-Path -LiteralPath (Join-Path $script:CopySource 'new.txt') | Should -BeTrue
+        }
+    }
+
+    Context 'Access and the elevated worker' {
+
+        It 'wants Modify for the account, and no deny' {
+            $sid  = 'S-1-5-21-1-2-3-1002'
+            $make = {
+                param($who, $rights, $type)
+                $acl = New-Object System.Security.AccessControl.DirectorySecurity
+                $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule((New-Object System.Security.Principal.SecurityIdentifier($who)), $rights, 'ContainerInherit,ObjectInherit', 'None', $type)))
+                $acl
+            }
+            Test-TkProfileAccess -Path 'unused' -Sid $sid -Acl (& $make $sid 'FullControl' 'Allow') | Should -BeTrue
+            Test-TkProfileAccess -Path 'unused' -Sid $sid -Acl (& $make $sid 'ReadAndExecute' 'Allow') | Should -BeFalse
+            Test-TkProfileAccess -Path 'unused' -Sid $sid -Acl (& $make 'S-1-5-21-1-2-3-9999' 'FullControl' 'Allow') | Should -BeFalse
+
+            $denied = & $make $sid 'FullControl' 'Allow'
+            $denied.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule((New-Object System.Security.Principal.SecurityIdentifier($sid)), 'Write', 'Deny')))
+            Test-TkProfileAccess -Path 'unused' -Sid $sid -Acl $denied | Should -BeFalse
+        }
+
+        It 'checks the profiles and paths again before copying anything' {
+            function Get-TkLocalProfile {
+                @([pscustomobject] @{ Sid = 'S-1-5-21-1-2-3-1001'; Path = 'C:\Users\old'; Name = 'old'; Loaded = $false; Current = $false }
+                  [pscustomobject] @{ Sid = 'S-1-5-21-1-2-3-1002'; Path = 'C:\Users\new'; Name = 'new'; Loaded = $false; Current = $false })
+            }
+            function Copy-TkProfileData { $script:WorkerCopied = $true }
+            $script:WorkerCopied = $false
+            $worker = (@(Get-TkElevatedAction) | Where-Object Name -eq 'CopyToProfile').Worker
+
+            $result = & $worker ([pscustomobject] @{
+                SourceSid = 'S-1-5-21-1-2-3-1001'; TargetSid = 'S-1-5-21-1-2-3-1002'; Move = $true
+                Steps = @([pscustomobject] @{ Key = 'Documents'; Name = 'Documents'; Source = 'C:\Users\old\Documents'; Target = 'C:\Windows\System32' })
+            })
+
+            $result.Ok | Should -BeFalse
+            $result.Message | Should -Match 'inside the profile C:\\Users\\new'
+            $script:WorkerCopied | Should -BeFalse
+
+            $unknown = & $worker ([pscustomobject] @{ SourceSid = 'S-1-5-21-1-2-3-1001'; TargetSid = 'S-1-5-21-9-9-9-1'; Move = $false; Steps = @() })
+            $unknown.Ok | Should -BeFalse
+            $script:WorkerCopied | Should -BeFalse
         }
     }
 }

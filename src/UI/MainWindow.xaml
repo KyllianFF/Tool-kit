@@ -2216,6 +2216,24 @@
                                         </StackPanel>
                                     </ScrollViewer>
                                 </TabItem>
+                                <TabItem Header="Another profile">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="From the profile" Style="{StaticResource Muted}" Margin="0,0,0,4" />
+                                            <ComboBox x:Name="MigrationProfileFrom" MinHeight="40" Margin="0,0,0,8"
+                                                      ToolTip="The account whose files are copied. Sign it out first, so no file is in use." />
+                                            <TextBlock Text="To the profile" Style="{StaticResource Muted}" Margin="0,0,0,4" />
+                                            <ComboBox x:Name="MigrationProfileTo" MinHeight="40" Margin="0,0,0,12"
+                                                      ToolTip="The account that receives them. It must have signed in once, so its profile exists." />
+                                            <StackPanel x:Name="MigrationProfileList" Margin="0,0,0,10" />
+                                            <CheckBox x:Name="MigrationProfileMove" Content="Move: delete each source file once its copy is verified" Margin="0,0,0,12"
+                                                      ToolTip="A source file is deleted only when its copy is read back and its SHA-256 matches. A conflict, a file that failed or one kept online only stays where it was." />
+                                            <Button x:Name="BtnMigrationProfileCopy" Content="Copy to the profile" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" />
+                                            <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"
+                                                       Text="Needs administrator rights, asked once. The copied files take the permissions of the folder they land in and belong to the destination account. Nothing at the destination is overwritten; a file that differs is kept at both places." />
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </TabItem>
                             </TabControl>
                         </Border>
 

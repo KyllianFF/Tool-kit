@@ -26,6 +26,7 @@ src/Features/System/MigrationPackage.ps1
 src/Features/System/MigrationApps.ps1
 src/Features/System/MigrationPins.ps1
 src/Features/System/MigrationBookmarks.ps1
+src/Features/System/MigrationProfile.ps1
 src/Features/System/Dashboard.ps1
 src/Features/Software/WingetManager.ps1
 src/Features/Software/SoftwareLifecycle.ps1
