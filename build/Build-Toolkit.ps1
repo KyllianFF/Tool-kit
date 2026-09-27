@@ -446,3 +446,14 @@ Write-Host 'Publish the SHA256 alongside the release so users can verify what th
 
 # Written next to the build so a release workflow can attach it.
 Set-Content -LiteralPath ($OutputPath + '.sha256') -Value ('{0}  {1}' -f $sha256, (Split-Path $OutputPath -Leaf)) -Encoding ASCII
+
+# The manifest the opt-in update check reads: one small file, so a copy can
+# tell whether a newer build is published without fetching the build itself.
+$manifest = [ordered] @{
+    version   = $Version
+    commit    = $commit
+    sha256    = $sha256
+    published = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+}
+
+Set-Content -LiteralPath ($OutputPath + '.version.json') -Value ($manifest | ConvertTo-Json) -Encoding ASCII

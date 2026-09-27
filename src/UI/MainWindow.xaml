@@ -1266,6 +1266,9 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24,0,24,0" />
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnUpdateAvailable" Content="Update available" Style="{StaticResource GlyphButton}" Tag="&#xE896;"
+                            Margin="0,0,10,0" Visibility="Collapsed"
+                            ToolTip="A newer build of the toolkit is published. Settings says where to get it." />
                     <Button x:Name="BtnSearch" Content="Search    Ctrl+K" Style="{StaticResource GlyphButton}" Tag="&#xE721;"
                             Margin="0,0,14,0" ToolTip="Find a page, a report, a fix, a tweak, an application, a topic or a vendor command." />
                     <Border x:Name="ElevationBadge" CornerRadius="12" Padding="10,4" Margin="0,0,10,0"
@@ -5463,7 +5466,7 @@
                     <StackPanel Grid.Row="0" Margin="0,0,0,4">
                         <TextBlock Text="Settings" Style="{StaticResource Heading}" />
                         <TextBlock Style="{StaticResource Muted}"
-                                   Text="Kept for this Windows account only: the VirusTotal key, and the folder where the toolkit writes its data and logs." />
+                                   Text="Kept for this Windows account only: the VirusTotal key, the update check, and the folder where the toolkit writes its data and logs." />
                     </StackPanel>
 
                     <ScrollViewer Grid.Row="1" Margin="0,10,0,0" VerticalScrollBarVisibility="Auto">
@@ -5479,6 +5482,20 @@
                                         <Button x:Name="BtnRemoveVtKey" Content="Remove stored key" />
                                     </StackPanel>
                                     <TextBlock x:Name="VtKeyStatus" Style="{StaticResource Muted}" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Updates" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                    <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" TextWrapping="Wrap"
+                                               Text="The one-liner always runs the published build; a portable or saved copy does not. The check reads one small file on raw.githubusercontent.com (the version, commit and SHA256 of the published build). Nothing is downloaded or replaced: you get the build yourself and verify its SHA256." />
+                                    <CheckBox x:Name="SettingCheckUpdates" Content="Check for a newer build when the toolkit starts" Margin="0,0,0,10" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="BtnCheckToolkitUpdate" Content="Check now" Style="{StaticResource PrimaryButton}" />
+                                        <Button x:Name="BtnOpenDownloads" Content="Open the published build" Margin="10,0,0,0" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="UpdateStatusText" Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>
 

@@ -281,6 +281,17 @@ endpoint sensor still flags a signed build, the answer is a scoped exception
 the security team owns — the package `README.txt` has the specifics for
 Microsoft Defender, CrowdStrike Falcon and ESET.
 
+**Staying current.** A portable or saved copy grows old without saying so. In
+Settings, **Updates** turns on an opt-in check at start-up (off by default), or
+runs one with **Check now**. It reads a single small file,
+`dist/toolkit.ps1.version.json`, which the build writes beside the script:
+the version, commit, SHA256 and date of the published build. When a newer build
+is published, an **Update available** button appears in the header. Nothing is
+downloaded or replaced: a signed copy would lose its signature, and a tool that
+rewrites itself from the network is what a security product is right to
+distrust. You fetch the published build, check its SHA256 against the one
+shown, and rebuild the portable package if that is the edition you use.
+
 ---
 
 ## Requirements

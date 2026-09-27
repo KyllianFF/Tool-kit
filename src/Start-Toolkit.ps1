@@ -191,6 +191,11 @@ function Start-Toolkit {
         Show-TkPage -Name 'Dashboard'
         Update-TkDashboard
 
+        # Only when the user turned it on in Settings: it is a network request.
+        if ($ctx.Settings['CheckForUpdates'] -eq $true) {
+            Invoke-TkUpdateCheckFromUi -Automatic
+        }
+
         if (-not $ctx.IsElevated) {
 
             Write-TkLog -Level Warning -Category 'Startup' -Message (

@@ -157,10 +157,77 @@ function Initialize-TkSecurityPage {
 
     Update-TkVirusTotalKeyStatus
 
+    # --- Updates ----------------------------------------------------------
+    $updateBox = Get-TkControl -Name 'SettingCheckUpdates'
+
+    if ($updateBox) {
+        $updateBox.IsChecked = ((Get-TkContext).Settings['CheckForUpdates'] -eq $true)
+        $updateBox.Add_Click({
+            $settings = (Get-TkContext).Settings
+            $settings['CheckForUpdates'] = [bool] (Get-TkControl -Name 'SettingCheckUpdates').IsChecked
+            Save-TkSettings
+            Set-TkStatus -Text $(if ($settings['CheckForUpdates']) { 'The toolkit checks for a newer build when it starts.' } else { 'The update check is off.' })
+        })
+    }
+
+    Register-TkClick -Name 'BtnCheckToolkitUpdate' -Action { Invoke-TkUpdateCheckFromUi }
+    Register-TkClick -Name 'BtnOpenDownloads'   -Action { Start-Process -FilePath (Get-TkUpdateSource).DownloadPage }
+    Register-TkClick -Name 'BtnUpdateAvailable' -Action { Show-TkPage -Name 'Settings' }
+
     # --- Calculators ------------------------------------------------------
     # The Ports, chmod, Regex, Timestamps and Encoding tabs share the Tools
     # page with the tabs above.
     Initialize-TkToolsPage
+}
+
+<#
+.SYNOPSIS
+    Checks for a newer build and says so in Settings, and in the header when there is one.
+
+.PARAMETER Automatic
+    The check made at start-up: it stays quiet unless a newer build is published.
+#>
+function Invoke-TkUpdateCheckFromUi {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [switch] $Automatic
+    )
+
+    $quiet = [bool] $Automatic
+
+    Invoke-TkBackgroundAction -StatusText 'Checking for a newer build of the toolkit...' `
+        -ScriptBlock { Test-TkToolkitUpdate } `
+        -OnComplete {
+            param($result)
+
+            $check = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Status'] } | Select-Object -Last 1
+
+            if (-not $check) {
+                return
+            }
+
+            $status = Get-TkControl -Name 'UpdateStatusText'
+            $badge  = Get-TkControl -Name 'BtnUpdateAvailable'
+
+            if ($status) {
+                $status.Text = if ($check.Status -eq 'UpdateAvailable' -and $check.Published) {
+                    '{0} Download it from the published build page and check that its SHA256 is {1}.' -f $check.Text, $check.Published.Sha256
+                }
+                else { $check.Text }
+            }
+
+            if ($badge) {
+                $badge.Visibility = if ($check.Status -eq 'UpdateAvailable') { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+            }
+
+            if ($check.Status -eq 'UpdateAvailable') {
+                Set-TkStatus -Text 'A newer build of the toolkit is published: see Settings, Updates.'
+            }
+            elseif (-not $quiet) {
+                Set-TkStatus -Text $check.Text
+            }
+        }.GetNewClosure()
 }
 
 # ---------------------------------------------------------------------------
