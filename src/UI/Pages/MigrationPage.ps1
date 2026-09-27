@@ -911,7 +911,10 @@ function Invoke-TkProfileCopyFromUi {
         [pscustomobject] @{ Key = $_.Key; Name = $_.Name; Source = $_.Source; Target = ([string] $_.Box.Text).Trim() }
     })
 
-    $plan = New-TkProfileCopyPlan -Row $rows -SourceProfile $from -TargetProfile $to -SkipSourceCheck:(-not (Test-TkIsElevated))
+    $pins      = [bool] (Get-TkControl -Name 'MigrationProfilePins').IsChecked
+    $bookmarks = [bool] (Get-TkControl -Name 'MigrationProfileBookmarks').IsChecked
+
+    $plan = New-TkProfileCopyPlan -Row $rows -SourceProfile $from -TargetProfile $to -SkipSourceCheck:(-not (Test-TkIsElevated)) -AllowNoFolder:($pins -or $bookmarks)
     if (@($plan.Errors).Count -gt 0) {
         Set-TkStatus -Text (@($plan.Errors) -join ' ')
         return
@@ -920,11 +923,19 @@ function Invoke-TkProfileCopyFromUi {
     $move    = [bool] (Get-TkControl -Name 'MigrationProfileMove').IsChecked
     $verb    = if ($move) { 'Move' } else { 'Copy' }
     $lines   = @($plan.Steps | ForEach-Object { '- {0}: {1}  ->  {2}' -f $_.Name, $_.Source, $_.Target })
+    if ($pins) { $lines += '- Pins: Quick Access, jump lists, taskbar and Start (those of {0} are saved first)' -f $to.Name }
+    if ($bookmarks) { $lines += '- Browser bookmarks, merged into a folder of each browser, and an HTML file on its desktop' }
     $message = "{0} from {1} to {2}:`n`n{3}`n`nOnly the files missing at the destination are copied; nothing there is overwritten. The copies take the permissions of the folder they land in and belong to {2}." -f `
         $verb, $from.Name, $to.Name, ($lines -join "`n")
 
     if ($move) {
         $message += "`n`nMove: each source file is deleted only once its copy is read back and its SHA-256 matches. A conflict, a file that failed and a file kept online only stay in {0}." -f $from.Path
+    }
+    if ($pins -and $to.Loaded) {
+        $message += "`n`n{0} is signed in, so its pins are not copied: sign it out first." -f $to.Name
+    }
+    if ($move -and ($pins -or $bookmarks)) {
+        $message += "`n`nPins and bookmarks are always copied, never moved."
     }
     if ($from.Loaded -and -not $from.Current) {
         $message += "`n`n{0} is signed in: files it has open are skipped. Sign it out first for a complete copy." -f $from.Name
@@ -941,6 +952,8 @@ function Invoke-TkProfileCopyFromUi {
         SourceSid = $from.Sid
         TargetSid = $to.Sid
         Move      = $move
+        Pins      = $pins
+        Bookmarks = $bookmarks
         Steps     = @($plan.Steps | ForEach-Object { @{ Key = $_.Key; Name = $_.Name; Source = $_.Source; Target = $_.Target } })
     } -OnResult {
         param($outcome)

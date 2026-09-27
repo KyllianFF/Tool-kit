@@ -360,7 +360,9 @@ function Export-TkMigrationBookmark {
     [OutputType([System.Collections.Specialized.OrderedDictionary])]
     param(
         [Parameter(Mandatory)] [string] $Root,
-        [Parameter()] [object[]] $Definition = @(Get-TkBrowserDefinition)
+        [Parameter()] [object[]] $Definition = @(Get-TkBrowserDefinition),
+        [Parameter()] [string] $LocalAppData = $env:LOCALAPPDATA,
+        [Parameter()] [switch] $SkipProcessCheck
     )
 
     $folder = [System.IO.Path]::Combine($Root, 'bookmarks')
@@ -385,7 +387,7 @@ function Export-TkMigrationBookmark {
             $target = [System.IO.Path]::Combine($folder, $browser.Name, $profileFolder.Name)
 
             # Firefox keeps places.sqlite open while it runs; a copy then is not consistent.
-            if ($browser.Kind -eq 'Firefox' -and (Get-Process -Name $browser.Process -ErrorAction SilentlyContinue)) {
+            if ($browser.Kind -eq 'Firefox' -and -not $SkipProcessCheck -and (Get-Process -Name $browser.Process -ErrorAction SilentlyContinue)) {
                 $busy.Add($label)
                 continue
             }
@@ -431,7 +433,7 @@ function Export-TkMigrationBookmark {
         blockedBy  = $(if ($blocked.Count -gt 0) { Get-TkBlockingProductName } else { '' })
         busy       = @($busy.ToArray())
         html       = $html
-        duckduckgo = (Test-TkDuckDuckGoInstalled)
+        duckduckgo = (Test-TkDuckDuckGoInstalled -LocalAppData $LocalAppData)
     }
 }
 
@@ -481,7 +483,7 @@ function Read-TkMigrationBookmark {
     The HTML file is put on the desktop, never over another file.
 
 .OUTPUTS
-    PSCustomObject[] with Browser, Ok and Text.
+    PSCustomObject[] with Browser, Ok, Text and Created (the files it wrote).
 #>
 function Import-TkMigrationBookmark {
     [CmdletBinding(SupportsShouldProcess)]
@@ -490,7 +492,8 @@ function Import-TkMigrationBookmark {
         [Parameter(Mandatory)] [string] $Root,
         [Parameter()] [string] $Computer = 'the old PC',
         [Parameter()] [string] $Desktop = [Environment]::GetFolderPath('Desktop'),
-        [Parameter()] [object[]] $Definition = @(Get-TkBrowserDefinition)
+        [Parameter()] [object[]] $Definition = @(Get-TkBrowserDefinition),
+        [Parameter()] [switch] $SkipProcessCheck
     )
 
     $package = Read-TkMigrationBookmark -Root $Root -Definition $Definition
@@ -507,8 +510,8 @@ function Import-TkMigrationBookmark {
         $browser = @($Definition | Where-Object Name -eq $file.Browser) | Select-Object -First 1
         $label   = '{0} ({1})' -f $file.Browser, $file.Profile
 
-        if (Get-Process -Name $browser.Process -ErrorAction SilentlyContinue) {
-            $results.Add([pscustomobject] @{ Browser = $label; Ok = $false; Text = ('{0} is open: close it and import again.' -f $file.Browser) })
+        if (-not $SkipProcessCheck -and (Get-Process -Name $browser.Process -ErrorAction SilentlyContinue)) {
+            $results.Add([pscustomobject] @{ Browser = $label; Ok = $false; Text = ('{0} is open: close it and import again.' -f $file.Browser); Created = @() })
             continue
         }
 
@@ -516,7 +519,7 @@ function Import-TkMigrationBookmark {
             if ($file.Kind -eq 'Chromium') {
                 $profileDir = [System.IO.Path]::Combine($browser.Root, 'Default')
                 if (-not (Test-Path -LiteralPath $profileDir -PathType Container)) {
-                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $false; Text = ('Open {0} once on this machine, close it, then import again; or use the HTML file.' -f $file.Browser) })
+                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $false; Text = ('Open {0} once on this machine, close it, then import again; or use the HTML file.' -f $file.Browser); Created = @() })
                     continue
                 }
 
@@ -524,30 +527,32 @@ function Import-TkMigrationBookmark {
                 $source = [System.IO.File]::ReadAllText($file.Path)
 
                 if (Test-Path -LiteralPath $target) {
-                    [System.IO.File]::Copy($target, ('{0}.toolkit-{1}.bak' -f $target, $stamp), $false)
+                    $saved = '{0}.toolkit-{1}.bak' -f $target, $stamp
+                    [System.IO.File]::Copy($target, $saved, $false)
                     $merged = Merge-TkChromiumBookmark -TargetJson ([System.IO.File]::ReadAllText($target)) -SourceJson $source -FolderName ('{0} - {1}' -f $name, $file.Profile)
                     [System.IO.File]::WriteAllText($target, $merged, (New-Object System.Text.UTF8Encoding($false)))
-                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $true; Text = ('Merged into "{0}", under Other bookmarks; the bookmarks there were saved beside the file first.' -f $name) })
+                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $true; Text = ('Merged into "{0}", under Other bookmarks; the bookmarks there were saved beside the file first.' -f $name); Created = @($saved) })
                 }
                 else {
                     [System.IO.File]::Copy($file.Path, $target, $false)
-                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $true; Text = 'Copied: this browser had no bookmarks yet.' })
+                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $true; Text = 'Copied: this browser had no bookmarks yet.'; Created = @($target) })
                 }
             }
             else {
                 $profileDir = @(Get-ChildItem -LiteralPath $browser.Root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*.default-release' }) | Select-Object -First 1
                 if ($profileDir -and -not (Test-Path -LiteralPath ([System.IO.Path]::Combine($profileDir.FullName, 'places.sqlite')))) {
-                    [System.IO.File]::Copy($file.Path, [System.IO.Path]::Combine($profileDir.FullName, 'places.sqlite'), $false)
-                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $true; Text = 'Copied into the Firefox profile, which had no bookmarks yet.' })
+                    $places = [System.IO.Path]::Combine($profileDir.FullName, 'places.sqlite')
+                    [System.IO.File]::Copy($file.Path, $places, $false)
+                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $true; Text = 'Copied into the Firefox profile, which had no bookmarks yet.'; Created = @($places) })
                 }
                 else {
-                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $false; Text = 'Firefox already has its bookmarks here and they are not replaced: import the HTML file (Bookmarks, Manage bookmarks, Import and backup).' })
+                    $results.Add([pscustomobject] @{ Browser = $label; Ok = $false; Text = 'Firefox already has its bookmarks here and they are not replaced: import the HTML file (Bookmarks, Manage bookmarks, Import and backup).'; Created = @() })
                 }
             }
         }
         catch {
             $denied = $_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception.InnerException -is [System.UnauthorizedAccessException]
-            $results.Add([pscustomobject] @{ Browser = $label; Ok = $false; Text = $(if ($denied) { '{0} refused access to the browser files: use the HTML file, or ask for an exception.' -f (Get-TkBlockingProductName) } else { $_.Exception.Message }) })
+            $results.Add([pscustomobject] @{ Browser = $label; Ok = $false; Text = $(if ($denied) { '{0} refused access to the browser files: use the HTML file, or ask for an exception.' -f (Get-TkBlockingProductName) } else { $_.Exception.Message }); Created = @() })
         }
     }
 
@@ -556,7 +561,7 @@ function Import-TkMigrationBookmark {
         $n = 1
         while (Test-Path -LiteralPath $copy) { $n++; $copy = [System.IO.Path]::Combine($Desktop, ('Bookmarks from {0} ({1}).html' -f $Computer, $n)) }
         [System.IO.File]::Copy($package.Html, $copy, $false)
-        $results.Add([pscustomobject] @{ Browser = 'HTML file'; Ok = $true; Text = ('{0} is on the desktop: any browser imports it, DuckDuckGo included (Settings, Import bookmarks).' -f (Split-Path -Path $copy -Leaf)) })
+        $results.Add([pscustomobject] @{ Browser = 'HTML file'; Ok = $true; Text = ('{0} is on the desktop: any browser imports it, DuckDuckGo included (Settings, Import bookmarks).' -f (Split-Path -Path $copy -Leaf)); Created = @($copy) })
     }
 
     Add-TkJournalEntry -Name 'Migration bookmarks imported' -Category 'Migration' -Detail ((@($results | ForEach-Object { '{0}: {1}' -f $_.Browser, $_.Text })) -join '; ')

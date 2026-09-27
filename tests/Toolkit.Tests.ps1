@@ -8907,6 +8907,182 @@ Describe 'Migration to another profile' {
     }
 }
 
+Describe 'Migration to another profile: pins and bookmarks' {
+
+    BeforeAll {
+        $script:TaskbandPath = 'Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband'
+    }
+
+    BeforeEach {
+        $script:RegCalls   = New-Object System.Collections.Generic.List[string]
+        $script:RegImport  = ''
+        $script:UnloadFail = 0
+        $script:SourceReg  = ''
+
+        # Stand-ins: no hive is loaded, no registry written, no owner changed.
+        function Invoke-TkProcess {
+            param($FilePath, $ArgumentList, $TimeoutSeconds)
+            $null = $TimeoutSeconds
+            $script:RegCalls.Add(('{0} {1}' -f $FilePath, ($ArgumentList -join ' ')))
+            $code = 0
+            if ($FilePath -eq 'reg.exe') {
+                switch ($ArgumentList[0]) {
+                    'export' {
+                        if ($ArgumentList[1] -like 'HKU\Toolkit-Source\*' -and $script:SourceReg) {
+                            [System.IO.File]::WriteAllText($ArgumentList[2], $script:SourceReg, [System.Text.Encoding]::Unicode)
+                        }
+                    }
+                    'import' { $script:RegImport = [System.IO.File]::ReadAllText($ArgumentList[1]) }
+                    'unload' { if ($script:UnloadFail -gt 0) { $script:UnloadFail--; $code = 1 } }
+                }
+            }
+            [pscustomobject] @{ ExitCode = $code; StandardOutput = ''; StandardError = '' }
+        }
+        function Add-TkJournalEntry { param($Name, $Category, $Detail) $null = $Name, $Category, $Detail }
+
+        $script:XBase = Join-Path $TestDrive ('x-{0}' -f [guid]::NewGuid())
+        $script:XOld  = [pscustomobject] @{ Sid = 'S-1-5-21-1-2-3-1001'; Path = (Join-Path $script:XBase 'old'); Name = 'PC\old'; Loaded = $false; Current = $false }
+        $script:XNew  = [pscustomobject] @{ Sid = 'S-1-5-21-1-2-3-1002'; Path = (Join-Path $script:XBase 'new'); Name = 'PC\new'; Loaded = $false; Current = $false }
+    }
+
+    It 'moves the key headers from one hive to another, and nothing else' {
+        $text = "Windows Registry Editor Version 5.00`r`n`r`n[HKEY_USERS\S-1-5-21-1\$($script:TaskbandPath)]`r`n""Note""=""HKEY_USERS\S-1-5-21-1""`r`n[-HKEY_USERS\S-1-5-21-1\$($script:TaskbandPath)\Old]`r`n[HKEY_USERS\S-1-5-21-10\Other]`r`n"
+        $moved = ConvertTo-TkTaskbandHive -Text $text -From 'HKEY_USERS\S-1-5-21-1' -To 'HKEY_USERS\Toolkit-Target'
+
+        $moved | Should -Match ([regex]::Escape("[HKEY_USERS\Toolkit-Target\$($script:TaskbandPath)]"))
+        $moved | Should -Match ([regex]::Escape("[-HKEY_USERS\Toolkit-Target\$($script:TaskbandPath)\Old]"))
+        $moved | Should -Match ([regex]::Escape('"Note"="HKEY_USERS\S-1-5-21-1"'))
+        $moved | Should -Match ([regex]::Escape('[HKEY_USERS\S-1-5-21-10\Other]'))
+    }
+
+    It 'uses a signed-in account''s hive as it is, and loads another''s under a name of its own' {
+        (Get-Command -Name Invoke-TkProcess).ScriptBlock.ToString() | Should -Match 'RegCalls'
+        $signedIn = [pscustomobject] @{ Sid = 'S-1-5-21-1-2-3-7'; Path = 'C:\Users\x'; Loaded = $true }
+        $hive = Mount-TkUserHive -UserProfile $signedIn -MountName 'Toolkit-Source' -Confirm:$false
+        $hive.Root    | Should -Be 'HKEY_USERS\S-1-5-21-1-2-3-7'
+        $hive.Mounted | Should -BeFalse
+        $script:RegCalls.Count | Should -Be 0
+
+        $hive = Mount-TkUserHive -UserProfile $script:XOld -MountName 'Toolkit-Source' -Confirm:$false
+        $hive.Short   | Should -Be 'HKU\Toolkit-Source'
+        $hive.Mounted | Should -BeTrue
+        $script:RegCalls[0] | Should -Be ('reg.exe load HKU\Toolkit-Source {0}\NTUSER.DAT' -f $script:XOld.Path)
+        { Mount-TkUserHive -UserProfile $script:XOld -MountName 'HKLM\SAM' -Confirm:$false } | Should -Throw
+    }
+
+    It 'tries the unload again while the hive is busy, and says when it stays loaded' {
+        $hive = [pscustomobject] @{ Mounted = $true; Short = 'HKU\Toolkit-Target' }
+        $script:UnloadFail = 2
+        Dismount-TkUserHive -Hive $hive -DelayMilliseconds 0 -Confirm:$false | Should -BeTrue
+        @($script:RegCalls | Where-Object { $_ -eq 'reg.exe unload HKU\Toolkit-Target' }).Count | Should -Be 3
+
+        $script:UnloadFail = 9
+        Dismount-TkUserHive -Hive $hive -Attempt 2 -DelayMilliseconds 0 -Confirm:$false | Should -BeFalse
+        Dismount-TkUserHive -Hive ([pscustomobject] @{ Mounted = $false }) -Confirm:$false | Should -BeTrue
+    }
+
+    Context 'Pins' {
+
+        BeforeEach {
+            $recent = 'AppData\Roaming\Microsoft\Windows\Recent'
+            $bar    = 'AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar'
+            $start  = 'AppData\Local\Packages\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\LocalState'
+            foreach ($userProfile in @($script:XOld, $script:XNew)) {
+                New-Item -ItemType Directory -Path (Join-Path $userProfile.Path "$recent\AutomaticDestinations"), (Join-Path $userProfile.Path $bar), (Join-Path $userProfile.Path $start) -Force | Out-Null
+            }
+            Set-Content -LiteralPath (Join-Path $script:XOld.Path "$recent\AutomaticDestinations\f01b4d95cf55d32a.automaticDestinations-ms") -Value 'old quick access'
+            Set-Content -LiteralPath (Join-Path $script:XOld.Path "$bar\App.lnk") -Value 'old'
+            Set-Content -LiteralPath (Join-Path $script:XOld.Path "$bar\Tool.lnk") -Value 'old'
+            Set-Content -LiteralPath (Join-Path $script:XOld.Path "$start\start2.bin") -Value 'old start'
+            Set-Content -LiteralPath (Join-Path $script:XNew.Path "$recent\AutomaticDestinations\f01b4d95cf55d32a.automaticDestinations-ms") -Value 'new quick access'
+            Set-Content -LiteralPath (Join-Path $script:XNew.Path "$bar\App.lnk") -Value 'new'
+            $script:XRecent = $recent; $script:XBar = $bar; $script:XStart = $start
+            $script:SourceReg = "Windows Registry Editor Version 5.00`r`n`r`n[HKEY_USERS\Toolkit-Source\$($script:TaskbandPath)]`r`n""Favorites""=hex:00,ff`r`n"
+        }
+
+        It 'refuses a destination account that is signed in' {
+            $signedIn = $script:XNew.PSObject.Copy(); $signedIn.Loaded = $true
+            $done = Copy-TkProfilePin -SourceProfile $script:XOld -TargetProfile $signedIn -BackupRoot $script:XBase -Confirm:$false
+            $done.Ok | Should -BeFalse
+            $done.Text | Should -Match 'sign it out'
+            Get-Content -LiteralPath (Join-Path $script:XNew.Path "$($script:XRecent)\AutomaticDestinations\f01b4d95cf55d32a.automaticDestinations-ms") | Should -Be 'new quick access'
+        }
+
+        It 'saves the destination''s pins, copies the source''s, moves the taskbar order across hives and unloads both' {
+            (Get-Command -Name Invoke-TkProcess).ScriptBlock.ToString() | Should -Match 'RegCalls'
+            $done = Copy-TkProfilePin -SourceProfile $script:XOld -TargetProfile $script:XNew -BackupRoot $script:XBase -Confirm:$false
+
+            $done.Ok | Should -BeTrue
+            Get-Content -LiteralPath (Join-Path $script:XNew.Path "$($script:XRecent)\AutomaticDestinations\f01b4d95cf55d32a.automaticDestinations-ms") | Should -Be 'old quick access'
+            Get-Content -LiteralPath (Join-Path $script:XNew.Path "$($script:XBar)\App.lnk") | Should -Be 'new'
+            Get-Content -LiteralPath (Join-Path $script:XNew.Path "$($script:XBar)\Tool.lnk") | Should -Be 'old'
+            Get-Content -LiteralPath (Join-Path $script:XNew.Path "$($script:XStart)\start2.bin") | Should -Be 'old start'
+
+            $backup = @(Get-ChildItem -LiteralPath $script:XBase -Directory -Filter 'pins-backup-new-*')[0].FullName
+            Get-Content -LiteralPath (Join-Path $backup 'AutomaticDestinations\f01b4d95cf55d32a.automaticDestinations-ms') | Should -Be 'new quick access'
+
+            $script:RegImport | Should -Match ([regex]::Escape("[HKEY_USERS\Toolkit-Target\$($script:TaskbandPath)]"))
+            $script:RegImport | Should -Not -Match 'Toolkit-Source'
+            $script:RegCalls | Should -Contain 'reg.exe unload HKU\Toolkit-Source'
+            $script:RegCalls | Should -Contain 'reg.exe unload HKU\Toolkit-Target'
+            $script:RegCalls | Should -Contain ('icacls.exe {0} /setowner *{1} /T /C /Q' -f (Join-Path $script:XNew.Path "$($script:XRecent)\AutomaticDestinations"), $script:XNew.Sid)
+            @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Filter 'toolkit-taskband-*.reg').Count | Should -Be 0
+        }
+
+        It 'refuses a taskbar export that writes another key, and says when a hive stays loaded' {
+            $script:SourceReg = "Windows Registry Editor Version 5.00`r`n`r`n[HKEY_USERS\Toolkit-Source\Software\Microsoft\Windows\CurrentVersion\Run]`r`n""Evil""=""cmd.exe""`r`n"
+            $script:UnloadFail = 99
+            $done = Copy-TkProfilePin -SourceProfile $script:XOld -TargetProfile $script:XNew -BackupRoot $script:XBase -Confirm:$false
+
+            $script:RegImport | Should -BeNullOrEmpty
+            $done.Text | Should -Match 'taskbar order was refused'
+            $done.Text | Should -Match 'still loaded: restart the machine'
+            $done.Ok   | Should -BeFalse
+        }
+    }
+
+    Context 'Bookmarks' {
+
+        It 'merges the source account''s bookmarks into the destination''s browsers, gives the files to it, and leaves no copy behind' {
+            $chrome = 'AppData\Local\Google\Chrome\User Data\Default'
+            New-Item -ItemType Directory -Path (Join-Path $script:XOld.Path $chrome), (Join-Path $script:XNew.Path $chrome), (Join-Path $script:XNew.Path 'Desktop') -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $script:XOld.Path "$chrome\Bookmarks"), '{"roots":{"bookmark_bar":{"children":[{"id":"9","name":"Old","type":"url","url":"https://old.example"}],"id":"1","type":"folder"},"other":{"children":[],"id":"2","type":"folder"},"synced":{"children":[],"id":"3","type":"folder"}},"version":1}')
+            [System.IO.File]::WriteAllText((Join-Path $script:XNew.Path "$chrome\Bookmarks"), '{"roots":{"bookmark_bar":{"children":[{"id":"5","name":"Mine","type":"url","url":"https://mine.example"}],"id":"1","type":"folder"},"other":{"children":[],"id":"2","type":"folder"},"synced":{"children":[],"id":"3","type":"folder"}},"version":1}')
+            $before = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'toolkit-bookmarks-*').Count
+
+            $rows = @(Copy-TkProfileBookmark -SourceProfile $script:XOld -TargetProfile $script:XNew -Confirm:$false)
+
+            ($rows | Where-Object Name -eq 'Bookmarks: Chrome (Default)').Ok | Should -BeTrue
+            $merged = [System.IO.File]::ReadAllText((Join-Path $script:XNew.Path "$chrome\Bookmarks")) | ConvertFrom-Json
+            @($merged.roots.bookmark_bar.children.name) | Should -Be @('Mine')
+            @($merged.roots.other.children)[0].name | Should -Match '^Imported from old'
+            Test-Path -LiteralPath (Join-Path $script:XNew.Path 'Desktop\Bookmarks from old.html') | Should -BeTrue
+            $script:RegCalls | Should -Contain ('icacls.exe {0} /setowner *{1} /C /Q' -f (Join-Path $script:XNew.Path 'Desktop\Bookmarks from old.html'), $script:XNew.Sid)
+            @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'toolkit-bookmarks-*').Count | Should -Be $before
+        }
+    }
+
+    Context 'The whole copy' {
+
+        It 'adds the pins and bookmarks to the folders, and is fine with no folder at all' {
+            function Copy-TkProfileData { [pscustomobject] @{ Steps = @([pscustomobject] @{ Name = 'Documents'; Ok = $true; Text = 'copied'; Log = '' }) } }
+            function Copy-TkProfilePin { [pscustomobject] @{ Name = 'Pins'; Ok = $false; Text = 'signed in'; Log = '' } }
+            function Copy-TkProfileBookmark { @([pscustomobject] @{ Name = 'Bookmarks: Edge'; Ok = $true; Text = 'merged'; Log = '' }) }
+
+            $all = Invoke-TkProfileCopy -Step @([pscustomobject] @{ Key = 'Documents' }) -SourceProfile $script:XOld -TargetProfile $script:XNew -Pins -Bookmarks -Confirm:$false
+            @($all.Steps.Name) | Should -Be @('Documents', 'Pins', 'Bookmarks: Edge')
+            $all.Ok | Should -BeFalse
+            $all.Message | Should -Be '2 of 3 item(s) done for PC\new without a problem.'
+
+            $none = Invoke-TkProfileCopy -SourceProfile $script:XOld -TargetProfile $script:XNew -Bookmarks -Confirm:$false
+            @($none.Steps.Name) | Should -Be @('Bookmarks: Edge')
+            $none.Ok | Should -BeTrue
+
+            (New-TkProfileCopyPlan -SourceProfile $script:XOld -TargetProfile $script:XNew -Row @() -AllowNoFolder).Errors | Should -BeNullOrEmpty
+        }
+    }
+}
+
 Describe 'Migration package and import' {
 
     It 'names the personal folders by their Windows key' {
