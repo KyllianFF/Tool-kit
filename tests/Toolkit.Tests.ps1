@@ -7930,6 +7930,120 @@ Describe 'Store apps' {
     }
 }
 
+Describe 'Event log search' {
+
+    It 'reads event ids and ranges, within the 23 Windows accepts' {
+        (ConvertFrom-TkEventIdList -Value '4625, 7000-7003').Ids | Should -Be @(4625, 7000, 7001, 7002, 7003)
+        (ConvertFrom-TkEventIdList -Value '').Ids.Count         | Should -Be 0
+
+        foreach ($value in @('abc', '7000-7030', '10-5', ((1..24) -join ','))) {
+            (ConvertFrom-TkEventIdList -Value $value).Error | Should -Not -BeNullOrEmpty -Because $value
+        }
+    }
+
+    It 'builds a filter with only the keys that are set, each value kept as a value' {
+        $now    = [datetime] '2026-09-27 12:00'
+        $filter = New-TkEventFilter -Log ' System ' -Id @(7036) -Level 2 -Provider " it's odd " -SinceHours 24 -Now $now
+
+        $filter.LogName      | Should -Be 'System'
+        $filter.Id           | Should -Be @(7036)
+        $filter.Level        | Should -Be 2
+        $filter.ProviderName | Should -Be "it's odd"
+        $filter.StartTime    | Should -Be ([datetime] '2026-09-26 12:00')
+
+        @((New-TkEventFilter -Log 'Application').Keys) | Should -Be @('LogName')
+    }
+
+    It 'keeps the events whose message holds the text, ignoring case, and trims each to a row' {
+        $records = @(
+            [pscustomobject] @{ TimeCreated = [datetime] '2026-09-27 10:00'; Level = 2; LevelDisplayName = 'Error'; Id = 7000; ProviderName = 'SCM'; Message = "The Spooler service failed.`r`nDetails follow." }
+            [pscustomobject] @{ TimeCreated = [datetime] '2026-09-27 09:00'; Level = 4; LevelDisplayName = 'Information'; Id = 7036; ProviderName = 'SCM'; Message = 'The BITS service entered the running state.' }
+            [pscustomobject] @{ TimeCreated = [datetime] '2026-09-27 08:00'; Level = 3; LevelDisplayName = ''; Id = 1; ProviderName = 'Odd'; Message = '' }
+        )
+
+        $rows = @(Select-TkEventRow -Record $records -Contains 'spooler')
+        $rows.Count      | Should -Be 1
+        $rows[0].Summary | Should -Be 'The Spooler service failed. Details follow.'
+
+        @(Select-TkEventRow -Record $records -MaxEvents 2).Count | Should -Be 2
+
+        $empty = @(Select-TkEventRow -Record $records -Contains '')[2]
+        $empty.Level   | Should -Be '3'
+        $empty.Summary | Should -Match 'no message text'
+    }
+
+    Context 'Searching' {
+
+        BeforeEach {
+            $script:EventFilter = $null
+
+            # A stand-in: the search is checked against known answers, not the machine.
+            function Get-WinEvent {
+                [CmdletBinding()]
+                param($ListLog, $ListProvider, [hashtable] $FilterHashtable, $MaxEvents)
+                $null = $MaxEvents
+
+                if ($ListLog -eq 'Security') {
+                    $PSCmdlet.ThrowTerminatingError((New-Object System.Management.Automation.ErrorRecord(
+                        (New-Object System.Exception('denied', (New-Object System.UnauthorizedAccessException))), 'LogInfoUnavailable', 'PermissionDenied', $null)))
+                }
+                if ($ListLog -eq 'Nope') {
+                    $PSCmdlet.ThrowTerminatingError((New-Object System.Management.Automation.ErrorRecord(
+                        (New-Object System.Exception('none')), 'NoMatchingLogsFound', 'ObjectNotFound', $null)))
+                }
+                if ($ListLog) { return [pscustomobject] @{ LogName = $ListLog; IsEnabled = $true; RecordCount = 10 } }
+                if ($ListProvider) {
+                    if ($ListProvider -ne 'Service Control Manager') {
+                        $PSCmdlet.ThrowTerminatingError((New-Object System.Management.Automation.ErrorRecord(
+                            (New-Object System.Exception('none')), 'NoMatchingProvidersFound', 'ObjectNotFound', $null)))
+                    }
+                    return [pscustomobject] @{ Name = $ListProvider }
+                }
+
+                $script:EventFilter = $FilterHashtable
+                if ($FilterHashtable.Id -contains 9999) {
+                    $PSCmdlet.ThrowTerminatingError((New-Object System.Management.Automation.ErrorRecord(
+                        (New-Object System.Exception('No events were found')), 'NoMatchingEventsFound', 'ObjectNotFound', $null)))
+                }
+
+                [pscustomobject] @{ TimeCreated = Get-Date; Level = 2; LevelDisplayName = 'Error'; Id = 7000; ProviderName = 'Service Control Manager'; Message = 'The Spooler service failed.' }
+            }
+        }
+
+        It 'hands the search to Windows as a filter and lists what comes back' {
+            (Get-Command -Name Get-WinEvent).CommandType | Should -Be 'Function'
+
+            $search = Search-TkEventLog -Log 'System' -Id @(7000) -Level 2 -Provider 'Service Control Manager' -SinceHours 24
+
+            $search.Error          | Should -BeNullOrEmpty
+            $search.Rows.Count     | Should -Be 1
+            $script:EventFilter.Id | Should -Be @(7000)
+            $script:EventFilter.ProviderName | Should -Be 'Service Control Manager'
+        }
+
+        It 'reports no match as an empty result, not a failure' {
+            $search = Search-TkEventLog -Log 'System' -Id @(9999)
+
+            $search.Error      | Should -BeNullOrEmpty
+            $search.Rows.Count | Should -Be 0
+        }
+
+        It 'says why a log or a provider cannot be searched' {
+            (Search-TkEventLog -Log 'Security').Error                   | Should -Match 'administrator rights'
+            (Search-TkEventLog -Log 'Nope').Error                       | Should -Match 'no event log named "Nope"'
+            (Search-TkEventLog -Log 'System' -Provider 'Ghost').Error   | Should -Match 'No event provider is named "Ghost"'
+            (Search-TkEventLog -Log 'System' -Provider 'Service*').Error | Should -Match 'wildcards'
+        }
+    }
+
+    It 'reads the System log of this machine' {
+        $search = Search-TkEventLog -Log 'System' -SinceHours 720 -MaxEvents 5
+
+        $search.Error | Should -BeNullOrEmpty
+        @($search.Rows).Count | Should -BeLessOrEqual 5
+    }
+}
+
 Describe 'Duplicate files' {
 
     Context 'Grouping in stages' {

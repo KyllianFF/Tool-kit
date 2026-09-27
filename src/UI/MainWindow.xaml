@@ -2802,6 +2802,58 @@
                             </Grid>
                         </TabItem>
 
+                        <TabItem Header="Event logs">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Log" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="EventSearchLogPreset" Width="170" MinHeight="40" Margin="0,0,8,8" />
+                                            <TextBox x:Name="EventSearchLog" Width="330" Margin="0,0,16,8" Text="System"
+                                                     ToolTip="The name of any log, as Event Viewer shows it, or one picked from the list beside it." />
+                                            <TextBlock Text="Period" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="EventSearchPeriod" Width="150" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Level" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="EventSearchLevel" Width="140" MinHeight="40" Margin="0,0,0,8" />
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBlock Text="Event IDs" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="EventSearchIds" Width="170" Margin="0,0,16,8" Tag="4625, 7000-7009"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New" />
+                                            <TextBlock Text="Provider" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="EventSearchProvider" Width="220" Margin="0,0,16,8" Tag="Any" />
+                                            <TextBlock Text="Contains" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="EventSearchContains" Width="200" Margin="0,0,16,8" Tag="Text in the message" />
+                                            <Border Style="{StaticResource ActionGroup}" Margin="0,0,0,8">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnSearchEvents" Content="Search" Style="{StaticResource GroupedPrimaryButton}" />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnExportEvents" Content="Export CSV" Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Save the events found, with their whole message, as a CSV file." />
+                                                </StackPanel>
+                                            </Border>
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Read only, newest first, 200 events at most. The search is handed to Windows as a filter, never as text, so nothing typed can change what it does; Contains is matched on the messages found. The Security log needs administrator rights." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="EventSearchOutput" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 IsDocumentEnabled="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
                         <TabItem Header="Hardware tests">
                             <Grid Margin="0,16,0,0">
                                 <Grid.ColumnDefinitions>
@@ -4937,6 +4989,8 @@
                                             <TextBlock Text="Text contains" VerticalAlignment="Center" Margin="0,0,8,0" />
                                             <TextBox x:Name="EventQueryContains" Width="200"
                                                      FontFamily="Cascadia Mono, Consolas, Courier New" Tag="optional" />
+                                            <Button x:Name="BtnRunEventQuery" Content="Run this search" Margin="16,0,0,0"
+                                                    ToolTip="Opens Diagnostics, Event logs, with this query filled in, and runs it there, read only." />
                                         </WrapPanel>
                                         <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
                                                    Text="The text search is only in the XPath forms, since a FilterHashtable cannot express it. Levels: Critical, Error, Warning, Information, Verbose." />

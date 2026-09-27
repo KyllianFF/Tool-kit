@@ -60,6 +60,7 @@ src/Features/Diagnostics/IdentityHealth.ps1
 src/Features/Diagnostics/Performance.ps1
 src/Features/Diagnostics/DiskSpace.ps1
 src/Features/Diagnostics/DuplicateFiles.ps1
+src/Features/Diagnostics/EventSearch.ps1
 src/Features/Diagnostics/LocalAccounts.ps1
 src/Features/Diagnostics/GroupPolicyResult.ps1
 src/Features/Diagnostics/ServiceInventory.ps1
