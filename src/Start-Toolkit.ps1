@@ -177,6 +177,7 @@ function Start-Toolkit {
         Initialize-TkNetworkPage
         Initialize-TkNetworkAdminPage
         Initialize-TkMicrosoft365Page
+        Initialize-TkMigrationPage
         Initialize-TkSecurityPage
         Initialize-TkThreatHuntingPage
         Initialize-TkDiagnosticsPage

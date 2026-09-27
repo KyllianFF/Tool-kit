@@ -278,6 +278,16 @@ function Get-TkElevatedAction {
             }
         }
         [pscustomobject] @{
+            Name   = 'ExportDrivers'
+            Worker = {
+                param($Parameters)
+
+                # Export-TkDriverPackage checks the destination again here, in
+                # the elevated process.
+                Export-TkDriverPackage -Destination ([string] $Parameters.Destination) -Confirm:$false
+            }
+        }
+        [pscustomobject] @{
             Name   = 'OpenThroughputPort'
             Worker = {
                 param($Parameters)

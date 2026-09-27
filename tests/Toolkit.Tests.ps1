@@ -370,7 +370,7 @@ Describe 'Per-action elevation' {
         $names   = @($actions | ForEach-Object { $_.Name })
 
         foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile', 'RemoveStoreApps',
-                                  'OpenThroughputPort', 'CloseThroughputPort')) {
+                                  'OpenThroughputPort', 'CloseThroughputPort', 'ExportDrivers')) {
             $names | Should -Contain $expected
         }
 
@@ -8161,6 +8161,150 @@ Describe 'Store apps' {
             $result[0].Message | Should -Match 'Access is denied'
             $result[1].Ok      | Should -BeTrue
         }
+    }
+}
+
+Describe 'Migration' {
+
+    It 'keeps the real printers and says how each comes back' {
+        $rows = @(ConvertTo-TkPrinterCarryOver -Printer @(
+            [pscustomobject] @{ Name = 'Microsoft Print to PDF'; Type = 'Local'; PortName = 'PORTPROMPT:'; DriverName = 'Microsoft Print To PDF' }
+            [pscustomobject] @{ Name = 'OneNote (Desktop)'; Type = 'Local'; PortName = 'nul:'; DriverName = 'Send to Microsoft OneNote 16 Driver' }
+            [pscustomobject] @{ Name = 'HP Fax'; Type = 'Local'; PortName = 'WSD-1'; DriverName = 'HP Fax' }
+            [pscustomobject] @{ Name = '\\print01\Floor2'; Type = 'Connection'; PortName = 'x'; DriverName = 'Xerox' }
+            [pscustomobject] @{ Name = 'HP OfficeJet'; Type = 'Local'; PortName = 'WSD-7922'; DriverName = 'HP OfficeJet' }
+            [pscustomobject] @{ Name = 'Canon'; Type = 'Local'; PortName = 'IP_192.168.1.20'; DriverName = 'Canon' }
+            [pscustomobject] @{ Name = 'Label'; Type = 'Local'; PortName = 'USB001'; DriverName = 'Zebra' }
+        ))
+
+        @($rows | ForEach-Object { '{0}|{1}|{2}' -f $_.Name, $_.Kind, $_.Where }) | Should -Be @(
+            '\\print01\Floor2|Shared|\\print01\Floor2'
+            'HP OfficeJet|Discovered (WSD)|found on the network'
+            'Canon|Network (TCP/IP)|192.168.1.20'
+            'Label|USB|USB001'
+        )
+        $rows[0].Command | Should -Be 'Add-Printer -ConnectionName "\\print01\Floor2"'
+    }
+
+    It 'reads the BitLocker state the Shell gives, protected or not' {
+        foreach ($case in @(
+            @{ Value = 1; State = 'on'; Encrypted = $true; Protected = $true }
+            @{ Value = '2'; State = 'off'; Encrypted = $false; Protected = $false }
+            @{ Value = 5; State = 'suspended'; Encrypted = $true; Protected = $false }
+            @{ Value = 8; State = 'encrypted, waiting for activation'; Encrypted = $true; Protected = $false }
+            @{ Value = 42; State = 'unknown'; Encrypted = $false; Protected = $false }
+            @{ Value = $null; State = 'unknown'; Encrypted = $false; Protected = $false }
+        )) {
+            $read = ConvertFrom-TkBitLockerShellState -Value $case.Value
+            $read.State     | Should -Be $case.State -Because ([string] $case.Value)
+            $read.Encrypted | Should -Be $case.Encrypted
+            $read.Protected | Should -Be $case.Protected
+        }
+    }
+
+    It 'warns only about a protected data drive, the one that locks after a reinstall' {
+        $state = [pscustomobject] @{
+            Activation = [pscustomobject] @{ Status = 1; Channel = 'OEM:DM'; FirmwareKey = $true }
+            Volumes = @(
+                [pscustomobject] @{ Drive = 'C:'; State = 'on'; Encrypted = $true; Protected = $true; System = $true }
+                [pscustomobject] @{ Drive = 'D:'; State = 'on'; Encrypted = $true; Protected = $true; System = $false }
+                [pscustomobject] @{ Drive = 'E:'; State = 'encrypted, waiting for activation'; Encrypted = $true; Protected = $false; System = $false }
+                [pscustomobject] @{ Drive = 'F:'; State = 'off'; Encrypted = $false; Protected = $false; System = $false }
+            )
+        }
+
+        $text = @(ConvertTo-TkReinstallFinding -State $state | ForEach-Object { '{0}:{1}' -f $_.Severity, $_.Heading }) -join ' | '
+
+        $text | Should -Match 'Pass:Windows reactivates by itself'
+        $text | Should -Match 'Info:C: \(Windows\) is encrypted'
+        $text | Should -Match 'Warning:D: is encrypted with BitLocker: keep its recovery key'
+        $text | Should -Match 'Info:E: is encrypted, but its key is kept in clear'
+        $text | Should -Not -Match 'F:'
+        (@(ConvertTo-TkReinstallFinding -State $state) | Where-Object { $_.Heading -like 'D:*' }).Note | Should -Match 'manage-bde -protectors -get D:'
+    }
+
+    It 'says how Windows reactivates for each kind of licence' {
+        $judge = { param($status, $channel, $firmware) @(ConvertTo-TkReinstallFinding -State ([pscustomobject] @{ Activation = [pscustomobject] @{ Status = $status; Channel = $channel; FirmwareKey = $firmware }; Volumes = @() }))[0] }
+
+        (& $judge 0 'Retail' $false).Heading      | Should -Be 'Windows is not activated'
+        (& $judge 1 'Retail' $false).Heading      | Should -Be 'A retail licence'
+        (& $judge 1 'Retail' $true).Heading       | Should -Be 'Windows reactivates by itself'
+        (& $judge 1 'Volume:GVLK' $false).Heading | Should -Be 'An organisation licence'
+    }
+
+    It 'refuses a destination that is not a safe place to copy to' {
+        $drives = { param($root) $root -in @('E:\', '\\server\share') }
+        $source = @('C:\Users\u\Documents')
+
+        Test-TkMigrationDestination -Destination 'E:\Backup' -Source $source -DriveExists $drives        | Should -BeNullOrEmpty
+        Test-TkMigrationDestination -Destination '\\server\share' -Source $source -DriveExists $drives   | Should -BeNullOrEmpty
+
+        foreach ($case in @(
+            @{ Path = '';                                Reason = 'Choose where' }
+            @{ Path = 'Backup';                          Reason = 'full path' }
+            @{ Path = 'E:\a<b';                          Reason = 'characters' }
+            @{ Path = 'E:\x\..\y';                       Reason = 'characters' }
+            @{ Path = (Join-Path $env:SystemRoot 'x');   Reason = 'Not inside Windows' }
+            @{ Path = 'C:\Users\u\Documents\backup';     Reason = 'copy into itself' }
+            @{ Path = 'Q:\Backup';                       Reason = 'not available' }
+        )) {
+            Test-TkMigrationDestination -Destination $case.Path -Source $source -DriveExists $drives | Should -Match $case.Reason -Because $case.Path
+        }
+    }
+
+    It 'plans the copy into a dated folder and skips what OneDrive keeps' {
+        # A drive that does not exist: the plan must not touch the disk.
+        $plan = @(New-TkMigrationCopyPlan -Destination 'Q:\' -Label 'Migration-PC-u' -Folder @(
+            [pscustomobject] @{ Name = 'Documents'; Path = 'C:\Users\u\Documents'; Bytes = 100; InOneDrive = $false }
+            [pscustomobject] @{ Name = 'Desktop'; Path = 'C:\Users\u\OneDrive\Desktop'; Bytes = 50; InOneDrive = $true }
+        ))
+
+        $plan[0].Target | Should -Be 'Q:\Migration-PC-u\Documents'
+        $plan[0].Skip   | Should -BeNullOrEmpty
+        $plan[1].Skip   | Should -Be 'kept by OneDrive'
+    }
+
+    It 'reads the robocopy exit codes as the bitmask they are' {
+        (ConvertFrom-TkRobocopyExit -Code 0).Text | Should -Be 'nothing new to copy'
+        (ConvertFrom-TkRobocopyExit -Code 1).Ok   | Should -BeTrue
+        (ConvertFrom-TkRobocopyExit -Code 3).Text | Should -Match 'extra files at the destination'
+        (ConvertFrom-TkRobocopyExit -Code 8).Ok   | Should -BeFalse
+        (ConvertFrom-TkRobocopyExit -Code 16).Ok  | Should -BeFalse
+    }
+
+    It 'copies a folder with robocopy, keeping the tree, and journals it' {
+        function Add-TkJournalEntry { param($Name, $Category, $Detail) $null = $Category; $script:MigrationJournal = '{0}: {1}' -f $Name, $Detail }
+        (Get-Command -Name Add-TkJournalEntry).ScriptBlock.ToString() | Should -Match 'MigrationJournal'
+
+        $source = Join-Path $TestDrive 'src\Docs'
+        New-Item -ItemType Directory -Path (Join-Path $source 'Sub') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $source 'a.txt') -Value 'a'
+        Set-Content -LiteralPath (Join-Path $source 'Sub\b.txt') -Value 'b'
+
+        $plan    = New-TkMigrationCopyPlan -Folder @([pscustomobject] @{ Name = 'Docs'; Path = $source; Bytes = 2; InOneDrive = $false }) -Destination (Join-Path $TestDrive 'dst') -Label 'M'
+        $results = @(Copy-TkMigrationFolder -Plan $plan -Confirm:$false)
+
+        $results[0].Ok | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $TestDrive 'dst\M\Docs\Sub\b.txt') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $TestDrive 'dst\M\Docs.log')       | Should -BeTrue
+        $script:MigrationJournal | Should -Match '^User folders copied: Docs: copied'
+    }
+
+    It 'turns the installed winget packages into catalogue applications' {
+        $catalog = @((Import-TkCatalog -Name 'applications').applications | Select-Object -First 2)
+
+        $ids = @(Get-TkInstalledCatalogApplication -InstalledId @($catalog[0].packageId.ToUpperInvariant(), 'Not.In.The.Catalog'))
+        $ids | Should -Be @($catalog[0].id)
+    }
+
+    It 'lists the mapped drives with the command that maps them again' {
+        function Get-ChildItem { [CmdletBinding()] param($LiteralPath) $null = $LiteralPath; [pscustomobject] @{ PSChildName = 'x'; PSPath = 'fake' } }
+        function Get-ItemProperty { [CmdletBinding()] param($LiteralPath) $null = $LiteralPath; [pscustomobject] @{ RemotePath = '\\nas\share' } }
+        (Get-Command -Name Get-ChildItem).CommandType | Should -Be 'Function'
+
+        $drive = @(Get-TkMappedDrive)[0]
+        $drive.Letter  | Should -Be 'X:'
+        $drive.Command | Should -Be 'net use X: "\\nas\share" /persistent:yes'
     }
 }
 
