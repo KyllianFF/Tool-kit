@@ -614,7 +614,7 @@
         <Style x:Key="NavSection" TargetType="TextBlock">
             <Setter Property="FontSize"   Value="11" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin"     Value="30,8,16,2" />
+            <Setter Property="Margin"     Value="30,6,16,1" />
             <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
         </Style>
 
@@ -629,7 +629,7 @@
             <Setter Property="BorderThickness"     Value="0" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="Padding"             Value="16,6" />
+            <Setter Property="Padding"             Value="16,5" />
             <Setter Property="Margin"              Value="12,1,12,1" />
             <Setter Property="FontSize"            Value="13" />
             <Setter Property="Template">
@@ -1315,16 +1315,18 @@
                             <Button x:Name="NavSystem"         Content="System"          Style="{StaticResource NavButton}" Tag="&#xEC4E;" />
                             <Button x:Name="NavSoftware"       Content="Software"        Style="{StaticResource NavButton}" Tag="&#xECA5;" />
                             <Button x:Name="NavTweaks"         Content="Tweaks"          Style="{StaticResource NavButton}" Tag="&#xE9E9;" />
-                            <Button x:Name="NavFixes"          Content="Fixes"           Style="{StaticResource NavButton}" Tag="&#xE90F;" />
-                            <Button x:Name="NavIntervention"   Content="Intervention"    Style="{StaticResource NavButton}" Tag="&#xE70F;" />
 
                             <TextBlock Text="TROUBLESHOOTING" Style="{StaticResource NavSection}" />
                             <Button x:Name="NavPlaybooks"      Content="Playbooks"       Style="{StaticResource NavButton}" Tag="&#xE9D9;" />
                             <Button x:Name="NavDiagnostics"    Content="Diagnostics"     Style="{StaticResource NavButton}" Tag="&#xE95E;" />
+                            <Button x:Name="NavFixes"          Content="Fixes"           Style="{StaticResource NavButton}" Tag="&#xE90F;" />
                             <Button x:Name="NavNetwork"        Content="Network"         Style="{StaticResource NavButton}" Tag="&#xEC26;" />
+                            <Button x:Name="NavIntervention"   Content="Intervention"    Style="{StaticResource NavButton}" Tag="&#xE70F;" />
 
                             <TextBlock Text="SECURITY" Style="{StaticResource NavSection}" />
                             <Button x:Name="NavSecurity"       Content="Audit"           Style="{StaticResource NavButton}" Tag="&#xEA18;" />
+
+                            <TextBlock Text="TOOLBOX" Style="{StaticResource NavSection}" />
                             <Button x:Name="NavSecurityTools"  Content="Tools"           Style="{StaticResource NavButton}" Tag="&#xE8D7;" />
 
                             <TextBlock Text="REFERENCE" Style="{StaticResource NavSection}" />
@@ -3201,7 +3203,7 @@
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ToolTipService.InitialShowDelay="450" ToolTipService.ShowDuration="30000">
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
-                                <TextBlock Text="SECURITY" Style="{StaticResource ChoiceGroupTitle}" />
+                                <TextBlock Text="CREDENTIALS" Style="{StaticResource ChoiceGroupTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Generate passwords and passphrases, see how long one takes to crack, and check it against known breaches.">
@@ -3212,8 +3214,15 @@
                                 <TextBlock Text="SSH keys" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Hash a file, compare it with the hash its vendor publishes, and look it up on VirusTotal.">
-                                <TextBlock Text="File integrity" Style="{StaticResource ChoiceTitle}" />
+                                         ToolTip="Compute the current authenticator code from a Base32 secret or an otpauth URI, to test a second factor without a phone.">
+                                <TextBlock Text="TOTP code" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Name the likely kind of a pasted hash from its length and shape: NTLM, MD5, SHA-1/256/512, bcrypt, and more.">
+                                <TextBlock Text="Hash identifier" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="E-MAIL" Style="{StaticResource ChoiceGroupTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Decode Microsoft Defender Safe Links in a link or a whole e-mail, to see where they lead without opening them.">
@@ -3227,6 +3236,9 @@
                                          ToolTip="Check the MX, SPF, DKIM and DMARC records of a domain, and count the DNS lookups its SPF record needs.">
                                 <TextBlock Text="Mail DNS records" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="WEB AND CERTIFICATES" Style="{StaticResource ChoiceGroupTitle}" />
+                            </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Decode a certificate, a chain or a certificate request: names, validity, key, purposes and fingerprints.">
                                 <TextBlock Text="Certificates" Style="{StaticResource ChoiceTitle}" />
@@ -3236,12 +3248,15 @@
                                 <TextBlock Text="HTTP headers" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Reveal invisible and deceptive characters in pasted text: zero-width spaces, direction overrides, unusual spaces, controls, and look-alikes of ASCII letters.">
-                                <TextBlock Text="Invisible characters" Style="{StaticResource ChoiceTitle}" />
+                                         ToolTip="Take a link apart: host, port, path, every query parameter decoded, and the tricks phishing links use.">
+                                <TextBlock Text="URL parser" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Name the likely kind of a pasted hash from its length and shape: NTLM, MD5, SHA-1/256/512, bcrypt, and more.">
-                                <TextBlock Text="Hash identifier" Style="{StaticResource ChoiceTitle}" />
+                                         ToolTip="Take a User-Agent string apart: browser, layout engine, operating system and device type.">
+                                <TextBlock Text="User-Agent" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="ANALYSIS" Style="{StaticResource ChoiceGroupTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Pull the indicators out of an e-mail or a report (IPs, domains, URLs, hashes, CVEs), and defang or refang a text.">
@@ -3251,7 +3266,14 @@
                                          ToolTip="Scan a config, a script or a log for exposed secrets: API keys, tokens, passwords and private keys, each named and masked.">
                                 <TextBlock Text="Secret scanner" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Reveal invisible and deceptive characters in pasted text: zero-width spaces, direction overrides, unusual spaces, controls, and look-alikes of ASCII letters.">
+                                <TextBlock Text="Invisible characters" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Hash a file, compare it with the hash its vendor publishes, and look it up on VirusTotal.">
+                                <TextBlock Text="File integrity" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                 <TextBlock Text="GENERATORS" Style="{StaticResource ChoiceGroupTitle}" />
                             </ListBoxItem>
@@ -3271,13 +3293,8 @@
                                          ToolTip="A QR code that joins a Wi-Fi network when a phone scans it, for guests or a meeting room.">
                                 <TextBlock Text="Wi-Fi QR code" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Compute the current authenticator code from a Base32 secret or an otpauth URI, to test a second factor without a phone.">
-                                <TextBlock Text="TOTP code" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
-                                <TextBlock Text="TEXT AND DATA" Style="{StaticResource ChoiceGroupTitle}" />
+                                <TextBlock Text="TEXT" Style="{StaticResource ChoiceGroupTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Base64, URL, HTML and hexadecimal both ways, and JSON Web Token decoding.">
@@ -3288,40 +3305,31 @@
                                 <TextBlock Text="Regex" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Unix, FILETIME and Active Directory timestamps, and dates, in every form.">
-                                <TextBlock Text="Timestamps" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Format, minify or validate JSON, and turn it into YAML or CSV.">
-                                <TextBlock Text="JSON and YAML" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="A number in binary, octal, decimal and hexadecimal, and the bits it sets.">
-                                <TextBlock Text="Number bases" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Convert a data size across units and work out how long a transfer takes at a given link speed.">
-                                <TextBlock Text="Data size and rate" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Compare two texts line by line, such as two versions of a configuration file.">
                                 <TextBlock Text="Text diff" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Take a link apart: host, port, path, every query parameter decoded, and the tricks phishing links use.">
-                                <TextBlock Text="URL parser" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Take a database connection string apart: server, database, user, the password masked, and whether the transport is encrypted and the certificate checked.">
-                                <TextBlock Text="Connection string" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Take a User-Agent string apart: browser, layout engine, operating system and device type.">
-                                <TextBlock Text="User-Agent" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Rewrite a text to one set of choices: line endings, tabs and spaces, trailing whitespace and a byte order mark.">
                                 <TextBlock Text="Text normalizer" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Spell out a serial number, a licence key or a password to dictate with the NATO phonetic alphabet.">
+                                <TextBlock Text="NATO alphabet" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Read a phone number written in any form and write it as E.164, international, national and a tel: link.">
+                                <TextBlock Text="Phone numbers" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Write formatted text and get clean HTML for a signature, a ticket or a wiki, or clean up HTML pasted from elsewhere.">
+                                <TextBlock Text="HTML editor" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="DATA FORMATS" Style="{StaticResource ChoiceGroupTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Format, minify or validate JSON, and turn it into YAML or CSV.">
+                                <TextBlock Text="JSON and YAML" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Format, minify or validate XML, or run an XPath query over it.">
@@ -3336,18 +3344,21 @@
                                 <TextBlock Text="CSV cleaner" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Spell out a serial number, a licence key or a password to dictate with the NATO phonetic alphabet.">
-                                <TextBlock Text="NATO alphabet" Style="{StaticResource ChoiceTitle}" />
+                                         ToolTip="Unix, FILETIME and Active Directory timestamps, and dates, in every form.">
+                                <TextBlock Text="Timestamps" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Read a phone number written in any form and write it as E.164, international, national and a tel: link.">
-                                <TextBlock Text="Phone numbers" Style="{StaticResource ChoiceTitle}" />
+                                         ToolTip="A number in binary, octal, decimal and hexadecimal, and the bits it sets.">
+                                <TextBlock Text="Number bases" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Write formatted text and get clean HTML for a signature, a ticket or a wiki, or clean up HTML pasted from elsewhere.">
-                                <TextBlock Text="HTML editor" Style="{StaticResource ChoiceTitle}" />
+                                         ToolTip="Convert a data size across units and work out how long a transfer takes at a given link speed.">
+                                <TextBlock Text="Data size and rate" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Take a database connection string apart: server, database, user, the password masked, and whether the transport is encrypted and the certificate checked.">
+                                <TextBlock Text="Connection string" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                 <TextBlock Text="LINUX AND DEVOPS" Style="{StaticResource ChoiceGroupTitle}" />
                             </ListBoxItem>
@@ -3363,9 +3374,8 @@
                                          ToolTip="Turn a docker run command into the Compose service it describes.">
                                 <TextBlock Text="Docker Compose" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
-
                             <ListBoxItem Style="{StaticResource ChoiceGroup}">
-                                <TextBlock Text="WINDOWS AND AD" Style="{StaticResource ChoiceGroupTitle}" />
+                                <TextBlock Text="ACTIVE DIRECTORY" Style="{StaticResource ChoiceGroupTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Read an SDDL security descriptor: owner, group, and each access control entry with its rights and trustee named.">
@@ -3376,6 +3386,25 @@
                                 <TextBlock Text="AD account flags" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Build a dsacls command that delegates control on an OU, the same as the Delegation of Control wizard.">
+                                <TextBlock Text="dsacls delegation" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Resolve a SID to its account and take it apart, or an account name back to its SID.">
+                                <TextBlock Text="SID resolver" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Compose an Active Directory search filter from conditions and presets, with the Get-ADObject and dsquery commands that use it.">
+                                <TextBlock Text="LDAP filter" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ChoiceGroup}">
+                                <TextBlock Text="WINDOWS COMMANDS" Style="{StaticResource ChoiceGroupTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
+                                         ToolTip="Build an icacls command to grant, deny, remove or reset NTFS permissions on a file or folder.">
+                                <TextBlock Text="icacls (NTFS)" Style="{StaticResource ChoiceTitle}" />
+                            </ListBoxItem>
+                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Build a robocopy command from its options, and read what a robocopy exit code means.">
                                 <TextBlock Text="Robocopy" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
@@ -3384,24 +3413,8 @@
                                 <TextBlock Text="Scheduled task" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Build a dsacls command that delegates control on an OU, the same as the Delegation of Control wizard.">
-                                <TextBlock Text="dsacls delegation" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Build an icacls command to grant, deny, remove or reset NTFS permissions on a file or folder.">
-                                <TextBlock Text="icacls (NTFS)" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Resolve a SID to its account and take it apart, or an account name back to its SID.">
-                                <TextBlock Text="SID resolver" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Build an event log query from a log, event ids, level and time: as a Get-WinEvent FilterHashtable, an XPath filter and a wevtutil command.">
                                 <TextBlock Text="Event log query" Style="{StaticResource ChoiceTitle}" />
-                            </ListBoxItem>
-                            <ListBoxItem Style="{StaticResource ReportChoice}"
-                                         ToolTip="Compose an Active Directory search filter from conditions and presets, with the Get-ADObject and dsquery commands that use it.">
-                                <TextBlock Text="LDAP filter" Style="{StaticResource ChoiceTitle}" />
                             </ListBoxItem>
                             <ListBoxItem Style="{StaticResource ReportChoice}"
                                          ToolTip="Build a WMI query from a class, properties and conditions: as Get-CimInstance with a filter or a query, the WQL, and the old wmic command.">

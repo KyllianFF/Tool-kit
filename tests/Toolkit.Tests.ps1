@@ -9966,12 +9966,12 @@ Describe 'Dashboard and pages' {
             ($order -join ',') | Should -Be (@(Get-TkPageName) -join ',')
         }
 
-        It 'groups the navigation under the four kinds of work' {
+        It 'groups the navigation under the kinds of work' {
 
             $headings = @([regex]::Matches($script:Markup, '<TextBlock Text="(?<text>[A-Z]+)" Style="\{StaticResource NavSection\}"') |
                           ForEach-Object { $_.Groups['text'].Value })
 
-            ($headings -join ',') | Should -Be 'WORKSTATION,TROUBLESHOOTING,SECURITY,REFERENCE'
+            ($headings -join ',') | Should -Be 'WORKSTATION,TROUBLESHOOTING,SECURITY,TOOLBOX,REFERENCE'
         }
 
         It 'opens on the Dashboard' {
