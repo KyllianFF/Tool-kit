@@ -51,6 +51,14 @@ mark, as JSON asks: read it back in Windows PowerShell 5.1 with
 and garbles accented names. The same parameters work on `toolkit.ps1` from a clone and on
 `dist\toolkit.ps1`.
 
+The document follows a versioned format, described in
+[docs/REPORT-FORMAT.md](docs/REPORT-FORMAT.md) with a
+[JSON Schema](docs/report.schema.json) beside it, so a script or a fleet view
+can rely on it: `Schema` and `SchemaVersion` say what it is (a minor version
+only adds fields), each report carries the `Version` of its data, and
+`MachineId`, derived from the Windows MachineGuid without revealing it, tells
+machines apart after a rename or once pseudonymised.
+
 **Before and after.** `-CompareWith` collects the reports of an earlier
 document again and adds what changed: judgements that got worse or better,
 devices, drives and findings that appeared or went, crashes and updates that
@@ -76,7 +84,9 @@ the IP and MAC addresses (the maker's part of a MAC is kept), the saved Wi-Fi
 networks and the domain names. A comparison is made on the real values, before
 they are replaced. The table back to the real values stays on the machine,
 encrypted for the Windows account that ran it, and **Settings, Privacy of
-exports** finds what an alias stood for.
+exports** finds what an alias stood for. The document says its level in
+`Privacy`, and a pseudonymised document cannot be the reference of
+`-CompareWith`: its aliases would each read as a change.
 
 ```powershell
 & $toolkit -Report All -Redact Strict -OutFile .\for-the-vendor.json
@@ -402,7 +412,8 @@ Tool-kit/
                            vendor support
   dist/                    Build output (toolkit.ps1 and its SHA256)
   tests/                   Pester 5 suite
-  docs/                    Architecture, security policy, contributing
+  docs/                    Architecture, security policy, contributing,
+                           the report format and its JSON Schema
 ```
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit

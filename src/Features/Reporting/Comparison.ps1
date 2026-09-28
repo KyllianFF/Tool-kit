@@ -488,8 +488,13 @@ function Compare-TkReportDocument {
         [pscustomobject] @{ Fact = $fact.Label; Before = [string] $then; After = [string] $now }
     }
 
+    # The MachineId survives a rename and a pseudonymised name; documents
+    # written before it existed are matched by the computer name.
+    $sameComputer = if ($Reference.MachineId -and $Difference.MachineId) { [string] $Reference.MachineId -eq [string] $Difference.MachineId }
+                    else { [string] $Reference.Computer -eq [string] $Difference.Computer }
+
     return [pscustomobject] @{
-        SameComputer = ([string] $Reference.Computer -eq [string] $Difference.Computer)
+        SameComputer = $sameComputer
         Reference    = [pscustomobject] @{ Computer = [string] $Reference.Computer; GeneratedAt = [string] $Reference.GeneratedAt }
         Difference   = [pscustomobject] @{ Computer = [string] $Difference.Computer; GeneratedAt = [string] $Difference.GeneratedAt }
         Reports      = $reports
@@ -552,6 +557,24 @@ function Read-TkReportDocument {
 
     if ($data -isnot [System.Collections.IDictionary] -or -not $data.Contains('Reports')) {
         throw 'This file is not a toolkit report: it has no Reports section.'
+    }
+
+    # A document written before the format had a name is read as it is; one
+    # of a later major version may have moved what the comparison reads.
+    $schema = Get-TkReportSchema
+
+    if ($data.Contains('Schema') -and [string] $data['Schema'] -ne $schema.Name) {
+        throw ('This file is not a toolkit report: its format is "{0}".' -f $data['Schema'])
+    }
+
+    if ($data.Contains('SchemaVersion')) {
+
+        $major = 0
+        $known = [int] ($schema.Version -split '\.')[0]
+
+        if (-not [int]::TryParse((([string] $data['SchemaVersion']) -split '\.')[0], [ref] $major) -or $major -gt $known) {
+            throw ('This report is in format {0}, written by a newer toolkit; this one reads format {1}. Compare it with a newer toolkit.' -f $data['SchemaVersion'], $schema.Version)
+        }
     }
 
     return $data

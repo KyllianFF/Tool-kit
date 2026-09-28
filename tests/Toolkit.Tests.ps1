@@ -522,9 +522,13 @@ Describe 'Headless reports' {
 
         $document = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
 
-        $document.Computer              | Should -Be $env:COMPUTERNAME
-        $document.Reports.Reboot.Status | Should -Be 'Ok'
-        $document.Reports.Reboot.Data   | Should -Not -BeNullOrEmpty
+        $document.Schema                 | Should -Be 'toolkit-report'
+        $document.Computer               | Should -Be $env:COMPUTERNAME
+        $document.MachineId              | Should -Be (Get-TkMachineId)
+        $document.Privacy                | Should -Be 'None'
+        $document.Reports.Reboot.Version | Should -Be 1
+        $document.Reports.Reboot.Status  | Should -Be 'Ok'
+        $document.Reports.Reboot.Data    | Should -Not -BeNullOrEmpty
     }
 
     It 'lists the reports it knows, and which need administrator rights' {
@@ -534,6 +538,114 @@ Describe 'Headless reports' {
 
         $items.Count                                           | Should -Be @(Get-TkHeadlessReport).Count
         ($items | Where-Object { $_.Name -eq 'Audit' }).Elevated | Should -BeTrue
+        ($items | Where-Object { $_.Name -eq 'Audit' }).Version  | Should -Be 1
+    }
+
+    It 'writes the envelope the format document and the schema describe, in their order' {
+
+        $table = @([pscustomobject] @{ Name = 'Alpha'; Version = 2; Elevated = $false; Description = 'x'; Collect = { param($Options) $null = $Options; [pscustomobject] @{ Severity = 'Warning' } } })
+
+        $document = New-TkReportDocument -Name 'Alpha' -Table $table -Privacy Personal
+        $schema   = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'docs\report.schema.json') -Raw | ConvertFrom-Json
+
+        # The envelope in the order the schema lists it; Comparison only comes with -CompareWith.
+        $required = (@($schema.required)) -join ','
+        (@($document.Keys)) -join ',' | Should -Be $required
+        (@($schema.properties.PSObject.Properties.Name | Where-Object { $_ -ne 'Comparison' })) -join ',' | Should -Be $required
+        (@($document.Reports.Alpha.Keys)) -join ',' | Should -Be ((@($schema.definitions.report.required)) -join ',')
+
+        $document.Schema          | Should -Be $schema.properties.Schema.const
+        $document.SchemaVersion   | Should -Be (Get-TkReportSchema).Version
+        $document.SchemaVersion   | Should -Match $schema.properties.SchemaVersion.pattern
+        $document.MachineId       | Should -Match $schema.properties.MachineId.pattern
+        $document.Privacy         | Should -Be 'Personal'
+        $document.Reports.Alpha.Version | Should -Be 2
+        $document.Summary.Worst   | Should -Be 'Warning'
+    }
+
+    It 'writes the same document on Windows PowerShell 5.1 and PowerShell 7' {
+
+        $table = @(
+            [pscustomobject] @{ Name = 'Alpha'; Version = 1; Elevated = $false; Description = 'x'; Collect = {
+                param($Options)
+                [pscustomobject] @{
+                    When    = [datetime]::new(2026, 9, 14, 7, 30, 0)
+                    Uptime  = [timespan]::new(1, 2, 3, 4)
+                    Day     = [System.DayOfWeek]::Monday
+                    Rows    = @([pscustomobject] @{ Name = 'only row'; Severity = 'Warning'; Size = [math]::Round(12.04, 1); Share = 0.25 })
+                    Level   = $Options.AuditLevel
+                    Missing = $null
+                    Ratio   = [double]::NaN
+                    Text    = 'Tom & Jerry <b> "quoted" \ it''s'
+                }
+            } }
+            [pscustomobject] @{ Name = 'Broken'; Version = 3; Elevated = $false; Description = 'x'; Collect = { param($Options) $null = $Options; throw 'the provider is gone' } }
+        )
+
+        $document = New-TkReportDocument -Name 'Alpha', 'Broken' -Table $table -Options @{ AuditLevel = 'Full' }
+
+        # What changes from one run to the next is set aside: the rest is the format.
+        foreach ($key in @('Computer', 'MachineId', 'User', 'GeneratedAt', 'Toolkit', 'Elevated')) { $document[$key] = '*' }
+        foreach ($report in @($document.Reports.Values)) { $report.DurationMs = 0 }
+
+        # Windows PowerShell 5.1 escapes < > & and ' where PowerShell 7 does not;
+        # a JSON reader sees the same text.
+        $json = (ConvertTo-Json -InputObject $document -Depth 20 -Compress) -replace '\\u003c', '<' -replace '\\u003e', '>' -replace '\\u0026', '&' -replace '\\u0027', "'"
+
+        $json | Should -BeExactly ('{"Schema":"toolkit-report","SchemaVersion":"1.0","Computer":"*","MachineId":"*","User":"*","GeneratedAt":"*","Toolkit":"*","Elevated":"*","Privacy":"None",' +
+                                   '"Summary":{"Worst":"Warning","Reports":{"Alpha":"Warning"}},"Reports":{' +
+                                   '"Alpha":{"Version":1,"Status":"Ok","Reason":"","DurationMs":0,"Worst":"Warning","Data":{"When":"2026-09-14T07:30:00.0000000","Uptime":"1.02:03:04","Day":"Monday",' +
+                                   '"Rows":[{"Name":"only row","Severity":"Warning","Size":12,"Share":0.25}],"Level":"Full","Missing":null,"Ratio":null,"Text":"Tom & Jerry <b> \"quoted\" \\ it''s"}},' +
+                                   '"Broken":{"Version":3,"Status":"Failed","Reason":"the provider is gone","DurationMs":0,"Worst":"","Data":null}}}')
+    }
+
+    It 'validates against the published schema, pseudonymised or not' -Skip:($PSVersionTable.PSVersion.Major -lt 7) {
+
+        $schemaFile = Join-Path $script:RepositoryRoot 'docs\report.schema.json'
+        $table      = @(
+            [pscustomobject] @{ Name = 'Alpha'; Version = 1; Elevated = $false; Description = 'x'; Collect = { param($Options) $null = $Options; , @([pscustomobject] @{ Severity = 'Pass' }) } }
+            [pscustomobject] @{ Name = 'Broken'; Version = 1; Elevated = $false; Description = 'x'; Collect = { param($Options) $null = $Options; throw 'gone' } }
+        )
+
+        $document = New-TkReportDocument -Name 'Alpha', 'Broken' -Table $table
+        Test-Json -Json (ConvertTo-Json -InputObject $document -Depth 20) -SchemaFile $schemaFile | Should -BeTrue
+
+        # A real run, pseudonymised at the strict level, keeps the format.
+        Test-Json -Json (Invoke-TkHeadlessReport -Report 'Reboot' -Redact Strict) -SchemaFile $schemaFile | Should -BeTrue
+
+        # And the schema does catch a document that breaks it.
+        $document.Remove('SchemaVersion')
+        Test-Json -Json (ConvertTo-Json -InputObject $document -Depth 20) -SchemaFile $schemaFile -ErrorAction SilentlyContinue | Should -BeFalse
+    }
+
+    It 'versions each report, as the format document lists them' {
+
+        # Raising a version is a decision: a field of that report's Data was
+        # removed or renamed, or changed type or meaning. It changes here, in
+        # Get-TkHeadlessReport and in docs/REPORT-FORMAT.md together.
+        $expected = 'Dashboard=1,Inventory=1,Network=1,Reboot=1,Storage=1,Performance=1,Devices=1,Crashes=1,Duplicates=1,Path=1,' +
+                    'Restarts=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Audit=1'
+
+        (@(Get-TkHeadlessReport | ForEach-Object { '{0}={1}' -f $_.Name, $_.Version })) -join ',' | Should -Be $expected
+
+        $format = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'docs\REPORT-FORMAT.md') -Raw
+
+        foreach ($entry in @(Get-TkHeadlessReport)) {
+            $format | Should -Match ('(?m)^\| {0} \| {1} \| {2} \|' -f $entry.Name, $entry.Version, $(if ($entry.Elevated) { 'yes' } else { 'no' })) -Because $entry.Name
+        }
+
+        $format | Should -Match ('currently \*\*{0}\*\*' -f [regex]::Escape((Get-TkReportSchema).Version))
+    }
+
+    It 'identifies the machine by a stable id that names nothing' {
+
+        $id = Get-TkMachineId
+
+        $id              | Should -Match '^[0-9a-f]{32}$'
+        Get-TkMachineId  | Should -Be $id
+
+        $guid = [string] (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name 'MachineGuid').MachineGuid
+        $id   | Should -Not -Match ($guid -replace '-', '').Substring(0, 12)
     }
 
     It 'takes the headless parameters at every entry point' {
@@ -996,6 +1108,43 @@ Describe 'Report comparison' {
         { Read-TkReportDocument -Path $path }                                  | Should -Throw '*not a toolkit report*'
         { Read-TkReportDocument -Path (Join-Path $TestDrive 'missing.json') }  | Should -Throw '*does not exist*'
         { Invoke-TkHeadlessReport }                                             | Should -Throw '*-Report*'
+    }
+
+    It 'reads a document of its own major version or an older one, and refuses a newer one' {
+
+        # Written by toolkit 1.0.0, before the format had a name.
+        (Read-TkReportDocument -Json '{ "Computer": "PC-01", "Reports": { } }').Computer | Should -Be 'PC-01'
+
+        (Read-TkReportDocument -Json '{ "Schema": "toolkit-report", "SchemaVersion": "1.7", "Reports": { } }').SchemaVersion | Should -Be '1.7'
+
+        { Read-TkReportDocument -Json '{ "Schema": "toolkit-report", "SchemaVersion": "2.0", "Reports": { } }' } | Should -Throw '*newer toolkit*'
+        { Read-TkReportDocument -Json '{ "Schema": "toolkit-report", "SchemaVersion": "next", "Reports": { } }' } | Should -Throw '*newer toolkit*'
+        { Read-TkReportDocument -Json '{ "Schema": "inventory-export", "Reports": { } }' } | Should -Throw '*not a toolkit report*'
+    }
+
+    It 'refuses to compare with a pseudonymised document, before collecting anything' {
+
+        $path = Join-Path $TestDrive 'redacted.json'
+        Set-Content -LiteralPath $path -Value '{ "Schema": "toolkit-report", "SchemaVersion": "1.0", "Computer": "PC-1", "Privacy": "Personal", "Reports": { "Reboot": { "Status": "Ok" } } }'
+
+        { Invoke-TkHeadlessReport -CompareWith $path } | Should -Throw '*pseudonymised*'
+    }
+
+    It 'knows a renamed or pseudonymised computer by its MachineId' {
+
+        $before = New-ComparisonTestDocument -Computer 'OLD-NAME'
+        $after  = New-ComparisonTestDocument -Computer 'NEW-NAME'
+        $before['MachineId'] = '5d8c1f0e9b7a4c2d8e6f1a3b5c7d9e0f'
+        $after['MachineId']  = '5d8c1f0e9b7a4c2d8e6f1a3b5c7d9e0f'
+
+        (Compare-TkReportDocument -Reference $before -Difference $after).SameComputer | Should -BeTrue
+
+        # Two pseudonymised machines are both PC-1.
+        $before['Computer'] = 'PC-1'
+        $after['Computer']  = 'PC-1'
+        $after['MachineId'] = '0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c'
+
+        (Compare-TkReportDocument -Reference $before -Difference $after).SameComputer | Should -BeFalse
     }
 }
 
