@@ -16,7 +16,79 @@
     blind. And the output goes through ConvertTo-TkPlainData before JSON, so
     Windows PowerShell 5.1 and PowerShell 7 write the same document: dates as
     ISO 8601, enumerations as names, CIM objects as their properties.
+
+    The document is a contract with whatever reads it: docs/REPORT-FORMAT.md
+    describes it, docs/report.schema.json lets a validator check it, and the
+    tests hold the code to both.
 #>
+
+<#
+.SYNOPSIS
+    The name and version of the report document format.
+
+.DESCRIPTION
+    The minor version rises when fields are added, the major one when a field
+    of the envelope is removed or renamed, or changes type or meaning. Each
+    report carries a version of its own for its Data (Get-TkHeadlessReport).
+
+.OUTPUTS
+    PSCustomObject with Name and Version.
+#>
+function Get-TkReportSchema {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    return [pscustomobject] @{ Name = 'toolkit-report'; Version = '1.0' }
+}
+
+<#
+.SYNOPSIS
+    A stable identifier for this machine that names nothing.
+
+.DESCRIPTION
+    A salted SHA-256 of the MachineGuid Windows writes at setup, cut to 32
+    hexadecimal characters: the same after a rename and in a pseudonymised
+    document, so a fleet view tells machines apart, and no way back to the
+    MachineGuid. Read from the 64-bit registry view, where the value lives,
+    so a 32-bit PowerShell (as some RMM agents run) gets the same one.
+
+.OUTPUTS
+    System.String, empty when the MachineGuid cannot be read.
+#>
+function Get-TkMachineId {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $guid = ''
+
+    try {
+        $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+        try {
+            $key = $base.OpenSubKey('SOFTWARE\Microsoft\Cryptography')
+            if ($key) { $guid = [string] $key.GetValue('MachineGuid'); $key.Dispose() }
+        }
+        finally {
+            $base.Dispose()
+        }
+    }
+    catch {
+        return ''
+    }
+
+    if (-not $guid.Trim()) { return '' }
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes('toolkit-report|' + $guid.Trim().ToLowerInvariant()))
+    }
+    finally {
+        $sha.Dispose()
+    }
+
+    return ([BitConverter]::ToString($hash, 0, 16) -replace '-', '').ToLowerInvariant()
+}
 
 <#
 .SYNOPSIS
@@ -26,8 +98,12 @@
     Each collector receives the options of the run and returns one object, or
     one array wrapped so a single row still comes out as an array.
 
+    Version is the version of the report's Data. Raise it when a field of it
+    is removed or renamed, or changes type or meaning, and change
+    docs/REPORT-FORMAT.md with it; a field can be added without it.
+
 .OUTPUTS
-    PSCustomObject[] with Name, Elevated, Description and Collect.
+    PSCustomObject[] with Name, Version, Elevated, Description and Collect.
 #>
 function Get-TkHeadlessReport {
     [CmdletBinding()]
@@ -35,18 +111,18 @@ function Get-TkHeadlessReport {
     param()
 
     $row = {
-        param($name, $elevated, $description, $collect)
-        [pscustomobject] @{ Name = $name; Elevated = $elevated; Description = $description; Collect = $collect }
+        param($name, $version, $elevated, $description, $collect)
+        [pscustomobject] @{ Name = $name; Version = [int] $version; Elevated = $elevated; Description = $description; Collect = $collect }
     }
 
     return @(
-        (& $row 'Dashboard' $false 'Computer, network and health tiles, as on the Dashboard.' {
+        (& $row 'Dashboard' 1 $false 'Computer, network and health tiles, as on the Dashboard.' {
             param($Options)
             $null = $Options
             Get-TkDashboardSnapshot
         })
 
-        (& $row 'Inventory' $false 'Identity, operating system, hardware, volumes, platform security and activation.' {
+        (& $row 'Inventory' 1 $false 'Identity, operating system, hardware, volumes, platform security and activation.' {
             param($Options)
             $null = $Options
             [pscustomobject] @{
@@ -59,25 +135,25 @@ function Get-TkHeadlessReport {
             }
         })
 
-        (& $row 'Network' $false 'Network adapters, connected or not.' {
+        (& $row 'Network' 1 $false 'Network adapters, connected or not.' {
             param($Options)
             $null = $Options
             , @(Get-TkNetworkAdapterInfo -IncludeDisconnected)
         })
 
-        (& $row 'Reboot' $false 'Whether a restart is pending, and why.' {
+        (& $row 'Reboot' 1 $false 'Whether a restart is pending, and why.' {
             param($Options)
             $null = $Options
             Get-TkPendingRebootStatus
         })
 
-        (& $row 'Storage' $false 'Disk reliability, free space and SSD wear.' {
+        (& $row 'Storage' 1 $false 'Disk reliability, free space and SSD wear.' {
             param($Options)
             $null = $Options
             , @(Get-TkStorageHealth)
         })
 
-        (& $row 'Performance' $false 'Usage now by application, startup programs, and start up time when elevated.' {
+        (& $row 'Performance' 1 $false 'Usage now by application, startup programs, and start up time when elevated.' {
             param($Options)
             $null = $Options
             $snapshot = Get-TkPerformanceSnapshot
@@ -92,13 +168,13 @@ function Get-TkHeadlessReport {
             }
         })
 
-        (& $row 'Devices' $false 'Devices Device Manager flags, with their problem code explained.' {
+        (& $row 'Devices' 1 $false 'Devices Device Manager flags, with their problem code explained.' {
             param($Options)
             $null = $Options
             , @(Get-TkDeviceProblem)
         })
 
-        (& $row 'Crashes' $false 'Blue screens of the last 30 days and stability events of the last 14.' {
+        (& $row 'Crashes' 1 $false 'Blue screens of the last 30 days and stability events of the last 14.' {
             param($Options)
             $null = $Options
             [pscustomobject] @{
@@ -107,25 +183,25 @@ function Get-TkHeadlessReport {
             }
         })
 
-        (& $row 'Duplicates' $false 'Files that exist more than once in the account''s own folders, and the space the copies take.' {
+        (& $row 'Duplicates' 1 $false 'Files that exist more than once in the account''s own folders, and the space the copies take.' {
             param($Options)
             $null = $Options
             Get-TkDuplicateFileReport
         })
 
-        (& $row 'Path' $false 'The system and user PATH, each entry judged, and the commands two folders provide.' {
+        (& $row 'Path' 1 $false 'The system and user PATH, each entry judged, and the commands two folders provide.' {
             param($Options)
             $null = $Options
             Get-TkPathAudit
         })
 
-        (& $row 'Restarts' $false 'Every start of the last 30 days, how the session before it ended and who asked.' {
+        (& $row 'Restarts' 1 $false 'Every start of the last 30 days, how the session before it ended and who asked.' {
             param($Options)
             $null = $Options
             Get-TkBootHistory -Days 30
         })
 
-        (& $row 'Wifi' $false 'Wi-Fi signal, band, rate, security and drops of the last week.' {
+        (& $row 'Wifi' 1 $false 'Wi-Fi signal, band, rate, security and drops of the last week.' {
             param($Options)
             $null = $Options
             $status = Get-TkWifiStatus -Days 7
@@ -136,7 +212,7 @@ function Get-TkHeadlessReport {
             }
         })
 
-        (& $row 'Proxy' $false 'The three proxy settings, and whether each proxy answers.' {
+        (& $row 'Proxy' 1 $false 'The three proxy settings, and whether each proxy answers.' {
             param($Options)
             $null = $Options
             $setting = Get-TkProxySetting
@@ -149,37 +225,37 @@ function Get-TkHeadlessReport {
             }
         })
 
-        (& $row 'Identity' $false 'Join type, single sign-on, domain controller, clock and MDM.' {
+        (& $row 'Identity' 1 $false 'Join type, single sign-on, domain controller, clock and MDM.' {
             param($Options)
             $null = $Options
             , @(Get-TkIdentityHealth)
         })
 
-        (& $row 'Updates' $false 'The last 30 updates, drivers and feature updates included.' {
+        (& $row 'Updates' 1 $false 'The last 30 updates, drivers and feature updates included.' {
             param($Options)
             $null = $Options
             , @(Get-TkUpdateHistory -Count 30)
         })
 
-        (& $row 'Printing' $false 'Spooler, printers, ports, drivers and queues.' {
+        (& $row 'Printing' 1 $false 'Spooler, printers, ports, drivers and queues.' {
             param($Options)
             $null = $Options
             , @(Get-TkPrintingReport)
         })
 
-        (& $row 'Profiles' $false 'Profile sizes, mapped drives and logon timing.' {
+        (& $row 'Profiles' 1 $false 'Profile sizes, mapped drives and logon timing.' {
             param($Options)
             $null = $Options
             , @(Get-TkUserContextReport)
         })
 
-        (& $row 'Lifecycle' $false 'Whether Windows and the installed programs still receive security fixes.' {
+        (& $row 'Lifecycle' 1 $false 'Whether Windows and the installed programs still receive security fixes.' {
             param($Options)
             $null = $Options
             Get-TkSoftwareLifecycleReport
         })
 
-        (& $row 'Audit' $true 'The security audit with its score, at the level asked for.' {
+        (& $row 'Audit' 1 $true 'The security audit with its score, at the level asked for.' {
             param($Options)
 
             # The accounts excluded in the interface apply here too, and are
@@ -471,7 +547,7 @@ function Get-TkWorstSeverity {
     The options of the run, handed to the collector.
 
 .OUTPUTS
-    Ordered dictionary with Status (Ok, Skipped or Failed), Reason,
+    Ordered dictionary with Version, Status (Ok, Skipped or Failed), Reason,
     DurationMs, Worst and Data.
 #>
 function Invoke-TkHeadlessCollector {
@@ -488,7 +564,7 @@ function Invoke-TkHeadlessCollector {
     )
 
     $timer  = [System.Diagnostics.Stopwatch]::StartNew()
-    $result = [ordered] @{ Status = 'Ok'; Reason = ''; DurationMs = 0; Worst = ''; Data = $null }
+    $result = [ordered] @{ Version = [int] $Entry.Version; Status = 'Ok'; Reason = ''; DurationMs = 0; Worst = ''; Data = $null }
 
     if ($Entry.Elevated -and -not $Elevated) {
         $result.Status = 'Skipped'
@@ -514,6 +590,94 @@ function Invoke-TkHeadlessCollector {
     $result.DurationMs = $timer.ElapsedMilliseconds
 
     return $result
+}
+
+<#
+.SYNOPSIS
+    Collects reports into a report document, ready to be written as JSON.
+
+.DESCRIPTION
+    The document docs/REPORT-FORMAT.md describes: what it is and in which
+    version first, then the machine, the run and its privacy level, the
+    summary a monitoring rule reads, and each report with its own version.
+    The collection is timed and journaled as one operation.
+
+.PARAMETER Name
+    The reports to collect, as Resolve-TkHeadlessReportName returns them.
+
+.PARAMETER Table
+    The reports the names are looked up in: Get-TkHeadlessReport, unless given.
+
+.PARAMETER Options
+    The options of the run, handed to each collector.
+
+.PARAMETER Privacy
+    The level the document is about to be pseudonymised at, recorded in it.
+
+.OUTPUTS
+    Ordered dictionary.
+#>
+function New-TkReportDocument {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Name,
+
+        [Parameter()]
+        [AllowNull()]
+        [object[]] $Table = $null,
+
+        [Parameter()]
+        [hashtable] $Options = @{ AuditLevel = 'Essential' },
+
+        [Parameter()]
+        [ValidateSet('None', 'Personal', 'Strict')]
+        [string] $Privacy = 'None'
+    )
+
+    if (-not $Table) {
+        $Table = @(Get-TkHeadlessReport)
+    }
+
+    $elevated  = [bool] (Test-TkIsElevated)
+    $context   = Get-TkContext
+    $schema    = Get-TkReportSchema
+    $operation = 'Headless report: {0}' -f ($Name -join ', ')
+    $stopwatch = Start-TkOperation -Name $operation -Category 'Headless'
+
+    $reports = [ordered] @{}
+    $worst   = [ordered] @{}
+
+    foreach ($item in $Name) {
+
+        $entry  = $Table | Where-Object { $_.Name -eq $item } | Select-Object -First 1
+        $result = Invoke-TkHeadlessCollector -Entry $entry -Elevated $elevated -Options $Options
+
+        $reports[$item] = $result
+
+        if ($result.Worst) {
+            $worst[$item] = $result.Worst
+        }
+    }
+
+    $overall = Get-TkWorstSeverity -Data ([ordered] @{ Rows = @($worst.Values | ForEach-Object { [ordered] @{ Severity = $_ } }) })
+
+    Stop-TkOperation -Name $operation -Stopwatch $stopwatch -Category 'Headless' `
+                     -Success (@($reports.Values | Where-Object { $_.Status -eq 'Failed' }).Count -eq 0)
+
+    return [ordered] @{
+        Schema        = $schema.Name
+        SchemaVersion = $schema.Version
+        Computer      = $env:COMPUTERNAME
+        MachineId     = Get-TkMachineId
+        User          = ('{0}\{1}' -f $env:USERDOMAIN, $env:USERNAME)
+        GeneratedAt   = (Get-Date).ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+        Toolkit       = [ordered] @{ Version = [string] $context.Version; Commit = [string] $context.Commit }
+        Elevated      = $elevated
+        Privacy       = $Privacy
+        Summary       = [ordered] @{ Worst = $overall; Reports = $worst }
+        Reports       = $reports
+    }
 }
 
 <#
@@ -568,7 +732,7 @@ function Invoke-TkHeadlessReport {
 
     if (@($Report | ForEach-Object { [string] $_ -split '[,;\s]+' } | Where-Object { $_ -eq 'List' }).Count -gt 0) {
 
-        $document = ConvertTo-TkPlainData -InputObject @($table | Select-Object -Property Name, Elevated, Description)
+        $document = ConvertTo-TkPlainData -InputObject @($table | Select-Object -Property Name, Version, Elevated, Description)
     }
     else {
 
@@ -577,6 +741,11 @@ function Invoke-TkHeadlessReport {
         if ($CompareWith) {
 
             $reference = Read-TkReportDocument -Path $CompareWith
+
+            # Its aliases would each read as a change against the real values.
+            if ([string] $reference['Privacy'] -in @('Personal', 'Strict')) {
+                throw ('{0} was pseudonymised ({1}): its names and addresses are aliases, and each would read as a change. Compare with a document saved without -Redact.' -f $CompareWith, $reference['Privacy'])
+            }
 
             if (@($Report | Where-Object { $_ }).Count -eq 0) {
                 $Report = @($reference.Reports.Keys)
@@ -588,41 +757,7 @@ function Invoke-TkHeadlessReport {
         }
 
         $names    = @(Resolve-TkHeadlessReportName -Name $Report)
-        $elevated = [bool] (Test-TkIsElevated)
-        $options  = @{ AuditLevel = $AuditLevel }
-        $context  = Get-TkContext
-
-        $stopwatch = Start-TkOperation -Name ('Headless report: {0}' -f ($names -join ', ')) -Category 'Headless'
-
-        $reports = [ordered] @{}
-        $worst   = [ordered] @{}
-
-        foreach ($name in $names) {
-
-            $entry  = $table | Where-Object { $_.Name -eq $name } | Select-Object -First 1
-            $result = Invoke-TkHeadlessCollector -Entry $entry -Elevated $elevated -Options $options
-
-            $reports[$name] = $result
-
-            if ($result.Worst) {
-                $worst[$name] = $result.Worst
-            }
-        }
-
-        $overall = Get-TkWorstSeverity -Data ([ordered] @{ Rows = @($worst.Values | ForEach-Object { [ordered] @{ Severity = $_ } }) })
-
-        $document = [ordered] @{
-            Computer    = $env:COMPUTERNAME
-            User        = ('{0}\{1}' -f $env:USERDOMAIN, $env:USERNAME)
-            GeneratedAt = (Get-Date).ToString('o', [Globalization.CultureInfo]::InvariantCulture)
-            Toolkit     = [ordered] @{ Version = [string] $context.Version; Commit = [string] $context.Commit }
-            Elevated    = $elevated
-            Summary     = [ordered] @{ Worst = $overall; Reports = $worst }
-            Reports     = $reports
-        }
-
-        Stop-TkOperation -Name ('Headless report: {0}' -f ($names -join ', ')) -Stopwatch $stopwatch -Category 'Headless' `
-                         -Success (@($reports.Values | Where-Object { $_.Status -eq 'Failed' }).Count -eq 0)
+        $document = New-TkReportDocument -Name $names -Table $table -Options @{ AuditLevel = $AuditLevel } -Privacy $Redact
 
         if ($reference) {
             $document['Comparison'] = ConvertTo-TkPlainData -InputObject (Compare-TkReportDocument -Reference $reference -Difference $document)

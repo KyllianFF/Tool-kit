@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/docs/report.schema.json",
+  "title": "Toolkit report document",
+  "description": "The JSON document a headless run of the toolkit writes (-Report, -CompareWith), format 1.x. docs/REPORT-FORMAT.md is the reference; this schema checks the envelope and each report's wrapper, not the Data of each report.",
+  "type": "object",
+  "required": [ "Schema", "SchemaVersion", "Computer", "MachineId", "User", "GeneratedAt", "Toolkit", "Elevated", "Privacy", "Summary", "Reports" ],
+  "properties": {
+    "Schema": {
+      "description": "What the document is: always toolkit-report.",
+      "const": "toolkit-report"
+    },
+    "SchemaVersion": {
+      "description": "major.minor. A minor version only adds fields.",
+      "type": "string",
+      "pattern": "^1\\.[0-9]+$"
+    },
+    "Computer": {
+      "description": "The computer name, or PC-1 when the document is pseudonymised.",
+      "type": "string"
+    },
+    "MachineId": {
+      "description": "32 hexadecimal characters derived from the Windows MachineGuid, the same with or without -Redact and after a rename; empty when it cannot be read.",
+      "type": "string",
+      "pattern": "^([0-9a-f]{32})?$"
+    },
+    "User": {
+      "description": "The account that ran the collection, as DOMAIN\\user.",
+      "type": "string"
+    },
+    "GeneratedAt": {
+      "description": "When the document was made, ISO 8601 with the offset.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    },
+    "Toolkit": {
+      "description": "The build that wrote the document.",
+      "type": "object",
+      "required": [ "Version", "Commit" ],
+      "properties": {
+        "Version": { "type": "string" },
+        "Commit": { "type": "string" }
+      }
+    },
+    "Elevated": {
+      "description": "Whether the run had administrator rights. A report that needs them is Skipped otherwise.",
+      "type": "boolean"
+    },
+    "Privacy": {
+      "description": "The -Redact level the document was pseudonymised at.",
+      "enum": [ "None", "Personal", "Strict" ]
+    },
+    "Summary": {
+      "description": "What a monitoring rule reads without knowing the shape of each report.",
+      "type": "object",
+      "required": [ "Worst", "Reports" ],
+      "properties": {
+        "Worst": { "$ref": "#/definitions/judgement" },
+        "Reports": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/judgement" }
+        }
+      }
+    },
+    "Reports": {
+      "description": "One entry per report collected, by name, in the order asked.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/report" }
+    },
+    "Comparison": {
+      "description": "Only with -CompareWith: what changed since the document given.",
+      "type": "object"
+    }
+  },
+  "definitions": {
+    "judgement": {
+      "description": "The worst judgement found; empty when nothing is judged.",
+      "enum": [ "Fail", "Warning", "Pass", "" ]
+    },
+    "report": {
+      "type": "object",
+      "required": [ "Version", "Status", "Reason", "DurationMs", "Worst", "Data" ],
+      "properties": {
+        "Version": {
+          "description": "The version of this report's Data: it rises when one of its fields is removed, renamed or changes type or meaning.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "Status": { "enum": [ "Ok", "Skipped", "Failed" ] },
+        "Reason": {
+          "description": "Why the report was skipped or failed; empty when it is Ok.",
+          "type": "string"
+        },
+        "DurationMs": { "type": "integer", "minimum": 0 },
+        "Worst": { "$ref": "#/definitions/judgement" },
+        "Data": {
+          "description": "The report as the interface shows it; null when it is not Ok. docs/REPORT-FORMAT.md lists what each one holds."
+        }
+      }
+    }
+  }
+}
