@@ -554,7 +554,13 @@ function Invoke-TkHeadlessReport {
 
         [Parameter()]
         [ValidateSet('Essential', 'Full')]
-        [string] $AuditLevel = 'Essential'
+        [string] $AuditLevel = 'Essential',
+
+        # Pseudonymises the document once collected and compared: a
+        # comparison needs the real values, a document sent away does not.
+        [Parameter()]
+        [ValidateSet('None', 'Personal', 'Strict')]
+        [string] $Redact = 'None'
     )
 
     $table     = @(Get-TkHeadlessReport)
@@ -624,6 +630,13 @@ function Invoke-TkHeadlessReport {
     }
 
     $json = ConvertTo-Json -InputObject $document -Depth 40
+
+    if ($Redact -ne 'None') {
+        $safe = Protect-TkExportText -Text $json -Level $Redact -Label 'headless-report'
+        $json = $safe.Text
+        Write-TkLog -Level Information -Category 'Headless' -Message (
+            'Pseudonymised ({0}): {1} value(s) replaced; the table is kept at {2}.' -f $Redact, $safe.Replaced, $(if ($safe.MapPath) { $safe.MapPath } else { '(nothing replaced)' }))
+    }
 
     if (-not $OutFile) {
         return $json

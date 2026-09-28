@@ -269,6 +269,7 @@ $builder = New-Object System.Text.StringBuilder
         & ([scriptblock]::Create((irm <url of this file>))) -Report List
         & ([scriptblock]::Create((irm <url of this file>))) -Report All -OutFile .\report.json
         & ([scriptblock]::Create((irm <url of this file>))) -CompareWith .\report.json
+        & ([scriptblock]::Create((irm <url of this file>))) -Report All -Redact Personal -OutFile .\to-send.json
 #>
 
 [CmdletBinding()]
@@ -295,6 +296,10 @@ param(
     [Parameter()]
     [ValidateSet('Essential', 'Full')]
     [string] `$AuditLevel = 'Essential',
+
+    [Parameter()]
+    [ValidateSet('None', 'Personal', 'Strict')]
+    [string] `$Redact = 'None',
 
     [Parameter()]
     [string] `$RunAction,
@@ -387,7 +392,7 @@ $($resourceLines -join "`r`n")
 `$script:TkEntryScript = `$PSCommandPath
 
 if (`$Report -or `$CompareWith) {
-    Start-Toolkit -Report `$Report -CompareWith `$CompareWith -OutFile `$OutFile -AuditLevel `$AuditLevel -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
+    Start-Toolkit -Report `$Report -CompareWith `$CompareWith -OutFile `$OutFile -AuditLevel `$AuditLevel -Redact `$Redact -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 }
 elseif (`$RunAction) {
     Start-Toolkit -RunAction `$RunAction -ActionData `$ActionData -ResultFile `$ResultFile -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256

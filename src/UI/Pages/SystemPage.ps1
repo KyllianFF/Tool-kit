@@ -598,10 +598,11 @@ function Export-TkSystemReportFromUi {
     [CmdletBinding()]
     param()
 
+    $level  = Get-TkExportPrivacyLevel
     $dialog = New-Object Microsoft.Win32.SaveFileDialog
     $dialog.Title      = 'Export the system report'
     $dialog.Filter     = 'JSON report (*.json)|*.json|Text report (*.txt)|*.txt'
-    $dialog.FileName   = '{0}-inventory-{1}.json' -f $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd')
+    $dialog.FileName   = '{0}-inventory-{1}.json' -f (Get-TkExportComputerName -Level $level), (Get-Date -Format 'yyyyMMdd')
 
     if (-not $dialog.ShowDialog()) {
         return
@@ -610,10 +611,10 @@ function Export-TkSystemReportFromUi {
     $path   = $dialog.FileName
     $format = if ($path -like '*.txt') { 'Text' } else { 'Json' }
 
-    $written = Export-TkSystemReport -Path $path -Format $format -Confirm:$false
+    $written = Export-TkSystemReport -Path $path -Format $format -Privacy $level -Confirm:$false
 
     if ($written) {
-        Set-TkStatus -Text ('Report written to {0}' -f $written)
+        Set-TkStatus -Text ('Report written to {0}.{1}' -f $written, (Format-TkPrivacyNote -Result ([pscustomobject] @{ Level = $level; Replaced = $null })))
     }
     else {
         Set-TkStatus -Text 'The report could not be written.'

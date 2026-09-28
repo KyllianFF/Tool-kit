@@ -1048,30 +1048,33 @@ function Export-TkHuntReportFromUi {
         return
     }
 
+    $level  = Get-TkExportPrivacyLevel
     $dialog = New-Object Microsoft.Win32.SaveFileDialog
     $dialog.Title    = 'Export the report'
     $dialog.Filter   = 'JSON report (*.json)|*.json'
-    $dialog.FileName = '{0}-{1}-{2}.json' -f $env:COMPUTERNAME, $script:TkLastHuntName, (Get-Date -Format 'yyyyMMdd')
+    $dialog.FileName = '{0}-{1}-{2}.json' -f (Get-TkExportComputerName -Level $level), $script:TkLastHuntName, (Get-Date -Format 'yyyyMMdd')
 
     if (-not $dialog.ShowDialog()) {
         return
     }
 
     try {
-        [pscustomobject]@{
+        $json = [pscustomobject]@{
             Computer    = $env:COMPUTERNAME
             Report      = $script:TkLastHuntName
             GeneratedAt = (Get-Date).ToString('s')
             Toolkit     = (Get-TkContext).Version
             Findings    = $script:TkLastHuntReport
-        } | ConvertTo-Json -Depth 6 |
-            Set-Content -LiteralPath $dialog.FileName -Encoding UTF8 -ErrorAction Stop
+        } | ConvertTo-Json -Depth 6
+
+        $safe = Protect-TkExportText -Text $json -Level $level -Label ('hunt-{0}' -f $script:TkLastHuntName)
+        Set-Content -LiteralPath $dialog.FileName -Value $safe.Text -Encoding UTF8 -ErrorAction Stop
 
         Write-TkLog -Level Information -Category 'Hunting' -Message (
             'Report written to {0}' -f $dialog.FileName
         )
 
-        Set-TkStatus -Text ('Report written to {0}' -f $dialog.FileName)
+        Set-TkStatus -Text ('Report written to {0}.{1}' -f $dialog.FileName, (Format-TkPrivacyNote -Result $safe))
     }
     catch {
         Write-TkLog -Level Error -Category 'Hunting' -Message (

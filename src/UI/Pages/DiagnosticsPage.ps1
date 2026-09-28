@@ -87,7 +87,8 @@ function Invoke-TkSupportBundleFromUi {
     Set-TkStatus -Text 'Building the support bundle. This reads the whole machine and can take a minute...'
 
     Invoke-TkBackgroundAction -StatusText 'Building the support bundle...' `
-        -ScriptBlock { New-TkSupportBundle } `
+        -ParameterList @{ privacy = (Get-TkExportPrivacyLevel) } `
+        -ScriptBlock { param($privacy) New-TkSupportBundle -Privacy $privacy } `
         -OnComplete {
             param($result)
 
@@ -98,7 +99,7 @@ function Invoke-TkSupportBundleFromUi {
                 return
             }
 
-            Set-TkStatus -Text ('Support bundle written to {0}' -f $path)
+            Set-TkStatus -Text ('Support bundle written to {0}.{1}' -f $path, (Format-TkPrivacyNote -Result ([pscustomobject] @{ Level = (Get-TkExportPrivacyLevel); Replaced = $null })))
 
             # Select it in Explorer rather than opening it, so the operator can
             # drag it straight onto a ticket.
@@ -1730,26 +1731,29 @@ function Export-TkDiagnosticReport {
         return
     }
 
+    $level  = Get-TkExportPrivacyLevel
     $dialog = New-Object Microsoft.Win32.SaveFileDialog
     $dialog.Title    = 'Export the report'
     $dialog.Filter   = 'JSON report (*.json)|*.json'
-    $dialog.FileName = '{0}-{1}-{2}.json' -f $env:COMPUTERNAME, $script:TkLastDiagnosticName, (Get-Date -Format 'yyyyMMdd')
+    $dialog.FileName = '{0}-{1}-{2}.json' -f (Get-TkExportComputerName -Level $level), $script:TkLastDiagnosticName, (Get-Date -Format 'yyyyMMdd')
 
     if (-not $dialog.ShowDialog()) {
         return
     }
 
     try {
-        [pscustomobject]@{
+        $json = [pscustomobject]@{
             Computer    = $env:COMPUTERNAME
             Report      = $script:TkLastDiagnosticName
             GeneratedAt = (Get-Date).ToString('s')
             Toolkit     = (Get-TkContext).Version
             Data        = $script:TkLastDiagnostic
-        } | ConvertTo-Json -Depth 6 |
-            Set-Content -LiteralPath $dialog.FileName -Encoding UTF8 -ErrorAction Stop
+        } | ConvertTo-Json -Depth 6
 
-        Set-TkStatus -Text ('Report written to {0}' -f $dialog.FileName)
+        $safe = Protect-TkExportText -Text $json -Level $level -Label ('diagnostic-{0}' -f $script:TkLastDiagnosticName)
+        Set-Content -LiteralPath $dialog.FileName -Value $safe.Text -Encoding UTF8 -ErrorAction Stop
+
+        Set-TkStatus -Text ('Report written to {0}.{1}' -f $dialog.FileName, (Format-TkPrivacyNote -Result $safe))
     }
     catch {
         Write-TkLog -Level Error -Category 'Diagnostics' -Message (
@@ -1938,9 +1942,12 @@ function Export-TkEventSearchFromUi {
     }
 
     try {
-        $script:TkLastEventRows | Select-Object Time, Level, Id, Provider, Message |
-            Export-Csv -LiteralPath $dialog.FileName -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
-        Set-TkStatus -Text ('{0} event(s) exported to {1}' -f @($script:TkLastEventRows).Count, $dialog.FileName)
+        $csv  = (@($script:TkLastEventRows | Select-Object Time, Level, Id, Provider, Message | ConvertTo-Csv -NoTypeInformation) -join "`r`n") + "`r`n"
+        $safe = Protect-TkExportText -Text $csv -Level (Get-TkExportPrivacyLevel) -Label 'event-log-search'
+
+        # With a byte order mark, which Excel needs to read the accents right.
+        [System.IO.File]::WriteAllText($dialog.FileName, $safe.Text, (New-Object System.Text.UTF8Encoding($true)))
+        Set-TkStatus -Text ('{0} event(s) exported to {1}.{2}' -f @($script:TkLastEventRows).Count, $dialog.FileName, (Format-TkPrivacyNote -Result $safe))
     }
     catch {
         Write-TkLog -Level Error -Category 'Events' -Message ('The events could not be exported: {0}' -f $_.Exception.Message)

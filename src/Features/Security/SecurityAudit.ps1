@@ -1786,7 +1786,12 @@ function Export-TkSecurityAuditReport {
         [string] $Path,
 
         [Parameter()]
-        $Findings
+        $Findings,
+
+        # Pseudonymises the report before it is written; see Protect-TkExportText.
+        [Parameter()]
+        [ValidateSet('None', 'Personal', 'Strict')]
+        [string] $Privacy = 'None'
     )
 
     if (-not $PSCmdlet.ShouldProcess($Path, 'Write audit report')) {
@@ -1807,6 +1812,7 @@ function Export-TkSecurityAuditReport {
 
         try {
             $html = ConvertTo-TkSecurityAuditHtml -Finding @($Findings) -Score $score
+            $html = (Protect-TkExportText -Text $html -Level $Privacy -Label 'security-audit').Text
             $html | Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
 
             Write-TkLog -Level Information -Category 'Audit' -Message ('Audit report written to {0}' -f $Path)
@@ -1839,7 +1845,8 @@ function Export-TkSecurityAuditReport {
     }
 
     try {
-        $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
+        $json = (Protect-TkExportText -Text ($report | ConvertTo-Json -Depth 5) -Level $Privacy -Label 'security-audit').Text
+        $json | Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
 
         Write-TkLog -Level Information -Category 'Audit' -Message ('Audit report written to {0}' -f $Path)
 

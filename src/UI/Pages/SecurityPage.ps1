@@ -170,6 +170,8 @@ function Initialize-TkSecurityPage {
         })
     }
 
+    Initialize-TkPrivacySetting
+
     Register-TkClick -Name 'BtnCheckToolkitUpdate' -Action { Invoke-TkUpdateCheckFromUi }
     Register-TkClick -Name 'BtnCopyLaunchCommand'  -Action { Copy-TkLaunchCommandFromUi }
 
@@ -236,6 +238,54 @@ function Invoke-TkUpdateCheckFromUi {
                 Set-TkStatus -Text $check.Text
             }
         }.GetNewClosure()
+}
+
+<#
+.SYNOPSIS
+    Wires the Privacy of exports card: the level, the preview and the lookup.
+#>
+function Initialize-TkPrivacySetting {
+    [CmdletBinding()]
+    param()
+
+    $combo = Get-TkControl -Name 'SettingExportPrivacy'
+    if ($combo) {
+        foreach ($label in @('No: exports say what the screens say',
+                             'Personal: names, accounts, e-mails, serial numbers',
+                             'Strict: also IP and MAC addresses, Wi-Fi networks, domains')) {
+            [void] $combo.Items.Add($label)
+        }
+        $combo.SelectedIndex = [array]::IndexOf(@('None', 'Personal', 'Strict'), (Get-TkExportPrivacyLevel))
+        $combo.Add_SelectionChanged({
+            $settings = (Get-TkContext).Settings
+            $settings['ExportPrivacy'] = @('None', 'Personal', 'Strict')[[math]::Max(0, (Get-TkControl -Name 'SettingExportPrivacy').SelectedIndex)]
+            Save-TkSettings
+            (Get-TkControl -Name 'PrivacyPreviewText').Text = ''
+            Set-TkStatus -Text $(if ($settings['ExportPrivacy'] -eq 'None') { 'Exports are written as they are.' } else { 'Exports are pseudonymised ({0}).' -f $settings['ExportPrivacy'].ToLowerInvariant() })
+        })
+    }
+
+    Register-TkClick -Name 'BtnPrivacyPreview' -Action {
+        $level = Get-TkExportPrivacyLevel
+        Set-TkStatus -Text 'Reading what this PC is known by...'
+        Invoke-TkBackgroundAction -StatusText 'Reading what this PC is known by...' `
+            -ParameterList @{ level = $level } `
+            -ScriptBlock { param($level) Get-TkPrivacyPreview -Level $level } `
+            -OnComplete {
+                param($result)
+                (Get-TkControl -Name 'PrivacyPreviewText').Text = (@($result.Output) | ForEach-Object { [string] $_ }) -join [Environment]::NewLine
+                Set-TkStatus -Text 'This is what the exports replace on this PC.'
+            }
+    }
+
+    Register-TkClick -Name 'BtnFindPseudonym' -Action {
+        $alias  = ([string] (Get-TkControl -Name 'PseudonymLookup').Text).Trim()
+        $result = Get-TkControl -Name 'PseudonymResult'
+        if (-not $alias) { $result.Text = 'Type an alias, such as PC-1 or USER-2.'; return }
+        $found = @(Find-TkPseudonym -Alias $alias)
+        $result.Text = if ($found.Count -eq 0) { 'No table on this PC has {0}.' -f $alias }
+                       else { (@($found | ForEach-Object { '{0} was {1} (export {2}, {3}).' -f $_.Alias, $_.Value, $_.Export, ([datetime] $_.Created).ToString('yyyy-MM-dd HH:mm') }) -join [Environment]::NewLine) }
+    }
 }
 
 # The published build the last update check found, for its verified command.
@@ -1220,21 +1270,22 @@ function Export-TkAuditFromUi {
         return
     }
 
+    $level  = Get-TkExportPrivacyLevel
     $dialog = New-Object Microsoft.Win32.SaveFileDialog
     $dialog.Title    = 'Export the audit report'
     # HTML first: the printable page for a ticket is what this is usually for.
     # JSON stays for feeding another tool.
     $dialog.Filter   = 'HTML report (*.html)|*.html|JSON report (*.json)|*.json'
-    $dialog.FileName = '{0}-audit-{1}.html' -f $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd')
+    $dialog.FileName = '{0}-audit-{1}.html' -f (Get-TkExportComputerName -Level $level), (Get-Date -Format 'yyyyMMdd')
 
     if (-not $dialog.ShowDialog()) {
         return
     }
 
-    $written = Export-TkSecurityAuditReport -Path $dialog.FileName -Findings $script:TkLastAudit -Confirm:$false
+    $written = Export-TkSecurityAuditReport -Path $dialog.FileName -Findings $script:TkLastAudit -Privacy $level -Confirm:$false
 
     if ($written) {
-        Set-TkStatus -Text ('Audit report written to {0}' -f $written)
+        Set-TkStatus -Text ('Audit report written to {0}.{1}' -f $written, (Format-TkPrivacyNote -Result ([pscustomobject] @{ Level = $level; Replaced = $null })))
     }
 }
 

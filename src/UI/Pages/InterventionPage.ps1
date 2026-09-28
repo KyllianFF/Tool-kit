@@ -358,10 +358,11 @@ function New-TkInterventionReportFromUi {
                 Entries     = @(Get-TkJournalEntry -Since $pending.Period.Since -Session $pending.Period.Session)
             }
 
+            $level  = Get-TkExportPrivacyLevel
             $dialog = New-Object Microsoft.Win32.SaveFileDialog
             $dialog.Title    = 'Save the intervention report'
             $dialog.Filter   = 'Web page (*.html)|*.html'
-            $dialog.FileName = '{0}-intervention-{1}.html' -f $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd-HHmm')
+            $dialog.FileName = '{0}-intervention-{1}.html' -f (Get-TkExportComputerName -Level $level), (Get-Date -Format 'yyyyMMdd-HHmm')
 
             if (-not $dialog.ShowDialog()) {
                 Set-TkStatus -Text 'The intervention report was not saved.'
@@ -369,8 +370,8 @@ function New-TkInterventionReportFromUi {
             }
 
             try {
-                [System.IO.File]::WriteAllText($dialog.FileName, (ConvertTo-TkInterventionHtml -Report $report),
-                                               (New-Object System.Text.UTF8Encoding($false)))
+                $safe = Protect-TkExportText -Text (ConvertTo-TkInterventionHtml -Report $report) -Level $level -Label 'intervention-report'
+                [System.IO.File]::WriteAllText($dialog.FileName, $safe.Text, (New-Object System.Text.UTF8Encoding($false)))
             }
             catch {
                 Write-TkLog -Level Error -Category 'Report' -Message ('The intervention report could not be written: {0}' -f $_.Exception.Message)
@@ -378,7 +379,7 @@ function New-TkInterventionReportFromUi {
             }
 
             Add-TkJournalEntry -Name 'Intervention report written' -Category 'Report' -Detail $dialog.FileName
-            Set-TkStatus -Text ('Intervention report written to {0}' -f $dialog.FileName)
+            Set-TkStatus -Text ('Intervention report written to {0}.{1}' -f $dialog.FileName, (Format-TkPrivacyNote -Result $safe))
 
             # Opened with whatever the operator uses for web pages. The file is
             # local and has no script or outside link in it.

@@ -307,7 +307,12 @@ function Export-TkSystemReport {
 
         [Parameter()]
         [ValidateSet('Json', 'Text')]
-        [string] $Format = 'Json'
+        [string] $Format = 'Json',
+
+        # Pseudonymises the report before it is written; see Protect-TkExportText.
+        [Parameter()]
+        [ValidateSet('None', 'Personal', 'Strict')]
+        [string] $Privacy = 'None'
     )
 
     if (-not $PSCmdlet.ShouldProcess($Path, 'Write system report')) {
@@ -326,8 +331,8 @@ function Export-TkSystemReport {
 
     try {
         if ($Format -eq 'Json') {
-            $report | ConvertTo-Json -Depth 6 |
-                Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
+            $json = (Protect-TkExportText -Text ($report | ConvertTo-Json -Depth 6) -Level $Privacy -Label 'system-report').Text
+            $json | Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
         }
         else {
             $lines = @()
@@ -347,7 +352,8 @@ function Export-TkSystemReport {
                 }
             }
 
-            $lines | Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
+            $text = (Protect-TkExportText -Text ($lines -join [Environment]::NewLine) -Level $Privacy -Label 'system-report').Text
+            $text | Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
         }
 
         Write-TkLog -Level Information -Category 'Inventory' -Message ('Report written to {0}' -f $Path)

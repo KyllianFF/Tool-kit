@@ -140,7 +140,13 @@ function New-TkSupportBundle {
     [OutputType([string])]
     param(
         [Parameter()]
-        [bool] $IncludeEventLog = $true
+        [bool] $IncludeEventLog = $true,
+
+        # Pseudonymises every file before it is packed, with one table for the
+        # whole bundle, so USER-1 is the same account in every file.
+        [Parameter()]
+        [ValidateSet('None', 'Personal', 'Strict')]
+        [string] $Privacy = 'None'
     )
 
     $ctx   = Get-TkContext
@@ -303,10 +309,19 @@ function New-TkSupportBundle {
     [void] $summary.AppendLine('  60-toolkit-log.txt   The toolkit log for today')
     [void] $summary.AppendLine('')
     [void] $summary.AppendLine('Before you send it')
-    [void] $summary.AppendLine('  This bundle describes this machine: its name, the signed in user, the')
-    [void] $summary.AppendLine('  network addresses and recent error events. That is what a support desk')
-    [void] $summary.AppendLine('  needs, and it is normal to share. It contains no stored passwords or')
-    [void] $summary.AppendLine('  API keys. Read it if you are unsure what you are sending.')
+    if ($Privacy -eq 'None') {
+        [void] $summary.AppendLine('  This bundle describes this machine: its name, the signed in user, the')
+        [void] $summary.AppendLine('  network addresses and recent error events. That is what a support desk')
+        [void] $summary.AppendLine('  needs, and it is normal to share. It contains no stored passwords or')
+        [void] $summary.AppendLine('  API keys. Read it if you are unsure what you are sending.')
+    }
+    else {
+        [void] $summary.AppendLine(('  Pseudonymised ({0}): the names of this machine and of its accounts,' -f $Privacy.ToLowerInvariant()))
+        [void] $summary.AppendLine('  e-mail addresses, account SIDs and serial numbers are replaced by stable')
+        [void] $summary.AppendLine('  aliases (PC-1, USER-1...), and in the strict level the IP and MAC')
+        [void] $summary.AppendLine('  addresses, Wi-Fi networks and domains too. The table back to the real')
+        [void] $summary.AppendLine('  values stays on the machine that made the bundle.')
+    }
     [void] $summary.AppendLine('')
 
     if ($errors.Count -gt 0) {
@@ -327,7 +342,12 @@ function New-TkSupportBundle {
         New-Item -Path $bundleRoot -ItemType Directory -Force | Out-Null
     }
 
-    $zipPath = Join-Path -Path $bundleRoot -ChildPath ('support-{0}-{1}.zip' -f $host_, $stamp)
+    $privacy = Protect-TkExportFolder -Path $workFolder -Level $Privacy -Label 'support-bundle' -Confirm:$false
+    $zipPath = Join-Path -Path $bundleRoot -ChildPath ('support-{0}-{1}.zip' -f (Get-TkExportComputerName -Level $Privacy), $stamp)
+
+    if ($privacy.Replaced -gt 0) {
+        Write-TkLog -Level Information -Category 'Bundle' -Message ('Pseudonymised ({0}): {1} value(s) replaced.' -f $Privacy, $privacy.Replaced)
+    }
 
     try {
         Compress-Archive -Path (Join-Path $workFolder '*') -DestinationPath $zipPath -Force -ErrorAction Stop
