@@ -14,12 +14,15 @@ irm https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1 |
 
 > Read [On `irm | iex`](#on-irm--iex) before running that on a machine that
 > matters. Piping a download into `iex` executes whatever the server returns,
-> and the alternatives are one line longer.
+> and the alternatives are one line longer: the [verified launch](#verified-launch-pinned-to-a-release)
+> of a release runs that release only if its SHA-256 matches.
 
 The toolkit starts with the rights of the console it was launched from. When a
 feature needs administrator rights, **Restart as administrator** in the header
 opens an elevated instance, downloaded again from the same address: no file is
-left on disk to re-run.
+left on disk to re-run. Started with the verified launch command of a release,
+it downloads that release again and runs it only if its SHA-256 still matches,
+so the elevated process is always the build that was checked.
 
 **Without a window.** For a script, a remote session or an RMM agent, the same
 reports come out as JSON. `irm | iex` cannot take a parameter; running the
@@ -146,10 +149,13 @@ you ask for it.
 
 **Restarting elevated never trusts downloaded content.** A launch through
 `irm | iex` leaves no script file to re-run, so the elevated instance downloads
-the published build again. That address is part of the code, not something
-read from a response, and only HTTPS is ever replayed: a plain HTTP source
-would let an attacker on the network choose the code that runs as
-Administrator.
+the published build again. That address is part of the code or of the command
+the operator typed, never something read from a response, and only a plain
+HTTPS address is ever replayed: a plain HTTP source would let an attacker on
+the network choose the code that runs as Administrator. Started with the
+verified launch command, the elevated instance checks the same SHA-256 before
+it runs, and runs nothing when the hash differs. The address and the hash are
+checked against a strict form before they are written into that command.
 
 **Automatic logon does not store a clear text password.** The usual
 implementation writes `DefaultPassword` under `Winlogon`, where any local
@@ -211,7 +217,33 @@ well-intentioned. Mitigations that are actually available to you:
 3. Clone the repository and run `.\toolkit.ps1` instead, which removes the
    network from the trust path entirely.
 
-Download, verify, then run:
+### Verified launch, pinned to a release
+
+Each release is tagged (`v1.0.0`, ...), and its page on GitHub gives the
+SHA-256 of `dist/toolkit.ps1` at that tag with the command below, filled in.
+The command downloads the build of the release, checks its SHA-256 and runs it
+only if it matches, all in memory: nothing is written to disk.
+
+```powershell
+$u = 'https://raw.githubusercontent.com/KyllianFF/Tool-kit/<tag>/dist/toolkit.ps1'; $h = '<SHA-256 from the release page>'; $b = (Invoke-WebRequest -Uri $u -UseBasicParsing).RawContentStream.ToArray(); if (([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($b)) -replace '-') -ne $h) { throw 'SHA-256 mismatch: this is not the expected build, and nothing was run.' }; & ([scriptblock]::Create([Text.Encoding]::UTF8.GetString($b))) -SourceUri $u -ExpectedSha256 $h
+```
+
+Why it is worth the longer line:
+
+- **A build that does not move.** `main` serves the latest build, which can
+  change between two launches. A tag serves the same bytes every time.
+- **Checked before it runs.** A download that is not the expected build is
+  refused before a single line of it executes.
+- **The same build when elevated.** `-SourceUri` and `-ExpectedSha256` go on
+  to the toolkit, so **Restart as administrator** and every per-action UAC
+  prompt download the same address again and run it only if the hash still
+  matches.
+
+Take the hash from the release page, a channel distinct from the download
+itself. **Settings, Updates, This copy** says where the running instance came
+from and what was checked, and copies its verified command for a colleague.
+
+### Download, verify, then run
 
 ```powershell
 $url = 'https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1'
@@ -328,6 +360,7 @@ Tool-kit/
     New-PortablePackage.ps1 Builds the offline, de-blobbed editions
     Sign-Toolkit.ps1       Authenticode-signs a build, timestamped
     New-CodeSigningCertificate.ps1 Creates a self-signed signing certificate
+    New-ReleaseNotes.ps1   Writes a release's SHA-256 and verified launch command
     portable/              Launcher and readme templates for the portable build
     Invoke-Tests.ps1       Runs the Pester suite
     source-order.txt       Load order, shared by the launcher and the build
@@ -418,6 +451,16 @@ catalogs as base64, re-parses the generated file, and refuses to produce a
 build that does not parse or whose catalogs are not valid JSON. Continuous
 integration runs the analysis and build, and the test suite on both Windows
 PowerShell 5.1 and PowerShell 7.
+
+**A release.** Once the build of the version in `src/Core/Config.ps1` is
+merged, tag that commit and publish its notes, which carry the SHA-256 and the
+verified launch command:
+
+```powershell
+git tag v1.0.0; git push origin v1.0.0
+.\build\New-ReleaseNotes.ps1 -Tag v1.0.0 -OutFile notes.md    # refuses a tag that is not the build's version
+gh release create v1.0.0 --title "Toolkit 1.0.0" --notes-file notes.md
+```
 
 ---
 

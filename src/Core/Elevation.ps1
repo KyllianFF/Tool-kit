@@ -51,6 +51,10 @@ function Test-TkIsElevated {
 .PARAMETER SourceUri
     HTTPS location of the bootstrap script, used when no local file exists.
 
+.PARAMETER Sha256
+    The SHA-256 the launch checked. With it, the elevated process downloads
+    the address again and runs it only if the hash still matches.
+
 .OUTPUTS
     System.Boolean - $true when a new process was started.
 #>
@@ -59,7 +63,11 @@ function Invoke-TkElevation {
     [OutputType([bool])]
     param(
         [Parameter()]
-        [string] $SourceUri
+        [string] $SourceUri,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Sha256 = ''
     )
 
     if (Test-TkIsElevated) {
@@ -76,8 +84,6 @@ function Invoke-TkElevation {
         $shell = Join-Path -Path $env:SystemRoot -ChildPath 'System32\WindowsPowerShell\v1.0\powershell.exe'
     }
 
-    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA')
-
     # The entry script, never $PSCommandPath. Inside this function the latter
     # points at src/Core/Elevation.ps1, which only declares functions, so the
     # elevated process would start, define them, and exit without a window.
@@ -85,19 +91,19 @@ function Invoke-TkElevation {
 
     if ($entryScript -and (Test-Path -LiteralPath $entryScript)) {
 
-        $arguments += @('-File', ('"{0}"' -f $entryScript))
+        $arguments = Get-TkRelaunchArgument -EntryScript $entryScript -Sta
     }
     elseif ($SourceUri) {
 
         # Only https is ever replayed. A plain http source would let an
         # on-path attacker choose the code that then runs as Administrator.
-        if ($SourceUri -notmatch '^https://') {
-            Write-TkLog -Level Error -Category 'Elevation' -Message 'Refusing to elevate a non-HTTPS source.'
+        if (-not (Test-TkSourceUri -Uri $SourceUri)) {
+            Write-TkLog -Level Error -Category 'Elevation' -Message 'Refusing to elevate a source that is not a plain HTTPS address.'
             return $false
         }
 
-        $command    = 'irm ''{0}'' | iex' -f $SourceUri
-        $arguments += @('-Command', ('"{0}"' -f $command))
+        # With a hash, the elevated process runs the same verified build, or nothing.
+        $arguments = Get-TkRelaunchArgument -SourceUri $SourceUri -Sha256 $Sha256 -Sta
     }
     else {
         Write-TkLog -Level Error -Category 'Elevation' -Message (
@@ -460,7 +466,11 @@ function Start-TkElevatedWorker {
         [string] $EntryScript,
 
         [Parameter()]
-        [string] $SourceUri
+        [string] $SourceUri,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Sha256 = ''
     )
 
     if ($PSVersionTable.PSEdition -eq 'Core') {
@@ -470,27 +480,22 @@ function Start-TkElevatedWorker {
         $shell = Join-Path -Path $env:SystemRoot -ChildPath 'System32\WindowsPowerShell\v1.0\powershell.exe'
     }
 
-    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass')
+    $action = [ordered] @{ RunAction = $Name; ActionData = $ActionDataPath; ResultFile = $ResultFile }
 
     if ($EntryScript -and (Test-Path -LiteralPath $EntryScript)) {
 
-        $arguments += @(
-            '-File', ('"{0}"' -f $EntryScript),
-            '-RunAction', $Name,
-            '-ActionData', ('"{0}"' -f $ActionDataPath),
-            '-ResultFile', ('"{0}"' -f $ResultFile)
-        )
+        $arguments = Get-TkRelaunchArgument -EntryScript $EntryScript -Parameter $action
     }
     elseif ($SourceUri) {
 
         # Only https is ever replayed, exactly as the elevation restart does.
-        if ($SourceUri -notmatch '^https://') {
-            Write-TkLog -Level Error -Category 'Elevation' -Message 'Refusing to elevate a non-HTTPS source.'
+        if (-not (Test-TkSourceUri -Uri $SourceUri)) {
+            Write-TkLog -Level Error -Category 'Elevation' -Message 'Refusing to elevate a source that is not a plain HTTPS address.'
             return 'Refused'
         }
 
-        $command = "& ([scriptblock]::Create((irm '$SourceUri'))) -RunAction '$Name' -ActionData '$ActionDataPath' -ResultFile '$ResultFile'"
-        $arguments += @('-Command', ('"{0}"' -f $command))
+        # The same verified build as the window, or nothing.
+        $arguments = Get-TkRelaunchArgument -SourceUri $SourceUri -Sha256 $Sha256 -Parameter $action
     }
     else {
         return 'NoTarget'
@@ -548,7 +553,11 @@ function Invoke-TkElevatedActionCore {
         [string] $EntryScript,
 
         [Parameter()]
-        [string] $SourceUri
+        [string] $SourceUri,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Sha256 = ''
     )
 
     $action = @(Get-TkElevatedAction) | Where-Object { $_.Name -eq $Name } | Select-Object -First 1
@@ -574,7 +583,7 @@ function Invoke-TkElevatedActionCore {
         ($Parameters | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $dataFile -Encoding UTF8
 
         $status = Start-TkElevatedWorker -Name $Name -ActionDataPath $dataFile -ResultFile $resultFile `
-                                         -EntryScript $EntryScript -SourceUri $SourceUri
+                                         -EntryScript $EntryScript -SourceUri $SourceUri -Sha256 $Sha256
 
         switch ($status) {
 

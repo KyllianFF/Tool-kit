@@ -5999,13 +5999,24 @@
                                 <StackPanel>
                                     <TextBlock Text="Updates" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
                                     <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" TextWrapping="Wrap"
-                                               Text="The one-liner always runs the published build; a portable or saved copy does not. The check reads one small file on raw.githubusercontent.com (the version, commit and SHA256 of the published build). Nothing is downloaded or replaced: you get the build yourself and verify its SHA256." />
+                                               Text="The one-liner from main runs the latest build; a release, a portable or a saved copy stays as it is. The check reads one small file on raw.githubusercontent.com (the version, commit and SHA256 of the published build). Nothing is downloaded or replaced: you get the build yourself and verify its SHA256." />
                                     <CheckBox x:Name="SettingCheckUpdates" Content="Check for a newer build when the toolkit starts" Margin="0,0,0,10" />
                                     <StackPanel Orientation="Horizontal">
                                         <Button x:Name="BtnCheckToolkitUpdate" Content="Check now" Style="{StaticResource PrimaryButton}" />
                                         <Button x:Name="BtnOpenDownloads" Content="Open the published build" Margin="10,0,0,0" />
                                     </StackPanel>
                                     <TextBlock x:Name="UpdateStatusText" Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap" />
+
+                                    <!--
+                                        Where this instance came from, and what was checked about it: the file and
+                                        its signature, or the address and the SHA-256 every elevation checks again.
+                                    -->
+                                    <TextBlock Text="This copy" Style="{StaticResource FieldLabel}" Margin="0,16,0,4" />
+                                    <TextBlock x:Name="LaunchProvenanceText" Style="{StaticResource Muted}" TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <Button x:Name="BtnCopyLaunchCommand" Content="Copy the verified launch command"
+                                                ToolTip="A command that downloads the build, checks its SHA-256 and runs it only if it matches, in memory. Restart as administrator and every UAC prompt then check the same hash." />
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
 

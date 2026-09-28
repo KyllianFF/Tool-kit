@@ -276,6 +276,10 @@ param(
     [Parameter()]
     [string] `$SourceUri,
 
+    # The SHA-256 the verified launch command checked; see Start-Toolkit.
+    [Parameter()]
+    [string] `$ExpectedSha256,
+
     [Parameter()]
     [switch] `$NoGui,
 
@@ -383,16 +387,16 @@ $($resourceLines -join "`r`n")
 `$script:TkEntryScript = `$PSCommandPath
 
 if (`$Report -or `$CompareWith) {
-    Start-Toolkit -Report `$Report -CompareWith `$CompareWith -OutFile `$OutFile -AuditLevel `$AuditLevel -SourceUri `$SourceUri
+    Start-Toolkit -Report `$Report -CompareWith `$CompareWith -OutFile `$OutFile -AuditLevel `$AuditLevel -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 }
 elseif (`$RunAction) {
-    Start-Toolkit -RunAction `$RunAction -ActionData `$ActionData -ResultFile `$ResultFile -SourceUri `$SourceUri
+    Start-Toolkit -RunAction `$RunAction -ActionData `$ActionData -ResultFile `$ResultFile -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 }
 elseif (`$NoGui) {
-    Start-Toolkit -NoGui -SourceUri `$SourceUri
+    Start-Toolkit -NoGui -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 }
 else {
-    Start-Toolkit -SourceUri `$SourceUri
+    Start-Toolkit -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 }
 "@)
 
