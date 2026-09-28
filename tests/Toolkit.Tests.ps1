@@ -665,6 +665,217 @@ Describe 'Headless reports' {
     }
 }
 
+Describe 'Headless actions' {
+
+    BeforeAll {
+        # Journaled to a temporary folder, never to the account that runs the tests.
+        $script:ActionsDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:ActionsDataRoot
+        $script:TkQuietConsole   = $false
+    }
+
+    BeforeEach {
+        # No real engine is reached: each one is replaced by a recorder, and
+        # the rights of the run are the test's.
+        $script:ActionCalls    = New-Object System.Collections.Generic.List[string]
+        $script:ActionElevated = $true
+        $script:ActionSystem   = $false
+        $script:ActionFailing  = @()
+
+        function Test-TkIsElevated { $script:ActionElevated }
+        function Test-TkIsSystemAccount { $script:ActionSystem }
+        function New-TkRestorePoint { param($Description, [switch] $Confirm) $null = $Description, $Confirm; $script:ActionCalls.Add('RestorePoint'); $true }
+        function Invoke-TkFix { param($Fix, [switch] $Confirm) $null = $Confirm; $script:ActionCalls.Add('Fix ' + $Fix.id); $script:ActionFailing -notcontains $Fix.id }
+        function Invoke-TkRemediation { param($Id, [switch] $Confirm) $null = $Confirm; $script:ActionCalls.Add('Remediation ' + $Id); $true }
+        function Invoke-TkTweak {
+            param($Tweak, $Action, [switch] $Confirm)
+            $null = $Confirm
+            $script:ActionCalls.Add(('Tweak {0} {1}' -f $Action, $Tweak.id))
+            [pscustomobject] @{ Success = $true; RequiresRestart = [bool] $Tweak.requiresRestart; Messages = @('stub step done') }
+        }
+    }
+
+    It 'lists what can be asked for, with the reason an entry would be refused' {
+
+        # Windows PowerShell 5.1 reads a JSON array as one object: unrolled here.
+        $read  = { param($json) @(($json | ConvertFrom-Json) | ForEach-Object { $_ }) }
+        $fixes = & $read (Invoke-TkHeadlessAction -Fix 'List')
+        $global:LASTEXITCODE | Should -Be 0
+
+        $fixes.Count | Should -Be @(Get-TkFix).Count
+        ($fixes | Where-Object { $_.Id -eq 'reset-onedrive' }).UserScoped | Should -BeTrue
+        ($fixes | Where-Object { $_.Id -eq 'resync-time' }).UserScoped    | Should -BeFalse
+
+        $corrections = & $read (Invoke-TkHeadlessAction -Remediate 'List')
+        ($corrections | Where-Object { $_.Id -eq 'open-bitlocker' }).Refused      | Should -BeLike '*page*'
+        ($corrections | Where-Object { $_.Id -eq 'restart-to-firmware' }).Refused | Should -BeLike '*firmware*'
+        ($corrections | Where-Object { $_.Id -eq 'enable-uac' }).RequiresRestart  | Should -BeTrue
+        ($corrections | Where-Object { $_.Id -eq 'enable-firewall' }).Refused     | Should -BeNullOrEmpty
+
+        $tweaks = & $read (Invoke-TkHeadlessAction -Tweak 'List')
+        ($tweaks | Where-Object { $_.Id -eq 'show-file-extensions' }).UserScoped | Should -BeTrue
+        ($tweaks | Where-Object { $_.Id -eq 'disable-telemetry' }).UserScoped    | Should -BeFalse
+
+        # A machine policy and the account's own value in one tweak: still the account's.
+        ($tweaks | Where-Object { $_.Id -eq 'disable-copilot' }).UserScoped | Should -BeTrue
+        Test-TkUserScopedTweak -Tweak ([pscustomobject] @{ registry = @(@{ path = 'HKLM:\SOFTWARE\Policies\X' }, @{ path = 'HKCU:\Software\X' }) }) | Should -BeTrue
+        Test-TkUserScopedTweak -Tweak ([pscustomobject] @{ registry = @{ path = 'Registry::HKEY_USERS\.DEFAULT\Control Panel\Keyboard' } }) | Should -BeFalse
+        $script:ActionCalls.Count | Should -Be 0
+    }
+
+    It 'plans without changing anything' {
+
+        $result = Invoke-TkHeadlessAction -Fix 'flush-dns, reset-print-spooler' -Tweak 'disable-telemetry' -Remediate 'enable-firewall' | ConvertFrom-Json
+
+        $global:LASTEXITCODE       | Should -Be 0
+        $result.Schema             | Should -Be 'toolkit-actions'
+        $result.Mode               | Should -Be 'Plan'
+        $result.Summary.Outcome    | Should -Be 'Planned'
+        $result.Summary.Counts.Planned | Should -Be 4
+        (@($result.Actions | ForEach-Object { '{0} {1} {2}' -f $_.Kind, $_.Operation, $_.Id })) -join ', ' |
+            Should -Be 'Fix Run flush-dns, Fix Run reset-print-spooler, Tweak Apply disable-telemetry, Remediation Run enable-firewall'
+
+        $script:ActionCalls.Count | Should -Be 0
+    }
+
+    It 'refuses the whole run, and takes nothing, when one action is refused' {
+
+        $result = Invoke-TkHeadlessAction -Fix 'flush-dns', 'no-such-fix' -Execute | ConvertFrom-Json
+
+        $global:LASTEXITCODE    | Should -Be 2
+        $result.Summary.Outcome | Should -Be 'Refused'
+
+        $known   = $result.Actions | Where-Object { $_.Id -eq 'flush-dns' }
+        $unknown = $result.Actions | Where-Object { $_.Id -eq 'no-such-fix' }
+        $known.Status   | Should -Be 'NotRun'
+        $unknown.Status | Should -Be 'Refused'
+        $unknown.Reason | Should -BeLike '*-Fix List*'
+
+        $script:ActionCalls.Count | Should -Be 0
+    }
+
+    It 'refuses what needs administrator rights in a standard session, and what reaches a profile when run as SYSTEM' {
+
+        $script:ActionElevated = $false
+        $standard = Invoke-TkHeadlessAction -Fix 'reset-print-spooler' | ConvertFrom-Json
+        $standard.Actions[0].Status | Should -Be 'Refused'
+        $standard.Actions[0].Reason | Should -BeLike '*administrator*'
+        $global:LASTEXITCODE        | Should -Be 2
+
+        $script:ActionElevated = $true
+        $script:ActionSystem   = $true
+        $system = Invoke-TkHeadlessAction -Fix 'reset-onedrive', 'resync-time' -Tweak 'show-file-extensions' -Remediate 'restart-to-firmware', 'open-bitlocker' | ConvertFrom-Json
+
+        $system.System | Should -BeTrue
+        foreach ($id in @('reset-onedrive', 'show-file-extensions', 'restart-to-firmware', 'open-bitlocker')) {
+            ($system.Actions | Where-Object { $_.Id -eq $id }).Status | Should -Be 'Refused' -Because $id
+        }
+        ($system.Actions | Where-Object { $_.Id -eq 'reset-onedrive' }).Reason | Should -BeLike '*SYSTEM*'
+        ($system.Actions | Where-Object { $_.Id -eq 'resync-time' }).Status    | Should -Be 'Planned'
+    }
+
+    It 'takes the actions through the engines, a restore point before the tweaks, and asks for a restart when one needs it' {
+
+        $result = Invoke-TkHeadlessAction -Fix 'flush-dns' -Tweak 'disable-telemetry' -Remediate 'disable-smbv1' -Execute | ConvertFrom-Json
+
+        ($script:ActionCalls.ToArray()) -join ', ' | Should -Be 'RestorePoint, Fix flush-dns, Tweak Apply disable-telemetry, Remediation disable-smbv1'
+
+        $result.Mode                    | Should -Be 'Execute'
+        $result.Summary.Outcome         | Should -Be 'Done'
+        $result.Summary.RestartRequired | Should -BeTrue
+        $result.Summary.ExitCode        | Should -Be 3010
+        $global:LASTEXITCODE            | Should -Be 3010
+        @($result.Actions | Where-Object { $_.Status -ne 'Succeeded' }).Count | Should -Be 0
+        ($result.Actions | Where-Object { $_.Kind -eq 'Tweak' }).Messages | Should -Be @('stub step done')
+    }
+
+    It 'reverts tweaks, and takes no restore point for fixes alone' {
+
+        Invoke-TkHeadlessAction -Tweak 'show-file-extensions' -Revert -Execute | Out-Null
+        ($script:ActionCalls.ToArray()) -join ', ' | Should -Be 'RestorePoint, Tweak Revert show-file-extensions'
+        $global:LASTEXITCODE | Should -Be 0
+
+        $script:ActionCalls.Clear()
+        Invoke-TkHeadlessAction -Fix 'resync-time' -Execute | Out-Null
+        ($script:ActionCalls.ToArray()) -join ', ' | Should -Be 'Fix resync-time'
+    }
+
+    It 'runs every action when one fails, and says which failed' {
+
+        $script:ActionFailing = @('flush-dns')
+        $result = Invoke-TkHeadlessAction -Fix 'flush-dns', 'resync-time' -Execute | ConvertFrom-Json
+
+        ($script:ActionCalls.ToArray()) -join ', ' | Should -Be 'Fix flush-dns, Fix resync-time'
+        $global:LASTEXITCODE    | Should -Be 1
+        $result.Summary.Outcome | Should -Be 'Failed'
+        ($result.Actions | Where-Object { $_.Id -eq 'flush-dns' }).Reason   | Should -BeLike '*toolkit log*'
+        ($result.Actions | Where-Object { $_.Id -eq 'resync-time' }).Status | Should -Be 'Succeeded'
+    }
+
+    It 'writes a result the published schema validates' -Skip:($PSVersionTable.PSVersion.Major -lt 7) {
+
+        $schemaFile = Join-Path $script:RepositoryRoot 'docs\actions.schema.json'
+
+        Test-Json -Json (Invoke-TkHeadlessAction -Fix 'flush-dns', 'no-such-fix') -SchemaFile $schemaFile | Should -BeTrue
+        Test-Json -Json (Invoke-TkHeadlessAction -Tweak 'disable-telemetry' -Execute) -SchemaFile $schemaFile | Should -BeTrue
+        Test-Json -Json (Invoke-TkHeadlessAction -Fix 'flush-dns' -Execute -Redact Personal) -SchemaFile $schemaFile | Should -BeTrue
+    }
+
+    It 'pseudonymises the result with -Redact, and writes a file without a byte order mark' {
+
+        $path   = Invoke-TkHeadlessAction -Fix 'flush-dns' -Redact Personal -OutFile (Join-Path $TestDrive 'actions.json')
+        $result = [System.IO.File]::ReadAllText($path) | ConvertFrom-Json
+
+        [System.IO.File]::ReadAllBytes($path)[0] | Should -Be 0x7B
+        $result.Computer | Should -Be 'PC-1'
+        $result.Privacy  | Should -Be 'Personal'
+    }
+
+    It 'refuses a run that mixes things up, before anything is loaded' {
+
+        { Start-Toolkit -Execute }                             | Should -Throw '*-Fix, -Tweak or -Remediate*'
+        { Start-Toolkit -Fix 'flush-dns' -Report 'Reboot' }    | Should -Throw '*two runs*'
+        { Invoke-TkHeadlessAction -Fix 'flush-dns' -Revert }   | Should -Throw '*-Tweak*'
+        { Invoke-TkHeadlessAction }                            | Should -Throw '*-Fix, -Tweak or -Remediate*'
+    }
+
+    It 'keeps its lists true to the engines' {
+
+        $dispatch = Get-TkFixDispatchTable
+        foreach ($name in (Get-TkUserScopedFixAction)) {
+            $dispatch.ContainsKey($name) | Should -BeTrue -Because $name
+        }
+
+        $table = Get-TkRemediationTable
+        foreach ($id in (Get-TkHeadlessRefusedRemediation).Keys) {
+            $table.ContainsKey($id) | Should -BeTrue -Because $id
+        }
+
+        # A correction that says it waits for a restart is flagged, so the exit code says 3010.
+        foreach ($id in @($table.Keys)) {
+            $says = [string] $table[$id].Explanation -match 'next restart'
+            [bool] $table[$id].Restart | Should -Be $says -Because $id
+        }
+    }
+
+    It 'takes the action parameters at every entry point, and exits with the code when run as a file' {
+
+        foreach ($name in @('Fix', 'Tweak', 'Remediate', 'Revert', 'Execute')) {
+            (Get-Command -Name 'Start-Toolkit').Parameters.Keys                                  | Should -Contain $name
+            (Get-Command -Name (Join-Path $script:RepositoryRoot 'toolkit.ps1')).Parameters.Keys | Should -Contain $name
+        }
+
+        $build = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'build\Build-Toolkit.ps1') -Raw
+
+        $build | Should -Match 'Start-Toolkit -Fix `\$Fix -Tweak `\$Tweak -Remediate `\$Remediate -Revert:`\$Revert -Execute:`\$Execute'
+        $build | Should -Match 'if \(`\$PSCommandPath -and `\$MyInvocation.InvocationName -ne ''\.''\) \{\s+exit `\$LASTEXITCODE'
+    }
+}
+
 Describe 'Portable build' {
 
     <#

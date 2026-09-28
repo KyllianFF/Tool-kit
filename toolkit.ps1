@@ -49,6 +49,21 @@ param(
     [string] $Redact = 'None',
 
     [Parameter()]
+    [string[]] $Fix,
+
+    [Parameter()]
+    [string[]] $Tweak,
+
+    [Parameter()]
+    [string[]] $Remediate,
+
+    [Parameter()]
+    [switch] $Revert,
+
+    [Parameter()]
+    [switch] $Execute,
+
+    [Parameter()]
     [string] $RunAction,
 
     [Parameter()]
@@ -109,7 +124,16 @@ if ($Elevated -and -not (Test-TkIsElevated)) {
 }
 
 # --- Start -----------------------------------------------------------------
-if ($Report -or $CompareWith) {
+if ($Fix -or $Tweak -or $Remediate -or $Execute -or $Revert) {
+    Start-Toolkit -Fix $Fix -Tweak $Tweak -Remediate $Remediate -Revert:$Revert -Execute:$Execute -OutFile $OutFile -Redact $Redact `
+                  -Report $Report -CompareWith $CompareWith
+
+    # Run as a file, the exit code is the process's, which an RMM tool reads.
+    if ($MyInvocation.InvocationName -ne '.') {
+        exit $LASTEXITCODE
+    }
+}
+elseif ($Report -or $CompareWith) {
     Start-Toolkit -Report $Report -CompareWith $CompareWith -OutFile $OutFile -AuditLevel $AuditLevel -Redact $Redact
 }
 elseif ($RunAction) {
