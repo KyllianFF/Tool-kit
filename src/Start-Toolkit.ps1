@@ -49,6 +49,12 @@
 .PARAMETER AuditLevel
     With Report, the depth of the Audit report: Essential or Full.
 
+.PARAMETER Redact
+    With Report or CompareWith, pseudonymises the document: None, Personal
+    (names, accounts, e-mails, serial numbers) or Strict (also addresses,
+    Wi-Fi networks and domains). The table back to the real values stays on
+    this PC, encrypted for this Windows account.
+
 .EXAMPLE
     Start-Toolkit
 
@@ -85,6 +91,10 @@ function Start-Toolkit {
         [Parameter()]
         [ValidateSet('Essential', 'Full')]
         [string] $AuditLevel = 'Essential',
+
+        [Parameter()]
+        [ValidateSet('None', 'Personal', 'Strict')]
+        [string] $Redact = 'None',
 
         [Parameter()]
         [string] $RunAction,
@@ -145,7 +155,7 @@ function Start-Toolkit {
     # A headless run needs no window, no single threaded apartment and no WPF.
     if ($Report -or $CompareWith) {
         return Invoke-TkHeadlessReport -Report @($Report | Where-Object { $_ }) -CompareWith ([string] $CompareWith) `
-                                       -OutFile ([string] $OutFile) -AuditLevel $AuditLevel
+                                       -OutFile ([string] $OutFile) -AuditLevel $AuditLevel -Redact $Redact
     }
 
     # The elevated worker: this process was started (as administrator) to run

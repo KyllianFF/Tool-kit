@@ -45,6 +45,10 @@ param(
     [string] $AuditLevel = 'Essential',
 
     [Parameter()]
+    [ValidateSet('None', 'Personal', 'Strict')]
+    [string] $Redact = 'None',
+
+    [Parameter()]
     [string] $RunAction,
 
     [Parameter()]
@@ -106,7 +110,7 @@ if ($Elevated -and -not (Test-TkIsElevated)) {
 
 # --- Start -----------------------------------------------------------------
 if ($Report -or $CompareWith) {
-    Start-Toolkit -Report $Report -CompareWith $CompareWith -OutFile $OutFile -AuditLevel $AuditLevel
+    Start-Toolkit -Report $Report -CompareWith $CompareWith -OutFile $OutFile -AuditLevel $AuditLevel -Redact $Redact
 }
 elseif ($RunAction) {
     Start-Toolkit -RunAction $RunAction -ActionData $ActionData -ResultFile $ResultFile

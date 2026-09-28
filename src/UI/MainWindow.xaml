@@ -5976,7 +5976,7 @@
                     <StackPanel Grid.Row="0" Margin="0,0,0,4">
                         <TextBlock Text="Settings" Style="{StaticResource Heading}" />
                         <TextBlock Style="{StaticResource Muted}"
-                                   Text="Kept for this Windows account only: the VirusTotal key, the update check, and the folder where the toolkit writes its data and logs." />
+                                   Text="Kept for this Windows account only: the VirusTotal key, the update check, the privacy of exports, and the folder where the toolkit writes its data and logs." />
                     </StackPanel>
 
                     <ScrollViewer Grid.Row="1" Margin="0,10,0,0" VerticalScrollBarVisibility="Auto">
@@ -6017,6 +6017,26 @@
                                         <Button x:Name="BtnCopyLaunchCommand" Content="Copy the verified launch command"
                                                 ToolTip="A command that downloads the build, checks its SHA-256 and runs it only if it matches, in memory. Restart as administrator and every UAC prompt then check the same hash." />
                                     </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Privacy of exports" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                    <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" TextWrapping="Wrap"
+                                               Text="Reports, support bundles and intervention reports often leave this machine. Pseudonymising replaces what they say about who and where by stable aliases (PC-1, USER-1...), the same everywhere in one export, so they stay readable. It reduces what an export discloses and cannot promise that nothing identifying is left. The table back to the real values stays on this PC, encrypted for this Windows account." />
+                                    <WrapPanel Margin="0,0,0,10">
+                                        <ComboBox x:Name="SettingExportPrivacy" Width="400" Margin="0,0,10,6"
+                                                  ToolTip="Applies to every export: diagnostic, audit, system and threat hunting reports, the event CSV, the support bundle and the intervention report. The headless mode takes -Redact." />
+                                        <Button x:Name="BtnPrivacyPreview" Content="Show what is replaced on this PC" Margin="0,0,0,6" />
+                                    </WrapPanel>
+                                    <TextBlock x:Name="PrivacyPreviewText" Style="{StaticResource Muted}" TextWrapping="Wrap" />
+                                    <TextBlock Text="Find a pseudonym" Style="{StaticResource FieldLabel}" Margin="0,14,0,4" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBox x:Name="PseudonymLookup" Width="260" Tag="PC-1, USER-2, PRIVATE-IP-3..." />
+                                        <Button x:Name="BtnFindPseudonym" Content="Find" Margin="10,0,0,0" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="PseudonymResult" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0" />
                                 </StackPanel>
                             </Border>
 

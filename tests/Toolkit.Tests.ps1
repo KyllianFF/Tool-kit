@@ -200,6 +200,195 @@ Describe 'Verified launch' {
     }
 }
 
+Describe 'Privacy of exports' {
+
+    BeforeAll {
+        $script:PrivacySeed = ConvertTo-TkRedactionSeed -Computers @('DESKTOP-KYLLIAN') -Users @('KyllianFF', 'Administrateur', 'jdupont') `
+                                                        -Serials @('5CG1234XYZ', 'To be filled by O.E.M.') -Domains @('contoso.local', 'CONTOSO') -Networks @('Livebox-4F2A')
+        $script:PrivacySample = @'
+{"Computer":"DESKTOP-KYLLIAN","User":"CONTOSO\\KyllianFF","Profile":"C:\\Users\\KyllianFF\\Documents","Other":"C:\\Users\\Public",
+ "Mail":"kyllian.f@contoso.com","Sid":"S-1-5-21-1711830978-3651369035-215202404-1001","Builtin":"S-1-5-32-544",
+ "Serial":"5CG1234XYZ","Bios":"To be filled by O.E.M.","Ip":"192.168.1.20","Gw":"192.168.1.1","Dns":"8.8.8.8","Apipa":"169.254.10.2",
+ "Mask":"255.255.255.0","Net":"192.168.1.0","Loop":"127.0.0.1","Mac":"A4-B1-C2-D3-E4-F5","Multicast":"01-00-5E-00-00-FB","V6":"fe80::1c2d:3e4f:5a6b:7c8d%12",
+ "Time":"12:30:45","Version":"10.0.26100.1","AppVersion":"5.1.0.0","Server":"srv01.contoso.local","Wifi":"Livebox-4F2A","Admin":"Administrateur"}
+'@
+    }
+
+    It 'keeps only real, identifying seed values' {
+        @($script:PrivacySeed.Users) | Should -Be @('KyllianFF', 'jdupont')
+        @($script:PrivacySeed.Serials) | Should -Be @('5CG1234XYZ')
+        (ConvertTo-TkRedactionSeed -Serials @('0', '00000000-0000-0000-0000-000000000000', 'Default string', 'ab', 'SN-778')).Serials | Should -Be @('SN-778')
+        (ConvertTo-TkRedactionSeed -Users @('Guest', 'Public', 'Default User', 'marie', 'MARIE')).Users | Should -Be @('marie')
+    }
+
+    It 'keeps generic account names, which name nobody and are ordinary words' {
+        $seed    = ConvertTo-TkRedactionSeed -Users @('test', 'Admin', 'support', 'alex')
+        $session = New-TkRedactionSession -Level Personal -Seed $seed
+        @($seed.Users) | Should -Be @('alex')
+
+        Protect-TkText -Text 'Test-NetConnection ran; the LAN throughput test ran for alex in C:\Users\test' -Session $session |
+            Should -Be 'Test-NetConnection ran; the LAN throughput test ran for USER-1 in C:\Users\test'
+    }
+
+    It 'replaces names, accounts, e-mails, SIDs and serials at the personal level, and nothing else' {
+        $session = New-TkRedactionSession -Level Personal -Seed $script:PrivacySeed
+        $out     = Protect-TkText -Text $script:PrivacySample -Session $session
+        $data    = $out | ConvertFrom-Json
+
+        $data.Computer | Should -Be 'PC-1'
+        $data.User     | Should -Be 'CONTOSO\USER-1'
+        $data.Profile  | Should -Be 'C:\Users\USER-1\Documents'
+        $data.Other    | Should -Be 'C:\Users\Public'
+        $data.Mail     | Should -Be 'EMAIL-1@example.invalid'
+        $data.Sid      | Should -Be 'S-1-5-21-SID-1-1001'
+        $data.Builtin  | Should -Be 'S-1-5-32-544'
+        $data.Serial   | Should -Be 'SERIAL-1'
+        $data.Bios     | Should -Be 'To be filled by O.E.M.'
+        $data.Admin    | Should -Be 'Administrateur'
+        $data.Ip       | Should -Be '192.168.1.20'
+        $data.Mac      | Should -Be 'A4-B1-C2-D3-E4-F5'
+        $session.Replaced | Should -Be 6
+    }
+
+    It 'also replaces addresses, networks and domains at the strict level, and keeps what names nobody' {
+        $session = New-TkRedactionSession -Level Strict -Seed $script:PrivacySeed
+        $data    = Protect-TkText -Text $script:PrivacySample -Session $session | ConvertFrom-Json
+
+        $data.User       | Should -Be 'DOMAIN-2\USER-1'
+        $data.Ip         | Should -Be 'PRIVATE-IP-1'
+        $data.Gw         | Should -Be 'PRIVATE-IP-2'
+        $data.Dns        | Should -Be 'PUBLIC-IP-1'
+        $data.Mac        | Should -Be 'MAC-A4B1C2-1'
+        $data.V6         | Should -Be 'IPV6-1'
+        $data.Server     | Should -Be 'HOST-1.DOMAIN-1'
+        $data.Wifi       | Should -Be 'WIFI-1'
+        foreach ($kept in @('Apipa', 'Mask', 'Net', 'Loop', 'Multicast', 'Time', 'Version', 'AppVersion')) {
+            $data.$kept | Should -Be ($script:PrivacySample | ConvertFrom-Json).$kept -Because $kept
+        }
+
+        # The e-mail is recorded whole, before its domain was replaced.
+        ($session.Entries.Values | Where-Object Alias -eq 'EMAIL-1').Value | Should -Be 'kyllian.f@contoso.com'
+    }
+
+    It 'gives the same aliases on every export of the same machine' {
+        $first  = Protect-TkText -Text 'KyllianFF on DESKTOP-KYLLIAN, then jdupont' -Session (New-TkRedactionSession -Level Personal -Seed $script:PrivacySeed)
+        $second = Protect-TkText -Text 'jdupont and KyllianFF' -Session (New-TkRedactionSession -Level Personal -Seed $script:PrivacySeed)
+        $first  | Should -Be 'USER-1 on PC-1, then USER-2'
+        $second | Should -Be 'USER-2 and USER-1'
+    }
+
+    It 'keeps the table encrypted on this PC, and finds what an alias stood for' {
+        $folder  = Join-Path $TestDrive ('privacy-{0}' -f [guid]::NewGuid())
+        $result  = Protect-TkExportText -Text $script:PrivacySample -Level Strict -Label 'unit test' -Seed $script:PrivacySeed -Folder $folder
+
+        $result.Replaced | Should -BeGreaterThan 10
+        (Split-Path $result.MapPath -Leaf) | Should -Match '^\d{8}-\d{6}-unit-test\.map$'
+        [System.IO.File]::ReadAllText($result.MapPath) | Should -Not -Match 'DESKTOP-KYLLIAN'
+
+        (Find-TkPseudonym -Alias 'PC-1' -Folder $folder)[0].Value | Should -Be 'DESKTOP-KYLLIAN'
+        (Find-TkPseudonym -Alias 'EMAIL-1@example.invalid' -Folder $folder)[0].Value | Should -Be 'kyllian.f@contoso.com'
+        (Find-TkPseudonym -Alias 'MAC-A4B1C2-1' -Folder $folder)[0].Value | Should -Be 'A4B1C2D3E4F5'
+        @(Find-TkPseudonym -Alias 'USER-9' -Folder $folder).Count | Should -Be 0
+
+        # A second export in the same second keeps its own table.
+        $again = Protect-TkExportText -Text $script:PrivacySample -Level Strict -Label 'unit test' -Seed $script:PrivacySeed -Folder $folder
+        $again.MapPath | Should -Not -Be $result.MapPath
+        @(Get-ChildItem -LiteralPath $folder -Filter '*.map').Count | Should -Be 2
+
+        $none = Protect-TkExportText -Text 'DESKTOP-KYLLIAN' -Level None -Label 'x' -Seed $script:PrivacySeed -Folder $folder
+        $none.Text | Should -Be 'DESKTOP-KYLLIAN'
+        $none.MapPath | Should -BeNullOrEmpty
+    }
+
+    It 'uses one table for every file of a bundle' {
+        $bundle = Join-Path $TestDrive ('bundle-{0}' -f [guid]::NewGuid())
+        New-Item -ItemType Directory -Path $bundle -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $bundle '10-system.txt') -Value 'Machine: DESKTOP-KYLLIAN, user jdupont'
+        Set-Content -LiteralPath (Join-Path $bundle '20-network.txt') -Value 'jdupont logged on DESKTOP-KYLLIAN'
+        Set-Content -LiteralPath (Join-Path $bundle 'image.png') -Value 'DESKTOP-KYLLIAN'
+
+        $result = Protect-TkExportFolder -Path $bundle -Level Personal -Label 'bundle' -Seed $script:PrivacySeed -Folder (Join-Path $bundle 'maps') -Confirm:$false
+
+        (Get-Content -LiteralPath (Join-Path $bundle '10-system.txt') -Raw).Trim() | Should -Be 'Machine: PC-1, user USER-2'
+        (Get-Content -LiteralPath (Join-Path $bundle '20-network.txt') -Raw).Trim() | Should -Be 'USER-2 logged on PC-1'
+        (Get-Content -LiteralPath (Join-Path $bundle 'image.png') -Raw).Trim() | Should -Be 'DESKTOP-KYLLIAN'
+        $result.Replaced | Should -Be 4
+        @(Get-ChildItem -LiteralPath (Join-Path $bundle 'maps') -Filter '*.map').Count | Should -Be 1
+    }
+
+    Context 'In the exports' {
+
+        BeforeAll {
+            # Journaled to a temporary folder, never to the account that runs the tests.
+            $script:PrivacyDataRoot = (Get-TkContext).DataRoot
+            (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+        }
+
+        AfterAll {
+            (Get-TkContext).DataRoot = $script:PrivacyDataRoot
+        }
+
+        BeforeEach {
+            $script:PrivacyFolder = Join-Path $TestDrive ('maps-{0}' -f [guid]::NewGuid())
+
+            # Stand-ins: the machine's values are the test's, and no table reaches the real data folder.
+            function Get-TkRedactionSeed { param($Level) $null = $Level; ConvertTo-TkRedactionSeed -Computers @($env:COMPUTERNAME) -Users @('jdupont') }
+            function Get-TkPrivacyFolder { $script:PrivacyFolder }
+        }
+
+        It 'writes the audit report with the names replaced' {
+            (Get-Command -Name Get-TkPrivacyFolder).ScriptBlock.ToString() | Should -Match 'PrivacyFolder'
+            $findings = @([pscustomobject] @{ Id = 'X1'; Name = 'Local admins'; Category = 'Accounts'; Severity = 'High'; Status = 'Fail'
+                                              Measured = 'jdupont is a local administrator'; Expected = 'none'; Detail = 'on this machine'; Remediation = ''; CanRemediate = $false })
+            foreach ($extension in @('html', 'json')) {
+                $path = Join-Path $TestDrive ('audit-{0}.{1}' -f [guid]::NewGuid(), $extension)
+                Export-TkSecurityAuditReport -Path $path -Findings $findings -Privacy Personal -Confirm:$false | Should -Be $path
+                $text = Get-Content -LiteralPath $path -Raw
+                $text | Should -Not -Match 'jdupont'
+                $text | Should -Match 'USER-1'
+            }
+            (Export-TkSecurityAuditReport -Path (Join-Path $TestDrive 'plain.json') -Findings $findings -Confirm:$false) | Should -Not -BeNullOrEmpty
+            Get-Content -LiteralPath (Join-Path $TestDrive 'plain.json') -Raw | Should -Match 'jdupont'
+        }
+
+        It 'pseudonymises a headless document once collected, with -Redact' {
+            # The run is journaled, here and not in the real journal.
+            $journal = Get-TkJournalFolder
+            $journal | Should -BeLike ('{0}*' -f $TestDrive)
+
+            $json = Invoke-TkHeadlessReport -Report 'Reboot' -Redact Personal
+            $data = $json | ConvertFrom-Json
+            $data.Computer | Should -Be 'PC-1'
+            $json | Should -Not -Match ([regex]::Escape($env:COMPUTERNAME))
+            @(Get-ChildItem -LiteralPath $script:PrivacyFolder -Filter '*.map').Count | Should -Be 1
+            @(Get-ChildItem -LiteralPath $journal -Filter 'journal-*.jsonl').Count | Should -Be 1
+        }
+
+        It 'reads the level from the settings, and knows nothing else than None, Personal and Strict' {
+            $settings = (Get-TkContext).Settings
+            $saved    = $settings['ExportPrivacy']
+            try {
+                $settings['ExportPrivacy'] = 'Strict';   Get-TkExportPrivacyLevel | Should -Be 'Strict'
+                $settings['ExportPrivacy'] = 'Anything'; Get-TkExportPrivacyLevel | Should -Be 'None'
+                $settings.Remove('ExportPrivacy');       Get-TkExportPrivacyLevel | Should -Be 'None'
+            }
+            finally {
+                if ($null -ne $saved) { $settings['ExportPrivacy'] = $saved }
+            }
+            Get-TkExportComputerName -Level Personal | Should -Be 'PC-1'
+            Get-TkExportComputerName -Level None     | Should -Be $env:COMPUTERNAME
+            Format-TkPrivacyNote -Result ([pscustomobject] @{ Level = 'Personal'; Replaced = 3 }) | Should -Match '3 value\(s\) replaced'
+        }
+
+        It 'takes -Redact at every entry point' {
+            (Get-Command -Name 'Start-Toolkit').Parameters.Keys | Should -Contain 'Redact'
+            (Get-Command -Name (Join-Path $script:RepositoryRoot 'toolkit.ps1')).Parameters.Keys | Should -Contain 'Redact'
+            $build = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'build\Build-Toolkit.ps1') -Raw
+            $build | Should -Match '-AuditLevel `\$AuditLevel -Redact `\$Redact'
+        }
+    }
+}
+
 Describe 'Headless reports' {
 
     BeforeAll {

@@ -67,6 +67,21 @@ left out.
 On the Intervention page, **Snapshot** and **Compare** do the same without a
 command line, with the snapshots kept beside the journal.
 
+**Before sending it away.** `-Redact Personal` pseudonymises the document once
+it is collected: the names of this computer and of its accounts, profile
+folders, e-mail addresses, the machine or domain part of account SIDs and the
+serial numbers become stable aliases (PC-1, USER-1, SERIAL-1), the same
+everywhere in the document so it still reads. `-Redact Strict` also replaces
+the IP and MAC addresses (the maker's part of a MAC is kept), the saved Wi-Fi
+networks and the domain names. A comparison is made on the real values, before
+they are replaced. The table back to the real values stays on the machine,
+encrypted for the Windows account that ran it, and **Settings, Privacy of
+exports** finds what an alias stood for.
+
+```powershell
+& $toolkit -Report All -Redact Strict -OutFile .\for-the-vendor.json
+```
+
 ---
 
 ## Navigation
@@ -132,7 +147,7 @@ Light and dark themes are toggled with the switch under Settings, in the navigat
 | --- | --- |
 | **Knowledge base** | **Topics**: 38 topics across 12 categories: fundamentals, switching and VLANs, routing and addressing, network services, network security, wireless, physical layer, method and tooling, Windows administration (start-up and recovery with BitLocker, Windows Update servicing with WSUS and Windows Update for Business), identity and access (Group Policy, Kerberos and NTLM, Microsoft Entra join and Intune enrolment, passwords and MFA), security operations (backups that survive ransomware, the first hour of an incident), SPF, DKIM and DMARC, and reference tables: well-known SIDs and RIDs, HTTP status codes, SMTP reply and Exchange Online status codes. **Windows codes**: type an error code in any form (0x80070005, 80070005, -2147024891 as the update history returns it, or a Win32 number), an event ID or words, and read what it means and what to try. Written from Microsoft's references: every Windows Update error, the servicing (CBS), setup and upgrade, network and sign-in failure codes a call meets, Intune enrolment errors, KMS and MAK activation errors, the NTSTATUS and exception codes of application crashes, and about a hundred event IDs with their source, from Kernel-Power 41 to the Secure Boot certificate update events. A code not in the reference is still decoded into its facility and code, with the Windows message for a Win32 error. Codes and events are also found from Ctrl+K, a failed update names its error in Update history, and the security event triage says why sign-ins failed. |
 | **Commands** | 691 commands, grouped by task and searchable all at once. **Administration cheat sheets**: **Active Directory** (users, groups, computers, replication, Group Policy, recycle bin), the **Windows command line** (robocopy, icacls, sc, schtasks, diskpart, bcdedit, wevtutil, certutil), **Intune and Entra device management** (dsregcmd, enrolment events, check-in, Intune Management Extension logs, Autopilot, BitLocker keys), **Microsoft Graph and Exchange Online PowerShell**, **OpenSSL and certificates**, **tcpdump, Wireshark filters and Nmap**, **Docker and Compose**, **Kubernetes**, and **Hyper-V, ESXi and Proxmox VE**. **Scripting cheat sheets**: **Git** from the first commit to recovering one that seemed lost; **PowerShell** with the verbs and what each promises, what can follow a \| (Where-Object, Sort-Object, Select-Object with computed properties, Group-Object, Measure-Object, ForEach-Object, Export-Csv, ConvertTo-Json, Out-GridView), the operators, variables, types, hashtables, objects and classes, parameters, error handling and remoting, and the everyday administration commands; **Bash** with quoting, parameter expansion, conditions and loops, functions and exit codes, redirections, arrays and globbing; **Linux system administration** with files, permissions and users, processes and systemd services, packages on Debian and Red Hat, disks, SSH and cron. **Network platforms**: Cisco, Cisco Meraki, Aruba AOS-CX and AOS-S, Fortinet, Palo Alto, Stormshield, pfSense and OPNsense, Juniper, Extreme, HPE Comware, MikroTik, Ubiquiti, Windows, Linux and Linux firewalling. |
-| **Settings** | The VirusTotal API key, stored encrypted for this Windows account, and the folder where the toolkit keeps its data and logs. |
+| **Settings** | The VirusTotal API key, stored encrypted for this Windows account, and the folder where the toolkit keeps its data and logs. **Privacy of exports**: whether what is exported from the window (the diagnostic, audit, system and threat hunting reports, the event CSV, the support bundle and the intervention report) is pseudonymised, and at which level, Personal or Strict; what that replaces on this PC, and what an alias such as PC-1 or USER-2 stood for, read back from the tables kept on it. |
 
 ---
 
@@ -200,6 +215,18 @@ value and the value to restore in the same object. There is no one-way path.
 **Nothing leaves the machine unless you ask.** The public IP lookup, the
 VirusTotal and breach checks, and a support bundle each wait for an explicit
 click.
+
+**What leaves can be pseudonymised, and says how far.** Reports and support
+bundles are made to be sent. With Privacy of exports, or `-Redact` without a
+window, what names a person, the machine or where it sits is replaced in the
+final text of the export by stable aliases, and the table back to the real
+values is kept on the machine, encrypted with DPAPI for the Windows account.
+Built-in and generic account names (Administrator, Public, admin, test) and
+addresses that name nobody (loopback, APIPA, multicast, masks, network
+addresses) are kept: they carry diagnostic meaning. The replacement works from
+the values the machine is known by and from patterns, so a name typed in a
+note or buried in another program's message can still be there: the toolkit
+says the export is reduced, never that it is anonymous.
 
 **Every privileged operation is logged**, to `%LOCALAPPDATA%\Toolkit\logs`,
 with the operation, the outcome and the duration.
