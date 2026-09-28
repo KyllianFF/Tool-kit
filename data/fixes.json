@@ -19,7 +19,7 @@
       "action": "FlushDnsCache",
       "category": "Network",
       "risk": "Low",
-      "requiresElevation": false,
+      "requiresElevation": true,
       "requiresRestart": false,
       "description": "Clears cached name resolutions.",
       "whenToUse": "A record was changed on the server and this machine is still reaching the old address."

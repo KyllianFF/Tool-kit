@@ -2832,6 +2832,14 @@ Describe 'Tweak engine: optional features, capabilities and audit policy' {
 
 Describe 'Fix helpers' {
 
+    It 'asks for administrator rights to flush the DNS cache, which current Windows 11 builds refuse without them' {
+
+        # ipconfig /flushdns answers "The requested operation requires
+        # elevation" from a standard session on Windows 11 build 26300, and
+        # the fix then failed after a click it had offered.
+        (Get-TkFix | Where-Object { $_.id -eq 'flush-dns' }).requiresElevation | Should -BeTrue
+    }
+
     It 'takes the newest Defender platform folder by version, then the copy in Program Files' {
 
         $platform = Join-Path $TestDrive 'Platform'
