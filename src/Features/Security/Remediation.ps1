@@ -225,6 +225,7 @@ function Get-TkRemediationTable {
             Command     = 'Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" EnableLUA 1'
             Action      = 'Repair-TkUacEnabled'
             Elevated    = $true
+            Restart     = $true
             Reversible  = 'Set EnableLUA back to 0 and restart.'
         }
 
@@ -246,6 +247,7 @@ function Get-TkRemediationTable {
             Command     = 'DeviceGuard: EnableVirtualizationBasedSecurity 1, RequirePlatformSecurityFeatures 1 ; Lsa: LsaCfgFlags 2'
             Action      = 'Repair-TkCredentialGuard'
             Elevated    = $true
+            Restart     = $true
             Reversible  = 'Set LsaCfgFlags to 0 and restart.'
         }
 
@@ -346,6 +348,7 @@ function Get-TkRemediationTable {
             Command     = 'Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" RunAsPPL 1'
             Action      = 'Repair-TkLsaProtection'
             Elevated    = $true
+            Restart     = $true
             Reversible  = 'Set RunAsPPL to 0 and restart. Check first that no security product needs to inject into LSASS.'
         }
 
@@ -456,6 +459,7 @@ function Get-TkRemediationTable {
             Command     = 'Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart'
             Action      = 'Repair-TkSmbV1'
             Elevated    = $true
+            Restart     = $true
             Reversible  = 'Enable-WindowsOptionalFeature on the same feature, if a genuinely legacy device needs it.'
         }
 

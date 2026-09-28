@@ -55,6 +55,22 @@
     Wi-Fi networks and domains). The table back to the real values stays on
     this PC, encrypted for this Windows account.
 
+.PARAMETER Fix
+    Fix ids to take without a window, or List. A plan unless Execute is given.
+
+.PARAMETER Tweak
+    Tweak ids to apply without a window (or revert, with Revert), or List.
+
+.PARAMETER Remediate
+    Audit correction ids to take without a window, or List.
+
+.PARAMETER Revert
+    With Tweak, reverts the tweaks instead of applying them.
+
+.PARAMETER Execute
+    With Fix, Tweak or Remediate, takes the actions. Without it nothing
+    changes: the run says what would be taken and what would be refused.
+
 .EXAMPLE
     Start-Toolkit
 
@@ -66,6 +82,9 @@
 
 .EXAMPLE
     Start-Toolkit -CompareWith .\before.json -OutFile .\after.json
+
+.EXAMPLE
+    Start-Toolkit -Fix flush-dns, reset-print-spooler -Execute -OutFile .\fix.json
 #>
 function Start-Toolkit {
     [CmdletBinding()]
@@ -97,6 +116,21 @@ function Start-Toolkit {
         [string] $Redact = 'None',
 
         [Parameter()]
+        [string[]] $Fix,
+
+        [Parameter()]
+        [string[]] $Tweak,
+
+        [Parameter()]
+        [string[]] $Remediate,
+
+        [Parameter()]
+        [switch] $Revert,
+
+        [Parameter()]
+        [switch] $Execute,
+
+        [Parameter()]
         [string] $RunAction,
 
         [Parameter()]
@@ -108,7 +142,16 @@ function Start-Toolkit {
 
     # Set on every start, so a headless run does not leave a later start
     # without its progress lines.
-    $script:TkQuietConsole = [bool] ($Report -or $CompareWith -or $RunAction)
+    $script:TkQuietConsole = [bool] ($Report -or $CompareWith -or $RunAction -or $Fix -or $Tweak -or $Remediate)
+
+    # Said before anything is loaded: alone, these would open the window.
+    if (($Execute -or $Revert) -and -not ($Fix -or $Tweak -or $Remediate)) {
+        throw '-Execute and -Revert go with -Fix, -Tweak or -Remediate.'
+    }
+
+    if (($Fix -or $Tweak -or $Remediate) -and ($Report -or $CompareWith)) {
+        throw 'Collect reports and take actions in two runs: -Report and -CompareWith do not mix with -Fix, -Tweak or -Remediate.'
+    }
 
     # --- 1. Context and logging ------------------------------------------
     $ctx = Initialize-TkContext
@@ -151,6 +194,12 @@ function Start-Toolkit {
 
     # --- 3. Data ----------------------------------------------------------
     Import-TkAllCatalogs
+
+    # Fixes, tweaks and corrections without a window: a plan, unless -Execute.
+    if ($Fix -or $Tweak -or $Remediate) {
+        return Invoke-TkHeadlessAction -Fix @($Fix | Where-Object { $_ }) -Tweak @($Tweak | Where-Object { $_ }) -Remediate @($Remediate | Where-Object { $_ }) `
+                                       -Revert:$Revert -Execute:$Execute -OutFile ([string] $OutFile) -Redact $Redact
+    }
 
     # A headless run needs no window, no single threaded apartment and no WPF.
     if ($Report -or $CompareWith) {

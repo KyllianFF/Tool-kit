@@ -82,6 +82,7 @@ src/Features/Reporting/Headless.ps1
 src/Features/Reporting/Comparison.ps1
 src/Features/Reporting/HtmlReport.ps1
 src/Features/Reporting/Privacy.ps1
+src/Features/Automation/HeadlessActions.ps1
 src/Features/Reference/WindowsReference.ps1
 src/Features/Tools/Calculators.ps1
 src/Features/Tools/TextTools.ps1

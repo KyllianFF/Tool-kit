@@ -92,6 +92,25 @@ exports** finds what an alias stood for. The document says its level in
 & $toolkit -Report All -Redact Strict -OutFile .\for-the-vendor.json
 ```
 
+**Fixes, tweaks and corrections.** The same script block takes the fixes,
+tweaks and audit corrections of the interface, through the same allow lists.
+Without `-Execute` the run is a plan: it says what would be taken and what
+would be refused, and changes nothing. The whole request is checked before
+anything runs, so an unknown id, an action that needs administrator rights in
+a standard session, or one that works on the signed-in account's profile when
+the run is SYSTEM (as an RMM agent's is), refuses the run rather than leaving
+the machine half changed. The result is JSON, and the exit code is 0, 3010
+when a restart is needed, 1 when an action failed and 2 when the request was
+refused. [docs/HEADLESS-ACTIONS.md](docs/HEADLESS-ACTIONS.md) has the rules,
+the codes and the result format.
+
+```powershell
+& $toolkit -Fix List                                              # every fix, and what is refused without a window
+& $toolkit -Fix reset-print-spooler -Remediate disable-smbv1       # the plan
+& $toolkit -Fix reset-print-spooler -Remediate disable-smbv1 -Execute -OutFile C:\Temp\actions.json
+exit $LASTEXITCODE
+```
+
 ---
 
 ## Navigation
@@ -197,7 +216,9 @@ install into arbitrary command execution.
 **Fix and remediation actions are dispatched through allow lists.** The fixes
 catalog names an action, not a command, and every audit remediation is an
 entry in a table declared in code. An edited JSON file cannot invoke anything
-the developer did not register.
+the developer did not register. The same tables are the only way in without a
+window: a command line selects an entry by its id, never a command, and a run
+without `-Execute` changes nothing.
 
 **The keyboard test is not a keylogger.** It reads keys only from its own
 window, only while its panel is on screen and the window has the focus. A
@@ -413,7 +434,8 @@ Tool-kit/
   dist/                    Build output (toolkit.ps1 and its SHA256)
   tests/                   Pester 5 suite
   docs/                    Architecture, security policy, contributing,
-                           the report format and its JSON Schema
+                           the report format, the headless actions and
+                           their JSON Schemas
 ```
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit

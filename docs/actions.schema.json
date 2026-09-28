@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/docs/actions.schema.json",
+  "title": "Toolkit action result",
+  "description": "The JSON document a headless run of fixes, tweaks or audit corrections writes (-Fix, -Tweak, -Remediate), format 1.x. docs/HEADLESS-ACTIONS.md is the reference.",
+  "type": "object",
+  "required": [ "Schema", "SchemaVersion", "Computer", "MachineId", "User", "GeneratedAt", "Toolkit", "Elevated", "System", "Privacy", "Mode", "Summary", "Actions" ],
+  "properties": {
+    "Schema": { "const": "toolkit-actions" },
+    "SchemaVersion": {
+      "description": "major.minor. A minor version only adds fields.",
+      "type": "string",
+      "pattern": "^1\\.[0-9]+$"
+    },
+    "Computer": { "type": "string" },
+    "MachineId": {
+      "description": "The same identifier as in a report document.",
+      "type": "string",
+      "pattern": "^([0-9a-f]{32})?$"
+    },
+    "User": { "type": "string" },
+    "GeneratedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    },
+    "Toolkit": {
+      "type": "object",
+      "required": [ "Version", "Commit" ],
+      "properties": {
+        "Version": { "type": "string" },
+        "Commit": { "type": "string" }
+      }
+    },
+    "Elevated": {
+      "description": "Whether the run had administrator rights.",
+      "type": "boolean"
+    },
+    "System": {
+      "description": "Whether the run was the SYSTEM account, as an RMM agent's usually is.",
+      "type": "boolean"
+    },
+    "Privacy": { "enum": [ "None", "Personal", "Strict" ] },
+    "Mode": {
+      "description": "Plan: nothing was changed. Execute: the actions were taken, unless the request was refused.",
+      "enum": [ "Plan", "Execute" ]
+    },
+    "Summary": {
+      "type": "object",
+      "required": [ "Outcome", "ExitCode", "RestartRequired", "Counts" ],
+      "properties": {
+        "Outcome": { "enum": [ "Planned", "Refused", "Done", "Failed" ] },
+        "ExitCode": { "enum": [ 0, 1, 2, 3010 ] },
+        "RestartRequired": { "type": "boolean" },
+        "Counts": {
+          "type": "object",
+          "required": [ "Planned", "Refused", "NotRun", "Succeeded", "Failed" ],
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "Actions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/action" }
+    }
+  },
+  "definitions": {
+    "action": {
+      "type": "object",
+      "required": [ "Kind", "Id", "Name", "Operation", "Elevated", "RequiresRestart", "Status", "Reason", "DurationMs", "Messages" ],
+      "properties": {
+        "Kind": { "enum": [ "Fix", "Tweak", "Remediation" ] },
+        "Id": { "type": "string" },
+        "Name": { "type": "string" },
+        "Operation": { "enum": [ "Run", "Apply", "Revert" ] },
+        "Elevated": {
+          "description": "Whether the action needs administrator rights.",
+          "type": "boolean"
+        },
+        "RequiresRestart": { "type": "boolean" },
+        "Status": { "enum": [ "Planned", "Refused", "NotRun", "Succeeded", "Failed" ] },
+        "Reason": {
+          "description": "Why it was refused, not run or failed; empty otherwise.",
+          "type": "string"
+        },
+        "DurationMs": { "type": "integer", "minimum": 0 },
+        "Messages": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -270,6 +270,7 @@ $builder = New-Object System.Text.StringBuilder
         & ([scriptblock]::Create((irm <url of this file>))) -Report All -OutFile .\report.json
         & ([scriptblock]::Create((irm <url of this file>))) -CompareWith .\report.json
         & ([scriptblock]::Create((irm <url of this file>))) -Report All -Redact Personal -OutFile .\to-send.json
+        & ([scriptblock]::Create((irm <url of this file>))) -Fix flush-dns -Execute; exit `$LASTEXITCODE
 #>
 
 [CmdletBinding()]
@@ -300,6 +301,22 @@ param(
     [Parameter()]
     [ValidateSet('None', 'Personal', 'Strict')]
     [string] `$Redact = 'None',
+
+    # Fixes, tweaks and audit corrections without a window; see Start-Toolkit.
+    [Parameter()]
+    [string[]] `$Fix,
+
+    [Parameter()]
+    [string[]] `$Tweak,
+
+    [Parameter()]
+    [string[]] `$Remediate,
+
+    [Parameter()]
+    [switch] `$Revert,
+
+    [Parameter()]
+    [switch] `$Execute,
 
     [Parameter()]
     [string] `$RunAction,
@@ -391,7 +408,18 @@ $($resourceLines -join "`r`n")
 # replayed instead.
 `$script:TkEntryScript = `$PSCommandPath
 
-if (`$Report -or `$CompareWith) {
+if (`$Fix -or `$Tweak -or `$Remediate -or `$Execute -or `$Revert) {
+    Start-Toolkit -Fix `$Fix -Tweak `$Tweak -Remediate `$Remediate -Revert:`$Revert -Execute:`$Execute -OutFile `$OutFile -Redact `$Redact ``
+                  -Report `$Report -CompareWith `$CompareWith -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
+
+    # Run as a file (powershell -File), the exit code is the process's own,
+    # which is what an RMM tool reads. Run as a script block from irm, it
+    # stays in `$LASTEXITCODE: an exit there would close the console.
+    if (`$PSCommandPath -and `$MyInvocation.InvocationName -ne '.') {
+        exit `$LASTEXITCODE
+    }
+}
+elseif (`$Report -or `$CompareWith) {
     Start-Toolkit -Report `$Report -CompareWith `$CompareWith -OutFile `$OutFile -AuditLevel `$AuditLevel -Redact `$Redact -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 }
 elseif (`$RunAction) {
