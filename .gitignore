@@ -28,3 +28,13 @@ $RECYCLE.BIN/
 scratch/
 tmp/
 *.log
+
+# Claude
+.claude/
+.agents/
+.aider-desk/
+.codeartsdoer/
+.codebuddy/
+.codemaker/
+.devin/
+skills-lock.json
