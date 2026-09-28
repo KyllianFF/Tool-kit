@@ -171,6 +171,12 @@ function Initialize-TkSecurityPage {
     }
 
     Register-TkClick -Name 'BtnCheckToolkitUpdate' -Action { Invoke-TkUpdateCheckFromUi }
+    Register-TkClick -Name 'BtnCopyLaunchCommand'  -Action { Copy-TkLaunchCommandFromUi }
+
+    $provenance = Get-TkControl -Name 'LaunchProvenanceText'
+    if ($provenance) {
+        $provenance.Text = (Get-TkLaunchProvenance).Text
+    }
     Register-TkClick -Name 'BtnOpenDownloads'   -Action { Start-Process -FilePath (Get-TkUpdateSource).DownloadPage }
     Register-TkClick -Name 'BtnUpdateAvailable' -Action { Show-TkPage -Name 'Settings' }
 
@@ -207,6 +213,8 @@ function Invoke-TkUpdateCheckFromUi {
                 return
             }
 
+            Set-TkPublishedBuild -Build $check.Published -Confirm:$false
+
             $status = Get-TkControl -Name 'UpdateStatusText'
             $badge  = Get-TkControl -Name 'BtnUpdateAvailable'
 
@@ -228,6 +236,64 @@ function Invoke-TkUpdateCheckFromUi {
                 Set-TkStatus -Text $check.Text
             }
         }.GetNewClosure()
+}
+
+# The published build the last update check found, for its verified command.
+$script:TkPublishedBuild = $null
+
+<#
+.SYNOPSIS
+    Keeps the published build the update check found.
+
+.DESCRIPTION
+    A function rather than an assignment in the completion block, where
+    $script: is not this file's scope.
+#>
+function Set-TkPublishedBuild {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [object] $Build
+    )
+
+    if ($PSCmdlet.ShouldProcess('update check', 'Remember the published build')) {
+        $script:TkPublishedBuild = $Build
+    }
+}
+
+<#
+.SYNOPSIS
+    Copies a verified launch command to the clipboard.
+
+.DESCRIPTION
+    The command of this copy when it was started verified; otherwise the one
+    for the build published on main, once an update check has read its
+    SHA-256. That one stops running as soon as main changes, which is the
+    point: it never runs a build it was not given the hash of.
+#>
+function Copy-TkLaunchCommandFromUi {
+    [CmdletBinding()]
+    param()
+
+    $ctx = Get-TkContext
+
+    if ($ctx.SourceUri -and $ctx.SourceSha256) {
+        $command = New-TkLaunchCommand -SourceUri $ctx.SourceUri -Sha256 $ctx.SourceSha256
+        $note    = 'The verified launch command of this copy is on the clipboard.'
+    }
+    elseif ($script:TkPublishedBuild -and (Test-TkSha256Text -Value ([string] $script:TkPublishedBuild.Sha256))) {
+        $command = New-TkLaunchCommand -SourceUri $script:TkDefaultSourceUri -Sha256 ([string] $script:TkPublishedBuild.Sha256)
+        $note    = 'The verified command for the build published on main is on the clipboard. It refuses to run once main changes; the command of a release keeps working.'
+    }
+    else {
+        Set-TkStatus -Text 'Check for updates first: the verified command needs the SHA-256 of the published build.'
+        return
+    }
+
+    if (Set-TkClipboard -Text $command) {
+        Set-TkStatus -Text $note
+    }
 }
 
 # ---------------------------------------------------------------------------

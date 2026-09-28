@@ -76,6 +76,10 @@ function Initialize-TkContext {
         # liner. Replayed verbatim by an elevation restart.
         SourceUri     = ''
 
+        # The SHA-256 the verified launch command checked before running this
+        # instance. An elevation restart checks the same hash again.
+        SourceSha256  = ''
+
         # The script the operator actually ran. Set by the launcher and by
         # the compiled build. It is not $PSCommandPath: inside a function,
         # that resolves to the file the function was declared in, which for a

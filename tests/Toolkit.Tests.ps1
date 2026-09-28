@@ -75,6 +75,131 @@ Describe 'Launch from the one liner' {
     }
 }
 
+Describe 'Verified launch' {
+
+    BeforeAll {
+        $script:TagUri  = 'https://raw.githubusercontent.com/KyllianFF/Tool-kit/v1.0.0/dist/toolkit.ps1'
+        $script:MainUri = 'https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1'
+    }
+
+    It 'accepts only plain HTTPS addresses, since they are written into a command line' {
+        Test-TkSourceUri -Uri $script:TagUri  | Should -BeTrue
+        Test-TkSourceUri -Uri $script:MainUri | Should -BeTrue
+        Test-TkSourceUri -Uri 'https://example.org:8443/a/b-c_d.ps1' | Should -BeTrue
+
+        foreach ($bad in @('http://example.org/toolkit.ps1', 'https://example.org/it''s.ps1', 'https://example.org/a b.ps1',
+                           'https://example.org/$(calc).ps1', 'https://example.org/a;calc', 'https://example.org/a`b', 'HTTPS://EXAMPLE.ORG/a',
+                           'https://example.org/a"b', 'ftp://example.org/a', '')) {
+            Test-TkSourceUri -Uri $bad | Should -BeFalse -Because $bad
+        }
+    }
+
+    It 'knows an SHA-256 written in hexadecimal' {
+        Test-TkSha256Text -Value ('A1' * 32) | Should -BeTrue
+        Test-TkSha256Text -Value ('a1' * 32) | Should -BeTrue
+        Test-TkSha256Text -Value ('A1' * 31) | Should -BeFalse
+        Test-TkSha256Text -Value (('A1' * 31) + 'ZZ') | Should -BeFalse
+    }
+
+    It 'quotes a value so that no quote in it can end the string' {
+        ConvertTo-TkPsLiteral -Value "C:\Users\O'Brien\t.json" | Should -Be "'C:\Users\O''Brien\t.json'"
+        # PowerShell reads the typographic quotes as single quotes too.
+        (ConvertTo-TkPsLiteral -Value ('a' + [char] 0x2019 + 'b')).Length | Should -Be 6
+    }
+
+    It 'writes the plain one-liner without a hash, and the verified launch with one' {
+        New-TkLaunchCommand -SourceUri $script:MainUri | Should -Be ("irm '{0}' | iex" -f $script:MainUri)
+
+        $command = New-TkLaunchCommand -SourceUri $script:TagUri -Sha256 ('ab' * 32) -Parameter ([ordered] @{ RunAction = 'RestorePoint'; ActionData = "C:\Temp\O'Brien.json" })
+        $command | Should -Match ([regex]::Escape("`$h = '" + ('AB' * 32) + "'"))
+        $command | Should -Match 'RawContentStream\.ToArray\(\)'
+        $command | Should -Match 'SHA-256 mismatch'
+        $command | Should -Match ([regex]::Escape("-SourceUri `$u -ExpectedSha256 `$h -RunAction 'RestorePoint' -ActionData 'C:\Temp\O''Brien.json'"))
+        $command | Should -Not -Match '"'
+
+        { New-TkLaunchCommand -SourceUri 'http://example.org/t.ps1' } | Should -Throw
+        { New-TkLaunchCommand -SourceUri $script:TagUri -Sha256 'not-a-hash' } | Should -Throw
+        { New-TkLaunchCommand -SourceUri $script:TagUri -Parameter @{ 'Run Action' = 'x' } } | Should -Throw
+    }
+
+    It 'runs the downloaded build only when its SHA-256 is the expected one' {
+        # A tiny stand-in build: it records what it was started with.
+        $build = [System.Text.Encoding]::UTF8.GetBytes('param($SourceUri, $ExpectedSha256, $RunAction) $global:TkLaunchProbe = @($SourceUri, $ExpectedSha256, $RunAction)')
+        $hash  = [BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($build)) -replace '-'
+
+        # Stand-in: no network, the build is served from memory.
+        function Invoke-WebRequest { param($Uri, [switch] $UseBasicParsing) $null = $Uri, $UseBasicParsing; [pscustomobject] @{ RawContentStream = New-Object System.IO.MemoryStream(, $build) } }
+
+        try {
+            $global:TkLaunchProbe = $null
+            Invoke-Expression (New-TkLaunchCommand -SourceUri $script:TagUri -Sha256 $hash -Parameter ([ordered] @{ RunAction = 'RestorePoint' }))
+            @($global:TkLaunchProbe) | Should -Be @($script:TagUri, $hash, 'RestorePoint')
+
+            $global:TkLaunchProbe = $null
+            { Invoke-Expression (New-TkLaunchCommand -SourceUri $script:TagUri -Sha256 ('0' * 64)) } | Should -Throw '*SHA-256 mismatch*'
+            $global:TkLaunchProbe | Should -BeNullOrEmpty
+        }
+        finally {
+            Remove-Variable -Name TkLaunchProbe -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'restarts a file with -File, and a download with the same verified command' {
+        $file = Get-TkRelaunchArgument -EntryScript 'C:\Tools\Toolkit.ps1' -Parameter ([ordered] @{ RunAction = 'RestorePoint' }) -Sta
+        ($file -join ' ') | Should -Be '-NoProfile -ExecutionPolicy Bypass -STA -File "C:\Tools\Toolkit.ps1" -RunAction "RestorePoint"'
+
+        $remote = Get-TkRelaunchArgument -SourceUri $script:TagUri -Sha256 ('cd' * 32)
+        $remote[3] | Should -Be '-Command'
+        $remote[4] | Should -Match '^"\$u = .*-ExpectedSha256 \$h"$'
+
+        (Get-TkRelaunchArgument -SourceUri $script:MainUri)[4] | Should -Be ('"irm ''{0}'' | iex"' -f $script:MainUri)
+    }
+
+    It 'says where a copy came from and what was checked about it' {
+        $file = Get-TkLaunchProvenance -Context @{ EntryScript = 'C:\Tools\Toolkit.ps1'; SourceUri = ''; SourceSha256 = '' } `
+                                       -Signature { param($path) $null = $path; [pscustomobject] @{ Status = 'Valid'; SignerCertificate = [pscustomobject] @{ Subject = 'CN=Contoso IT, O=Contoso'; Thumbprint = 'ABC123' } } }
+        $file.Kind | Should -Be 'File'
+        $file.Text | Should -Match 'Authenticode signature is valid: Contoso IT \(certificate ABC123\)'
+
+        $unsigned = Get-TkLaunchProvenance -Context @{ EntryScript = 'C:\Tools\Toolkit.ps1'; SourceUri = ''; SourceSha256 = '' } -Signature { param($path) $null = $path; [pscustomobject] @{ Status = 'NotSigned' } }
+        $unsigned.Text | Should -Match 'It is not signed'
+
+        $verified = Get-TkLaunchProvenance -Context @{ EntryScript = ''; SourceUri = $script:TagUri; SourceSha256 = ('EF' * 32) }
+        $verified.Kind | Should -Be 'Verified'
+        $verified.Pinned | Should -BeTrue
+        $verified.CanCopy | Should -BeTrue
+        $verified.Text | Should -Match 'pinned to one release'
+
+        $moving = Get-TkLaunchProvenance -Context @{ EntryScript = ''; SourceUri = $script:MainUri; SourceSha256 = '' }
+        $moving.Kind | Should -Be 'Remote'
+        $moving.Pinned | Should -BeFalse
+        $moving.Text | Should -Match 'no hash to check'
+    }
+
+    Context 'At start-up' {
+
+        BeforeAll {
+            $script:VerifiedEntryScript = $script:TkEntryScript
+        }
+
+        AfterAll {
+            $script:TkEntryScript = $script:VerifiedEntryScript
+            Start-Toolkit -NoGui | Out-Null
+        }
+
+        It 'keeps the expected hash with its address, for the elevation' {
+            $script:TkEntryScript = ''
+
+            $ctx = Start-Toolkit -NoGui -SourceUri $script:TagUri -ExpectedSha256 ('ab' * 32)
+            $ctx.SourceUri    | Should -Be $script:TagUri
+            $ctx.SourceSha256 | Should -Be ('AB' * 32)
+
+            (Start-Toolkit -NoGui -SourceUri $script:TagUri -ExpectedSha256 'nope').SourceSha256 | Should -BeNullOrEmpty
+            (Start-Toolkit -NoGui -ExpectedSha256 ('ab' * 32)).SourceSha256 | Should -BeNullOrEmpty
+        }
+    }
+}
+
 Describe 'Headless reports' {
 
     BeforeAll {
@@ -419,7 +544,7 @@ Describe 'Per-action elevation' {
             @([pscustomobject] @{ Name = 'TestEcho'; Worker = { param($p) [pscustomobject] @{ Ok = $true; Message = 'unused in this path' } } })
         }
         Mock Start-TkElevatedWorker {
-            param($Name, $ActionDataPath, $ResultFile, $EntryScript, $SourceUri)
+            param($Name, $ActionDataPath, $ResultFile, $EntryScript, $SourceUri, $Sha256)
             [pscustomobject] @{ Ok = $true; Message = 'from-child' } | ConvertTo-Json | Set-Content -LiteralPath $ResultFile -Encoding UTF8
             'Ran'
         }
@@ -456,6 +581,8 @@ Describe 'Per-action elevation' {
 
         $build = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'build\Build-Toolkit.ps1') -Raw
         $build | Should -Match '\[string\] `\$RunAction'
+        $build | Should -Match '\[string\] `\$ExpectedSha256'
+        $build | Should -Match 'Start-Toolkit -SourceUri `\$SourceUri -ExpectedSha256 `\$ExpectedSha256'
         $build | Should -Match 'Start-Toolkit -RunAction `\$RunAction -ActionData `\$ActionData -ResultFile `\$ResultFile'
     }
 

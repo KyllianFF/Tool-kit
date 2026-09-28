@@ -11,6 +11,7 @@
 src/Core/Config.ps1
 src/Core/Logging.ps1
 src/Core/Environment.ps1
+src/Core/Launch.ps1
 src/Core/Elevation.ps1
 src/Core/Utilities.ps1
 src/Core/Threading.ps1

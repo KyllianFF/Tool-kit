@@ -25,6 +25,11 @@
     HTTPS location this instance was launched from. Recorded so an elevation
     restart can replay the same source when there is no script file on disk.
 
+.PARAMETER ExpectedSha256
+    The SHA-256 the verified launch command checked before running this
+    instance. Kept with SourceUri, so an elevation restart downloads the same
+    address again and runs it only if the hash still matches.
+
 .PARAMETER NoGui
     Loads everything and returns without showing a window. Used by the tests
     and by anyone wanting the functions in a plain console session.
@@ -61,6 +66,9 @@ function Start-Toolkit {
     param(
         [Parameter()]
         [string] $SourceUri,
+
+        [Parameter()]
+        [string] $ExpectedSha256,
 
         [Parameter()]
         [switch] $NoGui,
@@ -107,6 +115,17 @@ function Start-Toolkit {
     }
     elseif (-not $ctx.EntryScript) {
         $ctx.SourceUri = $script:TkDefaultSourceUri
+    }
+
+    # Only with the address it belongs to, and only in its strict form: it is
+    # written into the command an elevated process runs.
+    if ($ExpectedSha256) {
+        if ($SourceUri -and (Test-TkSha256Text -Value $ExpectedSha256)) {
+            $ctx.SourceSha256 = $ExpectedSha256.ToUpperInvariant()
+        }
+        else {
+            Write-TkLog -Level Warning -Category 'Startup' -Message 'The expected SHA-256 was ignored: it needs -SourceUri and 64 hexadecimal characters.'
+        }
     }
 
     Write-TkLog -Level Information -Category 'Startup' -Message (

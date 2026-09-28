@@ -901,14 +901,15 @@ function Start-TkPrivilegedAction {
 
     Invoke-TkBackgroundAction -StatusText $StatusText `
         -ScriptBlock {
-            param($Name, $Parameters, $EntryScript, $SourceUri)
-            Invoke-TkElevatedActionCore -Name $Name -Parameters $Parameters -EntryScript $EntryScript -SourceUri $SourceUri
+            param($Name, $Parameters, $EntryScript, $SourceUri, $Sha256)
+            Invoke-TkElevatedActionCore -Name $Name -Parameters $Parameters -EntryScript $EntryScript -SourceUri $SourceUri -Sha256 $Sha256
         } `
         -ParameterList @{
             Name        = $Name
             Parameters  = $Parameters
             EntryScript = [string] $ctx.EntryScript
             SourceUri   = [string] $ctx.SourceUri
+            Sha256      = [string] $ctx.SourceSha256
         } `
         -OnComplete {
             param($result)
@@ -1555,7 +1556,7 @@ function Initialize-TkShell {
 
         $context = Get-TkContext
 
-        if (Invoke-TkElevation -SourceUri $context.SourceUri -Confirm:$false) {
+        if (Invoke-TkElevation -SourceUri $context.SourceUri -Sha256 $context.SourceSha256 -Confirm:$false) {
             $context.Window.Close()
         }
     }
