@@ -30,7 +30,7 @@
     PSCustomObject[] with KeyName, Scope (Machine, User), View (X64, X86),
     DisplayName, DisplayVersion, Publisher, UninstallString,
     QuietUninstallString, InstallLocation, WindowsInstaller, SystemComponent,
-    ParentKeyName and ReleaseType.
+    ParentKeyName, ReleaseType and InstallDate (yyyyMMdd as the installer wrote it).
 #>
 function Get-TkUninstallEntry {
     [CmdletBinding()]
@@ -64,6 +64,7 @@ function Get-TkUninstallEntry {
                     SystemComponent      = ([string] $subKey.GetValue('SystemComponent') -eq '1')
                     ParentKeyName        = [string] $subKey.GetValue('ParentKeyName')
                     ReleaseType          = [string] $subKey.GetValue('ReleaseType')
+                    InstallDate          = [string] $subKey.GetValue('InstallDate')
                 }
                 $subKey.Close()
             }

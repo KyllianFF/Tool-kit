@@ -624,7 +624,7 @@ Describe 'Headless reports' {
         # removed or renamed, or changed type or meaning. It changes here, in
         # Get-TkHeadlessReport and in docs/REPORT-FORMAT.md together.
         $expected = 'Dashboard=1,Inventory=1,Network=1,Reboot=1,Storage=1,Performance=1,Devices=1,Crashes=1,Duplicates=1,Path=1,' +
-                    'Restarts=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Readiness=1,Journal=1,Audit=1'
+                    'Restarts=1,Timeline=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Readiness=1,Journal=1,Audit=1'
 
         (@(Get-TkHeadlessReport | ForEach-Object { '{0}={1}' -f $_.Name, $_.Version })) -join ',' | Should -Be $expected
 
@@ -5436,6 +5436,142 @@ Describe 'Performance trace' {
         }
 
         (@(Get-TkRecentTrace -Folder $script:TraceFolder) | ForEach-Object { $_.Name }) -join ',' | Should -Be 'trace-20260102-100000.etl,trace-20260101-100000.etl'
+    }
+}
+
+Describe 'Timeline of changes' {
+
+    BeforeAll {
+        # Journaled to a temporary folder, never to the account that runs the tests.
+        $script:TimelineDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+
+        # One event as a converter receives it.
+        function New-TimelineFact {
+            param([int] $Id, [hashtable] $Field = @{}, [object[]] $Value = @())
+            [pscustomobject] @{ Id = $Id; Time = [datetime]::new(2026, 9, 22, 10, 12, 0); Field = $Field; Value = $Value }
+        }
+
+        function Invoke-TimelineSource {
+            param([string] $Log, [int] $Id, $Fact)
+            $source = @(Get-TkTimelineSource) | Where-Object { $_.Log -eq $Log -and $_.Id -contains $Id } | Select-Object -First 1
+            & $source.Convert $Fact
+        }
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:TimelineDataRoot
+        $script:TkQuietConsole   = $false
+    }
+
+    It 'reads a program installed, removed, and an install that failed, from the values in order' {
+
+        $installed = Invoke-TimelineSource 'Application' 1033 (New-TimelineFact -Id 1033 -Value @('Microsoft GameInput', '3.5.270.0', '1033', '0', 'Microsoft Corporation'))
+        $installed.Title    | Should -Be 'Installed Microsoft GameInput'
+        $installed.Detail   | Should -Be 'Version 3.5.270.0'
+        $installed.Severity | Should -Be 'Info'
+
+        $failed = Invoke-TimelineSource 'Application' 1034 (New-TimelineFact -Id 1034 -Value @('YubiKey Manager CLI', '5.9.2.0', '1033', '1603', 'Yubico AB'))
+        $failed.Title    | Should -Be 'Removed YubiKey Manager CLI'
+        $failed.Detail   | Should -BeLike '*status 1603*'
+        $failed.Severity | Should -Be 'Warning'
+    }
+
+    It 'reads updates, services, starts and crashes from their named fields' {
+
+        (Invoke-TimelineSource 'System' 20 (New-TimelineFact -Id 20 -Field @{ updateTitle = 'KB5066835'; errorCode = '0x80073d19' })).Detail | Should -Be 'Error 0x80073d19'
+
+        $service = Invoke-TimelineSource 'System' 7045 (New-TimelineFact -Id 7045 -Field @{ ServiceName = 'Updater'; ImagePath = 'C:\Users\jdupont\AppData\Local\Temp\u.exe'; AccountName = 'LocalSystem' })
+        $service.Title    | Should -Be 'Service installed: Updater'
+        $service.Severity | Should -Be 'Warning'
+        (Invoke-TimelineSource 'System' 7045 (New-TimelineFact -Id 7045 -Field @{ ServiceName = 'Spooler'; ImagePath = 'C:\Windows\System32\spoolsv.exe'; AccountName = 'LocalSystem' })).Severity | Should -Be 'Info'
+
+        (Invoke-TimelineSource 'System' 41 (New-TimelineFact -Id 41 -Field @{ BugcheckCode = '0' })).Title   | Should -Be 'Stopped without shutting down'
+        $blue = Invoke-TimelineSource 'System' 41 (New-TimelineFact -Id 41 -Field @{ BugcheckCode = '209' })
+        $blue.Detail   | Should -Be 'Stop code 0xD1'
+        $blue.Severity | Should -Be 'Fail'
+
+        (Invoke-TimelineSource 'Application' 1000 (New-TimelineFact -Id 1000 -Field @{ AppName = 'outlook.exe'; ModuleName = 'mso.dll'; ExceptionCode = 'c0000005' })).Title | Should -Be 'Application crashed: outlook.exe'
+    }
+
+    It 'reads firewall rules by the identifiers of Windows 10 and of Windows 11' {
+
+        $log = 'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall'
+
+        (Invoke-TimelineSource $log 2004 (New-TimelineFact -Id 2004 -Field @{ RuleName = 'RDP' })).Title | Should -Be 'Firewall rule added: RDP'
+        (Invoke-TimelineSource $log 2097 (New-TimelineFact -Id 2097 -Field @{ RuleName = 'RDP' })).Title | Should -Be 'Firewall rule added: RDP'
+        (Invoke-TimelineSource $log 2099 (New-TimelineFact -Id 2099 -Field @{ RuleName = 'RDP' })).Title | Should -Be 'Firewall rule changed: RDP'
+        (Invoke-TimelineSource $log 2052 (New-TimelineFact -Id 2052 -Field @{ RuleId = '{9F446E31}' })).Title | Should -Be 'Firewall rule deleted: {9F446E31}'
+    }
+
+    It 'folds repeats of the same change within the hour, and keeps the rest apart' {
+
+        $at   = { param($minutes) [datetime]::new(2026, 9, 22, 10, 0, 0).AddMinutes($minutes) }
+        $rows = @(
+            [pscustomobject] @{ Time = (& $at 0);   Category = 'Firewall'; Title = 'Firewall rule added: Edge'; Detail = ''; Severity = 'Info' }
+            [pscustomobject] @{ Time = (& $at 20);  Category = 'Firewall'; Title = 'Firewall rule added: Edge'; Detail = ''; Severity = 'Info' }
+            [pscustomobject] @{ Time = (& $at 70);  Category = 'Firewall'; Title = 'Firewall rule added: Edge'; Detail = ''; Severity = 'Info' }
+            [pscustomobject] @{ Time = (& $at 200); Category = 'Firewall'; Title = 'Firewall rule added: Edge'; Detail = ''; Severity = 'Info' }
+            [pscustomobject] @{ Time = (& $at 5);   Category = 'Services'; Title = 'Service installed: Edge'; Detail = ''; Severity = 'Info' }
+        )
+
+        $merged = @(Merge-TkTimelineRow -Row $rows)
+
+        $merged.Count      | Should -Be 3
+        $merged[0].Time    | Should -Be (& $at 200)
+        ($merged | Where-Object { $_.Category -eq 'Firewall' -and $_.Count -eq 3 }).Time | Should -Be (& $at 0)
+        ($merged | Where-Object { $_.Category -eq 'Services' }).Count | Should -Be 1
+    }
+
+    It 'names a report that exists for each source, in a category it knows' {
+
+        $categories = @(Get-TkTimelineCategory | ForEach-Object { $_.Name })
+        $reports    = @(Get-TkDiagnosticReport | ForEach-Object { $_.Title })
+
+        foreach ($source in (Get-TkTimelineSource)) {
+            $categories | Should -Contain $source.Category
+            if ($source.Report) { $reports | Should -Contain $source.Report -Because $source.Label }
+            $source.Convert | Should -BeOfType [scriptblock]
+        }
+    }
+
+    It 'reads an event of this machine into the shape a converter takes' {
+
+        $record = Get-WinEvent -LogName 'System' -MaxEvents 1
+
+        $read = ConvertFrom-TkTimelineEvent -Record $record
+        $read.Id          | Should -Be $record.Id
+        $read.Time        | Should -BeOfType [datetime]
+        $read.Field       | Should -BeOfType [hashtable]
+        $read.Value.Count | Should -Be @($record.Properties).Count
+
+        # A binary value stays one value, and the values after it keep their place.
+        $binary = [pscustomobject] @{
+            Id = 1033; TimeCreated = Get-Date; Properties = @([pscustomobject] @{ Value = [byte[]] (1..20) }, [pscustomobject] @{ Value = 'second' })
+        } | Add-Member -MemberType ScriptMethod -Name ToXml -Value { '<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><EventData><Data>x</Data></EventData></Event>' } -PassThru
+
+        $shaped = ConvertFrom-TkTimelineEvent -Record $binary
+        $shaped.Value.Count | Should -Be 2
+        $shaped.Value[1]    | Should -Be 'second'
+    }
+
+    It 'reads the timeline of this machine, saying which sources it could not read' {
+
+        $timeline = Get-TkTimeline -Days 1 -Category Startups, Security, Toolkit
+
+        $timeline.Days | Should -Be 1
+        foreach ($source in $timeline.Sources) {
+            $source.State | Should -BeIn @('Read', 'Empty', 'Off', 'NeedsElevation', 'Missing', 'Failed')
+            $source.Category | Should -BeIn @('Startups', 'Security', 'Toolkit')
+        }
+
+        $groups = $timeline.Sources | Where-Object { $_.Label -eq 'Local groups changed' }
+        if (-not (Test-TkIsElevated)) { $groups.State | Should -Be 'NeedsElevation' }
+
+        foreach ($entry in $timeline.Entries) {
+            $entry.Time -ge $timeline.Since | Should -BeTrue
+            $entry.Severity | Should -BeIn @('Info', 'Warning', 'Fail')
+        }
     }
 }
 

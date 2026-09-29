@@ -106,6 +106,7 @@ Each entry of `Reports`:
 | Duplicates | 1 | no | An object: `Folders`, `Scanned`, `Skipped`, `Truncated`, `Groups`, `Sets`, `Wasted`. |
 | Path | 1 | no | An object: `Machine`, `User`, `Entries`, `SetxCopies`, `Shadowed`, `Failures`, `Missing`, `Duplicates`, `Empty`. |
 | Restarts | 1 | no | An object: `Days`, `Current`, `Timeline`, `Summary`, `Wakes`. |
+| Timeline | 1 | no | An object: `Since`, `Until`, `Days` (14), `Entries` (newest first, each with `Time`, `Category`, `Title`, `Detail`, `Severity`, `Count`, `LastTime`, `DayOnly`, `Source`, `Report`) and `Sources` (each with `Category`, `Label`, `State`: Read, Empty, Off, NeedsElevation, Missing or Failed, `Count`, `Note`). |
 | Wifi | 1 | no | An object: `Findings`, `Status`. |
 | Proxy | 1 | no | An object: `Findings`, `Setting`, `Probe`. |
 | Identity | 1 | no | A list of sign-in and management checks. |
