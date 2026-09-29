@@ -298,6 +298,27 @@ function Get-TkElevatedAction {
             }
         }
         [pscustomobject] @{
+            Name   = 'RecordPerformanceTrace'
+            Worker = {
+                param($Parameters)
+
+                # The profiles, the duration and the folder are checked again
+                # here, in the elevated process; only names from the closed
+                # list reach wpr.exe.
+                Invoke-TkPerformanceTrace -TraceProfile @($Parameters.Profiles | ForEach-Object { [string] $_ }) `
+                                          -Seconds ([int] $Parameters.Seconds) -Folder ([string] $Parameters.Folder) -Confirm:$false
+            }
+        }
+        [pscustomobject] @{
+            Name   = 'CancelPerformanceTrace'
+            Worker = {
+                param($Parameters)
+
+                $null = $Parameters
+                Stop-TkPerformanceTrace -Confirm:$false
+            }
+        }
+        [pscustomobject] @{
             Name   = 'CopyToProfile'
             Worker = {
                 param($Parameters)

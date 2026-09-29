@@ -1007,7 +1007,8 @@ Describe 'Per-action elevation' {
         $names   = @($actions | ForEach-Object { $_.Name })
 
         foreach ($expected in @('RestorePoint', 'AddRoute', 'RemoveRoute', 'AddPortProxy', 'RemovePortProxy', 'ApplyProfile', 'ManagePackages',
-                                  'OpenThroughputPort', 'CloseThroughputPort', 'ExportDrivers', 'CopyToProfile')) {
+                                  'OpenThroughputPort', 'CloseThroughputPort', 'ExportDrivers', 'CopyToProfile',
+                                  'RecordPerformanceTrace', 'CancelPerformanceTrace')) {
             $names | Should -Contain $expected
         }
 
@@ -5264,6 +5265,172 @@ Describe 'Windows 11 and renewal' {
         $document = Invoke-TkHeadlessReport -Report 'Readiness' | ConvertFrom-Json
         $document.Reports.Readiness.Status                 | Should -Be 'Ok'
         $document.Reports.Readiness.Data.Windows11.Verdict | Should -BeIn @('Ready', 'ReadyAfterChanges', 'NotReady', 'Check', 'NotApplicable')
+    }
+}
+
+Describe 'Performance trace' {
+
+    BeforeAll {
+        # Journaled to a temporary folder, never to the account that runs the tests.
+        $script:TraceDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:TraceDataRoot
+        $script:TkQuietConsole   = $false
+    }
+
+    BeforeEach {
+        # wpr.exe is never started: each call is recorded and answered here.
+        $script:TraceCalls      = New-Object System.Collections.Generic.List[string]
+        $script:TraceElevated   = $true
+        $script:TraceStatusText = 'WPR is not recording'
+        $script:TraceStartCode  = 0
+        $script:TraceStopOk     = $true
+        $script:TraceSlept      = $null
+        $script:TraceFolder     = Join-Path (Join-Path $TestDrive ([guid]::NewGuid().ToString())) 'traces'
+
+        function Test-TkIsElevated { $script:TraceElevated }
+        function Get-TkWprPath { 'C:\Windows\System32\wpr.exe' }
+        function Start-Sleep { param($Seconds) $script:TraceSlept = $Seconds }
+        function Invoke-TkProcess {
+            param($FilePath, [string[]] $ArgumentList, $TimeoutSeconds)
+            $null = $FilePath, $TimeoutSeconds
+            $script:TraceCalls.Add(($ArgumentList -join ' '))
+            $code = 0
+            switch ($ArgumentList[0]) {
+                '-status' { return [pscustomobject] @{ ExitCode = 0; StandardOutput = $script:TraceStatusText; StandardError = '' } }
+                '-start'  { $code = $script:TraceStartCode }
+                '-stop'   { if ($script:TraceStopOk) { [System.IO.File]::WriteAllText($ArgumentList[1], 'etl') } else { $code = 1 } }
+            }
+            [pscustomobject] @{ ExitCode = $code; StandardOutput = ''; StandardError = '' }
+        }
+    }
+
+    It 'offers profiles Windows Performance Recorder knows, with the general one ticked' {
+
+        $known = @('GeneralProfile', 'CPU', 'DiskIO', 'FileIO', 'Registry', 'Network', 'Heap', 'Pool', 'Power', 'GPU')
+
+        foreach ($traceProfile in (Get-TkTraceProfile)) {
+            $known | Should -Contain $traceProfile.Name
+            $traceProfile.Description | Should -Not -BeNullOrEmpty
+        }
+
+        (@(Get-TkTraceProfile | Where-Object { $_.Default }) | ForEach-Object { $_.Name }) -join ',' | Should -Be 'GeneralProfile'
+    }
+
+    It 'accepts only its own profiles, once each, and a bounded duration' {
+
+        $ok = Test-TkTraceRequest -TraceProfile @('cpu', 'GeneralProfile', 'CPU') -Seconds 30
+        $ok.Ok                      | Should -BeTrue
+        ($ok.Profiles -join ',')    | Should -Be 'CPU,GeneralProfile'
+
+        (Test-TkTraceRequest -TraceProfile @('-cancel') -Seconds 30).Ok            | Should -BeFalse
+        (Test-TkTraceRequest -TraceProfile @('CPU -stop C:\x.etl') -Seconds 30).Ok | Should -BeFalse
+        (Test-TkTraceRequest -TraceProfile @() -Seconds 30).Message                | Should -BeLike '*at least one*'
+        (Test-TkTraceRequest -TraceProfile @('CPU') -Seconds 4).Ok                 | Should -BeFalse
+        (Test-TkTraceRequest -TraceProfile @('CPU') -Seconds 301).Ok               | Should -BeFalse
+    }
+
+    It 'starts, waits the time asked and stops into the traces folder' {
+
+        $result = Invoke-TkPerformanceTrace -TraceProfile @('GeneralProfile', 'CPU') -Seconds 30 -Folder $script:TraceFolder -Confirm:$false
+
+        $result.Ok           | Should -BeTrue
+        $result.Path         | Should -BeLike ('{0}\trace-*.etl' -f $script:TraceFolder)
+        $script:TraceSlept   | Should -Be 30
+        [System.IO.File]::Exists($result.Path) | Should -BeTrue
+
+        $script:TraceCalls[0] | Should -Be '-status'
+        $script:TraceCalls[1] | Should -Be '-start GeneralProfile -start CPU -filemode'
+        $script:TraceCalls[2] | Should -Be ('-stop {0} Toolkit performance trace' -f $result.Path)
+        $script:TraceCalls.Count | Should -Be 3
+    }
+
+    It 'cancels a trace it started but could not stop, and never one it did not start' {
+
+        $script:TraceStopOk = $false
+        $failed = Invoke-TkPerformanceTrace -TraceProfile @('CPU') -Seconds 10 -Folder $script:TraceFolder -Confirm:$false
+
+        $failed.Ok               | Should -BeFalse
+        $script:TraceCalls[-1]   | Should -Be '-cancel'
+
+        $script:TraceCalls.Clear()
+        $script:TraceSlept     = $null
+        $script:TraceStopOk    = $true
+        $script:TraceStartCode = 1
+        $notStarted = Invoke-TkPerformanceTrace -TraceProfile @('CPU') -Seconds 10 -Folder $script:TraceFolder -Confirm:$false
+
+        $notStarted.Ok           | Should -BeFalse
+        $notStarted.Message      | Should -BeLike '*did not start*'
+        $script:TraceCalls       | Should -Not -Contain '-cancel'
+        $script:TraceSlept       | Should -BeNullOrEmpty
+    }
+
+    It 'refuses without administrator rights, over a trace already recording, and outside a local traces folder' {
+
+        $script:TraceElevated = $false
+        (Invoke-TkPerformanceTrace -TraceProfile @('CPU') -Seconds 10 -Folder $script:TraceFolder -Confirm:$false).Message | Should -BeLike '*administrator*'
+
+        $script:TraceElevated   = $true
+        $script:TraceStatusText = "WPR is recording`nTime since start: 00:03:12"
+        (Invoke-TkPerformanceTrace -TraceProfile @('CPU') -Seconds 10 -Folder $script:TraceFolder -Confirm:$false).Message | Should -BeLike '*already recording*'
+        $script:TraceCalls -join '|' | Should -Be '-status'
+
+        foreach ($folder in @('\\server\share\traces', 'C:\Temp\other', 'C:\Temp\x\..\traces')) {
+            (Invoke-TkPerformanceTrace -TraceProfile @('CPU') -Seconds 10 -Folder $folder -Confirm:$false).Ok | Should -BeFalse -Because $folder
+        }
+    }
+
+    It 'reads whether a trace is recording, and says so when the answer is not one it knows' {
+
+        (Get-TkTraceStatus).Recording | Should -BeFalse
+
+        $script:TraceStatusText = "WPR is recording`nProfiles: GeneralProfile"
+        (Get-TkTraceStatus).Recording | Should -BeTrue
+
+        $script:TraceStatusText = 'Quelque chose d''autre'
+        (Get-TkTraceStatus).Recording | Should -BeNullOrEmpty
+    }
+
+    It 'cancels a trace left recording only when one is' {
+
+        (Stop-TkPerformanceTrace -Confirm:$false).Message | Should -BeLike '*No trace*'
+        $script:TraceCalls | Should -Not -Contain '-cancel'
+
+        $script:TraceStatusText = 'WPR is recording'
+        (Stop-TkPerformanceTrace -Confirm:$false).Ok | Should -BeTrue
+        $script:TraceCalls[-1] | Should -Be '-cancel'
+    }
+
+    It 'records through the elevated worker the interface calls, checking the request again there' {
+
+        $worker = (@(Get-TkElevatedAction) | Where-Object { $_.Name -eq 'RecordPerformanceTrace' }).Worker
+
+        # The parameters arrive as the elevated child reads them: from JSON.
+        $good = ConvertTo-Json -InputObject @{ Profiles = @('GeneralProfile'); Seconds = 15; Folder = $script:TraceFolder } | ConvertFrom-Json
+        $result = & $worker $good
+
+        $result.Ok               | Should -BeTrue
+        $script:TraceCalls[1]    | Should -Be '-start GeneralProfile -filemode'
+
+        $script:TraceCalls.Clear()
+        $forged = ConvertTo-Json -InputObject @{ Profiles = @('GeneralProfile', '-cancel'); Seconds = 15; Folder = $script:TraceFolder } | ConvertFrom-Json
+        (& $worker $forged).Ok   | Should -BeFalse
+        $script:TraceCalls.Count | Should -Be 0
+    }
+
+    It 'lists the traces kept, the newest first' {
+
+        New-Item -ItemType Directory -Path $script:TraceFolder -Force | Out-Null
+        foreach ($name in @('trace-20260101-100000.etl', 'trace-20260102-100000.etl')) {
+            $path = Join-Path $script:TraceFolder $name
+            [System.IO.File]::WriteAllText($path, 'etl')
+            (Get-Item -LiteralPath $path).LastWriteTime = [datetime]::ParseExact($name.Substring(6, 15), 'yyyyMMdd-HHmmss', $null)
+        }
+
+        (@(Get-TkRecentTrace -Folder $script:TraceFolder) | ForEach-Object { $_.Name }) -join ',' | Should -Be 'trace-20260102-100000.etl,trace-20260101-100000.etl'
     }
 }
 

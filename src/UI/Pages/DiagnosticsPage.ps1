@@ -157,6 +157,7 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Full check';              Show = 'Invoke-TkDiagnosticOverview' }
         [pscustomobject] @{ Title = 'Pending reboot';          Show = 'Show-TkRebootStatus' }
         [pscustomobject] @{ Title = 'Performance';             Show = 'Show-TkPerformanceReport' }
+        [pscustomobject] @{ Title = 'Performance trace';       Show = 'Show-TkPerformanceTraceView' }
         [pscustomobject] @{ Title = 'Crashes';                 Show = 'Show-TkStabilityReport' }
         [pscustomobject] @{ Title = 'Restarts and shutdowns';  Show = 'Show-TkBootHistoryReport' }
         [pscustomobject] @{ Title = 'Services';                Show = 'Show-TkServiceReport' }
@@ -2059,4 +2060,252 @@ function Invoke-TkEventQueryRunFromTools {
     (Get-TkControl -Name 'EventSearchLevel').SelectedItem  = [string] (Get-TkControl -Name 'EventQueryLevel').SelectedItem
 
     Invoke-TkEventSearchFromUi
+}
+
+# The last trace recorded or cancelled from the page, shown above the choices,
+# and the choices themselves, read when Record is clicked. Set through the
+# functions below: a completion handler cannot reach this file's scope.
+$script:TkLastTraceResult = $null
+$script:TkTraceControls   = $null
+
+<#
+.SYNOPSIS
+    Keeps the outcome of the last trace for the trace view.
+#>
+function Set-TkLastTraceResult {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Result
+    )
+
+    $script:TkLastTraceResult = $Result
+}
+
+<#
+.SYNOPSIS
+    Keeps the controls of the trace view, for the Record button.
+#>
+function Set-TkTraceControl {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Control
+    )
+
+    $script:TkTraceControls = $Control
+}
+
+<#
+.SYNOPSIS
+    Shows the performance trace view: whether a trace is recording, what to record, and the traces kept.
+#>
+function Show-TkPerformanceTraceView {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Asking Windows Performance Recorder...' `
+        -ScriptBlock { [pscustomobject] @{ Status = Get-TkTraceStatus; Recent = @(Get-TkRecentTrace) } } `
+        -OnComplete {
+            param($result)
+
+            $read = @($result.Output) | Select-Object -First 1
+            Write-TkPerformanceTraceView -Status $(if ($read) { $read.Status } else { $null }) -Recent $(if ($read) { @($read.Recent) } else { @() })
+        }
+}
+
+<#
+.SYNOPSIS
+    Writes the performance trace view into the report area.
+#>
+function Write-TkPerformanceTraceView {
+    [CmdletBinding()]
+    param(
+        [Parameter()] [AllowNull()] $Status,
+        [Parameter()] [AllowNull()] [object[]] $Recent = @()
+    )
+
+    $document = New-TkFlowDocument
+
+    Add-TkHeading   -Document $document -Text 'Performance trace' -Level 1
+    Add-TkParagraph -Document $document -Muted -Text (
+        'A report says what is slow; a trace shows why. Windows Performance Recorder, built into Windows, records what the machine does for the time chosen into an ETL file, which Windows Performance Analyzer opens (from the Microsoft Store or the Windows ADK) and a vendor''s support asks for. Recording needs administrator rights and stops by itself at the end, even if the toolkit is closed meanwhile. Nothing on the machine changes.'
+    )
+
+    $last = $script:TkLastTraceResult
+
+    if ($last) {
+        Add-TkSeverityLine -Document $document -Severity $(if ($last.Ok) { 'Pass' } else { 'Warning' }) -Heading ([string] $last.Message) `
+            -Note $(if ($last.Ok -and $last.SizeBytes) { 'Size: {0}.' -f (Format-TkBytes -Bytes ([long] $last.SizeBytes)) } else { '' })
+    }
+
+    if (-not $Status -or -not $Status.Available) {
+        Add-TkSeverityLine -Document $document -Severity 'Warning' -Heading 'Windows Performance Recorder is not on this machine' `
+            -Note 'It ships with Windows 10 and 11. On another edition, the Windows ADK installs it.'
+        Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        return
+    }
+
+    if ($Status.Recording -eq $true) {
+        Add-TkSeverityLine -Document $document -Severity 'Warning' -Heading 'A trace is recording' `
+            -Note 'Started by another tool, or left by an interruption. Cancel it before recording a new one.'
+    }
+    elseif ($null -eq $Status.Recording) {
+        Add-TkSeverityLine -Document $document -Severity 'Info' -Heading 'Whether a trace is recording is not known' -Note ([string] $Status.Text)
+    }
+
+    # --- The choices -----------------------------------------------------------
+    $panel        = New-Object System.Windows.Controls.StackPanel
+    $panel.Margin = New-Object System.Windows.Thickness(0, 6, 0, 10)
+
+    $label = {
+        param($text)
+        $block = New-Object System.Windows.Controls.TextBlock
+        $block.Text   = $text
+        $block.Margin = New-Object System.Windows.Thickness(0, 6, 0, 6)
+        $block.SetResourceReference([System.Windows.Controls.TextBlock]::StyleProperty, 'FieldLabel')
+        $block
+    }
+
+    [void] $panel.Children.Add((& $label 'What to record'))
+
+    $boxes = New-Object System.Windows.Controls.WrapPanel
+    $checks = foreach ($traceProfile in (Get-TkTraceProfile)) {
+        $box = New-Object System.Windows.Controls.CheckBox
+        $box.Content   = $traceProfile.Label
+        $box.Tag       = $traceProfile.Name
+        $box.ToolTip   = $traceProfile.Description
+        $box.IsChecked = [bool] $traceProfile.Default
+        $box.Margin    = New-Object System.Windows.Thickness(0, 0, 18, 6)
+        [void] $boxes.Children.Add($box)
+        $box
+    }
+    [void] $panel.Children.Add($boxes)
+
+    [void] $panel.Children.Add((& $label 'For how long'))
+
+    $duration = New-Object System.Windows.Controls.ComboBox
+    $duration.Width = 180
+    $duration.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Left
+
+    foreach ($choice in @(@(15, '15 seconds'), @(30, '30 seconds'), @(60, '1 minute'), @(120, '2 minutes'))) {
+        $item = New-Object System.Windows.Controls.ComboBoxItem
+        $item.Content = $choice[1]
+        $item.Tag     = $choice[0]
+        [void] $duration.Items.Add($item)
+    }
+
+    $duration.SelectedIndex = 1
+    [void] $panel.Children.Add($duration)
+
+    $buttons        = New-Object System.Windows.Controls.WrapPanel
+    $buttons.Margin = New-Object System.Windows.Thickness(0, 12, 0, 0)
+
+    foreach ($spec in @(
+        @{ Text = 'Record';                 Style = 'PrimaryButton'; Tip = 'Asks for administrator rights, records for the time chosen, then writes the trace to the traces folder.'; Click = { Invoke-TkPerformanceTraceFromUi } }
+        @{ Text = 'Cancel a running trace'; Style = '';              Tip = 'Stops a trace left recording, without saving it. Asks for administrator rights.';                     Click = { Stop-TkPerformanceTraceFromUi } }
+        @{ Text = 'Open the traces folder'; Style = '';              Tip = 'The folder the traces are written to, in the toolkit data folder.';                                  Click = { Open-TkTraceFolder } }
+    )) {
+        $button = New-Object System.Windows.Controls.Button
+        $button.Content = $spec.Text
+        $button.ToolTip = $spec.Tip
+        $button.Margin  = New-Object System.Windows.Thickness(0, 0, 8, 6)
+        if ($spec.Style) { $button.SetResourceReference([System.Windows.Controls.Button]::StyleProperty, $spec.Style) }
+        $button.Add_Click($spec.Click)
+        [void] $buttons.Children.Add($button)
+    }
+
+    [void] $panel.Children.Add($buttons)
+    [void] $document.Blocks.Add((New-Object System.Windows.Documents.BlockUIContainer($panel)))
+
+    Set-TkTraceControl -Control ([pscustomobject] @{ Profiles = @($checks); Duration = $duration })
+
+    # --- The traces kept -----------------------------------------------------------
+    $kept = @($Recent | Where-Object { $_ })
+
+    if ($kept.Count -gt 0) {
+        Add-TkHeading -Document $document -Text 'Recorded' -Level 2
+        Add-TkTable -Document $document -Column @('File', 'Size', 'Recorded') -Weight @(2.0, 0.8, 1.2) `
+            -Row @($kept | ForEach-Object { , @($_.Name, (Format-TkBytes -Bytes ([long] $_.SizeBytes)), ([datetime] $_.Recorded).ToString('yyyy-MM-dd HH:mm')) })
+    }
+
+    Add-TkParagraph -Document $document -Muted -Text (
+        'A trace holds the names of the processes, files and network addresses the machine used, and the privacy of exports cannot pseudonymise it: look through it in Windows Performance Analyzer before sending it anywhere.'
+    )
+
+    Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+}
+
+<#
+.SYNOPSIS
+    Records a trace with the choices of the view, through a UAC prompt.
+#>
+function Invoke-TkPerformanceTraceFromUi {
+    [CmdletBinding()]
+    param()
+
+    $controls = $script:TkTraceControls
+
+    if (-not $controls) {
+        return
+    }
+
+    $chosen  = @($controls.Profiles | Where-Object { $_.IsChecked } | ForEach-Object { [string] $_.Tag })
+    $seconds = if ($controls.Duration.SelectedItem) { [int] $controls.Duration.SelectedItem.Tag } else { 30 }
+    $request = Test-TkTraceRequest -TraceProfile $chosen -Seconds $seconds
+
+    if (-not $request.Ok) {
+        Set-TkStatus -Text $request.Message
+        return
+    }
+
+    $labels = @(Get-TkTraceProfile | Where-Object { $request.Profiles -contains $_.Name } | ForEach-Object { $_.Label.ToLowerInvariant() })
+
+    if (-not (Confirm-TkAction -Title 'Record a performance trace' -Message ("Record {0} for {1} seconds with Windows Performance Recorder?`n`nIt needs administrator rights, stops by itself at the end even if the toolkit is closed, and changes nothing on the machine. While it records, use the machine the way the problem shows." -f ($labels -join ', '), $seconds))) {
+        return
+    }
+
+    $status = if (Test-TkIsElevated) { 'Recording for {0} seconds: use the machine the way the problem shows...' -f $seconds }
+              else { 'Waiting for administrator consent, then recording for {0} seconds...' -f $seconds }
+
+    Start-TkPrivilegedAction -Name 'RecordPerformanceTrace' -StatusText $status `
+        -Parameters @{ Profiles = @($request.Profiles); Seconds = $seconds; Folder = (Get-TkTraceFolder) } -OnResult {
+            param($outcome)
+            Set-TkLastTraceResult -Result $outcome
+            Show-TkPerformanceTraceView
+        }
+}
+
+<#
+.SYNOPSIS
+    Cancels a trace left recording, through a UAC prompt.
+#>
+function Stop-TkPerformanceTraceFromUi {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Confirm-TkAction -Title 'Cancel the trace' -Message "Cancel the trace Windows Performance Recorder is recording, without saving it?`n`nThis needs administrator rights.")) {
+        return
+    }
+
+    Start-TkPrivilegedAction -Name 'CancelPerformanceTrace' -StatusText 'Cancelling the trace...' -OnResult {
+        param($outcome)
+        Set-TkLastTraceResult -Result $outcome
+        Show-TkPerformanceTraceView
+    }
+}
+
+<#
+.SYNOPSIS
+    Opens the traces folder, creating it when needed.
+#>
+function Open-TkTraceFolder {
+    [CmdletBinding()]
+    param()
+
+    $folder = Get-TkTraceFolder
+    New-Item -ItemType Directory -Path $folder -Force | Out-Null
+    Start-Process -FilePath 'explorer.exe' -ArgumentList $folder
 }
