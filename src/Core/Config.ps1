@@ -13,7 +13,7 @@
 # Application identity. The build script rewrites Version and Commit at
 # compile time so a running instance can always report what it was built from.
 $script:TkAppName    = 'Toolkit'
-$script:TkAppVersion = '1.0.0'
+$script:TkAppVersion = '1.1.0'
 $script:TkAppCommit  = 'dev'
 $script:TkRepository = 'https://github.com/KyllianFF/Tool-kit'
 

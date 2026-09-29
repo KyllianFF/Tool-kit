@@ -4730,13 +4730,18 @@ Describe 'Update check' {
     Context 'Asking GitHub' {
 
         BeforeEach {
-            $script:UpdateCommitBefore = (Get-TkContext).Commit
-            (Get-TkContext).Commit = '6b3ff73'
+            # The running build is the one the manifest below publishes, at an
+            # older commit, whatever version this copy of the toolkit carries.
+            $script:UpdateCommitBefore  = (Get-TkContext).Commit
+            $script:UpdateVersionBefore = (Get-TkContext).Version
+            (Get-TkContext).Commit  = '6b3ff73'
+            (Get-TkContext).Version = [string] $script:GoodManifest.version
             $script:UpdateCalls = New-Object System.Collections.Generic.List[string]
         }
 
         AfterEach {
-            (Get-TkContext).Commit = $script:UpdateCommitBefore
+            (Get-TkContext).Commit  = $script:UpdateCommitBefore
+            (Get-TkContext).Version = $script:UpdateVersionBefore
         }
 
         It 'reads only the manifest, and reports a newer build' {
