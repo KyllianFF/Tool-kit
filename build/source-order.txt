@@ -77,6 +77,7 @@ src/Features/Diagnostics/ServiceInventory.ps1
 src/Features/Diagnostics/DriverInventory.ps1
 src/Features/Diagnostics/Playbooks.ps1
 src/Features/Diagnostics/HardwareTests.ps1
+src/Features/Diagnostics/PerformanceTrace.ps1
 src/Features/Diagnostics/SupportBundle.ps1
 src/Features/Intervention/Journal.ps1
 src/Features/Reporting/Headless.ps1

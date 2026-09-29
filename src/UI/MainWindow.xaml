@@ -2961,6 +2961,10 @@
                                             <TextBlock Text="Performance" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Records what the processor, disks, files, network or power did for a few seconds with Windows Performance Recorder, into a trace Windows Performance Analyzer opens. Administrator rights; it stops by itself.">
+                                            <TextBlock Text="Performance trace" Style="{StaticResource ChoiceTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Blue screens with their stop code explained and the drivers registered before them, hard resets, and repeated application faults.">
                                             <TextBlock Text="Crashes" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
