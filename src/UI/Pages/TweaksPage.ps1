@@ -127,6 +127,7 @@ function Initialize-TkTweaksPage {
     Register-TkClick -Name 'BtnApplyTweaks'   -Action { Invoke-TkTweakUiAction -Action 'Apply' }
     Register-TkClick -Name 'BtnRevertTweaks'  -Action { Invoke-TkTweakUiAction -Action 'Revert' }
     Register-TkClick -Name 'BtnRefreshTweaks' -Action { Update-TkTweakState }
+    Register-TkClick -Name 'BtnFleetExportTweaks' -Action { Export-TkFleetFromUi }
 
     Update-TkTweakState
 }
@@ -304,4 +305,58 @@ function Invoke-TkTweakUiAction {
 
             Update-TkTweakState
         }
+}
+
+<#
+.SYNOPSIS
+    Writes the ticked tweaks as scripts for the fleet, into a folder picked.
+
+.DESCRIPTION
+    Nothing is applied on this machine: the tweaks become an Intune
+    remediation pair, a standalone script and .reg files, machine and account
+    parts apart, in a dated folder inside the one picked.
+#>
+function Export-TkFleetFromUi {
+    [CmdletBinding()]
+    param()
+
+    $selected = @($script:TkTweakItems | Where-Object { $_.IsSelected })
+
+    if ($selected.Count -eq 0) {
+        Set-TkStatus -Text 'Tick the tweaks to export first.'
+        return
+    }
+
+    $folder = Select-TkFolderPath -Description 'Choose where to write the scripts for the fleet. A dated folder is created inside it.'
+
+    if (-not $folder) {
+        return
+    }
+
+    try {
+        $result = Export-TkFleetPackage -Tweak @($selected | ForEach-Object { $_.Definition }) -Folder $folder -Confirm:$false
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Tweaks' -Message ('The fleet scripts could not be written: {0}' -f $_.Exception.Message)
+        Set-TkStatus -Text 'The fleet scripts could not be written; the log says why.'
+        return
+    }
+
+    $left = @($result.Refused | ForEach-Object { '{0} ({1})' -f $_.Name, $_.Refused })
+
+    if (-not $result.Folder) {
+        Set-TkStatus -Text ('Nothing was written. {0}' -f ($left -join ' '))
+        return
+    }
+
+    Add-TkJournalEntry -Name ('Fleet scripts written for {0} tweak(s)' -f @($result.Exported).Count) -Category 'Report' -Detail $result.Folder
+
+    Set-TkStatus -Text ('{0} tweak(s) written for the fleet to {1}.{2}' -f @($result.Exported).Count, $result.Folder, $(if ($left.Count) { ' Left out: ' + ($left -join '; ') } else { '' }))
+
+    try {
+        Start-Process -FilePath 'explorer.exe' -ArgumentList $result.Folder -ErrorAction Stop
+    }
+    catch {
+        $null = $_
+    }
 }

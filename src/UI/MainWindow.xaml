@@ -2053,6 +2053,8 @@
                                        Text="Every tweak declares both the applied state and the state to restore, so each one can be reverted. A system restore point is created before a batch is applied." />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                            <Button x:Name="BtnFleetExportTweaks" Content="Export for the fleet" Style="{StaticResource GlyphButton}" Tag="&#xEDE1;"
+                                    ToolTip="Write the ticked tweaks as an Intune remediation (detection and remediation), a standalone PowerShell script with -Check and -Revert, and .reg files, the machine and the account parts apart. Nothing is applied on this machine." />
                             <Button x:Name="BtnSaveConfigProfileTweaks" Content="Save profile" Style="{StaticResource GlyphButton}" Tag="&#xE74E;"
                                     ToolTip="Save the applications ticked on Software and the tweaks ticked on Tweaks to a profile file, to tick them again on another machine." />
                             <Button x:Name="BtnLoadConfigProfileTweaks" Content="Load profile" Style="{StaticResource GlyphButton}" Tag="&#xE8E5;" Margin="0"

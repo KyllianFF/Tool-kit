@@ -36,6 +36,7 @@ src/Features/Software/StoreApps.ps1
 src/Features/Software/InstalledApps.ps1
 src/Features/Software/ConfigProfile.ps1
 src/Features/Tweaks/TweakEngine.ps1
+src/Features/Tweaks/FleetExport.ps1
 src/Features/Fixes/SystemFixes.ps1
 src/Features/Fixes/AutoLogon.ps1
 src/Features/Network/SubnetCalculator.ps1
