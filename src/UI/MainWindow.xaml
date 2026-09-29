@@ -2157,7 +2157,9 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0" Padding="4">
+                    <TabControl Grid.Row="1" x:Name="FixesTabs" Background="Transparent" BorderThickness="0">
+                    <TabItem Header="Fixes">
+                    <Border Style="{StaticResource Card}" Margin="0,16,0,0" Padding="4">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ItemsControl x:Name="FixList">
                                 <ItemsControl.ItemTemplate>
@@ -2215,6 +2217,43 @@
                             </ItemsControl>
                         </ScrollViewer>
                     </Border>
+                    </TabItem>
+
+                    <TabItem Header="Verified plan">
+                        <Grid Margin="0,16,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                               Text="Proves whether fixes worked: the reports that show the problem are read, the fixes ticked run one after the other, and the same reports are read again, report by report better, the same or worse. Each fix names the reports that show its effect; one that names none runs, unverified. The verdict goes into the journal and the intervention report." />
+                                    <WrapPanel x:Name="PlanFixList" Margin="0,0,0,6" />
+                                    <WrapPanel Margin="0,4,0,0">
+                                        <CheckBox x:Name="PlanRestorePoint" Content="Create a restore point first" IsChecked="True" Margin="0,0,20,8"
+                                                  ToolTip="A fix has no revert of its own: the restore point is the way back when the plan makes things worse. Windows makes one a day at most." />
+                                        <CheckBox x:Name="PlanStopOnFailure" Content="Stop at the first fix that fails" IsChecked="True" Margin="0,0,20,8" />
+                                        <Button x:Name="BtnPlanRun" Content="Run the plan" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE768;" Margin="0,0,8,8" />
+                                        <Button x:Name="BtnPlanStop" Content="Stop after this step" Style="{StaticResource GlyphButton}" Tag="&#xE71A;" Margin="0,0,8,8" />
+                                        <Button x:Name="BtnPlanRestore" Content="Open System Restore" Style="{StaticResource GlyphButton}" Tag="&#xE777;" Margin="0,0,0,8"
+                                                ToolTip="Windows System Restore, to go back to the restore point taken before the plan." />
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                <RichTextBox x:Name="PlanOutput" IsReadOnly="True"
+                                             BorderThickness="0" Background="Transparent"
+                                             Foreground="{DynamicResource TextPrimary}"
+                                             VerticalScrollBarVisibility="Auto"
+                                             HorizontalScrollBarVisibility="Disabled"
+                                             IsDocumentEnabled="True" />
+                            </Border>
+                        </Grid>
+                    </TabItem>
+                    </TabControl>
                 </Grid>
 
                 <!-- ========================= NETWORK ========================= -->

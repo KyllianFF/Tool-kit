@@ -39,6 +39,7 @@ src/Features/Tweaks/TweakEngine.ps1
 src/Features/Tweaks/FleetExport.ps1
 src/Features/Fixes/SystemFixes.ps1
 src/Features/Fixes/AutoLogon.ps1
+src/Features/Fixes/VerifiedPlan.ps1
 src/Features/Network/SubnetCalculator.ps1
 src/Features/Network/IPv6Calculator.ps1
 src/Features/Network/NetworkTools.ps1
@@ -119,6 +120,7 @@ src/Features/Tools/HttpHeaders.ps1
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1
 src/UI/Window.ps1
+src/UI/ActionQueue.ps1
 src/UI/RichText.ps1
 src/UI/Search.ps1
 src/UI/Pages/DashboardPage.ps1
