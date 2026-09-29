@@ -624,7 +624,7 @@ Describe 'Headless reports' {
         # removed or renamed, or changed type or meaning. It changes here, in
         # Get-TkHeadlessReport and in docs/REPORT-FORMAT.md together.
         $expected = 'Dashboard=1,Inventory=1,Network=1,Reboot=1,Storage=1,Performance=1,Devices=1,Crashes=1,Duplicates=1,Path=1,' +
-                    'Restarts=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Journal=1,Audit=1'
+                    'Restarts=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Readiness=1,Journal=1,Audit=1'
 
         (@(Get-TkHeadlessReport | ForEach-Object { '{0}={1}' -f $_.Name, $_.Version })) -join ',' | Should -Be $expected
 
@@ -5112,6 +5112,158 @@ Describe 'Chained journal' {
         $document.Reports.Journal.Status     | Should -Be 'Ok'
         $document.Reports.Journal.Data.Valid | Should -BeTrue
         $document.Reports.Journal.Worst      | Should -Be 'Pass'
+    }
+}
+
+Describe 'Windows 11 and renewal' {
+
+    BeforeAll {
+        # Journaled to a temporary folder, never to the account that runs the tests.
+        $script:ReadinessDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+
+        # A machine described by hand: a recent, supported one to change a field at a time.
+        function New-ReadinessFacts {
+            param([hashtable] $Change = @{})
+            $facts = [pscustomobject] @{
+                Processor     = [pscustomobject] @{ Name = 'Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz'; Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 142 Stepping 12'; Cores = 4; ClockMHz = 2112; Architecture = 'x64' }
+                MemoryBytes   = 16GB
+                Is64BitOs     = $true
+                Firmware      = 'UEFI'
+                SecureBoot    = $true
+                Tpm           = '2.0'
+                SystemDisk    = [pscustomobject] @{ SizeBytes = 512GB; PartitionStyle = 'GPT'; MediaType = 'SSD'; BusType = 'NVMe'; Health = 'Healthy'; WearPercent = 12 }
+                FirmwareDate  = [datetime]::new(2020, 3, 1)
+                BatteryHealth = 87
+                Os            = [pscustomobject] @{ Caption = 'Microsoft Windows 10 Pro'; Build = 19045; Server = $false }
+            }
+            foreach ($key in $Change.Keys) {
+                $target = $facts
+                $parts  = $key -split '\.'
+                for ($i = 0; $i -lt $parts.Count - 1; $i++) { $target = $target.($parts[$i]) }
+                $target.($parts[-1]) = $Change[$key]
+            }
+            $facts
+        }
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:ReadinessDataRoot
+        $script:TkQuietConsole   = $false
+    }
+
+    It 'judges <Name> as <Verdict>' -TestCases @(
+        @{ Name = '13th Gen Intel(R) Core(TM) i9-13900K';            Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 183 Stepping 1';  Verdict = 'Supported' }
+        @{ Name = 'Intel(R) Core(TM) Ultra 7 155H';                  Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 170 Stepping 4';  Verdict = 'Supported' }
+        @{ Name = 'Intel(R) Core(TM) i5-7200U CPU @ 2.50GHz';        Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 142 Stepping 9';  Verdict = 'NotSupported' }
+        @{ Name = 'Intel(R) Core(TM) i5-8200Y CPU @ 1.30GHz';        Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 142 Stepping 9';  Verdict = 'Supported' }
+        @{ Name = 'Intel(R) Core(TM) i7-8809G CPU @ 3.10GHz';        Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 158 Stepping 9';  Verdict = 'Supported' }
+        @{ Name = 'Intel(R) Core(TM) i7-7820HQ CPU @ 2.90GHz';       Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 158 Stepping 9';  Verdict = 'Unknown' }
+        @{ Name = 'Intel(R) Core(TM) i7-7820X CPU @ 3.60GHz';        Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 85 Stepping 4';   Verdict = 'Supported' }
+        @{ Name = 'Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz';        Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 60 Stepping 3';   Verdict = 'NotSupported' }
+        @{ Name = 'Intel(R) Core(TM) m3-7Y30 CPU @ 1.00GHz';         Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 142 Stepping 9';  Verdict = 'NotSupported' }
+        @{ Name = 'Intel(R) Pentium(R) CPU G4560 @ 3.50GHz';         Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 158 Stepping 9';  Verdict = 'NotSupported' }
+        @{ Name = 'Intel(R) Pentium(R) Gold G5400 CPU @ 3.70GHz';    Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 158 Stepping 11'; Verdict = 'Supported' }
+        @{ Name = 'Intel(R) Celeron(R) N4000 CPU @ 1.10GHz';         Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 122 Stepping 1';  Verdict = 'Supported' }
+        @{ Name = 'Intel(R) Celeron(R) CPU N3350 @ 1.10GHz';         Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 92 Stepping 9';   Verdict = 'NotSupported' }
+        @{ Name = 'Intel(R) Xeon(R) Gold 6130 CPU @ 2.10GHz';        Vendor = 'GenuineIntel'; Identifier = 'Intel64 Family 6 Model 85 Stepping 4';   Verdict = 'Supported' }
+        @{ Name = 'AMD Ryzen 5 1600 Six-Core Processor';             Vendor = 'AuthenticAMD'; Identifier = 'AMD64 Family 23 Model 1 Stepping 1';     Verdict = 'NotSupported' }
+        @{ Name = 'AMD Ryzen 5 2400G with Radeon Vega Graphics';     Vendor = 'AuthenticAMD'; Identifier = 'AMD64 Family 23 Model 17 Stepping 0';    Verdict = 'NotSupported' }
+        @{ Name = 'AMD Ryzen 7 2700X Eight-Core Processor';          Vendor = 'AuthenticAMD'; Identifier = 'AMD64 Family 23 Model 8 Stepping 2';     Verdict = 'Supported' }
+        @{ Name = 'AMD Ryzen 5 5600X 6-Core Processor';              Vendor = 'AuthenticAMD'; Identifier = 'AMD64 Family 25 Model 33 Stepping 0';    Verdict = 'Supported' }
+        @{ Name = 'AMD FX(tm)-8350 Eight-Core Processor';            Vendor = 'AuthenticAMD'; Identifier = 'AMD64 Family 21 Model 2 Stepping 0';     Verdict = 'NotSupported' }
+        @{ Name = 'Snapdragon (TM) 835 @ 2.21 GHz';                  Vendor = 'Qualcomm Technologies Inc'; Identifier = 'ARMv8 (64-bit) Family 8 Model 801 Revision A14'; Verdict = 'NotSupported' }
+        @{ Name = 'Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU'; Vendor = 'Qualcomm Technologies Inc'; Identifier = 'ARMv8 (64-bit) Family 8 Model 1 Revision 201'; Verdict = 'Supported' }
+        @{ Name = 'VIA Nano X2 L4350';                               Vendor = 'CentaurHauls'; Identifier = 'x86 Family 6 Model 15 Stepping 12';      Verdict = 'Unknown' }
+    ) {
+        param($Name, $Vendor, $Identifier, $Verdict)
+
+        (Get-TkProcessorSupport -Vendor $Vendor -Identifier $Identifier -Name $Name).Verdict | Should -Be $Verdict
+    }
+
+    It 'keeps every processor rule readable: a verdict it knows and a reason' {
+
+        $catalog = Import-TkCatalog -Name 'processor-support'
+
+        $catalog.reviewed | Should -Match '^\d{4}-\d{2}$'
+        foreach ($rule in @($catalog.rules)) {
+            $rule.verdict | Should -BeIn @('Supported', 'NotSupported', 'Unknown')
+            $rule.reason  | Should -Not -BeNullOrEmpty
+            $rule.vendor  | Should -Not -BeNullOrEmpty
+            if ($rule.name) { { [regex]::new([string] $rule.name) } | Should -Not -Throw }
+        }
+    }
+
+    It 'says a recent machine is ready, to keep, and that Windows 10 is out of support' {
+
+        $result = Get-TkHardwareReadiness -Facts (New-ReadinessFacts) -Now ([datetime]::new(2026, 9, 29))
+
+        $result.Windows11.Verdict | Should -Be 'Ready'
+        $result.Windows11.Summary | Should -BeLike '*14 October 2025*'
+        $result.Renewal.Verdict   | Should -Be 'Keep'
+        $result.AgeYears          | Should -Be 6
+        @($result.Checks | Where-Object { $_.Severity -in @('Warning', 'Fail') }).Count | Should -Be 0
+    }
+
+    It 'tells what a firmware setting or a part changes from what only new hardware does' {
+
+        $facts  = New-ReadinessFacts -Change @{ Tpm = 'None'; Firmware = 'Legacy'; 'SystemDisk.PartitionStyle' = 'MBR'; 'SystemDisk.MediaType' = 'HDD'; 'SystemDisk.WearPercent' = $null; MemoryBytes = 4GB; BatteryHealth = 45 }
+        $result = Get-TkHardwareReadiness -Facts $facts
+
+        $result.Windows11.Verdict | Should -Be 'ReadyAfterChanges'
+        $result.Windows11.Summary | Should -BeLike '*firmware*tpm*'
+        $result.Renewal.Verdict   | Should -Be 'Upgrade'
+
+        $actions = $result.Renewal.Actions -join ' | '
+        $actions | Should -Match 'mbr2gpt'
+        $actions | Should -Match 'PTT'
+        $actions | Should -Match 'SSD in place of the hard disk'
+        $actions | Should -Match 'Add memory'
+        $actions | Should -Match 'Replace the battery'
+    }
+
+    It 'advises replacing a machine whose processor Windows 11 does not support' {
+
+        $facts  = New-ReadinessFacts -Change @{ 'Processor.Name' = 'Intel(R) Core(TM) i5-7200U CPU @ 2.50GHz'; 'Processor.Identifier' = 'Intel64 Family 6 Model 142 Stepping 9' }
+        $result = Get-TkHardwareReadiness -Facts $facts
+
+        $result.Windows11.Verdict | Should -Be 'NotReady'
+        $result.Renewal.Verdict   | Should -Be 'Replace'
+        ($result.Checks | Where-Object { $_.Check -eq 'Processor' }).Fixable | Should -BeFalse
+
+        # Already on Windows 11 all the same.
+        $facts.Os.Build = 26100
+        (Get-TkHardwareReadiness -Facts $facts).Windows11.Summary | Should -BeLike '*runs Windows 11 all the same*'
+    }
+
+    It 'says what it could not read, rather than guessing, and leaves Windows Server out' {
+
+        $facts  = New-ReadinessFacts -Change @{ 'Processor.Vendor' = 'CentaurHauls'; 'Processor.Name' = 'VIA Nano'; Tpm = ''; SecureBoot = $null; FirmwareDate = $null; BatteryHealth = $null }
+        $result = Get-TkHardwareReadiness -Facts $facts
+
+        $result.Windows11.Verdict | Should -Be 'Check'
+        $result.AgeYears          | Should -BeNullOrEmpty
+        ($result.Checks | Where-Object { $_.Check -eq 'TPM' }).Value | Should -Be 'Not known'
+
+        $server = New-ReadinessFacts -Change @{ 'Os.Server' = $true; 'Processor.Identifier' = 'Intel64 Family 6 Model 60 Stepping 3'; 'Processor.Name' = 'Intel(R) Xeon(R) CPU E3-1231 v3' }
+        $judged = Get-TkHardwareReadiness -Facts $server
+        $judged.Windows11.Verdict | Should -Be 'NotApplicable'
+        $judged.Renewal.Verdict   | Should -Not -Be 'Replace'
+    }
+
+    It 'reads this machine without administrator rights, and as a headless report' {
+
+        $facts = Get-TkHardwareFacts
+
+        $facts.Processor.Name       | Should -Not -BeNullOrEmpty
+        $facts.Processor.Identifier | Should -Match 'Family \d+'
+        $facts.MemoryBytes          | Should -BeGreaterThan 0
+        $facts.Firmware             | Should -BeIn @('UEFI', 'Legacy', '')
+        $facts.Tpm                  | Should -BeIn @('2.0', '1.2', 'None', '')
+
+        $document = Invoke-TkHeadlessReport -Report 'Readiness' | ConvertFrom-Json
+        $document.Reports.Readiness.Status                 | Should -Be 'Ok'
+        $document.Reports.Readiness.Data.Windows11.Verdict | Should -BeIn @('Ready', 'ReadyAfterChanges', 'NotReady', 'Check', 'NotApplicable')
     }
 }
 

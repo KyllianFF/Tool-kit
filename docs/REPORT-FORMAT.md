@@ -113,6 +113,7 @@ Each entry of `Reports`:
 | Printing | 1 | no | A list of spooler, printer, port, driver and queue rows. |
 | Profiles | 1 | no | A list of profile, mapped drive and logon rows. |
 | Lifecycle | 1 | no | An object: `Reviewed`, `Windows`, `Programs`, `InstalledCount`. |
+| Readiness | 1 | no | An object: `Windows11` (`Verdict`: Ready, ReadyAfterChanges, NotReady, Check or NotApplicable; `Summary`), `Renewal` (`Verdict`: Keep, Upgrade or Replace; `Summary`; `Actions`), `AgeYears`, `Processor` (`Verdict`, `Reason`, `Family`, `Model`, `Stepping`), `Checks` (each with `Area`, `Check`, `Value`, `Requirement`, `Severity`, `Fix`, `Fixable`) and `Facts`. |
 | Journal | 1 | no | An object: `Severity`, `Valid`, `Entries`, `Chained`, `Unchained`, `Trimmed`, `Head`, `First`, `Last`, `Breaks` (each with `File`, `Line`, `Time`, `Name`, `Problem`). |
 | Audit | 1 | yes | An object: `Level`, `ExcludedAccount`, `Score`, `Findings`. |
 

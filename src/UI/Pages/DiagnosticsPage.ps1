@@ -160,6 +160,7 @@ function Get-TkDiagnosticReport {
         [pscustomobject] @{ Title = 'Crashes';                 Show = 'Show-TkStabilityReport' }
         [pscustomobject] @{ Title = 'Restarts and shutdowns';  Show = 'Show-TkBootHistoryReport' }
         [pscustomobject] @{ Title = 'Services';                Show = 'Show-TkServiceReport' }
+        [pscustomobject] @{ Title = 'Windows 11 and renewal';  Show = 'Show-TkHardwareReadinessReport' }
         [pscustomobject] @{ Title = 'Devices';                 Show = 'Show-TkDeviceReport' }
         [pscustomobject] @{ Title = 'Drivers';                 Show = 'Show-TkDriverReport' }
         [pscustomobject] @{ Title = 'Printing';                Show = 'Show-TkPrintingReport' }
@@ -1414,6 +1415,75 @@ function Add-TkLifecycleLine {
 
     Add-TkSeverityLine -Document $Document -Severity $Row.Severity -Heading $Row.Title `
         -Detail (Format-TkLifecycleDetail -Row $Row) -Note ($note -join ' ') -RemediationId $remediation
+}
+
+<#
+.SYNOPSIS
+    Shows whether this machine can run Windows 11, and whether to keep, upgrade or replace it.
+#>
+function Show-TkHardwareReadinessReport {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Reading the processor, firmware, TPM, disk and battery...' `
+        -ScriptBlock { Get-TkHardwareReadinessReport } `
+        -OnComplete {
+            param($result)
+
+            $report = @($result.Output) | Select-Object -First 1
+
+            if (-not $report) {
+                return
+            }
+
+            Set-TkLastDiagnostic -Name 'windows-11-and-renewal' -Data $report
+
+            $eleven = @{
+                Ready             = @('Pass', 'Ready for Windows 11')
+                ReadyAfterChanges = @('Warning', 'Ready for Windows 11 once a few things are changed')
+                Check             = @('Warning', 'Windows 11: the processor needs checking')
+                NotReady          = @('Fail', 'Not ready for Windows 11')
+                NotApplicable     = @('Info', 'Windows 11 does not apply')
+            }[[string] $report.Windows11.Verdict]
+
+            $renewal = @{
+                Keep    = @('Pass', 'Keep it')
+                Upgrade = @('Warning', 'Keep it and upgrade it')
+                Replace = @('Fail', 'Replace it')
+            }[[string] $report.Renewal.Verdict]
+
+            $document = New-TkFlowDocument
+
+            Add-TkHeading   -Document $document -Text 'Windows 11 and renewal' -Level 1
+            Add-TkParagraph -Document $document -Muted -Text (
+                'Read without administrator rights. What a setting in the firmware or a part can change is told apart from what only new hardware can: a TPM switched off or a legacy BIOS boot is a setting, an unsupported processor is a replacement.'
+            )
+
+            Add-TkSeverityLine -Document $document -Severity $eleven[0] -Heading $eleven[1] -Note $report.Windows11.Summary
+            Add-TkSeverityLine -Document $document -Severity $renewal[0] -Heading $renewal[1] -Note $report.Renewal.Summary
+
+            foreach ($area in @('Windows 11', 'Renewal')) {
+
+                Add-TkHeading -Document $document -Text $area -Level 2
+
+                $rows = @($report.Checks | Where-Object { $_.Area -eq $area })
+
+                if ($area -eq 'Renewal' -and @($rows | Where-Object { $_.Severity -in @('Warning', 'Fail') }).Count -eq 0) {
+                    Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'Memory, system disk and battery need no change'
+                }
+
+                foreach ($check in $rows) {
+                    Add-TkSeverityLine -Document $document -Severity $check.Severity -Heading ('{0}: {1}' -f $check.Check, $check.Value) `
+                        -Detail $(if ($check.Requirement) { 'Wanted: {0}' -f $check.Requirement } else { '' }) -Note $check.Fix
+                }
+            }
+
+            Add-TkParagraph -Document $document -Muted -Text (
+                'The processor is judged by its CPUID family, model and stepping ({0}), with the rules of Microsoft''s own readiness check and the exceptions its lists name. The endurance of an SSD is read in an elevated session only.' -f $(if ($report.Processor.Family) { 'family {0}, model {1}, stepping {2}' -f $report.Processor.Family, $report.Processor.Model, $report.Processor.Stepping } else { 'not readable here' })
+            )
+
+            Set-TkDocument -ControlName 'DiagnosticsOutput' -Document $document
+        }
 }
 
 <#
