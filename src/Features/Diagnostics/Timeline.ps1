@@ -210,11 +210,18 @@ function ConvertFrom-TkTimelineEvent {
         $null = $_
     }
 
+    # Added one by one: a pipeline would unroll a binary value into its
+    # bytes and move every value after it.
+    $values = New-Object System.Collections.Generic.List[object]
+    foreach ($property in @($Record.Properties)) {
+        $values.Add($property.Value)
+    }
+
     return [pscustomobject] @{
         Id    = [int] $Record.Id
         Time  = $Record.TimeCreated
         Field = $field
-        Value = @($Record.Properties | ForEach-Object { $_.Value })
+        Value = $values.ToArray()
     }
 }
 

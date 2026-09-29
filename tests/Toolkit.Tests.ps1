@@ -5540,10 +5540,19 @@ Describe 'Timeline of changes' {
         $record = Get-WinEvent -LogName 'System' -MaxEvents 1
 
         $read = ConvertFrom-TkTimelineEvent -Record $record
-        $read.Id         | Should -Be $record.Id
-        $read.Time       | Should -BeOfType [datetime]
-        $read.Field      | Should -BeOfType [hashtable]
-        @($read.Value).Count | Should -Be @($record.Properties).Count
+        $read.Id          | Should -Be $record.Id
+        $read.Time        | Should -BeOfType [datetime]
+        $read.Field       | Should -BeOfType [hashtable]
+        $read.Value.Count | Should -Be @($record.Properties).Count
+
+        # A binary value stays one value, and the values after it keep their place.
+        $binary = [pscustomobject] @{
+            Id = 1033; TimeCreated = Get-Date; Properties = @([pscustomobject] @{ Value = [byte[]] (1..20) }, [pscustomobject] @{ Value = 'second' })
+        } | Add-Member -MemberType ScriptMethod -Name ToXml -Value { '<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><EventData><Data>x</Data></EventData></Event>' } -PassThru
+
+        $shaped = ConvertFrom-TkTimelineEvent -Record $binary
+        $shaped.Value.Count | Should -Be 2
+        $shaped.Value[1]    | Should -Be 'second'
     }
 
     It 'reads the timeline of this machine, saying which sources it could not read' {
