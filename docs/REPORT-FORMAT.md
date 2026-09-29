@@ -113,6 +113,7 @@ Each entry of `Reports`:
 | Printing | 1 | no | A list of spooler, printer, port, driver and queue rows. |
 | Profiles | 1 | no | A list of profile, mapped drive and logon rows. |
 | Lifecycle | 1 | no | An object: `Reviewed`, `Windows`, `Programs`, `InstalledCount`. |
+| Journal | 1 | no | An object: `Severity`, `Valid`, `Entries`, `Chained`, `Unchained`, `Trimmed`, `Head`, `First`, `Last`, `Breaks` (each with `File`, `Line`, `Time`, `Name`, `Problem`). |
 | Audit | 1 | yes | An object: `Level`, `ExcludedAccount`, `Score`, `Findings`. |
 
 `-Report List` writes an array of `Name`, `Version`, `Elevated` and

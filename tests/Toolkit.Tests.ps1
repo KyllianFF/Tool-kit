@@ -624,7 +624,7 @@ Describe 'Headless reports' {
         # removed or renamed, or changed type or meaning. It changes here, in
         # Get-TkHeadlessReport and in docs/REPORT-FORMAT.md together.
         $expected = 'Dashboard=1,Inventory=1,Network=1,Reboot=1,Storage=1,Performance=1,Devices=1,Crashes=1,Duplicates=1,Path=1,' +
-                    'Restarts=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Audit=1'
+                    'Restarts=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Journal=1,Audit=1'
 
         (@(Get-TkHeadlessReport | ForEach-Object { '{0}={1}' -f $_.Name, $_.Version })) -join ',' | Should -Be $expected
 
@@ -4918,6 +4918,200 @@ Describe 'Intervention journal' {
             $html | Should -Match 'No operation was run through the toolkit'
             $html | Should -Not -Match 'Security audit</h2>'
         }
+    }
+}
+
+Describe 'Chained journal' {
+
+    BeforeAll {
+        # Written to temporary folders, never to the journal of the account
+        # that runs the tests.
+        $script:ChainDataRoot = (Get-TkContext).DataRoot
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:ChainDataRoot
+        $script:TkQuietConsole   = $false
+    }
+
+    BeforeEach {
+        # A journal of its own for every test.
+        (Get-TkContext).DataRoot = Join-Path $TestDrive ([guid]::NewGuid().ToString())
+        $script:ChainFolder = Get-TkJournalFolder
+        $script:ChainToday  = Join-Path $script:ChainFolder ('journal-{0}.jsonl' -f (Get-Date -Format 'yyyyMMdd'))
+    }
+
+    It 'links every line to the one before it, across the days' {
+
+        $script:ChainFolder | Should -BeLike ('{0}*' -f $TestDrive)
+
+        # Yesterday's file, as that day left it.
+        $old = New-TkJournalEntry -Name 'Earlier' -Category 'Fixes' | ConvertTo-Json -Compress
+        [System.IO.File]::WriteAllText((Join-Path $script:ChainFolder ('journal-{0}.jsonl' -f (Get-Date).AddDays(-1).ToString('yyyyMMdd'))), $old + [Environment]::NewLine)
+
+        Add-TkJournalEntry -Name 'First today' -Category 'Fixes'
+        Add-TkJournalEntry -Name 'Second today' -Category 'Audit' -Success $false
+
+        $today = @([System.IO.File]::ReadAllLines($script:ChainToday))
+
+        ($today[0] | ConvertFrom-Json).Previous | Should -Be (Get-TkJournalLineHash -Line $old)
+        ($today[1] | ConvertFrom-Json).Previous | Should -Be (Get-TkJournalLineHash -Line $today[0])
+
+        $check = Test-TkJournalChain
+
+        $check.Valid    | Should -BeTrue
+        $check.Severity | Should -Be 'Pass'
+        $check.Entries  | Should -Be 3
+        $check.Chained  | Should -Be 3
+        $check.Head     | Should -Be (Get-TkJournalLineHash -Line $today[1])
+        $check.Head     | Should -Match '^[0-9a-f]{64}$'
+    }
+
+    It 'finds a line changed, removed, added or cut short since it was written' {
+
+        foreach ($number in 1..4) {
+            Add-TkJournalEntry -Name ('Operation {0}' -f $number) -Category 'Fixes'
+        }
+
+        $lines = [string[]] [System.IO.File]::ReadAllLines($script:ChainToday)
+
+        # Changed: the outcome of the second operation rewritten.
+        [System.IO.File]::WriteAllLines($script:ChainToday, [string[]] @($lines[0], ($lines[1] -replace '"Outcome":"Done"', '"Outcome":"Failed"'), $lines[2], $lines[3]))
+        $check = Test-TkJournalChain
+
+        $check.Valid           | Should -BeFalse
+        $check.Severity        | Should -Be 'Fail'
+        @($check.Breaks).Count | Should -Be 1
+        $check.Breaks[0].Line  | Should -Be 3
+        $check.Breaks[0].Name  | Should -Be 'Operation 3'
+        $check.Breaks[0].Problem | Should -BeLike '*changed or removed*'
+
+        # Removed: the second operation gone.
+        [System.IO.File]::WriteAllLines($script:ChainToday, [string[]] @($lines[0], $lines[2], $lines[3]))
+        (Test-TkJournalChain).Breaks[0].Name | Should -Be 'Operation 3'
+
+        # Added: a line without a link slipped in, which also unlinks the next one.
+        $forged = '{"Time":"2026-09-28T10:00:00.0000000+02:00","Name":"Nothing to see","Outcome":"Done"}'
+        [System.IO.File]::WriteAllLines($script:ChainToday, [string[]] @($lines[0], $lines[1], $forged, $lines[2], $lines[3]))
+        $breaks = @((Test-TkJournalChain).Breaks)
+
+        $breaks.Count      | Should -Be 2
+        $breaks[0].Problem | Should -BeLike '*added*'
+
+        # Cut short.
+        [System.IO.File]::WriteAllLines($script:ChainToday, [string[]] @($lines[0], $lines[1].Substring(0, 30), $lines[2], $lines[3]))
+        (Test-TkJournalChain).Breaks[0].Problem | Should -BeLike '*not a journal entry*'
+
+        # Put back as written: intact again.
+        [System.IO.File]::WriteAllLines($script:ChainToday, $lines)
+        (Test-TkJournalChain).Valid | Should -BeTrue
+    }
+
+    It 'counts the lines written before the chain apart, and checks from the first day kept' {
+
+        $legacy = [string[]] @(
+            '{"Time":"2026-09-27T09:00:00.0000000+02:00","Name":"Old one","Outcome":"Done"}'
+            '{"Time":"2026-09-27T09:05:00.0000000+02:00","Name":"Old two","Outcome":"Done"}'
+        )
+
+        [System.IO.File]::WriteAllLines($script:ChainToday, $legacy)
+        Add-TkJournalEntry -Name 'Linked' -Category 'Fixes'
+
+        $check = Test-TkJournalChain
+        $check.Valid     | Should -BeTrue
+        $check.Unchained | Should -Be 2
+        $check.Chained   | Should -Be 1
+
+        # Three days; the oldest removed as a clean-up does, then a day in the middle.
+        Remove-Item -LiteralPath $script:ChainToday
+        $one   = New-TkJournalEntry -Name 'Day one' -Category 'Fixes' | ConvertTo-Json -Compress
+        $two   = New-TkJournalEntry -Name 'Day two' -Category 'Fixes' -Previous (Get-TkJournalLineHash -Line $one) | ConvertTo-Json -Compress
+        $three = New-TkJournalEntry -Name 'Day three' -Category 'Fixes' -Previous (Get-TkJournalLineHash -Line $two) | ConvertTo-Json -Compress
+
+        foreach ($day in @(@('20260101', $one), @('20260102', $two), @('20260103', $three))) {
+            [System.IO.File]::WriteAllText((Join-Path $script:ChainFolder ('journal-{0}.jsonl' -f $day[0])), $day[1] + [Environment]::NewLine)
+        }
+
+        (Test-TkJournalChain).Valid | Should -BeTrue
+
+        Remove-Item -LiteralPath (Join-Path $script:ChainFolder 'journal-20260101.jsonl')
+        $trimmed = Test-TkJournalChain
+        $trimmed.Valid   | Should -BeTrue
+        $trimmed.Trimmed | Should -BeTrue
+
+        [System.IO.File]::WriteAllText((Join-Path $script:ChainFolder 'journal-20260101.jsonl'), $one + [Environment]::NewLine)
+        Remove-Item -LiteralPath (Join-Path $script:ChainFolder 'journal-20260102.jsonl')
+        $gap = Test-TkJournalChain
+        $gap.Valid           | Should -BeFalse
+        $gap.Breaks[0].File  | Should -Be 'journal-20260103.jsonl'
+    }
+
+    It 'writes an entry as a CEF event, escaped as the format asks' {
+
+        $entry = [pscustomobject] @{
+            Time = '2026-09-28T10:00:00.0000000+00:00'; Session = 's-1'; Computer = 'PC-01'; User = 'CONTOSO\jdupont'
+            Category = 'Fixes'; Kind = 'Change'; Name = 'Reset | the = spooler'; Outcome = 'Failed'; DurationMs = 42
+            Detail = "line one`nline=two"; Previous = 'abc'
+        }
+
+        ConvertTo-TkCefEvent -Entry $entry -Hash 'def' -Version '1.0.0' | Should -BeExactly (
+            'CEF:0|Toolkit|Toolkit|1.0.0|Fixes|Reset \| the = spooler|7|rt=1790589600000 shost=PC-01 suser=CONTOSO\\jdupont cat=Fixes outcome=Failed ' +
+            'cn1Label=DurationMs cn1=42 cs1Label=Session cs1=s-1 cs2Label=Kind cs2=Change cs3Label=Detail cs3=line one\nline\=two cs4Label=Previous cs4=abc cs5Label=Hash cs5=def')
+
+        $entry.Name    = 'Reset the spooler'
+        $entry.Outcome = 'Done'
+        (ConvertTo-TkCefEvent -Entry $entry -Version '1.0.0').Split('|')[6] | Should -Be '5'
+        $entry.Kind = 'Check'
+        (ConvertTo-TkCefEvent -Entry $entry -Version '1.0.0').Split('|')[6] | Should -Be '3'
+    }
+
+    It 'exports the period as the lines themselves, or as CEF' {
+
+        Add-TkJournalEntry -Name 'One' -Category 'Fixes'
+        Add-TkJournalEntry -Name 'Two' -Category 'Audit'
+
+        $jsonl = Join-Path $TestDrive ('export-{0}.jsonl' -f [guid]::NewGuid())
+        Export-TkJournal -Path $jsonl -Format Jsonl -Confirm:$false | Should -Be 2
+        [System.IO.File]::ReadAllLines($jsonl) | Should -Be ([System.IO.File]::ReadAllLines($script:ChainToday))
+
+        $cef = Join-Path $TestDrive ('export-{0}.cef' -f [guid]::NewGuid())
+        Export-TkJournal -Path $cef -Format Cef -Confirm:$false | Should -Be 2
+        @([System.IO.File]::ReadAllLines($cef) | Where-Object { $_ -like 'CEF:0|Toolkit|Toolkit|*' }).Count | Should -Be 2
+
+        Export-TkJournal -Path $jsonl -Session 'another session' -Confirm:$false | Should -Be 0
+        Export-TkJournal -Path $jsonl -Since (Get-Date).AddMinutes(5) -Confirm:$false | Should -Be 0
+    }
+
+    It 'records the head of the chain in the intervention report, and a break when there is one' {
+
+        Add-TkJournalEntry -Name 'Something done' -Category 'Fixes'
+        Add-TkJournalEntry -Name 'Something else' -Category 'Fixes'
+
+        $report = [pscustomobject] @{
+            Computer = 'PC-01'; GeneratedAt = Get-Date; Technician = 't'; Ticket = ''; Notes = ''; Period = 'Today'; Toolkit = 'Toolkit'
+            Identity = $null; OS = $null; Tiles = @(); Audit = $null; Entries = @(); Journal = (Test-TkJournalChain)
+        }
+
+        $html = ConvertTo-TkInterventionHtml -Report $report
+        $html | Should -Match 'Journal integrity'
+        $html | Should -Match ([regex]::Escape($report.Journal.Head))
+
+        $lines = [string[]] [System.IO.File]::ReadAllLines($script:ChainToday)
+        [System.IO.File]::WriteAllLines($script:ChainToday, [string[]] @(($lines[0] -replace 'Something done', 'Nothing done'), $lines[1]))
+        $report.Journal = Test-TkJournalChain
+
+        ConvertTo-TkInterventionHtml -Report $report | Should -Match 'The chain is broken in 1 place'
+    }
+
+    It 'is a headless report a monitoring rule can read' {
+
+        Add-TkJournalEntry -Name 'Something done' -Category 'Fixes'
+
+        $document = Invoke-TkHeadlessReport -Report 'Journal' | ConvertFrom-Json
+
+        $document.Reports.Journal.Status     | Should -Be 'Ok'
+        $document.Reports.Journal.Data.Valid | Should -BeTrue
+        $document.Reports.Journal.Worst      | Should -Be 'Pass'
     }
 }
 

@@ -255,6 +255,12 @@ function Get-TkHeadlessReport {
             Get-TkSoftwareLifecycleReport
         })
 
+        (& $row 'Journal' 1 $false 'Whether the intervention journal is intact, each line linked to the one before it.' {
+            param($Options)
+            $null = $Options
+            Test-TkJournalChain
+        })
+
         (& $row 'Audit' 1 $true 'The security audit with its score, at the level asked for.' {
             param($Options)
 
