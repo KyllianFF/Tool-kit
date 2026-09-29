@@ -10,6 +10,7 @@
       "risk": "Medium",
       "requiresElevation": true,
       "requiresRestart": true,
+      "verifyWith": ["Network"],
       "description": "Rebuilds the Winsock catalog and the IPv4 and IPv6 stacks, then re-registers DNS.",
       "whenToUse": "The link is up and the adapter has an address, but nothing above layer 3 works. Typical after a VPN client or a filter driver was removed badly."
     },
@@ -21,6 +22,7 @@
       "risk": "Low",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Network"],
       "description": "Clears cached name resolutions.",
       "whenToUse": "A record was changed on the server and this machine is still reaching the old address."
     },
@@ -32,6 +34,7 @@
       "risk": "High",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Audit"],
       "description": "Restores the default policy. Every custom rule is deleted.",
       "whenToUse": "Conflicting rules left behind by uninstalled software. Export the current rules first if the machine is managed."
     },
@@ -43,6 +46,7 @@
       "risk": "Medium",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Updates"],
       "description": "Stops the servicing services, renames SoftwareDistribution and catroot2 so Windows recreates them, then restarts the services.",
       "whenToUse": "Updates fail repeatedly with 0x8007000x or 0x80244xxx, or the download sits at 0 percent."
     },
@@ -54,6 +58,7 @@
       "risk": "Low",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Verifies protected system files against the component store and repairs what it can.",
       "whenToUse": "Unexplained shell crashes, missing system DLLs, or a first pass before any reinstall decision."
     },
@@ -65,6 +70,7 @@
       "risk": "Low",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Repairs the component store that the System File Checker copies from.",
       "whenToUse": "sfc reported corrupt files it could not repair. Run DISM, then run sfc again."
     },
@@ -76,6 +82,7 @@
       "risk": "Low",
       "requiresElevation": false,
       "requiresRestart": false,
+      "verifyWith": ["Storage"],
       "description": "Empties the user and system temporary folders and the prefetch cache. Locked files are skipped.",
       "whenToUse": "The system drive is full, or an installer keeps failing on a stale extraction."
     },
@@ -87,6 +94,7 @@
       "risk": "Low",
       "requiresElevation": false,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Deletes the cache databases and restarts Explorer.",
       "whenToUse": "Blank, wrong or generic icons on shortcuts and file types."
     },
@@ -98,6 +106,7 @@
       "risk": "Low",
       "requiresElevation": false,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Restarts the shell process.",
       "whenToUse": "The taskbar or the Start menu is unresponsive, or a shell setting has not taken effect."
     },
@@ -109,6 +118,7 @@
       "risk": "Medium",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Printing"],
       "description": "Stops the spooler, deletes queued jobs and restarts it.",
       "whenToUse": "A stuck job that will not delete, or a spooler that keeps crashing."
     },
@@ -120,6 +130,7 @@
       "risk": "Low",
       "requiresElevation": false,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Clears the Store cache without touching installed applications.",
       "whenToUse": "Store downloads fail or the Store opens on a blank page."
     },
@@ -131,6 +142,7 @@
       "risk": "Low",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Forces the indexer to rebuild from scratch. Full indexing then runs in the background for a while.",
       "whenToUse": "The Start menu or Outlook search returns nothing for content that clearly exists."
     },
@@ -142,6 +154,7 @@
       "risk": "Medium",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Proxy"],
       "description": "Resets the proxy Windows Update, BITS and the agents use (netsh winhttp reset proxy) and the one applications use, for the account the toolkit runs as, or for the whole machine when the proxy is set per machine. The settings in force are written to the log first. Environment variables are left alone.",
       "whenToUse": "Pages or updates fail after the machine left a network with a proxy, or a removed security product left one behind. Read the proxy report first: a proxy set by group policy or Intune comes back at the next refresh."
     },
@@ -153,6 +166,7 @@
       "risk": "Low",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Identity"],
       "description": "Deletes the cached Kerberos tickets of the computer and of the session the toolkit runs in (klist purge), so new ones carry the current group memberships, then applies Group Policy again (gpupdate /force).",
       "whenToUse": "The computer was just added to a group and still cannot reach a share, or a Group Policy change has not arrived, and a restart is not convenient. For a user added to a group, signing out and in again is still the sure way."
     },
@@ -164,6 +178,7 @@
       "risk": "Low",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Identity"],
       "description": "Starts the Windows Time service if it is stopped, then has it resynchronise with its time source (w32tm /resync), rediscovering the sources when the first attempt fails.",
       "whenToUse": "The clock is minutes off: Kerberos refuses sign-ins beyond five minutes of difference with the domain controller, and certificates look not yet valid or expired."
     },
@@ -175,6 +190,7 @@
       "risk": "Medium",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Identity"],
       "description": "Resets the connection this computer keeps with its domain (nltest /sc_reset) with the machine account password it already has. When that password no longer matches Active Directory, it says so: that repair needs a domain account, with Test-ComputerSecureChannel -Repair -Credential in Windows PowerShell 5.1, then a restart.",
       "whenToUse": "\"The trust relationship between this workstation and the primary domain failed\", or the sign-in and management report shows a broken secure channel while a domain controller answers."
     },
@@ -186,6 +202,7 @@
       "risk": "Medium",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Inventory"],
       "description": "Checks the WMI repository (winmgmt /verifyrepository) and salvages it only when it is inconsistent, keeping what can still be read (winmgmt /salvagerepository). It never resets the repository to its installed state, which Microsoft warns can break installed applications.",
       "whenToUse": "Inventory, System Information or a management agent reports WMI errors such as Invalid class or 0x80041010, or the reports here come back empty where they read WMI."
     },
@@ -197,6 +214,7 @@
       "risk": "Low",
       "requiresElevation": false,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Runs OneDrive's own reset (onedrive.exe /reset) for the account the toolkit runs as: its settings and sync state are rebuilt and every file is synced again, nothing is deleted online. OneDrive is started again when the toolkit is not elevated, since OneDrive refuses to run as administrator.",
       "whenToUse": "OneDrive is stuck on signing in or on processing changes, or keeps a sync error that restarting it does not clear."
     },
@@ -208,6 +226,7 @@
       "risk": "Low",
       "requiresElevation": false,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Closes Teams and empties its cache for the account the toolkit runs as, for new and classic Teams. Teams rebuilds it at its next start, which then takes longer than usual.",
       "whenToUse": "Teams does not start, opens on a blank window, or keeps showing an old account or picture. Not for missing messages, chats or channels: Microsoft notes that clearing the cache does not fix those and deletes the logs needed to find the cause."
     },
@@ -219,6 +238,7 @@
       "risk": "Low",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Restarts the Windows Audio Endpoint Builder and Windows Audio services.",
       "whenToUse": "No sound, or no output device listed, after sleep, a driver update or a headset change, while Device Manager shows the device working."
     },
@@ -230,6 +250,7 @@
       "risk": "Low",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Devices"],
       "description": "Restarts the Bluetooth Support Service, which discovers and pairs devices.",
       "whenToUse": "Paired devices no longer connect, or new ones are not found, after sleep or a docking station change."
     },
@@ -241,6 +262,7 @@
       "risk": "Low",
       "requiresElevation": false,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Ends the processes behind Start, search and the notification area. Windows starts them again the next time they are opened.",
       "whenToUse": "Start or search does not open, or ignores typing, while the rest of the taskbar works. When the whole taskbar is stuck, restart Explorer instead."
     },
@@ -252,6 +274,7 @@
       "risk": "Medium",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Audit"],
       "description": "Removes the security intelligence Defender downloaded dynamically (MpCmdRun -RemoveDefinitions -DynamicSignatures), then downloads the current set again (-SignatureUpdate). The signatures of the last full update keep protecting the machine in between.",
       "whenToUse": "Security intelligence updates keep failing, or Defender keeps flagging a file after a signature Microsoft has since corrected."
     },
@@ -263,6 +286,7 @@
       "risk": "Medium",
       "requiresElevation": false,
       "requiresRestart": true,
+      "verifyWith": ["Identity"],
       "description": "Deletes the Windows Hello container of this account (certutil -DeleteHelloContainer): the PIN, and the fingerprint or face enrolled with it, are removed. Sign out, sign in with the account password, and Windows offers to set up a new PIN. Run it from the account whose PIN is broken, and make sure its password is known first.",
       "whenToUse": "The PIN is refused, or Windows says \"Something happened and your PIN isn't available\", and \"I forgot my PIN\" does not help."
     },
@@ -274,6 +298,7 @@
       "risk": "Low",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "Resets the Windows Security app package for every account (Reset-AppxPackage on Microsoft.SecHealthUI), or registers it again from its manifest on builds without Reset-AppxPackage. Defender itself and its settings are not touched.",
       "whenToUse": "Windows Security opens blank, closes at once, or asks for an app to open a windowsdefender:// link, while Defender keeps working."
     },
@@ -285,6 +310,7 @@
       "risk": "Medium",
       "requiresElevation": false,
       "requiresRestart": false,
+      "verifyWith": [],
       "description": "The per-user part of Microsoft's reset of Microsoft 365 Apps activation: removes the license files in %LOCALAPPDATA%\\Microsoft\\Office, the Office Licensing and Identity keys of this account, and the Office credentials (MicrosoftOffice16_Data) in Credential Manager. Office asks to sign in again and activates afresh. Close every Office app first.",
       "whenToUse": "Office stays unlicensed or keeps signing in with an old or wrong account, after a change of subscription, tenant or user of the PC."
     },
@@ -296,6 +322,7 @@
       "risk": "Medium",
       "requiresElevation": true,
       "requiresRestart": false,
+      "verifyWith": ["Network"],
       "description": "Changes the network of the physical connection that carries the default route from Public to Private, so file sharing, network discovery and the firewall rules for private networks apply to it. A VPN, a virtual switch or a domain network is left as it is. Only for a network you trust, such as your home or office.",
       "whenToUse": "Windows filed your own network as Public, so other machines cannot see this one, shared folders and printers are unreachable, or the LAN throughput test gets no connection."
     }

@@ -5717,6 +5717,177 @@ Describe 'Export for the fleet' {
     }
 }
 
+Describe 'Action queue' {
+
+    BeforeEach {
+        # The background task runs at once, here: the queue logic is what is tested.
+        function Invoke-TkBackgroundAction {
+            param($ScriptBlock, $ParameterList, $OnComplete, $StatusText, $ArgumentList)
+            $null = $StatusText, $ArgumentList
+            $arguments = if ($ParameterList) { $ParameterList } else { @{} }
+            $output = @(& $ScriptBlock @arguments)
+            & $OnComplete ([pscustomobject] @{ Output = $output; Errors = @(); HadErrors = $false })
+        }
+
+        $script:QueueEvents = New-Object System.Collections.Generic.List[string]
+        $script:QueueDone   = 0
+
+        function New-QueueStep {
+            param([string] $Key, [bool] $Ok = $true, [bool] $Critical = $true, [scriptblock] $Extra = { })
+            [pscustomobject] @{
+                Key = $Key; Label = ('Step {0}' -f $Key); Critical = $Critical; Parameters = @{ ok = $Ok; extra = $Extra }
+                Work = { param($ok, $extra) & $extra; [pscustomobject] @{ Ok = $ok; Text = $(if ($ok) { '' } else { 'broke' }) } }
+            }
+        }
+    }
+
+    It 'runs every step in order, says when each starts and ends, and finishes once' {
+
+        $queue = New-TkActionQueue -Name 'Test' -Step @((New-QueueStep 'a'), (New-QueueStep 'b'), (New-QueueStep 'c')) -Confirm:$false `
+            -OnStep { param($q, $s) $null = $q; $script:QueueEvents.Add(('{0}:{1}' -f $s.Key, $s.State)) } `
+            -OnDone { param($q) $null = $q; $script:QueueDone++ }
+
+        Start-TkActionQueue -Name 'Test' -Confirm:$false
+
+        ($script:QueueEvents.ToArray()) -join ',' | Should -Be 'a:Running,a:Done,b:Running,b:Done,c:Running,c:Done'
+        $script:QueueDone | Should -Be 1
+        $queue.Finished   | Should -BeTrue
+        Format-TkActionQueueProgress -Queue $queue | Should -Be 'Finished: 3 done, 0 failed, 0 not run.'
+    }
+
+    It 'stops the rest when a critical step fails, unless asked not to, and never for a step that is not critical' {
+
+        $stopped = New-TkActionQueue -Name 'Test' -Step @((New-QueueStep 'a' -Ok $false), (New-QueueStep 'b')) -Confirm:$false
+        Start-TkActionQueue -Name 'Test' -Confirm:$false
+        ($stopped.Steps | ForEach-Object { $_.State }) -join ',' | Should -Be 'Failed,NotRun'
+        $stopped.Steps[0].Text | Should -Be 'broke'
+        $stopped.Steps[1].Text | Should -BeLike '*earlier step failed*'
+
+        $minor = New-TkActionQueue -Name 'Test' -Step @((New-QueueStep 'a' -Ok $false -Critical $false), (New-QueueStep 'b')) -Confirm:$false
+        Start-TkActionQueue -Name 'Test' -Confirm:$false
+        ($minor.Steps | ForEach-Object { $_.State }) -join ',' | Should -Be 'Failed,Done'
+
+        $going = New-TkActionQueue -Name 'Test' -Step @((New-QueueStep 'a' -Ok $false), (New-QueueStep 'b')) -StopOnFailure $false -Confirm:$false
+        Start-TkActionQueue -Name 'Test' -Confirm:$false
+        ($going.Steps | ForEach-Object { $_.State }) -join ',' | Should -Be 'Failed,Done'
+    }
+
+    It 'stops between two steps when asked' {
+
+        $queue = New-TkActionQueue -Name 'Test' -Step @((New-QueueStep 'a' -Extra { Stop-TkActionQueue -Name 'Test' -Confirm:$false }), (New-QueueStep 'b')) -Confirm:$false
+        Start-TkActionQueue -Name 'Test' -Confirm:$false
+
+        ($queue.Steps | ForEach-Object { $_.State }) -join ',' | Should -Be 'Done,NotRun'
+        $queue.Steps[1].Text | Should -Be 'Not run: stopped.'
+    }
+
+    It 'reads what a step returned: a boolean, an object with Ok, errors, or nothing' {
+
+        (Resolve-TkActionOutcome -Result ([pscustomobject] @{ Output = @($true) })).Ok  | Should -BeTrue
+        (Resolve-TkActionOutcome -Result ([pscustomobject] @{ Output = @($false) })).Ok | Should -BeFalse
+        (Resolve-TkActionOutcome -Result ([pscustomobject] @{ Output = @('noise', [pscustomobject] @{ Ok = $false; Text = 'why' }) })).Text | Should -Be 'why'
+        (Resolve-TkActionOutcome -Result ([pscustomobject] @{ Output = @(); Errors = @('boom') })).Ok | Should -BeFalse
+        (Resolve-TkActionOutcome -Result ([pscustomobject] @{ Output = @('done') })).Ok | Should -BeTrue
+    }
+}
+
+Describe 'Verified plan' {
+
+    BeforeAll {
+        # A document reduced to what the verdict reads: one report and its worst judgement.
+        function New-PlanDocument {
+            param([string] $Worst, [string] $Status = 'Ok')
+            [ordered] @{ Computer = 'PC-01'; GeneratedAt = '2026-09-29T10:00:00'; Reports = [ordered] @{
+                Network = [ordered] @{ Status = $Status; Reason = ''; DurationMs = 1; Worst = $Worst; Data = @([ordered] @{ Severity = $Worst }) }
+            } }
+        }
+    }
+
+    BeforeEach {
+        function Invoke-TkBackgroundAction {
+            param($ScriptBlock, $ParameterList, $OnComplete, $StatusText, $ArgumentList)
+            $null = $StatusText, $ArgumentList
+            $arguments = if ($ParameterList) { $ParameterList } else { @{} }
+            $output = @(& $ScriptBlock @arguments)
+            & $OnComplete ([pscustomobject] @{ Output = $output; Errors = @(); HadErrors = $false })
+        }
+
+        # Nothing real runs: the fixes, the restore point and the reports are recorded here.
+        $script:PlanCalls     = New-Object System.Collections.Generic.List[string]
+        $script:PlanDocuments = New-Object System.Collections.Generic.Queue[object]
+        $script:PlanFailing   = @()
+
+        function New-TkRestorePoint { param($Description, [switch] $Confirm) $null = $Description, $Confirm; $script:PlanCalls.Add('restore'); $true }
+        function New-TkReportDocument { param($Name) $script:PlanCalls.Add('read ' + (@($Name) -join ',')); $script:PlanDocuments.Dequeue() }
+        function Invoke-TkFix { param($Fix, [switch] $Confirm) $null = $Confirm; $script:PlanCalls.Add('fix ' + $Fix.id); $script:PlanFailing -notcontains $Fix.id }
+    }
+
+    It 'names only reports that exist, for every fix of the catalog' {
+
+        $known = @(Get-TkHeadlessReport | ForEach-Object { $_.Name })
+
+        foreach ($fix in (Get-TkFix)) {
+            $fix.PSObject.Properties.Name | Should -Contain 'verifyWith' -Because $fix.id
+            foreach ($name in @($fix.verifyWith)) { $known | Should -Contain $name -Because $fix.id }
+        }
+
+        @(Get-TkPlanReport -Fix @([pscustomobject] @{ verifyWith = @('Network', 'Nope') }, [pscustomobject] @{ verifyWith = @('Network', 'Proxy') })) -join ',' | Should -Be 'Network,Proxy'
+    }
+
+    It 'plans a restore point, a reading before, the fixes in order and a reading after' {
+
+        $steps = @(New-TkVerifiedPlanStep -FixId @('flush-dns', 'reset-proxy', 'restart-explorer') -RestorePoint)
+
+        ($steps | ForEach-Object { $_.Key }) -join ',' | Should -Be 'restore,before,fix:flush-dns,fix:reset-proxy,fix:restart-explorer,after'
+        $steps[1].Parameters.names -join ',' | Should -Be 'Network,Proxy'
+        @($steps | Where-Object { $_.Critical } | ForEach-Object { $_.Key }) -join ',' | Should -Be 'before,fix:flush-dns,fix:reset-proxy,fix:restart-explorer'
+
+        ((@(New-TkVerifiedPlanStep -FixId @('restart-explorer'))) | ForEach-Object { $_.Key }) -join ',' | Should -Be 'fix:restart-explorer'
+        { New-TkVerifiedPlanStep -FixId @('no-such-fix') } | Should -Throw '*Unknown fix*'
+    }
+
+    It 'says better, the same or worse, report by report' {
+
+        (Get-TkPlanVerdict -Before (New-PlanDocument 'Warning') -After (New-PlanDocument 'Pass')).Verdict    | Should -Be 'Better'
+        (Get-TkPlanVerdict -Before (New-PlanDocument 'Pass') -After (New-PlanDocument 'Fail')).Verdict       | Should -Be 'Worse'
+        (Get-TkPlanVerdict -Before (New-PlanDocument 'Warning') -After (New-PlanDocument 'Warning')).Verdict | Should -Be 'Same'
+        (Get-TkPlanVerdict -Before (New-PlanDocument 'Warning') -After (New-PlanDocument '' -Status 'Failed')).Verdict | Should -Be 'NotVerified'
+        (Get-TkPlanVerdict -Before $null -After $null).Verdict | Should -Be 'NotVerified'
+
+        $fixes = @(Get-TkFix | Where-Object { $_.id -in @('reset-network-stack', 'restart-explorer') })
+        $named = Get-TkPlanVerdict -Before (New-PlanDocument 'Warning') -After (New-PlanDocument 'Pass') -Fix $fixes
+        $named.Unverified   | Should -Be @('Restart Explorer')
+        $named.AwaitRestart | Should -Be @('Reset the TCP/IP stack and Winsock')
+    }
+
+    It 'runs a whole plan through the queue and proves it better' {
+
+        $script:PlanDocuments.Enqueue((New-PlanDocument 'Warning'))
+        $script:PlanDocuments.Enqueue((New-PlanDocument 'Pass'))
+
+        $queue = New-TkActionQueue -Name 'PlanTest' -Step @(New-TkVerifiedPlanStep -FixId @('flush-dns', 'make-network-private') -RestorePoint) -Confirm:$false
+        Start-TkActionQueue -Name 'PlanTest' -Confirm:$false
+
+        ($script:PlanCalls.ToArray()) -join ' | ' | Should -Be 'restore | read Network | fix flush-dns | fix make-network-private | read Network'
+
+        $before  = ($queue.Steps | Where-Object { $_.Key -eq 'before' }).Output.Document
+        $after   = ($queue.Steps | Where-Object { $_.Key -eq 'after' }).Output.Document
+        (Get-TkPlanVerdict -Before $before -After $after).Verdict | Should -Be 'Better'
+    }
+
+    It 'stops at the first fix that fails, and leaves the plan unverified' {
+
+        $script:PlanDocuments.Enqueue((New-PlanDocument 'Warning'))
+        $script:PlanFailing = @('flush-dns')
+
+        $queue = New-TkActionQueue -Name 'PlanTest' -Step @(New-TkVerifiedPlanStep -FixId @('flush-dns', 'make-network-private')) -Confirm:$false
+        Start-TkActionQueue -Name 'PlanTest' -Confirm:$false
+
+        ($queue.Steps | ForEach-Object { '{0}={1}' -f $_.Key, $_.State }) -join ',' | Should -Be 'before=Done,fix:flush-dns=Failed,fix:make-network-private=NotRun,after=NotRun'
+        $script:PlanCalls -join ' | ' | Should -Not -Match 'make-network-private'
+    }
+}
+
 Describe 'Switch port discovery' {
 
     BeforeAll {

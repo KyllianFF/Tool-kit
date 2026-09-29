@@ -116,6 +116,8 @@ function Initialize-TkFixesPage {
 
     Register-TkClick -Name 'BtnAutoLogon' -Action { Show-TkAutoLogonDialog }
 
+    Initialize-TkPlanTab
+
     Register-TkClick -Name 'BtnRestorePoint' -Action {
 
         # A standard user gets a single UAC prompt for this one action; an
@@ -330,4 +332,210 @@ function Show-TkAutoLogonDialog {
     $dialog.Add_Closed({ $passwordBox.Clear() })
 
     $dialog.ShowDialog() | Out-Null
+}
+
+# ---------------------------------------------------------------------------
+# Verified plan tab
+# ---------------------------------------------------------------------------
+
+# The verdict of the last plan, shown under its steps. Set through
+# Set-TkPlanVerdict: a completion handler cannot reach this file's scope.
+$script:TkPlanVerdict = $null
+
+<#
+.SYNOPSIS
+    Keeps the verdict of the last plan for the view.
+#>
+function Set-TkPlanVerdict {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Verdict
+    )
+
+    if ($PSCmdlet.ShouldProcess('verified plan', 'Remember the verdict')) {
+        $script:TkPlanVerdict = $Verdict
+    }
+}
+
+<#
+.SYNOPSIS
+    Fills the Verified plan tab: the fixes to tick, and the options.
+#>
+function Initialize-TkPlanTab {
+    [CmdletBinding()]
+    param()
+
+    $panel = Get-TkControl -Name 'PlanFixList'
+
+    if ($panel) {
+
+        $elevated = Test-TkIsElevated
+
+        foreach ($fix in @(Get-TkFix)) {
+
+            $reports = @(Get-TkPlanReport -Fix @($fix))
+            $allowed = -not ($fix.requiresElevation -and -not $elevated)
+
+            $box = New-Object System.Windows.Controls.CheckBox
+            $box.Content   = $fix.name
+            $box.Tag       = $fix.id
+            $box.IsEnabled = $allowed
+            $box.Margin    = New-Object System.Windows.Thickness(0, 0, 18, 8)
+            $box.ToolTip   = if (-not $allowed) { 'Needs administrator rights. Use "Restart as administrator" in the header.' }
+                             elseif ($reports.Count -gt 0) { '{0} Checked with the report(s): {1}.' -f $fix.description, ($reports -join ', ') }
+                             else { '{0} No report shows its effect: it runs, unverified.' -f $fix.description }
+
+            [void] $panel.Children.Add($box)
+        }
+    }
+
+    $restore = Get-TkControl -Name 'PlanRestorePoint'
+    if ($restore -and -not (Test-TkIsElevated)) {
+        $restore.IsChecked = $false
+        $restore.IsEnabled = $false
+        $restore.ToolTip   = 'A restore point needs administrator rights.'
+    }
+
+    Register-TkClick -Name 'BtnPlanRun'     -Action { Invoke-TkPlanFromUi }
+    Register-TkClick -Name 'BtnPlanStop'    -Action { Stop-TkActionQueue -Name 'VerifiedPlan' -Confirm:$false; Set-TkStatus -Text 'The plan stops after this step.' }
+    Register-TkClick -Name 'BtnPlanRestore' -Action { Start-Process -FilePath ([System.IO.Path]::Combine([Environment]::SystemDirectory, 'rstrui.exe')) }
+
+    $stop = Get-TkControl -Name 'BtnPlanStop'
+    if ($stop) { $stop.IsEnabled = $false }
+
+    $document = New-TkFlowDocument
+    Add-TkParagraph -Document $document -Muted -Text 'Tick the fixes of the plan: they run in the order of this list, between a reading of the reports before and one after.'
+    Set-TkDocument -ControlName 'PlanOutput' -Document $document
+}
+
+<#
+.SYNOPSIS
+    Confirms the whole plan, then runs it step by step.
+#>
+function Invoke-TkPlanFromUi {
+    [CmdletBinding()]
+    param()
+
+    $panel  = Get-TkControl -Name 'PlanFixList'
+    $chosen = @($panel.Children | Where-Object { $_.IsChecked -and $_.IsEnabled } | ForEach-Object { [string] $_.Tag })
+
+    if ($chosen.Count -eq 0) {
+        Set-TkStatus -Text 'Tick the fixes of the plan first.'
+        return
+    }
+
+    $restore = [bool] (Get-TkControl -Name 'PlanRestorePoint').IsChecked
+    $stop    = [bool] (Get-TkControl -Name 'PlanStopOnFailure').IsChecked
+    $steps   = @(New-TkVerifiedPlanStep -FixId $chosen -RestorePoint:$restore)
+    $fixes   = @(Get-TkFix | Where-Object { $chosen -contains $_.id })
+    $reports = @(Get-TkPlanReport -Fix $fixes)
+
+    $message = "The plan, in order:`n`n{0}`n`n" -f ((@($steps | ForEach-Object { '- ' + $_.Label })) -join "`n")
+    $message += if ($reports.Count -gt 0) { 'The reports read before and after say whether the machine is better or worse. ' } else { 'No report shows the effect of these fixes: they run, unverified. ' }
+    $message += if ($restore) { 'A fix has no revert of its own: the restore point is the way back.' } else { 'A fix has no revert of its own, and no restore point is taken.' }
+    $message += "`n`nRun the plan?"
+
+    if (-not (Confirm-TkAction -Title 'Run the verified plan' -Message $message)) {
+        return
+    }
+
+    Set-TkPlanVerdict -Verdict $null -Confirm:$false
+    (Get-TkControl -Name 'BtnPlanRun').IsEnabled  = $false
+    (Get-TkControl -Name 'BtnPlanStop').IsEnabled = $true
+
+    [void] (New-TkActionQueue -Name 'VerifiedPlan' -Step $steps -StopOnFailure $stop -Confirm:$false `
+        -OnStep { param($queue, $step) $null = $step; Write-TkPlanView -Queue $queue } `
+        -OnDone { param($queue) Complete-TkPlanFromUi -Queue $queue })
+
+    Start-TkActionQueue -Name 'VerifiedPlan' -Confirm:$false
+}
+
+<#
+.SYNOPSIS
+    Judges a finished plan, journals it and shows the verdict.
+#>
+function Complete-TkPlanFromUi {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        $Queue
+    )
+
+    $document = { param($key) $step = @($Queue.Steps | Where-Object { $_.Key -eq $key -and $_.State -eq 'Done' }) | Select-Object -First 1; if ($step -and $step.Output) { $step.Output.Document } else { $null } }
+
+    $ids     = @($Queue.Steps | Where-Object { $_.Key -like 'fix:*' } | ForEach-Object { $_.Key.Substring(4) })
+    $fixes   = @(Get-TkFix | Where-Object { $ids -contains $_.id })
+    $verdict = Get-TkPlanVerdict -Before (& $document 'before') -After (& $document 'after') -Fix $fixes
+
+    Set-TkPlanVerdict -Verdict $verdict -Confirm:$false
+
+    $ran    = @($Queue.Steps | Where-Object { $_.Key -like 'fix:*' -and $_.State -eq 'Done' }).Count
+    $failed = @($Queue.Steps | Where-Object { $_.Key -like 'fix:*' -and $_.State -eq 'Failed' }).Count
+    $word   = switch ($verdict.Verdict) { 'Better' { 'better' } 'Worse' { 'worse' } 'Same' { 'no change seen' } default { 'not verified' } }
+
+    Add-TkJournalEntry -Name ('Verified plan: {0} of {1} fix(es) run, {2}' -f $ran, $ids.Count, $word) -Category 'Fixes' -Success ($failed -eq 0 -and $verdict.Verdict -ne 'Worse') `
+        -Detail ((@($verdict.Reports | ForEach-Object { '{0}: {1} to {2} ({3})' -f $_.Report, $_.Before, $_.After, $_.Direction })) -join '; ')
+
+    (Get-TkControl -Name 'BtnPlanRun').IsEnabled  = $true
+    (Get-TkControl -Name 'BtnPlanStop').IsEnabled = $false
+
+    Write-TkPlanView -Queue $Queue
+    Set-TkStatus -Text (Format-TkActionQueueProgress -Queue $Queue)
+}
+
+<#
+.SYNOPSIS
+    Shows the steps of the plan as they run, then its verdict.
+#>
+function Write-TkPlanView {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        $Queue
+    )
+
+    $document = New-TkFlowDocument
+
+    Add-TkHeading   -Document $document -Text 'Verified plan' -Level 1
+    Add-TkParagraph -Document $document -Muted -Text (Format-TkActionQueueProgress -Queue $Queue)
+
+    $states = @{ Waiting = 'Waiting'; Running = 'Running...'; Done = 'Done'; Failed = 'Failed'; NotRun = 'Not run' }
+
+    Add-TkTable -Document $document -Column @('Step', 'State', 'Note') -Weight @(3.0, 0.9, 3.0) `
+        -Row @($Queue.Steps | ForEach-Object { , @($_.Label, $states[[string] $_.State], $_.Text) })
+
+    $verdict = $script:TkPlanVerdict
+
+    if ($Queue.Finished -and $verdict) {
+
+        switch ($verdict.Verdict) {
+            'Better'      { Add-TkSeverityLine -Document $document -Severity 'Pass'    -Heading 'Better after the plan' -Note 'The reports read after show fewer problems than before.' }
+            'Same'        { Add-TkSeverityLine -Document $document -Severity 'Info'    -Heading 'No change the reports can see' -Note 'The fixes ran, and the reports read the same before and after.' }
+            'Worse'       { Add-TkSeverityLine -Document $document -Severity 'Fail'    -Heading 'Worse after the plan' -Note $(if (@($Queue.Steps | Where-Object { $_.Key -eq 'restore' -and $_.State -eq 'Done' }).Count) { 'The restore point taken first is the way back: Open System Restore.' } else { 'No restore point was taken first.' }) }
+            default       { Add-TkSeverityLine -Document $document -Severity 'Info'    -Heading 'Not verified' -Note 'No report was read before and after these fixes.' }
+        }
+
+        if (@($verdict.Reports).Count -gt 0) {
+            Add-TkTable -Document $document -Column @('Report', 'Before', 'After', 'Result') -Weight @(1.4, 1.0, 1.0, 1.0) `
+                -Row @($verdict.Reports | ForEach-Object { , @($_.Report, $_.Before, $_.After, $_.Direction) })
+
+            $changes = @($verdict.Reports | ForEach-Object { $_.Changes } | Where-Object { $_ } | Select-Object -First 20)
+            if ($changes.Count -gt 0) {
+                Add-TkTable -Document $document -Column @('Report', 'What', 'Change', 'Result') -Weight @(1.0, 3.0, 1.0, 0.8) `
+                    -Row @($changes | ForEach-Object { , @($_.Report, $_.Item, $_.Change, $_.Direction) })
+            }
+        }
+
+        if (@($verdict.Unverified).Count -gt 0) {
+            Add-TkParagraph -Document $document -Muted -Text ('No report shows the effect of: {0}.' -f (@($verdict.Unverified) -join ', '))
+        }
+
+        if (@($verdict.AwaitRestart).Count -gt 0) {
+            Add-TkParagraph -Document $document -Muted -Text ('Only a restart completes: {0}. Compare again after it, from Intervention, Compare.' -f (@($verdict.AwaitRestart) -join ', '))
+        }
+    }
+
+    Set-TkDocument -ControlName 'PlanOutput' -Document $document
 }
