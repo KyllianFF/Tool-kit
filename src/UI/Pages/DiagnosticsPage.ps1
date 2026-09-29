@@ -49,6 +49,7 @@ function Initialize-TkDiagnosticsPage {
     Register-TkClick -Name 'BtnSupportBundle' -Action { Invoke-TkSupportBundleFromUi }
 
     Initialize-TkEventSearchTab
+    Initialize-TkTimelineTab
 
 }
 
@@ -2308,4 +2309,250 @@ function Open-TkTraceFolder {
     $folder = Get-TkTraceFolder
     New-Item -ItemType Directory -Path $folder -Force | Out-Null
     Start-Process -FilePath 'explorer.exe' -ArgumentList $folder
+}
+
+# ---------------------------------------------------------------------------
+# Timeline tab
+# ---------------------------------------------------------------------------
+
+# The last timeline read, filtered again without reading the logs again when a
+# category or the text changes. Set through Set-TkTimelineResult: a completion
+# handler cannot reach this file's scope.
+$script:TkTimelineResult = $null
+
+<#
+.SYNOPSIS
+    Keeps the last timeline read, for the filters and the export.
+#>
+function Set-TkTimelineResult {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Result
+    )
+
+    if ($PSCmdlet.ShouldProcess('last timeline', 'Remember')) {
+        $script:TkTimelineResult = $Result
+    }
+}
+
+<#
+.SYNOPSIS
+    The periods the timeline offers.
+
+.OUTPUTS
+    PSCustomObject[] with Label and Days.
+#>
+function Get-TkTimelinePeriodChoice {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    return @(
+        [pscustomobject] @{ Label = 'Last 24 hours'; Days = 1 }
+        [pscustomobject] @{ Label = 'Last 3 days';   Days = 3 }
+        [pscustomobject] @{ Label = 'Last 7 days';   Days = 7 }
+        [pscustomobject] @{ Label = 'Last 14 days';  Days = 14 }
+        [pscustomobject] @{ Label = 'Last 30 days';  Days = 30 }
+    )
+}
+
+<#
+.SYNOPSIS
+    Wires the Timeline tab of Diagnostics.
+#>
+function Initialize-TkTimelineTab {
+    [CmdletBinding()]
+    param()
+
+    $period = Get-TkControl -Name 'TimelinePeriod'
+    if ($period) {
+        foreach ($choice in @(Get-TkTimelinePeriodChoice)) { [void] $period.Items.Add($choice.Label) }
+        $period.SelectedIndex = 3
+    }
+
+    $panel = Get-TkControl -Name 'TimelineCategories'
+    if ($panel) {
+        foreach ($category in @(Get-TkTimelineCategory)) {
+            $box = New-Object System.Windows.Controls.CheckBox
+            $box.Content   = $category.Label
+            $box.Tag       = $category.Name
+            $box.IsChecked = $true
+            $box.Margin    = New-Object System.Windows.Thickness(0, 0, 18, 6)
+            $box.Add_Click({ Write-TkTimelineView })
+            [void] $panel.Children.Add($box)
+        }
+    }
+
+    Register-TkClick -Name 'BtnTimelineRead'   -Action { Invoke-TkTimelineFromUi }
+    Register-TkClick -Name 'BtnTimelineExport' -Action { Export-TkTimelineFromUi }
+
+    $contains = Get-TkControl -Name 'TimelineContains'
+    if ($contains) {
+        $contains.Add_KeyDown({
+            param($source, $keyArgs)
+            $null = $source
+            if ($keyArgs.Key -eq [System.Windows.Input.Key]::Enter) { Write-TkTimelineView }
+        })
+    }
+
+    $document = New-TkFlowDocument
+    Add-TkParagraph -Document $document -Muted -Text 'Choose a period and Read: what changed on this machine appears here, newest first.'
+    Set-TkDocument -ControlName 'TimelineOutput' -Document $document
+}
+
+<#
+.SYNOPSIS
+    Reads the timeline of the period chosen, in the background.
+#>
+function Invoke-TkTimelineFromUi {
+    [CmdletBinding()]
+    param()
+
+    $label = [string] (Get-TkControl -Name 'TimelinePeriod').SelectedItem
+    $days  = [int] (@(Get-TkTimelinePeriodChoice | Where-Object { $_.Label -eq $label }) + [pscustomobject] @{ Days = 14 })[0].Days
+
+    Invoke-TkBackgroundAction -StatusText 'Reading what changed on this machine...' -ParameterList @{ days = $days } `
+        -ScriptBlock { param($days) Get-TkTimeline -Days $days } `
+        -OnComplete {
+            param($result)
+
+            $timeline = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Entries'] } | Select-Object -Last 1
+
+            if (-not $timeline) {
+                Set-TkStatus -Text 'The timeline could not be read; the log says why.'
+                return
+            }
+
+            Set-TkTimelineResult -Result $timeline -Confirm:$false
+            Write-TkTimelineView
+            Set-TkStatus -Text ('{0} change(s) in the last {1} day(s).' -f @($timeline.Entries).Count, $timeline.Days)
+        }
+}
+
+<#
+.SYNOPSIS
+    The lines of the last timeline the categories ticked and the text typed keep.
+
+.OUTPUTS
+    PSCustomObject[]
+#>
+function Select-TkTimelineRow {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+
+    if (-not $script:TkTimelineResult) {
+        return @()
+    }
+
+    $ticked = @()
+    $panel  = Get-TkControl -Name 'TimelineCategories'
+    if ($panel) {
+        $ticked = @($panel.Children | Where-Object { $_.IsChecked } | ForEach-Object { [string] $_.Tag })
+    }
+
+    $text = ([string] (Get-TkControl -Name 'TimelineContains').Text).Trim()
+
+    return @($script:TkTimelineResult.Entries | Where-Object {
+        ($ticked -contains $_.Category) -and (-not $text -or ('{0} {1}' -f $_.Title, $_.Detail) -like ('*{0}*' -f $text))
+    })
+}
+
+<#
+.SYNOPSIS
+    Shows the last timeline read, with the filters of the tab.
+#>
+function Write-TkTimelineView {
+    [CmdletBinding()]
+    param()
+
+    $timeline = $script:TkTimelineResult
+
+    if (-not $timeline) {
+        return
+    }
+
+    $rows     = @(Select-TkTimelineRow)
+    $labels   = @{}
+    foreach ($category in @(Get-TkTimelineCategory)) { $labels[$category.Name] = $category.Label }
+
+    $document = New-TkFlowDocument
+
+    Add-TkHeading   -Document $document -Text ('What changed in the last {0} day(s)' -f $timeline.Days) -Level 1
+    Add-TkParagraph -Document $document -Muted -Text (
+        'From {0:yyyy-MM-dd HH:mm} to {1:yyyy-MM-dd HH:mm}, newest first. Repeats of the same change within the hour are one line, with their count. The last column names the report that deals with a line.' -f $timeline.Since, $timeline.Until
+    )
+
+    foreach ($source in @($timeline.Sources | Where-Object { $_.State -in @('Off', 'NeedsElevation', 'Missing', 'Failed') })) {
+        $heading = switch ($source.State) {
+            'Off'            { '{0}: the log is turned off' -f $source.Label }
+            'NeedsElevation' { '{0}: needs administrator rights' -f $source.Label }
+            'Missing'        { '{0}: not on this machine' -f $source.Label }
+            default          { '{0}: could not be read' -f $source.Label }
+        }
+        $note = switch ($source.State) { 'NeedsElevation' { 'Restart as administrator to read it.' } 'Off' { '' } default { [string] $source.Note } }
+        Add-TkSeverityLine -Document $document -Severity 'Info' -Heading $heading -Note $note
+    }
+
+    if ($rows.Count -eq 0) {
+        Add-TkSeverityLine -Document $document -Severity 'Pass' -Heading 'Nothing in this period matches the categories and the text chosen'
+    }
+    else {
+        $shown = @($rows | Select-Object -First 500)
+
+        Add-TkTable -Document $document -Column @('When', 'Kind', 'What', 'Detail', 'See') -Weight @(1.35, 0.9, 2.5, 2.3, 0.9) `
+            -Row @($shown | ForEach-Object {
+                $when  = if ($_.DayOnly) { ([datetime] $_.Time).ToString('yyyy-MM-dd') } else { ([datetime] $_.Time).ToString('yyyy-MM-dd HH:mm') }
+                $what  = if ($_.Count -gt 1) { '{0} (x{1})' -f $_.Title, $_.Count } else { $_.Title }
+                $kind  = if ($labels.ContainsKey($_.Category)) { $labels[$_.Category] } else { $_.Category }
+                , @($when, $kind, $what, $_.Detail, $_.Report)
+            })
+
+        if ($rows.Count -gt $shown.Count) {
+            Add-TkParagraph -Document $document -Muted -Text ('The {0} most recent of {1} lines; Export CSV keeps them all.' -f $shown.Count, $rows.Count)
+        }
+    }
+
+    Set-TkDocument -ControlName 'TimelineOutput' -Document $document
+}
+
+<#
+.SYNOPSIS
+    Saves the lines the filters keep as CSV, pseudonymised as the privacy of exports asks.
+#>
+function Export-TkTimelineFromUi {
+    [CmdletBinding()]
+    param()
+
+    $rows = @(Select-TkTimelineRow)
+
+    if ($rows.Count -eq 0) {
+        Set-TkStatus -Text 'Read a timeline with lines in it first.'
+        return
+    }
+
+    $level  = Get-TkExportPrivacyLevel
+    $dialog = New-Object Microsoft.Win32.SaveFileDialog
+    $dialog.Title    = 'Export the timeline'
+    $dialog.Filter   = 'CSV file (*.csv)|*.csv'
+    $dialog.FileName = '{0}-timeline-{1}.csv' -f (Get-TkExportComputerName -Level $level), (Get-Date -Format 'yyyyMMdd')
+
+    if (-not $dialog.ShowDialog((Get-TkContext).Window)) {
+        return
+    }
+
+    try {
+        $csv  = (@($rows | Select-Object @{ n = 'Time'; e = { ([datetime] $_.Time).ToString('yyyy-MM-dd HH:mm:ss') } }, Category, Title, Detail, Severity, Count, DayOnly, Source, Report |
+                  ConvertTo-Csv -NoTypeInformation) -join "`r`n") + "`r`n"
+        $safe = Protect-TkExportText -Text $csv -Level $level -Label 'timeline'
+
+        # With a byte order mark, which Excel needs to read the accents right.
+        [System.IO.File]::WriteAllText($dialog.FileName, $safe.Text, (New-Object System.Text.UTF8Encoding($true)))
+        Set-TkStatus -Text ('{0} line(s) exported to {1}.{2}' -f $rows.Count, $dialog.FileName, (Format-TkPrivacyNote -Result $safe))
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Events' -Message ('The timeline could not be exported: {0}' -f $_.Exception.Message)
+    }
 }

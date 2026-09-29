@@ -201,6 +201,12 @@ function Get-TkHeadlessReport {
             Get-TkBootHistory -Days 30
         })
 
+        (& $row 'Timeline' 1 $false 'What changed in the last 14 days: programs, updates, drivers, services, starts and crashes, threats, firewall rules.' {
+            param($Options)
+            $null = $Options
+            Get-TkTimeline -Days 14
+        })
+
         (& $row 'Wifi' 1 $false 'Wi-Fi signal, band, rate, security and drops of the last week.' {
             param($Options)
             $null = $Options

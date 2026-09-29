@@ -3069,6 +3069,47 @@
                             </Grid>
                         </TabItem>
 
+                        <TabItem Header="Timeline">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Period" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <ComboBox x:Name="TimelinePeriod" Width="150" MinHeight="40" Margin="0,0,16,8" />
+                                            <TextBlock Text="Contains" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                            <TextBox x:Name="TimelineContains" Width="240" Margin="0,0,16,8" Tag="Text in a line, then Enter" />
+                                            <Border Style="{StaticResource ActionGroup}" Margin="0,0,0,8">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnTimelineRead" Content="Read" Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Reads the logs Windows keeps and the uninstall entries for the period chosen." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnTimelineExport" Content="Export CSV" Style="{StaticResource GroupedButton}"
+                                                            ToolTip="Save the lines the filters keep as a CSV file, pseudonymised as the privacy of exports asks." />
+                                                </StackPanel>
+                                            </Border>
+                                        </WrapPanel>
+                                        <WrapPanel x:Name="TimelineCategories" Margin="0,0,0,6" />
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Read only. What changed on this machine, newest first: programs installed and removed, Windows updates, drivers, services and tasks, starts and crashes, threats caught, firewall rules and what was done with the toolkit. Each event is read by its fields, so the display language does not matter. The Security log needs administrator rights, and a log turned off is named rather than passed over." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="TimelineOutput" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 IsDocumentEnabled="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
                         <TabItem Header="Event logs">
                             <Grid Margin="0,16,0,0">
                                 <Grid.RowDefinitions>
