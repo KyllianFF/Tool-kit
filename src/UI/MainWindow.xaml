@@ -5948,6 +5948,12 @@
                                     <Button x:Name="BtnCompareSnapshot" Content="Compare" Margin="8,3,0,3"
                                             Style="{StaticResource GlyphButton}" Tag="&#xE8F1;"
                                             ToolTip="Collects the same reports again and shows what changed since a snapshot: judgements that got worse or better, devices and findings that appeared or went, new crashes and updates, and facts such as the Windows build, the BIOS version or the audit score." />
+                                    <Button x:Name="BtnJournalVerify" Content="Verify" Margin="8,3,0,3"
+                                            Style="{StaticResource GlyphButton}" Tag="&#xE73E;"
+                                            ToolTip="Checks every line of the journal: each records the SHA-256 of the one before it, so a line changed, removed or added since it was written shows. Changes nothing." />
+                                    <Button x:Name="BtnJournalExport" Content="Export" Margin="8,3,0,3"
+                                            Style="{StaticResource GlyphButton}" Tag="&#xEDE1;"
+                                            ToolTip="Writes the journal of the period as JSON Lines, with the links so the chain can be checked elsewhere, or as CEF for a SIEM." />
                                     <Button x:Name="BtnJournalFolder" Content="Open journal folder" Margin="8,3,0,3" />
                                     <Button x:Name="BtnInterventionReport" Content="Create the intervention report"
                                             Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE8A5;" Margin="8,3,0,3"

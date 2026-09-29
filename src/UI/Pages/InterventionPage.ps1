@@ -46,6 +46,8 @@ function Initialize-TkInterventionPage {
     Register-TkClick -Name 'BtnInterventionReport' -Action { New-TkInterventionReportFromUi }
     Register-TkClick -Name 'BtnTakeSnapshot'       -Action { Invoke-TkSnapshotFromUi }
     Register-TkClick -Name 'BtnCompareSnapshot'    -Action { Invoke-TkSnapshotComparisonFromUi }
+    Register-TkClick -Name 'BtnJournalVerify'      -Action { Invoke-TkJournalVerificationFromUi }
+    Register-TkClick -Name 'BtnJournalExport'      -Action { Export-TkJournalFromUi }
 
     Register-TkFirstShow -PageName 'Intervention' -Action { Update-TkJournalView }
 }
@@ -335,11 +337,12 @@ function New-TkInterventionReportFromUi {
     }
 
     Invoke-TkBackgroundAction -StatusText 'Reading the machine for the intervention report...' `
-        -ScriptBlock { Get-TkDashboardSnapshot } `
+        -ScriptBlock { [pscustomobject] @{ Snapshot = Get-TkDashboardSnapshot; Journal = Test-TkJournalChain } } `
         -OnComplete {
             param($result)
 
-            $snapshot = @($result.Output) | Select-Object -First 1
+            $read     = @($result.Output) | Select-Object -First 1
+            $snapshot = $(if ($read) { $read.Snapshot } else { $null })
             $pending  = $script:TkPendingReport
             $ctx      = Get-TkContext
 
@@ -356,6 +359,7 @@ function New-TkInterventionReportFromUi {
                 Tiles       = @(if ($snapshot) { ConvertTo-TkDashboardHealth -Snapshot $snapshot })
                 Audit       = $pending.Audit
                 Entries     = @(Get-TkJournalEntry -Since $pending.Period.Since -Session $pending.Period.Session)
+                Journal     = $(if ($read) { $read.Journal } else { $null })
             }
 
             $level  = Get-TkExportPrivacyLevel
@@ -392,4 +396,119 @@ function New-TkInterventionReportFromUi {
 
             Update-TkJournalView
         }
+}
+
+<#
+.SYNOPSIS
+    Checks the chain of the whole journal in the background and shows the result.
+#>
+function Invoke-TkJournalVerificationFromUi {
+    [CmdletBinding()]
+    param()
+
+    Invoke-TkBackgroundAction -StatusText 'Checking every line of the journal...' `
+        -ScriptBlock { Test-TkJournalChain } `
+        -OnComplete {
+            param($result)
+
+            $check = @($result.Output) | Select-Object -First 1
+
+            if (-not $check) {
+                Set-TkStatus -Text 'The journal could not be checked; the log says why.'
+                return
+            }
+
+            Show-TkJournalChain -Check $check
+            Set-TkStatus -Text $(if ($check.Valid) { 'The journal is intact.' } else { 'The journal chain is broken: see where.' })
+        }
+}
+
+<#
+.SYNOPSIS
+    Shows the result of a journal check in the journal area.
+#>
+function Show-TkJournalChain {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        $Check
+    )
+
+    $document = New-TkFlowDocument
+
+    Add-TkHeading -Document $document -Text 'Journal integrity' -Level 1
+
+    if ($Check.Entries -eq 0) {
+        Add-TkParagraph -Document $document -Muted -Text 'The journal is empty.'
+    }
+    elseif ($Check.Valid) {
+        Add-TkSeverityLine -Document $document -Severity 'Pass' `
+            -Heading ('{0} entries, each linked to the one before it' -f $Check.Entries) `
+            -Note 'No line was changed or removed since it was written, and no day is missing between the first and the last.'
+    }
+    else {
+        Add-TkSeverityLine -Document $document -Severity 'Fail' `
+            -Heading ('The chain is broken in {0} place(s)' -f @($Check.Breaks).Count) `
+            -Note 'A line was changed, removed or added after it was written, at or just before each place below.'
+
+        $when = {
+            param($text)
+            if (-not $text) { return '' }
+            try { (ConvertTo-TkJournalTime -Value $text).ToString('yyyy-MM-dd HH:mm:ss') } catch { [string] $text }
+        }
+
+        Add-TkTable -Document $document -Column @('File', 'Line', 'Time', 'Operation', 'What is wrong') -Weight @(1.4, 0.4, 1.1, 1.6, 2.5) `
+            -Row @(@($Check.Breaks) | ForEach-Object { , @($_.File, [string] $_.Line, (& $when $_.Time), $_.Name, $_.Problem) })
+    }
+
+    if ($Check.Unchained -gt 0) {
+        Add-TkParagraph -Document $document -Muted -Text (
+            '{0} line(s) were written before the journal linked its lines, and are counted apart.' -f $Check.Unchained
+        )
+    }
+
+    if ($Check.Trimmed) {
+        Add-TkParagraph -Document $document -Muted -Text 'The oldest days were removed; the chain is checked from the first line kept.'
+    }
+
+    if ($Check.Head) {
+        Add-TkParagraph -Document $document -Muted -Text (
+            'Head of the chain: {0}. The intervention report records it: a journal changed afterwards, even rewritten whole, no longer leads to it. Refresh to see the journal again.' -f $Check.Head
+        )
+    }
+
+    Set-TkDocument -ControlName 'JournalOutput' -Document $document
+}
+
+<#
+.SYNOPSIS
+    Exports the journal of the selected period as JSON Lines or CEF.
+#>
+function Export-TkJournalFromUi {
+    [CmdletBinding()]
+    param()
+
+    $period = Get-TkSelectedJournalPeriod
+    $dialog = New-Object Microsoft.Win32.SaveFileDialog
+    $dialog.Title    = 'Export the journal'
+    $dialog.Filter   = 'JSON Lines, the lines with their links (*.jsonl)|*.jsonl|CEF, for a SIEM (*.cef)|*.cef'
+    $dialog.FileName = '{0}-journal-{1}.jsonl' -f $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd-HHmm')
+
+    if (-not $dialog.ShowDialog()) {
+        return
+    }
+
+    $format = if ($dialog.FilterIndex -eq 2 -or $dialog.FileName -match '\.cef$') { 'Cef' } else { 'Jsonl' }
+
+    try {
+        $count = Export-TkJournal -Path $dialog.FileName -Format $format -Since $period.Since -Session $period.Session -Confirm:$false
+    }
+    catch {
+        Write-TkLog -Level Error -Category 'Report' -Message ('The journal could not be exported: {0}' -f $_.Exception.Message)
+        Set-TkStatus -Text 'The journal could not be exported; the log says why.'
+        return
+    }
+
+    Set-TkStatus -Text ('{0} journal entries of {1} exported to {2} ({3}). The journal is the record itself and is not pseudonymised.' -f
+        $count, $period.Label.ToLowerInvariant(), $dialog.FileName, $(if ($format -eq 'Cef') { 'CEF' } else { 'JSON Lines, links kept' }))
 }
