@@ -5575,6 +5575,148 @@ Describe 'Timeline of changes' {
     }
 }
 
+Describe 'Export for the fleet' {
+
+    BeforeAll {
+        # A tweak with one of each kind of step the catalog has.
+        $script:FleetTweak = [pscustomobject] @{
+            id = 'sample'; name = 'Sample tweak'; requiresElevation = $true
+            registry = @(
+                [pscustomobject] @{ path = 'HKLM:\SOFTWARE\Policies\Contoso\Sample'; name = 'Enabled'; type = 'DWord'; value = 0; default = 1; defaultAction = 'delete' }
+                [pscustomobject] @{ path = 'HKCU:\Software\Contoso\Sample'; name = 'Say "hi"'; type = 'String'; value = 'C:\Temp\it''s'; default = 'old' }
+            )
+            registryKeys     = @([pscustomobject] @{ path = 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'; applyAction = 'create'; revertAction = 'delete'; defaultValue = '' })
+            services         = @([pscustomobject] @{ name = 'DiagTrack'; startup = 'Disabled'; default = 'Automatic' })
+            scheduledTasks   = @('\Microsoft\Windows\Application Experience\ProgramDataUpdater')
+            optionalFeatures = @([pscustomobject] @{ name = 'SMB1Protocol'; state = 'Disabled'; default = 'Enabled' })
+            capabilities     = @([pscustomobject] @{ name = 'OpenSSH.Server~~~~0.0.1.0'; state = 'Installed'; default = 'NotPresent' })
+            auditPolicy      = @([pscustomobject] @{ subcategory = '{0CCE922B-69AE-11D9-BED3-505054503030}'; name = 'Process Creation'; success = 'enable'; failure = 'disable'; defaultSuccess = 'disable'; defaultFailure = 'disable' })
+        }
+
+        $script:ParseErrors = {
+            param($text)
+            $tokens = $null; $errors = $null
+            [void] [System.Management.Automation.Language.Parser]::ParseInput($text, [ref] $tokens, [ref] $errors)
+            @($errors)
+        }
+    }
+
+    It 'turns each kind of step into a test, an apply and a revert, machine and account apart' {
+
+        $converted = Get-TkFleetStep -Tweak $script:FleetTweak
+
+        $converted.Refused    | Should -BeNullOrEmpty
+        @($converted.Steps).Count | Should -Be 8
+        (@($converted.Steps | Where-Object { $_.Scope -eq 'User' })).Count | Should -Be 2
+
+        $value = $converted.Steps[0]
+        $value.Test   | Should -Be "Test-FleetValue -Path 'HKLM:\SOFTWARE\Policies\Contoso\Sample' -Name 'Enabled' -Value 0"
+        $value.Revert | Should -Be "Remove-FleetValue -Path 'HKLM:\SOFTWARE\Policies\Contoso\Sample' -Name 'Enabled'"
+
+        # Quotes in a value stay inside the literal.
+        $converted.Steps[1].Apply | Should -Be "Set-FleetValue -Path 'HKCU:\Software\Contoso\Sample' -Name 'Say `"hi`"' -Type String -Value 'C:\Temp\it''s'"
+
+        ($converted.Steps | Where-Object { $_.Label -like 'Task *' }).Apply | Should -Be "Set-FleetTask -Path '\Microsoft\Windows\Application Experience\' -Name 'ProgramDataUpdater' -Enabled `$false"
+        ($converted.Steps | Where-Object { $_.Label -like 'Audit *' }).Test | Should -Be "Test-FleetAudit -Guid '{0CCE922B-69AE-11D9-BED3-505054503030}' -Success enable -Failure disable"
+    }
+
+    It 'refuses a tweak whose catalog entry does not have the form a script can carry' {
+
+        $bad = @(
+            [pscustomobject] @{ id = 'a'; name = 'Line break'; registry = @([pscustomobject] @{ path = "HKLM:\SOFTWARE\X`nY"; name = 'N'; type = 'DWord'; value = 1; default = 0 }) }
+            [pscustomobject] @{ id = 'b'; name = 'Other hive'; registry = @([pscustomobject] @{ path = 'HKCR:\X'; name = 'N'; type = 'DWord'; value = 1; default = 0 }) }
+            [pscustomobject] @{ id = 'c'; name = 'Command in a service name'; services = @([pscustomobject] @{ name = 'x; Remove-Item C:\'; startup = 'Disabled'; default = 'Manual' }) }
+            [pscustomobject] @{ id = 'd'; name = 'Quote in a task'; scheduledTasks = @('\X\"; calc; "') }
+            [pscustomobject] @{ id = 'e'; name = 'Not a DWORD'; registry = @([pscustomobject] @{ path = 'HKLM:\SOFTWARE\X'; name = 'N'; type = 'DWord'; value = '1; calc'; default = 0 }) }
+            [pscustomobject] @{ id = 'f'; name = 'Not a GUID'; auditPolicy = @([pscustomobject] @{ subcategory = 'Process Creation'; name = 'x'; success = 'enable'; failure = 'disable'; defaultSuccess = 'disable'; defaultFailure = 'disable' }) }
+        )
+
+        foreach ($tweak in $bad) {
+            (Get-TkFleetStep -Tweak $tweak).Refused | Should -Not -BeNullOrEmpty -Because $tweak.name
+        }
+    }
+
+    It 'writes scripts that parse, with the SHA-256 of their body in the header' {
+
+        $steps = @((Get-TkFleetStep -Tweak $script:FleetTweak).Steps | Where-Object { $_.Scope -eq 'Machine' })
+
+        foreach ($kind in @('Detect', 'Remediate', 'Standalone')) {
+            $text = New-TkFleetScript -Step $steps -Kind $kind -Scope Machine -TweakName @('Sample tweak') -Toolkit 'Toolkit test' -When ([datetime]::new(2026, 9, 29, 10, 0, 0))
+
+            (& $script:ParseErrors $text).Count | Should -Be 0 -Because $kind
+            $text | Should -Match 'Generated by Toolkit test on 2026-09-29 10:00'
+
+            $end  = $text.IndexOf('#>') + 2
+            $body = $text.Substring($end).TrimStart("`r", "`n")
+            if ($body.StartsWith('#Requires')) { $body = $body.Substring($body.IndexOf("`n") + 1) }
+            $text | Should -Match ('Body SHA-256: {0}' -f (Get-TkTextSha256 -Text $body))
+        }
+
+        New-TkFleetScript -Step $steps -Kind Standalone -Scope Machine -TweakName @('x') | Should -Match '#Requires -RunAsAdministrator'
+        New-TkFleetScript -Step $steps -Kind Detect -Scope User -TweakName @('x') | Should -Match 'logged-on credentials = Yes'
+    }
+
+    It 'writes the registry part as a .reg file to apply and one to revert' {
+
+        $steps  = @((Get-TkFleetStep -Tweak $script:FleetTweak).Steps)
+        $apply  = ConvertTo-TkFleetReg -Step $steps -TweakName @('Sample tweak')
+        $revert = ConvertTo-TkFleetReg -Step $steps -Revert -TweakName @('Sample tweak')
+
+        $apply | Should -Match '^Windows Registry Editor Version 5\.00'
+        $apply | Should -Match '(?m)^\[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Contoso\\Sample\]\r?\n"Enabled"=dword:00000000'
+        $apply | Should -Match '(?m)^"Say \\"hi\\""="C:\\\\Temp\\\\it''s"'
+        $apply | Should -Match '(?m)^@=""'
+        $apply | Should -Match '5 other step\(s\)'
+
+        $revert | Should -Match '(?m)^"Enabled"=-'
+        $revert | Should -Match '(?m)^"Say \\"hi\\""="old"'
+        $revert | Should -Match '(?m)^\[-HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2\}\\InprocServer32\]'
+
+        ConvertTo-TkRegKeyName -Path 'Registry::HKEY_USERS\.DEFAULT\Control Panel\Keyboard' | Should -Be 'HKEY_USERS\.DEFAULT\Control Panel\Keyboard'
+    }
+
+    It 'carries every tweak of the catalog' {
+
+        foreach ($tweak in (Get-TkTweak)) {
+            $converted = Get-TkFleetStep -Tweak $tweak
+            $converted.Refused | Should -BeNullOrEmpty -Because $tweak.id
+            @($converted.Steps).Count | Should -BeGreaterThan 0 -Because $tweak.id
+        }
+    }
+
+    It 'writes a folder with a set per scope and a README, the .reg files in UTF-16' {
+
+        $result = Export-TkFleetPackage -Tweak @($script:FleetTweak, [pscustomobject] @{ id = 'bad'; name = 'Bad one'; services = @([pscustomobject] @{ name = 'a b'; startup = 'Disabled'; default = 'Manual' }) }) -Folder $TestDrive -Confirm:$false
+
+        $names = [string[]] @($result.Files | ForEach-Object { [System.IO.Path]::GetFileName($_) })
+        [Array]::Sort($names, [StringComparer]::Ordinal)
+        ($names -join ',') | Should -Be 'README.txt,toolkit-machine-detect.ps1,toolkit-machine-remediate.ps1,toolkit-machine-revert.reg,toolkit-machine.ps1,toolkit-machine.reg,toolkit-user-detect.ps1,toolkit-user-remediate.ps1,toolkit-user-revert.reg,toolkit-user.ps1,toolkit-user.reg'
+
+        [System.IO.File]::ReadAllBytes((Join-Path $result.Folder 'toolkit-user.reg'))[0..1] | Should -Be @(0xFF, 0xFE)
+        @($result.Refused).Count | Should -Be 1
+        Get-Content -LiteralPath (Join-Path $result.Folder 'README.txt') -Raw | Should -Match 'Bad one'
+    }
+
+    It 'applies, checks and reverts for real, on a registry key of its own' {
+
+        # Pester's own sandbox key, under the account that runs the tests.
+        $root  = (Get-PSDrive -Name TestRegistry).Root -replace '^HKEY_CURRENT_USER', 'HKCU:'
+        $tweak = [pscustomobject] @{ id = 'live'; name = 'Live test'; registry = @([pscustomobject] @{ path = "$root\Fleet"; name = 'Value'; type = 'DWord'; value = 7; default = 1; defaultAction = 'delete' }) }
+
+        $result = Export-TkFleetPackage -Tweak @($tweak) -Folder $TestDrive -Confirm:$false
+        $shell  = (Get-Process -Id $PID).Path
+        $run    = { param($name, [string[]] $extra) & $shell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $result.Folder $name) @extra | Out-Null; $LASTEXITCODE }
+
+        & $run 'toolkit-user-detect.ps1' @()        | Should -Be 1
+        & $run 'toolkit-user.ps1' @('-Check')       | Should -Be 1
+        & $run 'toolkit-user-remediate.ps1' @()     | Should -Be 0
+        (Get-ItemProperty -LiteralPath "$root\Fleet" -Name 'Value').Value | Should -Be 7
+        & $run 'toolkit-user-detect.ps1' @()        | Should -Be 0
+        & $run 'toolkit-user.ps1' @('-Revert')      | Should -Be 0
+        (Get-ItemProperty -LiteralPath "$root\Fleet" -Name 'Value' -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Switch port discovery' {
 
     BeforeAll {
