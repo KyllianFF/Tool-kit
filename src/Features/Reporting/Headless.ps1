@@ -255,6 +255,12 @@ function Get-TkHeadlessReport {
             Get-TkSoftwareLifecycleReport
         })
 
+        (& $row 'Readiness' 1 $false 'Whether the machine can run Windows 11, and whether to keep, upgrade or replace it.' {
+            param($Options)
+            $null = $Options
+            Get-TkHardwareReadinessReport
+        })
+
         (& $row 'Journal' 1 $false 'Whether the intervention journal is intact, each line linked to the one before it.' {
             param($Options)
             $null = $Options

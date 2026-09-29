@@ -19,6 +19,7 @@ src/Core/DataLoader.ps1
 
 # --- Features: depend on core only -----------------------------------------
 src/Features/System/SystemInventory.ps1
+src/Features/System/HardwareReadiness.ps1
 src/Features/System/WindowsUpdate.ps1
 src/Features/System/VendorSupport.ps1
 src/Features/System/UpdateCheck.ps1

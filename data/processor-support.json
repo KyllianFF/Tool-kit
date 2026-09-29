@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "description": "Which processors Windows 11 supports. The rules follow the processor check of Microsoft's Windows 11 hardware readiness script, which reads the CPUID family, model and stepping, with the exceptions Microsoft's lists of supported Intel, AMD and Qualcomm processors name. They are read in order and the first rule that matches decides. A processor no rule matches is reported as not known, never guessed.",
+  "reviewed": "2026-09",
+  "reference": "https://learn.microsoft.com/windows-hardware/design/minimum/windows-processor-requirements",
+  "rules": [
+    {
+      "vendor": "GenuineIntel",
+      "name": "Core\\(TM\\) Ultra|Core Ultra",
+      "verdict": "Supported",
+      "reason": "Intel Core Ultra."
+    },
+    {
+      "vendor": "GenuineIntel",
+      "name": "\\bi[79]-7(800|820|900|920|940|960|980)X",
+      "verdict": "Supported",
+      "reason": "Intel Core X-series of the 7th generation, which Microsoft lists."
+    },
+    {
+      "vendor": "GenuineIntel",
+      "name": "\\bi7-7820HQ\\b",
+      "verdict": "Unknown",
+      "reason": "Supported only in some devices, such as the Surface Studio 2 and the Dell Precision 5520."
+    },
+    {
+      "vendor": "GenuineIntel",
+      "name": "\\b(i[3579]|m3)-(8\\d{3}|9\\d{3}|1\\d{4})",
+      "verdict": "Supported",
+      "reason": "Intel Core of the 8th generation or later."
+    },
+    {
+      "vendor": "GenuineIntel",
+      "name": "\\b(i[3579]|m[357])-[2-7]\\d{3}|\\bm[357]-[67]Y",
+      "verdict": "NotSupported",
+      "reason": "Intel Core of the 7th generation or earlier."
+    },
+    {
+      "vendor": "GenuineIntel",
+      "family": 6,
+      "models": [ 85 ],
+      "verdict": "Supported",
+      "reason": "Intel Xeon Scalable, Xeon W or Core X (Skylake-SP and later)."
+    },
+    {
+      "vendor": "GenuineIntel",
+      "family": 6,
+      "modelMax": 95,
+      "verdict": "NotSupported",
+      "reason": "An Intel processor older than the 8th generation."
+    },
+    {
+      "vendor": "GenuineIntel",
+      "family": 6,
+      "models": [ 142, 158 ],
+      "steppings": [ 9 ],
+      "verdict": "NotSupported",
+      "reason": "Intel of the 7th generation (Kaby Lake)."
+    },
+    {
+      "vendor": "GenuineIntel",
+      "family": 6,
+      "verdict": "Supported",
+      "reason": "Intel of the 8th generation or later."
+    },
+    {
+      "vendor": "GenuineIntel",
+      "verdict": "NotSupported",
+      "reason": "An Intel processor family Windows 11 does not support."
+    },
+    {
+      "vendor": "AuthenticAMD",
+      "familyMax": 22,
+      "verdict": "NotSupported",
+      "reason": "An AMD processor older than Ryzen, such as FX, A-series or an Athlon before Zen."
+    },
+    {
+      "vendor": "AuthenticAMD",
+      "family": 23,
+      "models": [ 1, 17 ],
+      "verdict": "NotSupported",
+      "reason": "AMD Zen of the first generation: Ryzen 1000, Threadripper 1000, EPYC 7001, and the Ryzen 2000 and Athlon with Radeon graphics of that generation."
+    },
+    {
+      "vendor": "AuthenticAMD",
+      "verdict": "Supported",
+      "reason": "AMD Zen+ or later: Ryzen 2000 and later."
+    },
+    {
+      "vendor": "Qualcomm",
+      "name": "\\b835\\b",
+      "verdict": "NotSupported",
+      "reason": "Qualcomm Snapdragon 835."
+    },
+    {
+      "vendor": "Qualcomm",
+      "verdict": "Supported",
+      "reason": "Qualcomm Snapdragon 850 or later, or a Microsoft SQ."
+    }
+  ]
+}
