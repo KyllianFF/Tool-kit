@@ -284,7 +284,7 @@ function Get-TkPageName {
     return @(
         'Dashboard', 'System', 'Software', 'Tweaks', 'Migration',                # Workstation
         'Playbooks', 'Diagnostics', 'Fixes', 'Network', 'M365', 'Intervention',  # Troubleshooting
-        'Security',                                                              # Security
+        'Security', 'Fleet',                                                     # Security
         'SecurityTools',                                                         # Toolbox
         'Knowledge', 'VendorCommands',                                           # Reference
         'Settings'

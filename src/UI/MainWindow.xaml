@@ -1327,6 +1327,7 @@
 
                             <TextBlock Text="SECURITY" Style="{StaticResource NavSection}" />
                             <Button x:Name="NavSecurity"       Content="Audit"           Style="{StaticResource NavButton}" Tag="&#xEA18;" />
+                            <Button x:Name="NavFleet"          Content="Fleet"           Style="{StaticResource NavButton}" Tag="&#xE7F4;" />
 
                             <TextBlock Text="TOOLBOX" Style="{StaticResource NavSection}" />
                             <Button x:Name="NavSecurityTools"  Content="Tools"           Style="{StaticResource NavButton}" Tag="&#xE8D7;" />
@@ -6055,6 +6056,45 @@
                                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                          IsDocumentEnabled="True" />
                         </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- ========================== FLEET ========================== -->
+                <Grid x:Name="PageFleet" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <TextBlock Text="Fleet" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                   Text="The report documents of many machines, read from one folder: health, Windows 11 and renewal, what is out of support, and each audit control across the fleet. No server and no agent: the machines drop their reports in a share." />
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <WrapPanel>
+                                <TextBlock Text="Folder" VerticalAlignment="Center" Margin="0,0,8,8" />
+                                <TextBox x:Name="FleetFolder" Width="460" Margin="0,0,8,8" Tag="\\server\fleet$, or a local folder" />
+                                <Button x:Name="BtnFleetBrowse" Content="Browse" Style="{StaticResource GlyphButton}" Tag="&#xE838;" Margin="0,0,8,8" />
+                                <Button x:Name="BtnFleetRead" Content="Read the folder" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE72C;" Margin="0,0,8,8" />
+                                <Button x:Name="BtnFleetExport" Content="Export HTML" Style="{StaticResource GlyphButton}" Tag="&#xEDE1;" Margin="0,0,0,8"
+                                        ToolTip="One page for a meeting, pseudonymised as the privacy of exports asks." />
+                            </WrapPanel>
+                            <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                       Text="Fill it from a startup script, an Intune remediation or an RMM running, as SYSTEM for the full audit: &amp; $toolkit -Report All -AuditLevel Full -OutFile &quot;\\server\fleet$\$env:COMPUTERNAME.json&quot;. Give the machines the right to write to the share and not to read it. Each machine writes its own report: the view says what the machines declare." />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0">
+                        <RichTextBox x:Name="FleetOutput" IsReadOnly="True"
+                                     BorderThickness="0" Background="Transparent"
+                                     Foreground="{DynamicResource TextPrimary}"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Disabled"
+                                     IsDocumentEnabled="True" />
                     </Border>
                 </Grid>
 
