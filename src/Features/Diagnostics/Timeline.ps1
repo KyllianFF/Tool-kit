@@ -157,6 +157,26 @@ function Get-TkTimelineSource {
             New-TkTimelineLine ('{0} {1}: {2}' -f $verb, $fact.Field['TargetUserName'], $member) ('By {0}' -f $fact.Field['SubjectUserName']) 'Warning'
         })
 
+        # What the audit modes of the Before hardening tab record: each one
+        # is something a hardening would have refused.
+        (& $source 'Security' 'NTLM a restriction would refuse (audit mode)' 'Microsoft-Windows-NTLM/Operational' '' @(8001, 8002) $false '' {
+            param($fact)
+            $row = ConvertTo-TkImpactRow -ProbeId 'ntlm' -EventId $fact.Id -Data (ConvertTo-TkImpactData -Fact $fact)
+            New-TkTimelineLine ('NTLM: {0}' -f $row.Key) $row.Detail 'Warning'
+        })
+
+        (& $source 'Security' 'SMBv1 connections (audit mode)' 'Microsoft-Windows-SMBServer/Audit' '' @(3000) $true '' {
+            param($fact)
+            $row = ConvertTo-TkImpactRow -ProbeId 'smb1' -EventId $fact.Id -Data (ConvertTo-TkImpactData -Fact $fact)
+            New-TkTimelineLine $row.Key 'Removing SMBv1 would refuse it.' 'Warning'
+        })
+
+        (& $source 'Security' 'Modules LSA protection would refuse (audit mode)' 'Microsoft-Windows-CodeIntegrity/Operational' '' @(3065, 3066) $false '' {
+            param($fact)
+            $row = ConvertTo-TkImpactRow -ProbeId 'lsa' -EventId $fact.Id -Data (ConvertTo-TkImpactData -Fact $fact)
+            New-TkTimelineLine $row.Key $row.Detail 'Warning'
+        })
+
         # The identifiers changed with Windows 11: 2004 to 2006 before, 2097, 2099 and 2052 after.
         (& $source 'Firewall' 'Firewall rules added, changed or deleted' 'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall' '' @(2004, 2005, 2006, 2097, 2099, 2052) $false '' {
             param($fact)

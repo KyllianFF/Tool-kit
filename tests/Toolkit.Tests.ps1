@@ -624,7 +624,7 @@ Describe 'Headless reports' {
         # removed or renamed, or changed type or meaning. It changes here, in
         # Get-TkHeadlessReport and in docs/REPORT-FORMAT.md together.
         $expected = 'Dashboard=1,Inventory=1,Network=1,Reboot=1,Storage=1,Performance=1,Devices=1,Crashes=1,Duplicates=1,Path=1,' +
-                    'Restarts=1,Timeline=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Readiness=1,Journal=1,Audit=1'
+                    'Restarts=1,Timeline=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Readiness=1,Journal=1,Impact=1,Audit=1'
 
         (@(Get-TkHeadlessReport | ForEach-Object { '{0}={1}' -f $_.Name, $_.Version })) -join ',' | Should -Be $expected
 
@@ -6416,6 +6416,226 @@ Describe 'Organisation policy' {
 
         Format-TkPolicyCheck -Import $null | Should -Be 'The policy could not be read.'
         Format-TkPolicyCheck -Import ([pscustomobject] @{ Applied = $false; Reason = 'It is not signed.' }) | Should -Be 'Not applied: It is not signed.'
+    }
+}
+
+Describe 'Impact before hardening' {
+
+    BeforeAll {
+        # Journaled to a temporary folder, never to the account that runs the tests.
+        $script:ImpactDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+
+        $script:Msv = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0'
+        $script:Ntlm = @(Get-TkImpactProbe | Where-Object { $_.Id -eq 'ntlm' })[0]
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:ImpactDataRoot
+    }
+
+    It 'keeps a value already as strict, and records what it replaces' {
+
+        $plan = @(Get-TkImpactPlan -Probe $script:Ntlm -Current @{ AuditReceivingNTLMTraffic = $null; RestrictSendingNTLMTraffic = 2 })
+
+        $plan[0].Name    | Should -Be 'AuditReceivingNTLMTraffic'
+        $plan[0].Set     | Should -BeTrue
+        $plan[0].Existed | Should -BeFalse
+        $plan[1].Set     | Should -BeFalse -Because 'a machine that already refuses NTLM is not put back to auditing it'
+        $plan[1].Previous | Should -Be 2
+
+        $open = @(Get-TkImpactPlan -Probe $script:Ntlm -Current @{ AuditReceivingNTLMTraffic = 1; RestrictSendingNTLMTraffic = 0 })
+        ($open | ForEach-Object { '{0}:{1}:{2}' -f $_.Name, $_.Set, $_.Previous }) -join ',' | Should -Be 'AuditReceivingNTLMTraffic:True:1,RestrictSendingNTLMTraffic:True:0'
+    }
+
+    It 'puts back exactly what was there, and never a value it could not have replaced' {
+
+        $sending = $script:Ntlm.Settings | Where-Object { $_.Name -eq 'RestrictSendingNTLMTraffic' }
+        $record  = { param($set, $existed, $previous) [pscustomobject] @{ Name = 'RestrictSendingNTLMTraffic'; Set = $set; Existed = $existed; Previous = $previous } }
+
+        (Get-TkImpactRestore -Setting $sending -Record (& $record $false $true 2) -Current 2).Action | Should -Be 'Leave'
+        (Get-TkImpactRestore -Setting $sending -Record (& $record $true $true 0) -Current 2).Action  | Should -Be 'Leave' -Because 'it changed since'
+        (Get-TkImpactRestore -Setting $sending -Record (& $record $true $false $null) -Current 1).Action | Should -Be 'Remove'
+
+        $back = Get-TkImpactRestore -Setting $sending -Record (& $record $true $true 0) -Current 1
+        $back.Action | Should -Be 'Restore'
+        $back.Value  | Should -Be 0
+
+        # A record changed to write a value the toolkit never replaces.
+        $forged = Get-TkImpactRestore -Setting $sending -Record (& $record $true $true 7) -Current 1
+        $forged.Action | Should -Be 'Remove'
+        $forged.Reason | Should -Match 'could have replaced'
+    }
+
+    It 'turns a mode on and off through its record, journaled, and refuses what it must' {
+
+        $registry = @{}
+        $logs     = @{ 'Microsoft-Windows-NTLM/Operational' = [pscustomobject] @{ Readable = $true; Enabled = $true; MaxBytes = 1052672; Records = 10; Reason = '' } }
+        $store    = @{ Text = '' }
+
+        function Test-TkIsElevated { $true }
+        function Get-TkImpactValue { param($Path, $Name) $registry[('{0}\{1}' -f $Path, $Name)] }
+        function Set-TkImpactValue {
+            [CmdletBinding(SupportsShouldProcess)]
+            param($Path, $Name, $Value)
+            if ($null -eq $Value) { $registry.Remove(('{0}\{1}' -f $Path, $Name)) } else { $registry[('{0}\{1}' -f $Path, $Name)] = [long] $Value }
+        }
+        function Get-TkImpactLog { param($LogName) $logs[$LogName] }
+        function Set-TkImpactLog {
+            [CmdletBinding(SupportsShouldProcess)]
+            param($LogName, $Enabled, $MaxBytes)
+            $before = $logs[$LogName]
+            $logs[$LogName] = [pscustomobject] @{ Readable = $true; Enabled = $Enabled; MaxBytes = $(if ($MaxBytes -gt 0) { $MaxBytes } else { $before.MaxBytes }); Records = 10; Reason = '' }
+        }
+        function Read-TkImpactState { ConvertFrom-TkImpactStateText -Text $store.Text }
+        function Write-TkImpactState { [CmdletBinding(SupportsShouldProcess)] param($State) $store.Text = ConvertTo-TkImpactStateText -State $State }
+
+        $sending   = '{0}\RestrictSendingNTLMTraffic' -f $script:Msv
+        $receiving = '{0}\AuditReceivingNTLMTraffic' -f $script:Msv
+        $registry[$sending] = 0
+
+        $on = Start-TkImpactMeasurement -Id 'ntlm'
+        $on.Ok                  | Should -BeTrue
+        $registry[$sending]     | Should -Be 1
+        $registry[$receiving]   | Should -Be 2
+        $logs['Microsoft-Windows-NTLM/Operational'].MaxBytes | Should -Be 33554432
+        (Read-TkImpactState).ContainsKey('ntlm') | Should -BeTrue
+
+        (Start-TkImpactMeasurement -Id 'ntlm').Message | Should -BeLike '*already being measured*'
+
+        $off = Stop-TkImpactMeasurement -Id 'ntlm'
+        $off.Ok                          | Should -BeTrue
+        $registry[$sending]              | Should -Be 0
+        $registry.ContainsKey($receiving) | Should -BeFalse
+        $logs['Microsoft-Windows-NTLM/Operational'].MaxBytes | Should -Be 1052672
+        $store.Text                      | Should -Be ''
+
+        (Stop-TkImpactMeasurement -Id 'ntlm').Message | Should -BeLike '*was not turned on by the toolkit*'
+
+        $journal = @(Get-TkJournalEntry -Since (Get-Date).AddMinutes(-10) | Where-Object { $_.Category -eq 'Hardening' })
+        ($journal | ForEach-Object { $_.Name }) -join ',' | Should -Be 'Impact measurement started: NTLM,Impact measurement stopped: NTLM'
+        $journal[0].Kind   | Should -Be 'Change'
+        $journal[0].Detail | Should -Match 'RestrictSendingNTLMTraffic 0 -> 1'
+
+        # A machine that already refuses outgoing NTLM keeps refusing it, before and after.
+        $registry[$sending] = 2
+        $null = Start-TkImpactMeasurement -Id 'ntlm'
+        $registry[$sending] | Should -Be 2
+        # Changed by someone else while it measured: left as it is.
+        $registry[$receiving] = 1
+        $null = Stop-TkImpactMeasurement -Id 'ntlm'
+        $registry[$sending]   | Should -Be 2
+        $registry[$receiving] | Should -Be 1
+
+        $registry['HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\RunAsPPL'] = 2
+        (Start-TkImpactMeasurement -Id 'lsa').Message | Should -BeLike '*already in place*'
+        (Start-TkImpactMeasurement -Id 'ps2').Message | Should -BeLike '*needs nothing turned on*'
+        (Start-TkImpactMeasurement -Id 'nope').Ok     | Should -BeFalse
+
+        function Test-TkIsElevated { $false }
+        (Start-TkImpactMeasurement -Id 'smb1').Message | Should -BeLike '*needs administrator rights*'
+        $registry.ContainsKey('HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters\AuditSmb1Access') | Should -BeFalse
+    }
+
+    It 'keeps its record through JSON the same on both editions' {
+
+        $text  = ConvertTo-TkImpactStateText -State @{ ntlm = [ordered] @{ Started = '2026-09-30T10:00:00.0000000+02:00'; StartedBy = 'PC\admin'; Settings = @([ordered] @{ Name = 'AuditReceivingNTLMTraffic'; Set = $true; Existed = $false; Previous = $null }) } }
+        $state = ConvertFrom-TkImpactStateText -Text $text
+
+        $state.ntlm.Started                | Should -BeOfType [string]
+        ([datetime] $state.ntlm.Started)   | Should -Be ([datetime] '2026-09-30T10:00:00.0000000+02:00')
+        @($state.ntlm.Settings)[0].Set     | Should -BeTrue
+        @($state.ntlm.Settings)[0].Previous | Should -BeNullOrEmpty
+        (ConvertFrom-TkImpactStateText -Text '{ broken').Count | Should -Be 0
+        ConvertTo-TkImpactStateText -State @{} | Should -Be ''
+    }
+
+    It 'names who or what a hardening would refuse, from the events' {
+
+        $row = { param($probe, $id, $data) ConvertTo-TkImpactRow -ProbeId $probe -EventId $id -Data $data }
+
+        $sent = & $row 'ntlm' 8001 @{ TargetName = 'nas01.contoso.local'; ProcessName = 'C:\Windows\explorer.exe'; ClientDomainName = 'CONTOSO'; ClientUserName = 'jdoe' }
+        $sent.Key    | Should -Be 'Sent to nas01.contoso.local'
+        $sent.Detail | Should -Be 'C:\Windows\explorer.exe, as CONTOSO\jdoe'
+
+        (& $row 'ntlm' 8002 @{ ProcessName = 'System' }).Key                                                              | Should -Be 'Received by System'
+        (& $row 'ntlm' 8002 @{ ProcessName = 'System'; WorkstationName = 'PRINTER-3' }).Key                               | Should -Be 'Received from PRINTER-3'
+        (& $row 'smb1' 3000 @{ ClientName = '192.168.1.50' }).Key                                                          | Should -Be 'SMBv1 client 192.168.1.50'
+        (& $row 'lsa' 3066 @{ FileNameBuffer = '\Device\HarddiskVolume3\Windows\System32\legacyfilter.dll' }).Key          | Should -Be 'Module \Windows\System32\legacyfilter.dll'
+        (& $row 'ps2' 400 @{ '#2' = "EngineVersion=2.0`r`nHostApplication=powershell.exe -Version 2 -File C:\old.ps1`r`nScriptName=" }).Key | Should -Be 'PowerShell 2.0 started by powershell.exe -Version 2 -File C:\old.ps1'
+        & $row 'ps2' 400 @{ '#2' = "EngineVersion=5.1.26100.1`r`nHostApplication=powershell.exe" } | Should -BeNullOrEmpty
+
+        $data = ConvertTo-TkImpactData -Fact ([pscustomobject] @{ Field = @{ ClientName = '10.0.0.9' }; Value = @('10.0.0.9', 'x') })
+        $data['ClientName'] | Should -Be '10.0.0.9'
+        $data['#1']         | Should -Be 'x'
+
+        $rows = @(
+            [pscustomobject] @{ Key = 'Sent to nas01'; Detail = 'a'; EventId = 8001; Time = [datetime]::new(2026, 9, 25) }
+            [pscustomobject] @{ Key = 'Sent to nas01'; Detail = 'b'; EventId = 8001; Time = [datetime]::new(2026, 9, 21) }
+            [pscustomobject] @{ Key = 'Sent to srv02'; Detail = 'c'; EventId = 8001; Time = [datetime]::new(2026, 9, 22) }
+        )
+        $groups = @(Group-TkImpactRow -Row $rows)
+        $groups[0].Key   | Should -Be 'Sent to nas01'
+        $groups[0].Count | Should -Be 2
+        $groups[0].First | Should -Be ([datetime]::new(2026, 9, 21))
+        $groups[0].Last  | Should -Be ([datetime]::new(2026, 9, 25))
+    }
+
+    It 'says only what it could see' {
+
+        $now      = [datetime]::new(2026, 9, 30, 12, 0, 0)
+        $lsa      = @(Get-TkImpactProbe | Where-Object { $_.Id -eq 'lsa' })[0]
+        $seen     = { param($rows, $oldest) [pscustomobject] @{ Readable = $true; Reason = ''; Oldest = $oldest; Rows = @($rows) } }
+        $verdict  = { param($probe, $measuring, $started, $evidence, $boot) Resolve-TkImpactVerdict -Probe $probe -Measuring $measuring -Started $started -Evidence $evidence -LastBoot $boot -Now $now }
+        $use      = { param($key) [pscustomobject] @{ Key = $key; Detail = ''; EventId = 8001; Time = $now.AddDays(-1) } }
+
+        (Resolve-TkImpactVerdict -Probe $lsa -Measuring $true -Hardened $true -Evidence (& $seen @() $null) -Now $now).Verdict | Should -Be 'Hardened'
+        (& $verdict $script:Ntlm $true $null ([pscustomobject] @{ Readable = $false; Reason = 'denied'; Oldest = $null; Rows = @() }) $null).Verdict | Should -Be 'NotReadable'
+        (& $verdict $script:Ntlm $false $null (& $seen @() $now.AddDays(-30)) $null).Verdict | Should -Be 'NotMeasured'
+        (& $verdict $lsa $true $now.AddHours(-2) (& $seen @() $now.AddDays(-30)) $now.AddDays(-3)).Verdict | Should -Be 'Waiting'
+        (& $verdict $script:Ntlm $true $now.AddHours(-6) (& $seen @() $now.AddDays(-30)) $null).Verdict | Should -Be 'TooEarly'
+
+        $quiet = & $verdict $script:Ntlm $true $now.AddDays(-7) (& $seen @() $now.AddDays(-30)) $null
+        $quiet.Verdict  | Should -Be 'NoUseSeen'
+        $quiet.Severity | Should -Be 'Pass'
+        $quiet.Headline | Should -Be 'No use seen in 7 day(s): restricting NTLM should break nothing that ran here in that time.'
+
+        # The log overwrote the start: only what it still holds is vouched for.
+        $short = & $verdict $script:Ntlm $true $now.AddDays(-7) (& $seen @() $now.AddDays(-2)) $null
+        $short.Headline | Should -BeLike 'No use seen in 2 day(s)*'
+        $short.Note     | Should -Match 'only reaches back'
+
+        $busy = & $verdict $script:Ntlm $true $now.AddDays(-7) (& $seen @((& $use 'Sent to nas01'), (& $use 'Sent to nas01'), (& $use 'Sent to srv02')) $now.AddDays(-30)) $null
+        $busy.Verdict  | Should -Be 'InUse'
+        $busy.Severity | Should -Be 'Warning'
+        $busy.Headline | Should -Be '3 use(s) by 2 source(s) in 7 day(s): restricting NTLM would break them.'
+    }
+
+    It 'is wired: the headless report, the timeline, the elevated actions, the audit hint and the tab' {
+
+        $report = Get-TkHeadlessReport | Where-Object { $_.Name -eq 'Impact' }
+        $report.Version  | Should -Be 1
+        $report.Elevated | Should -BeFalse
+
+        $source = @(Get-TkTimelineSource) | Where-Object { $_.Log -eq 'Microsoft-Windows-NTLM/Operational' } | Select-Object -First 1
+        $line   = & $source.Convert ([pscustomobject] @{ Id = 8001; Time = Get-Date; Field = @{ TargetName = 'nas01' }; Value = @() })
+        $line.Title    | Should -Be 'NTLM: Sent to nas01'
+        $line.Severity | Should -Be 'Warning'
+
+        $names = @(Get-TkElevatedAction | ForEach-Object { $_.Name })
+        $names | Should -Contain 'StartImpactMeasurement'
+        $names | Should -Contain 'StopImpactMeasurement'
+
+        Format-TkImpactHint -Finding (New-TkAuditFinding -Id 'SMB-001' -Name 'SMBv1' -Category 'Network' -Status 'Fail' -Detail 'x') | Should -BeLike '*Before hardening, SMBv1*'
+        Format-TkImpactHint -Finding (New-TkAuditFinding -Id 'SMB-001' -Name 'SMBv1' -Category 'Network' -Status 'Pass' -Detail 'x') | Should -Be ''
+        Format-TkImpactHint -Finding (New-TkAuditFinding -Id 'FW-001' -Name 'Firewall' -Category 'Network' -Status 'Fail' -Detail 'x')  | Should -Be ''
+
+        Get-TkJournalKind -Category 'Hardening' | Should -Be 'Change'
+
+        $markup = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\MainWindow.xaml') -Raw
+        foreach ($name in @('ImpactProbe', 'BtnImpactStart', 'BtnImpactStop', 'BtnImpactRead', 'ImpactOutput')) {
+            $markup | Should -Match ('x:Name="{0}"' -f $name)
+        }
     }
 }
 
