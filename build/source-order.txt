@@ -85,6 +85,7 @@ src/Features/Diagnostics/SupportBundle.ps1
 src/Features/Intervention/Journal.ps1
 src/Features/Reporting/Headless.ps1
 src/Features/Reporting/Comparison.ps1
+src/Features/Reporting/Fleet.ps1
 src/Features/Reporting/HtmlReport.ps1
 src/Features/Reporting/Privacy.ps1
 src/Features/Automation/HeadlessActions.ps1
@@ -138,6 +139,7 @@ src/UI/Pages/DiagnosticsPage.ps1
 src/UI/Pages/HardwarePage.ps1
 src/UI/Pages/PlaybooksPage.ps1
 src/UI/Pages/InterventionPage.ps1
+src/UI/Pages/FleetPage.ps1
 src/UI/Pages/ReferencePage.ps1
 src/UI/Pages/ToolsPage.ps1
 

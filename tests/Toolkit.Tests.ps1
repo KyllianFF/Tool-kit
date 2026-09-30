@@ -5888,6 +5888,118 @@ Describe 'Verified plan' {
     }
 }
 
+Describe 'Fleet view' {
+
+    BeforeAll {
+        # A report document as a machine drops it: only what the fleet view reads.
+        function New-FleetDocument {
+            param(
+                [string] $Computer, [string] $MachineId, [datetime] $When, [string] $Worst = 'Pass', [int] $Score = 80,
+                [string] $Windows11 = 'Ready', [string] $Renewal = 'Keep', [string] $Privacy = 'None', [object[]] $Findings = @()
+            )
+            [ordered] @{
+                Schema = 'toolkit-report'; SchemaVersion = '1.0'; Computer = $Computer; MachineId = $MachineId
+                User = 'CONTOSO\x'; GeneratedAt = $When.ToString('o'); Toolkit = [ordered] @{ Version = '1.1.0'; Commit = 'abc' }
+                Elevated = $true; Privacy = $Privacy; Summary = [ordered] @{ Worst = $Worst; Reports = [ordered] @{} }
+                Reports = [ordered] @{
+                    Audit     = [ordered] @{ Version = 1; Status = 'Ok'; Reason = ''; DurationMs = 1; Worst = $Worst; Data = [ordered] @{ Level = 'Full'; Score = [ordered] @{ Score = $Score }; Findings = @($Findings) } }
+                    Readiness = [ordered] @{ Version = 1; Status = 'Ok'; Reason = ''; DurationMs = 1; Worst = 'Pass'; Data = [ordered] @{ Windows11 = [ordered] @{ Verdict = $Windows11 }; Renewal = [ordered] @{ Verdict = $Renewal } } }
+                    Reboot    = [ordered] @{ Version = 1; Status = 'Ok'; Reason = ''; DurationMs = 1; Worst = ''; Data = [ordered] @{ Pending = $true } }
+                    Lifecycle = [ordered] @{ Version = 1; Status = 'Failed'; Reason = 'x'; DurationMs = 1; Worst = ''; Data = $null }
+                }
+            }
+        }
+
+        $script:FleetFolder = Join-Path $TestDrive 'fleet'
+        New-Item -ItemType Directory -Path $script:FleetFolder | Out-Null
+
+        $fail = @([ordered] @{ Id = 'AV-001'; Name = 'Antivirus'; Status = 'Fail' }, [ordered] @{ Id = 'FW-001'; Name = 'Firewall'; Status = 'Pass' })
+        $pass = @([ordered] @{ Id = 'AV-001'; Name = 'Antivirus'; Status = 'Pass' }, [ordered] @{ Id = 'FW-001'; Name = 'Firewall'; Status = 'Warning' })
+
+        $documents = @(
+            , @('pc-a-old.json', (New-FleetDocument -Computer 'PC-A' -MachineId ('a' * 32) -When ([datetime]::new(2026, 9, 1)) -Worst 'Fail' -Score 40 -Findings $fail))
+            , @('pc-a-new.json', (New-FleetDocument -Computer 'PC-A-RENAMED' -MachineId ('a' * 32) -When ([datetime]::new(2026, 9, 28)) -Worst 'Warning' -Score 70 -Findings $pass))
+            , @('pc-b.json',     (New-FleetDocument -Computer 'PC-B' -MachineId ('b' * 32) -When ([datetime]::new(2026, 9, 27)) -Worst 'Fail' -Score 35 -Windows11 'NotReady' -Renewal 'Replace' -Findings $fail))
+            , @('pseudo-1.json', (New-FleetDocument -Computer 'PC-1' -MachineId ('c' * 32) -When ([datetime]::new(2026, 9, 26)) -Privacy 'Personal'))
+            , @('pseudo-2.json', (New-FleetDocument -Computer 'PC-1' -MachineId ('d' * 32) -When ([datetime]::new(2026, 8, 1)) -Privacy 'Personal'))
+        )
+
+        foreach ($pair in $documents) {
+            [System.IO.File]::WriteAllText((Join-Path $script:FleetFolder $pair[0]), (ConvertTo-Json -InputObject $pair[1] -Depth 12))
+        }
+
+        [System.IO.File]::WriteAllText((Join-Path $script:FleetFolder 'notes.json'), '{ "name": "not a report" }')
+        [System.IO.File]::WriteAllText((Join-Path $script:FleetFolder 'future.json'), '{ "Schema": "toolkit-report", "SchemaVersion": "2.0", "Reports": { } }')
+        [System.IO.File]::WriteAllText((Join-Path $script:FleetFolder 'broken.json'), '{ "Schema": ')
+    }
+
+    It 'keeps the latest document of each machine, told apart by its MachineId, and sets the rest aside' {
+
+        $fleet = Read-TkFleetFolder -Path $script:FleetFolder
+
+        @($fleet.Machines).Count | Should -Be 4
+        ($fleet.Machines | ForEach-Object { $_.Computer }) -join ',' | Should -Be 'PC-A-RENAMED,PC-B,PC-1,PC-1'
+
+        $renamed = $fleet.Machines | Where-Object { $_.MachineId -eq ('a' * 32) }
+        $renamed.AuditScore | Should -Be 70
+        $renamed.Documents  | Should -Be 2
+        $renamed.Failed     | Should -Be @('Lifecycle')
+
+        @($fleet.Skipped).Count | Should -Be 3
+        ($fleet.Skipped | Where-Object { $_.File -eq 'future.json' }).Reason | Should -BeLike '*newer toolkit*'
+
+        { Read-TkFleetFolder -Path (Join-Path $TestDrive 'nowhere') } | Should -Throw '*does not exist*'
+    }
+
+    It 'sums the fleet up, and each audit control across the machines' {
+
+        $fleet   = Read-TkFleetFolder -Path $script:FleetFolder
+        $summary = Get-TkFleetSummary -Machine @($fleet.Machines) -Now ([datetime]::new(2026, 9, 29))
+
+        $summary.Machines                | Should -Be 4
+        $summary.Fail                    | Should -Be 1
+        $summary.Warning                 | Should -Be 1
+        $summary.Windows11.NotReady      | Should -Be 1
+        $summary.Renewal.Replace         | Should -Be 1
+        $summary.RebootPending           | Should -Be 4
+        $summary.Stale                   | Should -Be 1
+        $summary.Pseudonymised           | Should -Be 2
+        $summary.AuditAverage            | Should -Be ([math]::Round((70 + 35 + 80 + 80) / 4, 0))
+        $summary.Exposed[0].Computer     | Should -Be 'PC-B'
+
+        $antivirus = $summary.Controls | Where-Object { $_.Id -eq 'AV-001' }
+        $antivirus.Fail          | Should -Be 1
+        $antivirus.Pass          | Should -Be 1
+        @($antivirus.FailingOn)  | Should -Be @('PC-B')
+        Format-TkFleetControlSpread -Control $antivirus | Should -Be 'fail: PC-B'
+
+        $firewall = $summary.Controls | Where-Object { $_.Id -eq 'FW-001' }
+        $firewall.Warning          | Should -Be 1
+        @($firewall.FailingOn).Count | Should -Be 0
+        Format-TkFleetControlSpread -Control $firewall | Should -Be 'warning: PC-A-RENAMED'
+        Format-TkFleetControlSpread -Control ([pscustomobject] @{ FailingOn = @('A', 'B', 'C'); WarningOn = @('D') }) -First 2 | Should -Be 'fail: A, B and 1 more; warning: D'
+    }
+
+    It 'writes one page for a meeting, with nothing loaded from anywhere else' {
+
+        $fleet = Read-TkFleetFolder -Path $script:FleetFolder
+        $html  = ConvertTo-TkFleetHtml -Fleet $fleet -Summary (Get-TkFleetSummary -Machine @($fleet.Machines)) -Toolkit 'Toolkit test'
+
+        $html | Should -Match 'PC-A-RENAMED'
+        $html | Should -Match 'AV-001 Antivirus'
+        $html | Should -Not -Match '<script|https?://|src='
+        $html | Should -Match 'what the machines declare'
+    }
+
+    It 'lists the page with its navigation button and its panel' {
+
+        @(Get-TkPageName) | Should -Contain 'Fleet'
+        $markup = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\MainWindow.xaml') -Raw
+        $markup | Should -Match 'x:Name="NavFleet"'
+        $markup | Should -Match 'x:Name="PageFleet"'
+    }
+}
+
 Describe 'Switch port discovery' {
 
     BeforeAll {

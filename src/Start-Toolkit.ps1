@@ -262,6 +262,7 @@ function Start-Toolkit {
         Initialize-TkHardwarePage
         Initialize-TkPlaybooksPage
         Initialize-TkInterventionPage
+        Initialize-TkFleetPage
 
         # After every page is wired, so each control exists to be disabled.
         Update-TkPrivilegedControls

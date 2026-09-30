@@ -130,3 +130,17 @@ away"), and `Privacy` says at which level. `Schema`, `SchemaVersion`,
 document validates and reads like any other. It cannot be the reference of
 `-CompareWith`: its names and addresses are aliases, and each one would read
 as a change.
+
+## In a fleet
+
+The Fleet page reads a folder of these documents, one or more per machine. It
+keeps the latest document of each `MachineId` (of each `Computer`, for a
+document of toolkit 1.0.0 that has none), and sets aside, with the reason, a file that is not a
+`toolkit-report` or comes from a later major version. From each document it
+reads `Computer`, `GeneratedAt`, `Privacy`, `Toolkit.Version`,
+`Summary.Worst`, and, from the reports whose `Status` is `Ok`:
+`Audit.Data.Score.Score`, `Audit.Data.Level`, `Audit.Data.Findings` (`Id`,
+`Name`, `Status`), `Readiness.Data.Windows11.Verdict`,
+`Readiness.Data.Renewal.Verdict`, `Lifecycle.Data.Windows.Severity`,
+`Reboot.Data.Pending` and `Journal.Data.Valid`. A report missing from a
+document, or not `Ok`, is shown as unknown, never as a pass.
