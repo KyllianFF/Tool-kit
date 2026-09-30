@@ -116,10 +116,30 @@ Each entry of `Reports`:
 | Lifecycle | 1 | no | An object: `Reviewed`, `Windows`, `Programs`, `InstalledCount`. |
 | Readiness | 1 | no | An object: `Windows11` (`Verdict`: Ready, ReadyAfterChanges, NotReady, Check or NotApplicable; `Summary`), `Renewal` (`Verdict`: Keep, Upgrade or Replace; `Summary`; `Actions`), `AgeYears`, `Processor` (`Verdict`, `Reason`, `Family`, `Model`, `Stepping`), `Checks` (each with `Area`, `Check`, `Value`, `Requirement`, `Severity`, `Fix`, `Fixable`) and `Facts`. |
 | Journal | 1 | no | An object: `Severity`, `Valid`, `Entries`, `Chained`, `Unchained`, `Trimmed`, `Head`, `First`, `Last`, `Breaks` (each with `File`, `Line`, `Time`, `Name`, `Problem`). |
-| Audit | 1 | yes | An object: `Level`, `ExcludedAccount`, `Score`, `Findings`. |
+| Audit | 1 | yes | An object: `Level`, `ExcludedAccount`, `Score`, `Findings`, and `Compliance` when an organisation policy is set (see below). |
 
 `-Report List` writes an array of `Name`, `Version`, `Elevated` and
 `Description`, one per report.
+
+### Audit under an organisation policy
+
+With `-Policy` or a policy set in Settings ([POLICY.md](POLICY.md)), the
+Audit report adds `Compliance`, and each finding gains `Policy`: its `State`
+(`Blocking`, `Accepted`, `Expired`, `NotRequired`, `Tolerated`, `NotAssessed`
+or `Met`) and the `Exception` that covers it (`Reason`, `Owner`, `Expires`,
+`Ticket`), or null. Without a policy, neither appears.
+
+| Field of `Compliance` | Meaning |
+|---|---|
+| `Verdict` | `Compliant`, `CompliantWithExceptions`, `NonCompliant`, or `PolicyRefused` when the policy could not be trusted or read: the findings are then the generic audit. |
+| `Until` | With exceptions accepted, the day the first of them ends (`yyyy-MM-dd`). |
+| `Reason` | With `PolicyRefused`, why. |
+| `Policy` | `Name`, `Version`, `Owner`, `Published`, `Source`, `Sha256` of the file, `VerifiedBy` (`Signature` or `Hash`), `Signer`, `Thumbprint`. |
+| `Blocking`, `Expired`, `Accepted`, `NotRequired`, `NotAssessed` | Counts. `Blocking` includes `Expired`. |
+| `Items` | What blocks, what an exception covers and what is not required: `Id`, `Name`, `Status`, `State`, `Reason`, `Owner`, `Expires`, `Ticket`. |
+| `Rules` | The policy's own rules (software, least build, patch age), shaped as findings of the `Policy` category, each with its `Policy` state. They are not in the score. |
+| `Unused` | Exceptions for this machine that cover nothing on it: `Control`, `Owner`, `Expires`. |
+| `Problems` | Entries of the policy that were left out, and why. |
 
 ## Pseudonymised documents
 
@@ -142,5 +162,6 @@ reads `Computer`, `GeneratedAt`, `Privacy`, `Toolkit.Version`,
 `Audit.Data.Score.Score`, `Audit.Data.Level`, `Audit.Data.Findings` (`Id`,
 `Name`, `Status`), `Readiness.Data.Windows11.Verdict`,
 `Readiness.Data.Renewal.Verdict`, `Lifecycle.Data.Windows.Severity`,
-`Reboot.Data.Pending` and `Journal.Data.Valid`. A report missing from a
-document, or not `Ok`, is shown as unknown, never as a pass.
+`Reboot.Data.Pending`, `Journal.Data.Valid`, and `Audit.Data.Compliance.Verdict`
+with the policy's `Name` and `Version`. A report missing from a document, or
+not `Ok`, is shown as unknown, never as a pass.
