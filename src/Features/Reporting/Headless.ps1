@@ -662,7 +662,10 @@ function Invoke-TkHeadlessCollector {
 function New-TkReportDocument {
     [CmdletBinding()]
     param(
+        # Empty for an envelope with no report, such as a request for support
+        # the user attached nothing to.
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [string[]] $Name,
 
         [Parameter()]

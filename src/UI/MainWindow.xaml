@@ -1265,7 +1265,7 @@
                            TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                            HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24,0,24,0" />
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel Grid.Column="2" x:Name="HeaderActions" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnUpdateAvailable" Content="Update available" Style="{StaticResource GlyphButton}" Tag="&#xE896;"
                             Margin="0,0,10,0" Visibility="Collapsed"
                             ToolTip="A newer build of the toolkit is published. Settings says where to get it." />
@@ -1284,12 +1284,12 @@
         <!-- ============================== Body ============================== -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="208" />
+                <ColumnDefinition x:Name="RailColumn" Width="208" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Navigation rail -->
-            <Border Grid.Column="0" Background="{DynamicResource AppBackground}" BorderThickness="0">
+            <!-- Navigation rail. The assistance mode hides it, with its column. -->
+            <Border Grid.Column="0" x:Name="RailPanel" Background="{DynamicResource AppBackground}" BorderThickness="0">
                 <!--
                     Grouped by the kind of work rather than listed in the order the
                     pages were written: what is this machine, what is wrong with it,
@@ -6132,6 +6132,73 @@
                                      HorizontalScrollBarVisibility="Disabled"
                                      IsDocumentEnabled="True" />
                     </Border>
+                </Grid>
+
+                <!-- ======================== MY PC (assistance mode) ======================== -->
+                <!--
+                    The only page of the assistance mode (-Assist): no rail, no search, no
+                    administrator button. Not in the page list, so nothing navigates to it
+                    and it navigates nowhere.
+                -->
+                <Grid x:Name="AssistPage" Margin="24,20" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <TextBlock Text="My PC" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                   Text="What is wrong with this PC, in plain words, and what you can do yourself. Then, if you need help, a request prepared with only what you agree to send. Nothing here changes your PC or needs an administrator." />
+                    </StackPanel>
+
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="390" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,16,0">
+                            <RichTextBox x:Name="AssistOutput" IsReadOnly="True"
+                                         BorderThickness="0" Background="Transparent"
+                                         Foreground="{DynamicResource TextPrimary}"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Disabled"
+                                         IsDocumentEnabled="True" />
+                        </Border>
+
+                        <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <TextBlock Text="Ask for help" Style="{StaticResource SubHeading}" Margin="0,0,0,6" />
+                                    <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                               Text="Describe what happens, since when, and what you were doing." />
+                                    <TextBox x:Name="AssistDescription" Height="120" AcceptsReturn="True" TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
+                                             Tag="Since this morning, Outlook will not open..." />
+
+                                    <TextBlock Text="What will be attached" Style="{StaticResource FieldLabel}" Margin="0,14,0,6" />
+                                    <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,6"
+                                               Text="Untick what you do not want to send. The verdicts on the left and your description are always included." />
+                                    <StackPanel x:Name="AssistIncludes" />
+
+                                    <CheckBox x:Name="AssistShowNames" Content="Show the name of this PC and my user name" Margin="0,10,0,2" />
+                                    <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                               Text="Without it they are replaced by aliases, such as PC-1 and USER-1." />
+
+                                    <Button x:Name="BtnAssistPrepare" Content="Prepare my request" Style="{StaticResource PrimaryButton}"
+                                            HorizontalAlignment="Left" Margin="0,14,0,8" />
+                                    <TextBlock x:Name="AssistResult" Style="{StaticResource Muted}" TextWrapping="Wrap" />
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <Button x:Name="BtnAssistCopy" Content="Copy the summary" IsEnabled="False" Margin="0,0,10,6" />
+                                        <Button x:Name="BtnAssistShow" Content="Show the file" IsEnabled="False" Margin="0,0,0,6" />
+                                    </WrapPanel>
+                                    <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"
+                                               Text="The file is not encrypted: attach it to your ticket or your support portal, not to an ordinary e-mail. Nothing is sent by the toolkit." />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+                    </Grid>
                 </Grid>
 
                 <!-- ======================== SETTINGS ======================== -->

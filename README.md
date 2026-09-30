@@ -125,6 +125,23 @@ the codes and the result format.
 exit $LASTEXITCODE
 ```
 
+**For the person in front of the PC.** `-Assist` opens the assistance mode,
+"My PC": one page with no navigation, no search and nothing that changes the
+PC or needs an administrator. It says in plain words what is wrong (the
+network, a restart waiting, updates, a disk almost full or failing, crashes,
+a device, the organisation account), each with what the user can do alone.
+Then **Prepare my request**: the user describes the problem, sees the exact
+list of what will be attached (restart, disks, network, Wi-Fi, proxy,
+updates), unticks what they refuse, and gets a file and a summary to paste
+into the ticket. The file is a report document like any other, with the
+description and the verdicts added. The names of the PC and of the user are
+replaced by aliases unless the user ticks otherwise. Nothing is sent by the
+toolkit. The portable edition has a `Start-Assistance.cmd` launcher for it.
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/KyllianFF/Tool-kit/main/dist/toolkit.ps1))) -Assist
+```
+
 ---
 
 ## Navigation
@@ -381,7 +398,8 @@ interface left in plain files beside it, rather than embedded as blobs.
 This writes to `dist/`:
 
 - `Toolkit-Portable-<version>/` and its `.zip` — the de-blobbed folder:
-  `Toolkit.ps1`, `MainWindow.xaml`, `data/`, a `Start-Toolkit.cmd` launcher,
+  `Toolkit.ps1`, `MainWindow.xaml`, `data/`, a `Start-Toolkit.cmd` launcher
+  and a `Start-Assistance.cmd` one for the assistance mode,
   a `README.txt` with offline-run and allowlisting guidance, and a
   `SHA256SUMS.txt` for the whole set.
 - `Toolkit-<version>.ps1` — the same self-contained single file the one-liner

@@ -168,8 +168,11 @@ Remove-Item -LiteralPath ($portableScript + '.sha256') -Force -ErrorAction Silen
 Copy-Item -LiteralPath $dataFolder -Destination (Join-Path $stageFolder 'data') -Recurse -Force
 Copy-Item -LiteralPath $xamlFile   -Destination (Join-Path $stageFolder 'MainWindow.xaml') -Force
 
-# The launcher, verbatim.
-Copy-Item -LiteralPath (Join-Path $templateFolder 'Start-Toolkit.cmd') -Destination (Join-Path $stageFolder 'Start-Toolkit.cmd') -Force
+# The launchers, verbatim: the toolkit, and its assistance mode for the
+# person in front of the PC.
+foreach ($launcher in @('Start-Toolkit.cmd', 'Start-Assistance.cmd')) {
+    Copy-Item -LiteralPath (Join-Path $templateFolder $launcher) -Destination (Join-Path $stageFolder $launcher) -Force
+}
 
 # The README, with its version tokens filled in.
 $readme = Get-Content -LiteralPath (Join-Path $templateFolder 'README.txt') -Raw

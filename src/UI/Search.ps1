@@ -694,6 +694,11 @@ function Show-TkSearch {
     [CmdletBinding()]
     param()
 
+    # The search reaches every page: the assistance mode has only one.
+    if (Test-TkAssistMode) {
+        return
+    }
+
     $overlay = Get-TkControl -Name 'SearchOverlay'
     $searchBox   = Get-TkControl -Name 'SearchInput'
 

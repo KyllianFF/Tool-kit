@@ -306,6 +306,12 @@ function Show-TkPage {
         [string] $Name
     )
 
+    # The assistance mode shows one page, with nothing that changes the PC:
+    # a tile, a link or a shortcut must not lead out of it.
+    if (Test-TkAssistMode) {
+        return
+    }
+
     $ctx = Get-TkContext
 
     foreach ($page in @(Get-TkPageName)) {

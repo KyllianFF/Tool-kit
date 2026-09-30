@@ -951,14 +951,19 @@ Describe 'Portable build' {
     }
 
     It 'ships a launcher and a readme template' {
-        Test-Path (Join-Path $script:PortableFolder 'Start-Toolkit.cmd') | Should -BeTrue
-        Test-Path (Join-Path $script:PortableFolder 'README.txt')        | Should -BeTrue
+        Test-Path (Join-Path $script:PortableFolder 'Start-Toolkit.cmd')    | Should -BeTrue
+        Test-Path (Join-Path $script:PortableFolder 'Start-Assistance.cmd') | Should -BeTrue
+        Test-Path (Join-Path $script:PortableFolder 'README.txt')           | Should -BeTrue
     }
 
     It 'launches with the apartment and policy the interface needs, and nothing more' {
-        $launcher = Get-Content -LiteralPath (Join-Path $script:PortableFolder 'Start-Toolkit.cmd') -Raw
-        $launcher | Should -Match '-Sta'
-        $launcher | Should -Match '-ExecutionPolicy Bypass'
+        foreach ($name in @('Start-Toolkit.cmd', 'Start-Assistance.cmd')) {
+            $launcher = Get-Content -LiteralPath (Join-Path $script:PortableFolder $name) -Raw
+            $launcher | Should -Match '-Sta' -Because $name
+            $launcher | Should -Match '-ExecutionPolicy Bypass' -Because $name
+        }
+
+        Get-Content -LiteralPath (Join-Path $script:PortableFolder 'Start-Assistance.cmd') -Raw | Should -Match 'Toolkit\.ps1" -Assist'
     }
 
     It 'fills the readme version tokens at package time' {
@@ -6636,6 +6641,147 @@ Describe 'Impact before hardening' {
         foreach ($name in @('ImpactProbe', 'BtnImpactStart', 'BtnImpactStop', 'BtnImpactRead', 'ImpactOutput')) {
             $markup | Should -Match ('x:Name="{0}"' -f $name)
         }
+    }
+}
+
+Describe 'Assistance mode' {
+
+    BeforeAll {
+        # The journal and the pseudonym tables go to a temporary folder, never
+        # to the account that runs the tests.
+        $script:AssistDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:AssistDataRoot
+        $script:TkQuietConsole   = $false
+    }
+
+    It 'says the Dashboard judgements in plain words, problems first, and never hides what it could not check' {
+
+        $tile  = { param($title, $value, $severity, $detail) [pscustomobject] @{ Title = $title; Value = $value; Severity = $severity; Detail = [string] $detail } }
+        $tiles = @(
+            (& $tile 'Restart' 'Restart pending' 'Warning' 'Windows Update')
+            (& $tile 'Updates' '75 days ago' 'Fail' 'Last installed: KB5040000')
+            (& $tile 'Storage C:' '93% used' 'Fail' '12.1 GB free of 237 GB')
+            (& $tile 'Disks' 'All healthy' 'Pass' '1 physical disk(s)')
+            (& $tile 'Devices' 'No problem' 'Pass' '')
+            (& $tile 'Blue screens' '2 in 30 days' 'Fail' 'Last: 0x0000000A')
+            (& $tile 'Sign-in' 'Unknown' 'NotAssessed' '')
+            (& $tile 'Battery' 'No battery' 'Info' 'Mains powered.')
+        )
+        $wifi = [pscustomobject] @{ Name = 'Wi-Fi'; Description = 'Intel(R) Wi-Fi 6 AX201'; IPv4Address = '192.168.1.20'; Gateway = '192.168.1.1' }
+
+        $verdicts = @(ConvertTo-TkAssistVerdict -Tile $tiles -Adapter $wifi)
+
+        (@($verdicts | ForEach-Object { '{0}={1}' -f $_.Id, $_.Severity })) -join ',' | Should -Be 'updates=Fail,storage=Fail,crashes=Fail,restart=Warning,network=Pass,disks=Pass'
+        ($verdicts | Where-Object { $_.Id -eq 'storage' }).Headline | Should -Be 'Your disk C: is almost full (12.1 GB free of 237 GB)'
+        ($verdicts | Where-Object { $_.Id -eq 'updates' }).Headline | Should -Be 'Windows has not installed an update for a while: the last one was 75 days ago'
+        ($verdicts | Where-Object { $_.Id -eq 'network' }).Headline | Should -Be 'Your PC is connected through Wi-Fi'
+        @($verdicts | Where-Object { $_.Severity -in @('Fail', 'Warning') -and -not $_.Advice }).Count | Should -Be 0 -Because 'every problem says what the user can do'
+
+        # Nothing could be read: said so, not left out.
+        $blind = @(ConvertTo-TkAssistVerdict -Tile @() -Adapter $null)
+        (@($blind | ForEach-Object { '{0}={1}' -f $_.Id, $_.Severity })) -join ',' | Should -Be 'network=Fail,restart=NotAssessed,updates=NotAssessed,storage=NotAssessed'
+        ($blind | Where-Object { $_.Id -eq 'restart' }).Advice | Should -Match 'not a sign of a problem'
+
+        $noAddress = [pscustomobject] @{ Name = 'Ethernet'; Description = 'Realtek PCIe GbE'; IPv4Address = '169.254.10.4'; Gateway = 'None' }
+        (@(ConvertTo-TkAssistVerdict -Tile @() -Adapter $noAddress) | Where-Object { $_.Id -eq 'network' }).Headline | Should -Match 'gave it no address'
+
+        $vpn = [pscustomobject] @{ Name = 'ProtonVPN'; Description = 'ProtonVPN Tunnel'; IPv4Address = '10.2.0.2'; Gateway = '10.2.0.1' }
+        (@(ConvertTo-TkAssistVerdict -Tile @() -Adapter $vpn) | Where-Object { $_.Id -eq 'network' }).Headline | Should -Be 'Your PC is connected through a VPN'
+
+        $laptop = @(ConvertTo-TkAssistVerdict -Tile @((& $tile 'Battery' '84%' 'Info' 'Good')) -Adapter $wifi)
+        ($laptop | Where-Object { $_.Id -eq 'battery' }).Headline | Should -Be 'Battery: 84%'
+
+        Get-TkAssistReportLabel -Name 'Wifi' | Should -Match 'never its password'
+    }
+
+    It 'writes a request with what the user left ticked, pseudonymised unless they agree, with a summary to paste' {
+
+        function Get-TkHeadlessReport {
+            foreach ($name in @('Reboot', 'Storage', 'Network', 'Wifi', 'Proxy', 'Updates')) {
+                [pscustomobject] @{
+                    Name = $name; Version = 1; Elevated = $false; Description = $name
+                    Collect = { param($Options) $null = $Options; [pscustomobject] @{ Host = $env:COMPUTERNAME; Severity = 'Pass' } }
+                }
+            }
+        }
+
+        $verdicts = @(
+            New-TkAssistVerdict -Id 'restart' -Severity 'Warning' -Headline 'Your PC is waiting to restart' -Advice 'Restart it.'
+            New-TkAssistVerdict -Id 'network' -Severity 'Pass' -Headline 'Your PC is connected through a cable'
+        )
+
+        $path    = Join-Path $TestDrive 'request.json'
+        $request = New-TkAssistRequest -Path $path -Description ('Outlook will not open on {0}.' -f $env:COMPUTERNAME) -Report @('Storage', 'Reboot') `
+                                       -Verdict $verdicts -Now ([datetime]::new(2026, 9, 30, 14, 2, 0)) -Confirm:$false
+
+        $request.Privacy       | Should -Be 'Personal'
+        @($request.Attached)   | Should -Be @('Reboot', 'Storage')
+
+        $text = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+        $text | Should -Not -Match ([regex]::Escape($env:COMPUTERNAME))
+
+        $document = $text | ConvertFrom-Json
+        $document.Schema                              | Should -Be 'toolkit-report'
+        (@($document.Reports.PSObject.Properties.Name) | Sort-Object) -join ',' | Should -Be 'Reboot,Storage'
+        @($document.Request.Declined)                 | Should -Be @('Network', 'Wifi', 'Proxy', 'Updates')
+        $document.Request.Description                 | Should -Match '^Outlook will not open on PC-\d+\.$'
+        @($document.Request.Verdicts).Count           | Should -Be 2
+
+        $request.Summary | Should -Match 'Support request from PC-\d+, 2026-09-30 14:02'
+        $request.Summary | Should -Match '- Your PC is waiting to restart'
+        $request.Summary | Should -Not -Match 'connected through a cable'
+        $request.Summary | Should -Match 'Attached: request\.json \(Reboot, Storage\)'
+        $request.Summary | Should -Match 'replaced by aliases'
+
+        # The user agreed to show the names, and attached nothing.
+        $named = New-TkAssistRequest -Path (Join-Path $TestDrive 'named.json') -Description 'x' -Report @() -Verdict @() -ShowNames -Confirm:$false
+        $named.Privacy | Should -Be 'None'
+        (Get-Content -LiteralPath $named.Path -Raw -Encoding UTF8 | ConvertFrom-Json).Computer | Should -Be $env:COMPUTERNAME
+        $named.Summary | Should -Match 'the verdicts only'
+
+        { New-TkAssistRequest -Path (Join-Path $TestDrive 'bad.json') -Report @('Audit') -Confirm:$false } | Should -Throw '*not a report a request can attach*'
+
+        (Get-TkJournalFolder) | Should -BeLike ('{0}*' -f $TestDrive)
+    }
+
+    It 'keeps the window to one page, which nothing navigates to or out of' {
+
+        Test-TkAssistMode | Should -BeFalse
+
+        $markup = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\MainWindow.xaml') -Raw
+        foreach ($name in @('AssistPage', 'RailPanel', 'RailColumn', 'HeaderActions', 'AssistOutput', 'AssistDescription', 'AssistIncludes', 'AssistShowNames', 'BtnAssistPrepare', 'BtnAssistCopy', 'BtnAssistShow')) {
+            $markup | Should -Match ('x:Name="{0}"' -f $name)
+        }
+
+        @(Get-TkPageName) | Should -Not -Contain 'Assist'
+
+        # The page offers its own buttons and no other.
+        $page    = [regex]::Match($markup, '(?s)<Grid x:Name="AssistPage".*?<!-- =+ SETTINGS').Value
+        $buttons = @([regex]::Matches($page, 'x:Name="(Btn\w+)"') | ForEach-Object { $_.Groups[1].Value })
+        $buttons.Count | Should -Be 3
+        @($buttons | Where-Object { $_ -notlike 'BtnAssist*' }).Count | Should -Be 0
+
+        # In the mode, neither a page change nor the search reaches a control.
+        $touched = New-Object System.Collections.Generic.List[string]
+        function Test-TkAssistMode { $true }
+        function Get-TkControl { param($Name) $touched.Add([string] $Name) }
+        Show-TkPage -Name 'Tweaks'
+        Show-TkSearch
+        $touched.Count | Should -Be 0
+    }
+
+    It 'opens from every entry point, and alone' {
+
+        foreach ($file in @('toolkit.ps1', 'build\Build-Toolkit.ps1', 'src\Start-Toolkit.ps1')) {
+            Get-Content -LiteralPath (Join-Path $script:RepositoryRoot $file) -Raw | Should -Match '\[switch\] `?\$Assist' -Because $file
+        }
+
+        { Start-Toolkit -Assist -Report 'Reboot' } | Should -Throw '*does not mix*'
+        $script:TkQuietConsole = $false
     }
 }
 

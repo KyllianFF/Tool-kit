@@ -24,6 +24,9 @@ data in plain files beside it, so there is nothing that looks hidden.
   MainWindow.xaml    The interface layout, read at startup.
   data\              The catalogs: applications, tweaks, fixes, references...
   Start-Toolkit.cmd  A launcher that runs Toolkit.ps1 the right way.
+  Start-Assistance.cmd
+                     The same, in its assistance mode for the user: one page,
+                     "My PC", in plain words, and a request for support.
   README.txt         This file.
   SHA256SUMS.txt     A checksum for every file, so you can verify the set.
 
@@ -33,6 +36,11 @@ data in plain files beside it, so there is nothing that looks hidden.
 -------------------------------------------------------------------------------
 
   Double-click  Start-Toolkit.cmd
+
+For the person in front of the PC, with no technical page and nothing that
+changes it:
+
+  Double-click  Start-Assistance.cmd
 
 or, from a PowerShell prompt opened in this folder:
 
