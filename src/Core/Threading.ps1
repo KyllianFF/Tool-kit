@@ -98,7 +98,11 @@ function Initialize-TkRunspacePool {
         # the controls share; seeded so the worker starts from a known empty
         # state rather than from whatever the dispatcher thread last read.
         'TkAuditControl', 'TkAuditExcludedAccount',
-        'TkDefenderStatus', 'TkDefenderStatusRead'
+        'TkDefenderStatus', 'TkDefenderStatusRead',
+
+        # The Before hardening tab reads the audit modes in a worker: where
+        # the record of what was turned on is kept, and the log size it sets.
+        'TkImpactStateKey', 'TkImpactLogBytes'
     )
 
     foreach ($name in $sharedVariables) {

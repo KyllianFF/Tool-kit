@@ -174,6 +174,7 @@ function Initialize-TkSecurityPage {
 
     Initialize-TkPrivacySetting
     Initialize-TkPolicySetting
+    Initialize-TkImpactTab
 
     Register-TkClick -Name 'BtnCheckToolkitUpdate' -Action { Invoke-TkUpdateCheckFromUi }
     Register-TkClick -Name 'BtnCopyLaunchCommand'  -Action { Copy-TkLaunchCommandFromUi }
@@ -1000,7 +1001,7 @@ function Show-TkAuditReport {
             Add-TkFindingCard -Document $document -Severity $finding.Status -Tinted `
                 -Title ('{0}  -  {1}' -f $finding.Id, $finding.Name) `
                 -State $finding.Measured -Detail (Join-TkPolicyNote -Finding $finding) `
-                -Action $finding.Recommendation -RemediationId $finding.RemediationId
+                -Action ('{0} {1}' -f $finding.Recommendation, (Format-TkImpactHint -Finding $finding)).Trim() -RemediationId $finding.RemediationId
         }
     }
 

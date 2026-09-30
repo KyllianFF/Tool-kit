@@ -319,6 +319,24 @@ function Get-TkElevatedAction {
             }
         }
         [pscustomobject] @{
+            Name   = 'StartImpactMeasurement'
+            Worker = {
+                param($Parameters)
+
+                # The id is looked up again here, in the elevated process:
+                # only the audit values of the fixed table are ever written.
+                Start-TkImpactMeasurement -Id ([string] $Parameters.Id) -Confirm:$false
+            }
+        }
+        [pscustomobject] @{
+            Name   = 'StopImpactMeasurement'
+            Worker = {
+                param($Parameters)
+
+                Stop-TkImpactMeasurement -Id ([string] $Parameters.Id) -Confirm:$false
+            }
+        }
+        [pscustomobject] @{
             Name   = 'CopyToProfile'
             Worker = {
                 param($Parameters)

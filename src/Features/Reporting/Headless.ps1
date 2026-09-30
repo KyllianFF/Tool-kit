@@ -273,6 +273,12 @@ function Get-TkHeadlessReport {
             Test-TkJournalChain
         })
 
+        (& $row 'Impact' 1 $false 'What the audit modes recorded before hardening: NTLM, SMBv1, LSA protection and PowerShell 2.0.' {
+            param($Options)
+            $null = $Options
+            [pscustomobject] @{ Probes = @(Get-TkImpactReport) }
+        })
+
         (& $row 'Audit' 1 $true 'The security audit with its score, at the level asked for, and its compliance with the organisation policy when one is set.' {
             param($Options)
 

@@ -32,6 +32,7 @@ $script:TkJournalKind = @{
     Software    = 'Change'
     Fixes       = 'Change'
     Remediation = 'Change'
+    Hardening   = 'Change'
     Network     = 'Change'
     SSH         = 'Change'
     Bundle      = 'Collection'

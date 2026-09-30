@@ -116,6 +116,7 @@ Each entry of `Reports`:
 | Lifecycle | 1 | no | An object: `Reviewed`, `Windows`, `Programs`, `InstalledCount`. |
 | Readiness | 1 | no | An object: `Windows11` (`Verdict`: Ready, ReadyAfterChanges, NotReady, Check or NotApplicable; `Summary`), `Renewal` (`Verdict`: Keep, Upgrade or Replace; `Summary`; `Actions`), `AgeYears`, `Processor` (`Verdict`, `Reason`, `Family`, `Model`, `Stepping`), `Checks` (each with `Area`, `Check`, `Value`, `Requirement`, `Severity`, `Fix`, `Fixable`) and `Facts`. |
 | Journal | 1 | no | An object: `Severity`, `Valid`, `Entries`, `Chained`, `Unchained`, `Trimmed`, `Head`, `First`, `Last`, `Breaks` (each with `File`, `Line`, `Time`, `Name`, `Problem`). |
+| Impact | 1 | no | An object: `Probes`, one per hardening (`ntlm`, `smb1`, `lsa`, `ps2`), each with `Id`, `Name`, `Hardening`, `Control` (the audit control it relates to), `Measuring`, `ByToolkit`, `Started`, `StartedBy`, `Verdict` (`NotMeasured`, `Waiting`, `TooEarly`, `NoUseSeen`, `InUse`, `Hardened` or `NotReadable`), `Severity`, `Headline`, `Note`, `Days`, `Uses` and `Sources` (`Key`, `Count`, `First`, `Last`, `Detail`). |
 | Audit | 1 | yes | An object: `Level`, `ExcludedAccount`, `Score`, `Findings`, and `Compliance` when an organisation policy is set (see below). |
 
 `-Report List` writes an array of `Name`, `Version`, `Elevated` and

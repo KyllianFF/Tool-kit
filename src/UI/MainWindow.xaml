@@ -3597,6 +3597,42 @@
                             </Grid>
                         </TabItem>
 
+                        <!--
+                            Windows' audit modes: what a hardening would refuse, recorded
+                            before it is applied, and read back days later.
+                        -->
+                        <TabItem Header="Before hardening">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Restricting NTLM, removing SMBv1, protecting LSA and removing PowerShell 2.0 now and then break an application. Windows can first record what each would refuse, without refusing anything: turn the audit mode on, come back after a few days of normal work, and see who would have been affected. Turning it off puts back exactly what was there." />
+                                        <WrapPanel Margin="0,12,0,0">
+                                            <ComboBox x:Name="ImpactProbe" Width="320" Margin="0,0,10,6" />
+                                            <Button x:Name="BtnImpactStart" Content="Start measuring" Style="{StaticResource PrimaryButton}" Margin="0,0,10,6"
+                                                    ToolTip="Needs administrator rights. Writes only the documented audit values, keeps any stricter value, and enlarges a log that is too small." />
+                                            <Button x:Name="BtnImpactStop" Content="Stop measuring" Margin="0,0,10,6" />
+                                            <Button x:Name="BtnImpactRead" Content="Read what was recorded" Style="{StaticResource GlyphButton}" Tag="&#xE72C;" Margin="0,0,0,6" />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="ImpactOutput" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 IsDocumentEnabled="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
                     </TabControl>
                 </Grid>
 
