@@ -129,6 +129,10 @@ function Write-TkFleetView {
             -Note $(if ($summary.Windows11.Unknown) { '{0} machine(s) without the Readiness report.' -f $summary.Windows11.Unknown } else { '' })
         Add-TkSeverityLine -Document $document -Severity $(if ($summary.Renewal.Replace) { 'Warning' } else { 'Info' }) `
             -Heading ('Renewal: {0} keep, {1} upgrade, {2} replace' -f $summary.Renewal.Keep, $summary.Renewal.Upgrade, $summary.Renewal.Replace)
+        if ($summary.Compliance.None -lt $summary.Machines) {
+            Add-TkSeverityLine -Document $document -Severity $(if ($summary.Compliance.NonCompliant) { 'Fail' } elseif ($summary.Compliance.CompliantWithExceptions -or $summary.Compliance.PolicyRefused) { 'Warning' } else { 'Pass' }) `
+                -Heading ('Policy: {0}' -f (Format-TkFleetCompliance -Summary $summary))
+        }
         if ($summary.WindowsOutOfSupport) {
             Add-TkSeverityLine -Document $document -Severity 'Fail' -Heading ('{0} machine(s) on a Windows out of support' -f $summary.WindowsOutOfSupport)
         }
@@ -143,9 +147,10 @@ function Write-TkFleetView {
         }
 
         Add-TkHeading -Document $document -Text 'Machines' -Level 2
-        Add-TkTable -Document $document -Column @('Computer', 'Report of', 'Worst', 'Audit', 'Windows 11', 'Renewal', 'Restart') -Weight @(1.5, 1.1, 0.7, 0.6, 1.2, 0.8, 0.7) `
+        Add-TkTable -Document $document -Column @('Computer', 'Report of', 'Worst', 'Audit', 'Policy', 'Windows 11', 'Renewal', 'Restart') -Weight @(1.5, 1.1, 0.7, 0.6, 0.9, 1.2, 0.8, 0.7) `
             -Row @($fleet.Machines | ForEach-Object {
-                , @($_.Computer, $_.GeneratedAt.ToString('yyyy-MM-dd HH:mm'), $_.Worst, $(if ($null -ne $_.AuditScore) { [string] $_.AuditScore } else { '-' }), $_.Windows11, $_.Renewal, $(if ($_.RebootPending) { 'pending' } else { '' }))
+                , @($_.Computer, $_.GeneratedAt.ToString('yyyy-MM-dd HH:mm'), $_.Worst, $(if ($null -ne $_.AuditScore) { [string] $_.AuditScore } else { '-' }),
+                    (Format-TkFleetComplianceShort -Verdict $_.Compliance), $_.Windows11, $_.Renewal, $(if ($_.RebootPending) { 'pending' } else { '' }))
             })
 
         $controls = @($summary.Controls | Where-Object { $_.Fail -or $_.Warning } | Select-Object -First 25)

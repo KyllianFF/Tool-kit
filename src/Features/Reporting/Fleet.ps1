@@ -73,6 +73,8 @@ function ConvertTo-TkFleetMachine {
         WindowsSupport = $(if (& $ok 'Lifecycle') { [string] (& $value 'Reports.Lifecycle.Data.Windows.Severity') } else { '' })
         RebootPending  = $(if (& $ok 'Reboot') { [bool] (& $value 'Reports.Reboot.Data.Pending') } else { $null })
         JournalValid   = $(if (& $ok 'Journal') { [bool] (& $value 'Reports.Journal.Data.Valid') } else { $null })
+        Compliance     = $(if (& $ok 'Audit') { [string] (& $value 'Reports.Audit.Data.Compliance.Verdict') } else { '' })
+        Policy         = $(if (& $ok 'Audit') { ('{0} {1}' -f (& $value 'Reports.Audit.Data.Compliance.Policy.Name'), (& $value 'Reports.Audit.Data.Compliance.Policy.Version')).Trim() } else { '' })
         Failed         = $failed
         File           = $File
         Documents      = 1
@@ -188,12 +190,63 @@ function Get-TkFleetSummary {
         JournalBroken   = @($Machine | Where-Object { $_.JournalValid -eq $false }).Count
         Windows11       = [ordered] @{ Ready = & $count $Machine 'Windows11' 'Ready'; ReadyAfterChanges = & $count $Machine 'Windows11' 'ReadyAfterChanges'; NotReady = & $count $Machine 'Windows11' 'NotReady'; Check = & $count $Machine 'Windows11' 'Check'; Unknown = @($Machine | Where-Object { -not $_.Windows11 }).Count }
         Renewal         = [ordered] @{ Keep = & $count $Machine 'Renewal' 'Keep'; Upgrade = & $count $Machine 'Renewal' 'Upgrade'; Replace = & $count $Machine 'Renewal' 'Replace' }
+        Compliance      = [ordered] @{ Compliant = & $count $Machine 'Compliance' 'Compliant'; CompliantWithExceptions = & $count $Machine 'Compliance' 'CompliantWithExceptions'; NonCompliant = & $count $Machine 'Compliance' 'NonCompliant'; PolicyRefused = & $count $Machine 'Compliance' 'PolicyRefused'; None = @($Machine | Where-Object { -not $_.Compliance }).Count }
+        Policies        = @($Machine | Where-Object { $_.Policy } | ForEach-Object { $_.Policy } | Sort-Object -Unique)
         WindowsOutOfSupport = & $count $Machine 'WindowsSupport' 'Fail'
         AuditScored     = $scored.Count
         AuditAverage    = $average
         Exposed         = @($scored | Sort-Object -Property @{ Expression = { [double] $_.AuditScore } } | Select-Object -First 10)
         Controls        = @($controls.Values | Sort-Object -Property @{ Expression = { $_.Fail }; Descending = $true }, @{ Expression = { $_.Warning }; Descending = $true }, Id)
     }
+}
+
+<#
+.SYNOPSIS
+    The organisation policy's verdicts across the fleet, in one line.
+#>
+function Format-TkFleetCompliance {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        $Summary
+    )
+
+    $compliance = $Summary.Compliance
+
+    if ($compliance.None -eq $Summary.Machines) {
+        return 'No machine was audited under a policy'
+    }
+
+    $text = '{0} compliant, {1} with exceptions, {2} not compliant' -f $compliance.Compliant, $compliance.CompliantWithExceptions, $compliance.NonCompliant
+    if ($compliance.PolicyRefused) { $text += ', {0} where the policy was refused' -f $compliance.PolicyRefused }
+    if ($compliance.None) { $text += ', {0} without a policy' -f $compliance.None }
+    if (@($Summary.Policies).Count) { $text += ' ({0})' -f (@($Summary.Policies) -join ', ') }
+
+    return $text
+}
+
+<#
+.SYNOPSIS
+    A machine's verdict, short enough for a table cell.
+#>
+function Format-TkFleetComplianceShort {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Verdict
+    )
+
+    switch ($Verdict) {
+        'Compliant'               { return 'compliant' }
+        'CompliantWithExceptions' { return 'exceptions' }
+        'NonCompliant'            { return 'not compliant' }
+        'PolicyRefused'           { return 'refused' }
+    }
+
+    return ''
 }
 
 <#
@@ -258,6 +311,7 @@ function ConvertTo-TkFleetHtml {
         [pscustomobject] @{ Label = 'Worst judgement'; Value = ('{0} fail, {1} warning, {2} pass' -f $Summary.Fail, $Summary.Warning, $Summary.Pass) }
         [pscustomobject] @{ Label = 'Windows 11'; Value = ('{0} ready, {1} ready after changes, {2} not ready, {3} to check, {4} not collected' -f $Summary.Windows11.Ready, $Summary.Windows11.ReadyAfterChanges, $Summary.Windows11.NotReady, $Summary.Windows11.Check, $Summary.Windows11.Unknown) }
         [pscustomobject] @{ Label = 'Renewal'; Value = ('{0} keep, {1} upgrade, {2} replace' -f $Summary.Renewal.Keep, $Summary.Renewal.Upgrade, $Summary.Renewal.Replace) }
+        [pscustomobject] @{ Label = 'Organisation policy'; Value = (Format-TkFleetCompliance -Summary $Summary) }
         [pscustomobject] @{ Label = 'Windows out of support'; Value = [string] $Summary.WindowsOutOfSupport }
         [pscustomobject] @{ Label = 'Audit score'; Value = $(if ($null -ne $Summary.AuditAverage) { '{0} on average over {1} machine(s)' -f $Summary.AuditAverage, $Summary.AuditScored } else { 'No audit collected' }) }
         [pscustomobject] @{ Label = 'Restart pending'; Value = [string] $Summary.RebootPending }
@@ -268,12 +322,12 @@ function ConvertTo-TkFleetHtml {
 
     $class = { param($worst) switch ([string] $worst) { 'Fail' { 'fail' } 'Warning' { 'warn' } 'Pass' { 'pass' } default { '' } } }
 
-    [void] $html.AppendLine('<h2>Machines</h2><table><tr><th>Computer</th><th>Report of</th><th>Worst</th><th>Audit</th><th>Windows 11</th><th>Renewal</th><th>Restart</th><th>Toolkit</th></tr>')
+    [void] $html.AppendLine('<h2>Machines</h2><table><tr><th>Computer</th><th>Report of</th><th>Worst</th><th>Audit</th><th>Policy</th><th>Windows 11</th><th>Renewal</th><th>Restart</th><th>Toolkit</th></tr>')
     foreach ($item in @($Fleet.Machines)) {
-        [void] $html.AppendLine(('<tr><td>{0}</td><td>{1}</td><td class="{2}">{3}</td><td>{4}</td><td>{5}</td><td>{6}</td><td>{7}</td><td>{8}</td></tr>' -f
+        [void] $html.AppendLine(('<tr><td>{0}</td><td>{1}</td><td class="{2}">{3}</td><td>{4}</td><td>{5}</td><td>{6}</td><td>{7}</td><td>{8}</td><td>{9}</td></tr>' -f
             (& $h $item.Computer), (& $h $item.GeneratedAt.ToString('yyyy-MM-dd HH:mm')), (& $class $item.Worst), (& $h $item.Worst),
-            (& $h $(if ($null -ne $item.AuditScore) { $item.AuditScore } else { '-' })), (& $h $item.Windows11), (& $h $item.Renewal),
-            (& $h $(if ($item.RebootPending) { 'pending' } else { '' })), (& $h $item.Toolkit)))
+            (& $h $(if ($null -ne $item.AuditScore) { $item.AuditScore } else { '-' })), (& $h (Format-TkFleetComplianceShort -Verdict $item.Compliance)),
+            (& $h $item.Windows11), (& $h $item.Renewal), (& $h $(if ($item.RebootPending) { 'pending' } else { '' })), (& $h $item.Toolkit)))
     }
     [void] $html.AppendLine('</table>')
 

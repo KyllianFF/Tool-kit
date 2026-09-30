@@ -102,6 +102,10 @@ function Get-TkHtmlReportStyle {
     .card .detail { margin: 6px 0 0; }
     .card .reco { margin: 6px 0 0; color: #1b1f24; }
     .card .reco strong { color: #57606a; font-weight: 600; }
+    .card .policy { margin: 6px 0 0; color: #57606a; font-size: 13px; }
+    table.grid { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; background: #fff; }
+    table.grid th, table.grid td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #e1e4e8; vertical-align: top; }
+    table.grid th { color: #57606a; font-weight: 600; }
     .sev-pass        { border-left-color: #1a7f37; }
     .sev-pass .pill,        .pill.sev-pass        { background: #eaf6ec; color: #1a7f37; border-color: #a7d6b3; }
     .sev-warning     { border-left-color: #d29922; }
@@ -270,7 +274,12 @@ function ConvertTo-TkSecurityAuditHtml {
         [pscustomobject] $Score,
 
         [Parameter()]
-        [string] $Computer = $env:COMPUTERNAME
+        [string] $Computer = $env:COMPUTERNAME,
+
+        # The verdict of the organisation policy, set first when given.
+        [Parameter()]
+        [AllowNull()]
+        [pscustomobject] $Compliance
     )
 
     if (-not $Score) {
@@ -297,6 +306,11 @@ function ConvertTo-TkSecurityAuditHtml {
     }
 
     $body = New-Object System.Text.StringBuilder
+
+    if ($Compliance) {
+        [void] $body.Append((ConvertTo-TkComplianceHtml -Compliance $Compliance))
+    }
+
     [void] $body.AppendLine('<h2 class="section">Summary</h2>')
     [void] $body.AppendLine('<div class="score">')
     [void] $body.AppendLine(('<div class="value">{0}<span>/100</span></div>' -f [int] $Score.Score))
@@ -338,6 +352,11 @@ function ConvertTo-TkSecurityAuditHtml {
 
             if ($item.Recommendation) {
                 [void] $body.AppendLine(('<p class="reco"><strong>Recommendation:</strong> {0}</p>' -f (ConvertTo-TkHtmlEncoded ([string] $item.Recommendation))))
+            }
+
+            $policyNote = Format-TkFindingPolicyNote -Finding $item
+            if ($policyNote) {
+                [void] $body.AppendLine(('<p class="policy">{0}</p>' -f (ConvertTo-TkHtmlEncoded $policyNote)))
             }
 
             [void] $body.AppendLine('</div>')

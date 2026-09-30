@@ -273,7 +273,7 @@ function Get-TkHeadlessReport {
             Test-TkJournalChain
         })
 
-        (& $row 'Audit' 1 $true 'The security audit with its score, at the level asked for.' {
+        (& $row 'Audit' 1 $true 'The security audit with its score, at the level asked for, and its compliance with the organisation policy when one is set.' {
             param($Options)
 
             # The accounts excluded in the interface apply here too, and are
@@ -284,14 +284,32 @@ function Get-TkHeadlessReport {
                 $excluded = @(Get-TkAuditExclusion)
             }
 
-            $findings = @(Invoke-TkSecurityAudit -Level $Options.AuditLevel -ExcludedAccount $excluded)
+            # The policy given on the command line, or else the one set in
+            # Settings for this account.
+            $source = [string] $Options['Policy']
+            $trust  = @($Options['PolicyTrust'] | Where-Object { $_ })
 
-            [pscustomobject] @{
-                Level           = $Options.AuditLevel
-                ExcludedAccount = $excluded
-                Score           = Get-TkAuditScore -Finding $findings
-                Findings        = $findings
+            if (-not $source) {
+                $setting = Get-TkPolicySetting
+                $source  = $setting.Source
+                $trust   = @($setting.Trust)
             }
+
+            $audit = Invoke-TkPolicyAudit -Level $Options.AuditLevel -ExcludedAccount $excluded -PolicySource $source -PolicyTrust $trust
+
+            $data = [ordered] @{
+                Level           = $audit.Level
+                ExcludedAccount = @($audit.ExcludedAccount)
+                Score           = $audit.Score
+                Findings        = @($audit.Findings)
+            }
+
+            # Only with a policy, so a document without one reads as before.
+            if ($audit.Compliance) {
+                $data['Compliance'] = $audit.Compliance
+            }
+
+            [pscustomobject] $data
         })
     )
 }
@@ -715,6 +733,14 @@ function New-TkReportDocument {
 .PARAMETER AuditLevel
     Essential or Full, for the Audit report.
 
+.PARAMETER Policy
+    The organisation policy the Audit report is judged against: a file, a
+    share or an https:// address. Without it, the one set in Settings.
+
+.PARAMETER PolicyTrust
+    The certificate thumbprints and SHA-256 hashes that make the policy
+    trusted.
+
 .OUTPUTS
     System.String: the JSON, or the full path of the file written.
 #>
@@ -742,7 +768,15 @@ function Invoke-TkHeadlessReport {
         # comparison needs the real values, a document sent away does not.
         [Parameter()]
         [ValidateSet('None', 'Personal', 'Strict')]
-        [string] $Redact = 'None'
+        [string] $Redact = 'None',
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $Policy = '',
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [string[]] $PolicyTrust = @()
     )
 
     $table     = @(Get-TkHeadlessReport)
@@ -775,7 +809,7 @@ function Invoke-TkHeadlessReport {
         }
 
         $names    = @(Resolve-TkHeadlessReportName -Name $Report)
-        $document = New-TkReportDocument -Name $names -Table $table -Options @{ AuditLevel = $AuditLevel } -Privacy $Redact
+        $document = New-TkReportDocument -Name $names -Table $table -Options @{ AuditLevel = $AuditLevel; Policy = $Policy; PolicyTrust = @($PolicyTrust | Where-Object { $_ }) } -Privacy $Redact
 
         if ($reference) {
             $document['Comparison'] = ConvertTo-TkPlainData -InputObject (Compare-TkReportDocument -Reference $reference -Difference $document)

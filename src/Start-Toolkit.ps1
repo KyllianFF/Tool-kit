@@ -49,6 +49,15 @@
 .PARAMETER AuditLevel
     With Report, the depth of the Audit report: Essential or Full.
 
+.PARAMETER Policy
+    With Report, the organisation policy the Audit report is judged against:
+    a .psd1 file, a share or an https:// address. Without it, the one set in
+    Settings for this account.
+
+.PARAMETER PolicyTrust
+    With Policy, the certificate thumbprints or SHA-256 hashes that make it
+    trusted. An untrusted policy is not applied: the audit stays generic.
+
 .PARAMETER Redact
     With Report or CompareWith, pseudonymises the document: None, Personal
     (names, accounts, e-mails, serial numbers) or Strict (also addresses,
@@ -110,6 +119,12 @@ function Start-Toolkit {
         [Parameter()]
         [ValidateSet('Essential', 'Full')]
         [string] $AuditLevel = 'Essential',
+
+        [Parameter()]
+        [string] $Policy,
+
+        [Parameter()]
+        [string[]] $PolicyTrust,
 
         [Parameter()]
         [ValidateSet('None', 'Personal', 'Strict')]
@@ -204,7 +219,8 @@ function Start-Toolkit {
     # A headless run needs no window, no single threaded apartment and no WPF.
     if ($Report -or $CompareWith) {
         return Invoke-TkHeadlessReport -Report @($Report | Where-Object { $_ }) -CompareWith ([string] $CompareWith) `
-                                       -OutFile ([string] $OutFile) -AuditLevel $AuditLevel -Redact $Redact
+                                       -OutFile ([string] $OutFile) -AuditLevel $AuditLevel -Redact $Redact `
+                                       -Policy ([string] $Policy) -PolicyTrust @($PolicyTrust | Where-Object { $_ })
     }
 
     # The elevated worker: this process was started (as administrator) to run

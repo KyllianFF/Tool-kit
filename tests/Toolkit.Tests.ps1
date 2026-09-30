@@ -6000,6 +6000,425 @@ Describe 'Fleet view' {
     }
 }
 
+Describe 'Signed data packs' {
+
+    BeforeAll {
+        $script:PackFolder = Join-Path $TestDrive 'packs'
+        New-Item -ItemType Directory -Path $script:PackFolder | Out-Null
+
+        function New-PackFile {
+            param([string] $Name, [string] $Text)
+            $path = Join-Path $script:PackFolder $Name
+            [System.IO.File]::WriteAllText($path, $Text, (New-Object System.Text.UTF8Encoding($true)))
+            $path
+        }
+
+        # Stands in for the signature reader: the signed state the test asks for.
+        function New-SignatureStub {
+            param([string] $Status, [string] $Thumbprint = '', [string] $Subject = 'CN=Contoso Security, O=Contoso')
+            $certificate = if ($Thumbprint) { [pscustomobject] @{ Thumbprint = $Thumbprint; Subject = $Subject } } else { $null }
+            $signature   = [pscustomobject] @{ Status = $Status; SignerCertificate = $certificate }
+            { param($bytes, $extension) $null = $bytes, $extension; $signature }.GetNewClosure()
+        }
+    }
+
+    It 'reads the data of a pack, and refuses anything that would run' {
+
+        $data = ConvertFrom-TkDataPackText -Text ("# a comment`r`n@{ Name = 'x'; List = @('a', 'b'); Nested = @{ On = `$true; Number = 3 } }`r`n" +
+                                                 "# SIG # Begin signature block`r`n# MIIxyz`r`n# SIG # End signature block`r`n")
+
+        $data.Name          | Should -Be 'x'
+        @($data.List)       | Should -Be @('a', 'b')
+        $data.Nested.On     | Should -BeTrue
+        $data.Nested.Number | Should -Be 3
+
+        foreach ($text in @(
+            '@{ A = (Get-Date) }', '@{ A = $env:USERNAME }', '@{ A = "$(Get-Date)" }', '@{ A = 1 + 1 }', "@{ A = [datetime] '2026-01-01' }",
+            'Remove-Item -Path x; @{ A = 1 }', '@{ A = 1 }; @{ B = 2 }', 'param($x) @{ A = 1 }', "#requires -Version 5`r`n@{ A = 1 }",
+            '@{ A = 1 } > out.txt', '@(1, 2)', '', '@{ A = '
+        )) {
+            { ConvertFrom-TkDataPackText -Text $text } | Should -Throw -Because $text
+        }
+    }
+
+    It 'sorts what is pinned into thumbprints and hashes, and keeps apart what is neither' {
+
+        $sha    = 'AB' * 32
+        $anchor = ConvertTo-TkTrustAnchor -Value @('a1 b2 c3 d4 e5 f6 a1 b2 c3 d4 e5 f6 a1 b2 c3 d4 e5 f6 a1 b2', ("{0};{1}`r`nAA:BB" -f $sha.ToLowerInvariant(), $sha))
+
+        @($anchor.Thumbprints) | Should -Be @('A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2')
+        @($anchor.Hashes)      | Should -Be @($sha)
+        @($anchor.Invalid)     | Should -Be @('AA:BB')
+        @((ConvertTo-TkTrustAnchor -Value $null).Hashes).Count | Should -Be 0
+    }
+
+    It 'refuses a pack nothing trusts and says what to pin, and reads one whose SHA-256 is pinned' {
+
+        $path = New-PackFile -Name 'plain.psd1' -Text "@{ Name = 'plain' }"
+        $sha  = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+
+        $refused = Read-TkSignedDataPack -Source $path
+        $refused.Accepted | Should -BeFalse
+        $refused.Data     | Should -BeNullOrEmpty
+        $refused.Sha256   | Should -Be $sha
+        $refused.Reason   | Should -Match $sha
+
+        $pinned = Read-TkSignedDataPack -Source $path -Trust @($sha.ToLowerInvariant())
+        $pinned.Accepted   | Should -BeTrue
+        $pinned.VerifiedBy | Should -Be 'Hash'
+        $pinned.Data.Name  | Should -Be 'plain'
+
+        (Read-TkSignedDataPack -Source $path -Trust @('12345')).Reason                                 | Should -BeLike '*neither a certificate thumbprint*'
+        (Read-TkSignedDataPack -Source 'http://example.com/policy.psd1' -Trust @($sha)).Reason          | Should -BeLike '*https://*'
+        (Read-TkSignedDataPack -Source $path -Trust @($sha) -MaxBytes 4).Reason                        | Should -BeLike '*larger than*'
+        (Read-TkSignedDataPack -Source (Join-Path $script:PackFolder 'none.psd1') -Trust @($sha)).Reason | Should -BeLike '*does not exist*'
+    }
+
+    It 'trusts a signature only from a pinned certificate that Windows reports valid' {
+
+        $path  = New-PackFile -Name 'signed.psd1' -Text "@{ Name = 'signed' }"
+        $thumb = 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2'
+
+        $valid = Read-TkSignedDataPack -Source $path -Trust @($thumb) -Signature (New-SignatureStub -Status 'Valid' -Thumbprint $thumb)
+        $valid.Accepted   | Should -BeTrue
+        $valid.VerifiedBy | Should -Be 'Signature'
+        $valid.Signer     | Should -Be 'Contoso Security'
+
+        $other = Read-TkSignedDataPack -Source $path -Trust @($thumb) -Signature (New-SignatureStub -Status 'Valid' -Thumbprint ('F' * 40))
+        $other.Accepted | Should -BeFalse
+        $other.Reason   | Should -BeLike '*not a trusted signer*'
+
+        $chain = Read-TkSignedDataPack -Source $path -Trust @($thumb) -Signature (New-SignatureStub -Status 'UnknownError' -Thumbprint $thumb)
+        $chain.Accepted | Should -BeFalse
+        $chain.Reason   | Should -BeLike '*chain is not trusted*'
+
+        $changed = Read-TkSignedDataPack -Source $path -Trust @($thumb) -Signature (New-SignatureStub -Status 'HashMismatch' -Thumbprint $thumb)
+        $changed.Accepted | Should -BeFalse
+        $changed.Reason   | Should -BeLike '*changed after it was signed*'
+
+        # A pinned SHA-256 is these very bytes, whatever the signature says.
+        $sha = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+        (Read-TkSignedDataPack -Source $path -Trust @($sha) -Signature (New-SignatureStub -Status 'NotSigned')).VerifiedBy | Should -Be 'Hash'
+    }
+
+    It 'downloads an https:// pack to a temporary file, and removes it' {
+
+        $seen     = New-Object System.Collections.Generic.List[string]
+        $download = { param($uri, $path) $null = $uri; $seen.Add($path); [System.IO.File]::WriteAllText($path, "@{ Name = 'remote' }") }.GetNewClosure()
+        $sha      = Get-TkBytesSha256 -Bytes ([System.Text.Encoding]::UTF8.GetBytes("@{ Name = 'remote' }"))
+
+        $pack = Read-TkSignedDataPack -Source 'https://policy.contoso.test/workstations.psd1' -Trust @($sha) -Download $download
+
+        $pack.Accepted  | Should -BeTrue
+        $pack.Data.Name | Should -Be 'remote'
+        $seen.Count     | Should -Be 1
+        Test-Path -LiteralPath $seen[0] | Should -BeFalse
+    }
+
+    It 'refuses a trusted pack that holds code, and reads a real signature through a locked copy' {
+
+        $path = New-PackFile -Name 'code.psd1' -Text '@{ Name = (Get-Process) }'
+        $pack = Read-TkSignedDataPack -Source $path -Trust @((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)
+
+        $pack.Accepted | Should -BeFalse
+        $pack.Data     | Should -BeNullOrEmpty
+        $pack.Reason   | Should -BeLike '*not a data file*'
+
+        (Get-TkBytesSignature -Bytes ([System.Text.Encoding]::UTF8.GetBytes("@{ Name = 'x' }"))).Status | Should -Be 'NotSigned'
+    }
+}
+
+Describe 'Organisation policy' {
+
+    BeforeAll {
+        # Journaled to a temporary folder, never to the account that runs the tests.
+        $script:PolicyDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+
+        function New-PolicyData {
+            param([hashtable] $Extra = @{})
+            $data = @{
+                Schema = 'toolkit-policy'; SchemaVersion = '1.0'; Name = 'Contoso workstations'; Version = '2026.09.1'; Owner = 'Contoso security'
+                Audit          = @{ Level = 'full'; NotRequired = @('prn-001'); WarningsBlock = $false }
+                Administrators = @('CONTOSO\Workstation Admins')
+                Windows        = @{ MinimumBuild = 22631; MaxPatchAgeDays = 30 }
+                Software       = @{
+                    Required  = @(@{ Id = 'ORG-EDR'; Name = 'EDR sensor'; Service = 'CSAgent'; Package = 'CrowdStrike*'; Why = 'Every workstation runs the EDR.' })
+                    Forbidden = @(@{ Id = 'ORG-REMOTE'; Name = 'AnyDesk'; Package = 'AnyDesk*' })
+                }
+                Exceptions     = @(
+                    @{ Control = 'RDP-001'; Computers = @('LAB-*'); Reason = 'Lab machines are administered over RDP.'; Owner = 'J. Martin'; Expires = '2026-12-31'; Ticket = 'CHG-1' }
+                    @{ Control = 'FW-001'; Reason = 'Replaced by the network appliance.'; Owner = 'N. Petit'; Expires = '2026-09-01' }
+                    @{ Control = 'SMB-001'; Reason = 'Legacy scanner.'; Owner = 'N. Petit'; Expires = '2027-01-31' }
+                )
+            }
+            foreach ($key in $Extra.Keys) { $data[$key] = $Extra[$key] }
+            $data
+        }
+
+        function New-Finding {
+            param([string] $Id, [string] $Status)
+            New-TkAuditFinding -Id $Id -Name $Id -Category 'Test' -Status $Status -Detail ('{0} detail.' -f $Id)
+        }
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:PolicyDataRoot
+    }
+
+    It 'checks a policy, and leaves out by name what it cannot use' {
+
+        $data = New-PolicyData -Extra @{
+            Colour     = 'blue'
+            Software   = @{ Required = @(@{ Id = 'ORG-EDR'; Service = 'CSAgent' }); Forbidden = @(@{ Name = 'Nothing named' }) }
+            Exceptions = @(
+                @{ Control = 'RDP-001'; Reason = 'r'; Owner = 'o'; Expires = '2026-12-31' }
+                @{ Control = 'UAC-001'; Reason = 'r'; Owner = 'o' }
+                @{ Control = 'LOCK-001'; Reason = 'r'; Expires = '2026-12-31' }
+            )
+        }
+
+        $policy = ConvertTo-TkPolicy -Data $data
+
+        $policy.Level                 | Should -Be 'Full'
+        @($policy.NotRequired)        | Should -Be @('PRN-001')
+        @($policy.Software).Count     | Should -Be 1
+        @($policy.Exceptions).Count   | Should -Be 1
+        $policy.Exceptions[0].Expires | Should -Be ([datetime]::new(2026, 12, 31))
+
+        $problems = $policy.Problems -join ' '
+        $problems | Should -Match 'Colour'
+        $problems | Should -Match 'neither a Package nor a Service'
+        $problems | Should -Match 'UAC-001.*no Expires'
+        $problems | Should -Match 'LOCK-001.*no Reason or no Owner'
+
+        $summary = Format-TkPolicySummary -Policy $policy -Now ([datetime]::new(2026, 9, 29))
+        $summary | Should -Match 'Contoso workstations 2026.09.1'
+        $summary | Should -Match '1 control\(s\) not required \(PRN-001\)'
+        $summary | Should -Match 'Windows build 22631 or later'
+        $summary | Should -Match 'Left out: Colour'
+
+        { ConvertTo-TkPolicy -Data @{ Schema = 'other'; SchemaVersion = '1.0'; Name = 'x'; Version = '1' } }          | Should -Throw '*not a toolkit policy*'
+        { ConvertTo-TkPolicy -Data @{ Schema = 'toolkit-policy'; SchemaVersion = '2.0'; Name = 'x'; Version = '1' } } | Should -Throw '*newer toolkit*'
+        { ConvertTo-TkPolicy -Data @{ Schema = 'toolkit-policy'; SchemaVersion = '1.0'; Version = '1' } }             | Should -Throw '*has no Name*'
+    }
+
+    It 'judges its own rules on what the machine has' {
+
+        $policy = ConvertTo-TkPolicy -Data (New-PolicyData)
+        $now    = [datetime]::new(2026, 9, 29)
+        $judge  = { param($fact) (@(Get-TkPolicyRuleFinding -Policy $policy -Fact $fact -Now $now) | ForEach-Object { '{0}={1}' -f $_.Id, $_.Status }) -join ',' }
+
+        $bad = [pscustomobject] @{ Computer = 'PC-1'; Packages = @('CrowdStrike Windows Sensor', 'AnyDesk'); Services = @{ CSAgent = 'Stopped' }; LastUpdate = [datetime]::new(2026, 9, 1); Build = 22000 }
+        & $judge $bad | Should -Be 'ORG-EDR=Fail,ORG-REMOTE=Fail,POL-WIN-BUILD=Fail,POL-PATCH-AGE=Pass'
+
+        $rules = @(Get-TkPolicyRuleFinding -Policy $policy -Fact $bad -Now $now)
+        $rules[0].Category       | Should -Be 'Policy'
+        $rules[0].Detail         | Should -Match 'CSAgent service is stopped'
+        $rules[0].Recommendation | Should -Be 'Every workstation runs the EDR.'
+        $rules[1].Detail         | Should -Match 'installed as AnyDesk'
+
+        $good = [pscustomobject] @{ Computer = 'PC-1'; Packages = @('CrowdStrike Windows Sensor'); Services = @{ CSAgent = 'Running' }; LastUpdate = [datetime]::new(2026, 8, 1); Build = 26100 }
+        & $judge $good | Should -Be 'ORG-EDR=Pass,ORG-REMOTE=Pass,POL-WIN-BUILD=Pass,POL-PATCH-AGE=Fail'
+
+        $unreadable = [pscustomobject] @{ Computer = 'PC-1'; Packages = $null; Services = @{}; LastUpdate = $null; Build = 0 }
+        & $judge $unreadable | Should -Be 'ORG-EDR=NotAssessed,ORG-REMOTE=NotAssessed,POL-WIN-BUILD=NotAssessed,POL-PATCH-AGE=NotAssessed'
+    }
+
+    It 'gives the verdict, with exceptions that hold through their day and count again after it' {
+
+        $policy   = ConvertTo-TkPolicy -Data (New-PolicyData)
+        $now      = [datetime]::new(2026, 9, 29)
+        $findings = @(
+            New-Finding 'RDP-001' 'Fail'
+            New-Finding 'FW-001' 'Fail'
+            New-Finding 'PRN-001' 'Fail'
+            New-Finding 'UPD-002' 'Warning'
+            New-Finding 'ENC-001' 'Pass'
+            New-Finding 'TPM-001' 'NotAssessed'
+        )
+
+        # On a lab machine: Remote Desktop accepted, the firewall exception over.
+        $lab = Resolve-TkPolicyCompliance -Policy $policy -Finding $findings -Computer 'LAB-07' -Now $now
+
+        $lab.Verdict  | Should -Be 'NonCompliant'
+        $lab.Blocking | Should -Be 1
+        $lab.Expired  | Should -Be 1
+        $lab.Accepted | Should -Be 1
+        $lab.Until    | Should -Be '2026-12-31'
+
+        (@($lab.Findings | ForEach-Object { '{0}={1}' -f $_.Id, $_.Policy.State })) -join ',' |
+            Should -Be 'RDP-001=Accepted,FW-001=Expired,PRN-001=NotRequired,UPD-002=Tolerated,ENC-001=Met,TPM-001=NotAssessed'
+        ($lab.Findings | Where-Object { $_.Id -eq 'RDP-001' }).Policy.Exception.Owner | Should -Be 'J. Martin'
+        @($lab.Unused | ForEach-Object { $_.Control }) | Should -Be @('SMB-001')
+
+        # The findings given are copied, never changed.
+        $findings[0].PSObject.Properties['Policy'] | Should -BeNullOrEmpty
+
+        # Elsewhere, the lab's exception does not apply.
+        $office = Resolve-TkPolicyCompliance -Policy $policy -Finding @($findings | Where-Object { $_.Id -ne 'FW-001' }) -Computer 'ACC-01' -Now $now
+        $office.Verdict | Should -Be 'NonCompliant'
+        ($office.Findings | Where-Object { $_.Id -eq 'RDP-001' }).Policy.State | Should -Be 'Blocking'
+
+        # An exception holds through the day it ends, and not the day after.
+        $rdp = @(New-Finding 'RDP-001' 'Fail')
+        (Resolve-TkPolicyCompliance -Policy $policy -Finding $rdp -Computer 'LAB-07' -Now ([datetime]::new(2026, 12, 31, 18, 0, 0))).Verdict | Should -Be 'CompliantWithExceptions'
+        (Resolve-TkPolicyCompliance -Policy $policy -Finding $rdp -Computer 'LAB-07' -Now ([datetime]::new(2027, 1, 1))).Verdict            | Should -Be 'NonCompliant'
+
+        # Warnings block when the policy says so.
+        $strict = ConvertTo-TkPolicy -Data (New-PolicyData -Extra @{ Audit = @{ WarningsBlock = $true } })
+        (Resolve-TkPolicyCompliance -Policy $strict -Finding @(New-Finding 'UPD-002' 'Warning') -Computer 'ACC-01' -Now $now).Verdict | Should -Be 'NonCompliant'
+
+        # The policy's own rules count as much as the audit.
+        $rule     = New-TkAuditFinding -Id 'ORG-REMOTE' -Name 'Forbidden: AnyDesk' -Category 'Policy' -Status 'Fail' -Detail 'x'
+        $withRule = Resolve-TkPolicyCompliance -Policy $policy -Finding @(New-Finding 'ENC-001' 'Pass') -Rule @($rule) -Computer 'ACC-01' -Now $now
+        $withRule.Verdict               | Should -Be 'NonCompliant'
+        $withRule.Rules[0].Policy.State | Should -Be 'Blocking'
+        (Resolve-TkPolicyCompliance -Policy $policy -Finding @(New-Finding 'ENC-001' 'Pass') -Computer 'ACC-01' -Now $now).Verdict | Should -Be 'Compliant'
+    }
+
+    It 'applies a trusted policy to the audit and journals which one, and falls back to the generic audit otherwise' {
+
+        $calls = New-Object System.Collections.Generic.List[object]
+        function Invoke-TkSecurityAudit {
+            param($Level, $ExcludedAccount)
+            $calls.Add([pscustomobject] @{ Level = $Level; Excluded = @($ExcludedAccount) })
+            New-Finding 'RDP-001' 'Fail'
+            New-Finding 'ENC-001' 'Pass'
+        }
+        function Get-TkPolicyFact {
+            param($Policy)
+            $null = $Policy
+            [pscustomobject] @{ Computer = 'PC-1'; Packages = @('CrowdStrike Windows Sensor'); Services = @{ CSAgent = 'Running' }; LastUpdate = (Get-Date).AddDays(-3); Build = 26100 }
+        }
+
+        $path = Join-Path $TestDrive 'policy.psd1'
+        [System.IO.File]::WriteAllText($path, @'
+@{
+    Schema = 'toolkit-policy'; SchemaVersion = '1.0'; Name = 'Contoso workstations'; Version = '2026.09.1'; Owner = 'Contoso security'
+    Audit = @{ Level = 'Full' }
+    Administrators = @('CONTOSO\Workstation Admins')
+    Windows = @{ MinimumBuild = 22631; MaxPatchAgeDays = 30 }
+    Software = @{ Required = @(@{ Id = 'ORG-EDR'; Name = 'EDR sensor'; Service = 'CSAgent'; Package = 'CrowdStrike*' }) }
+    Exceptions = @(@{ Control = 'RDP-001'; Reason = 'Administered over RDP.'; Owner = 'J. Martin'; Expires = '2099-12-31' })
+}
+'@)
+        $sha = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+
+        $audit = Invoke-TkPolicyAudit -Level 'Essential' -ExcludedAccount @('PC\helpdesk') -PolicySource $path -PolicyTrust @($sha)
+
+        $audit.Level                     | Should -Be 'Full'
+        $calls[0].Level                  | Should -Be 'Full'
+        @($calls[0].Excluded)            | Should -Be @('PC\helpdesk', 'CONTOSO\Workstation Admins')
+        $audit.Compliance.Verdict        | Should -Be 'CompliantWithExceptions'
+        $audit.Compliance.Until          | Should -Be '2099-12-31'
+        $audit.Compliance.Policy.Sha256  | Should -Be $sha
+        @($audit.Compliance.Rules).Count | Should -Be 3
+        $audit.Compliance.PSObject.Properties['Findings'] | Should -BeNullOrEmpty
+        ($audit.Findings | Where-Object { $_.Id -eq 'RDP-001' }).Policy.State | Should -Be 'Accepted'
+        $audit.Score.Score               | Should -Be 50
+
+        (Get-TkJournalFolder) | Should -BeLike ('{0}*' -f $TestDrive)
+        $applied = @(Get-TkJournalEntry -Since (Get-Date).AddMinutes(-10) | Where-Object { $_.Category -eq 'Policy' }) | Select-Object -Last 1
+        $applied.Name   | Should -Be 'Organisation policy applied'
+        $applied.Kind   | Should -Be 'Check'
+        $applied.Detail | Should -Match $sha
+
+        # Trusted by nothing it carries: the generic audit, and the reason.
+        $refused = Invoke-TkPolicyAudit -Level 'Essential' -PolicySource $path -PolicyTrust @('0' * 64)
+        $refused.Level              | Should -Be 'Essential'
+        $refused.Compliance.Verdict | Should -Be 'PolicyRefused'
+        $refused.Compliance.Reason  | Should -Match 'not a trusted hash'
+        ($refused.Findings | Where-Object { $_.Id -eq 'RDP-001' }).PSObject.Properties['Policy'] | Should -BeNullOrEmpty
+
+        $last = @(Get-TkJournalEntry -Since (Get-Date).AddMinutes(-10) | Where-Object { $_.Category -eq 'Policy' }) | Select-Object -Last 1
+        $last.Name    | Should -Be 'Organisation policy refused'
+        $last.Outcome | Should -Be 'Failed'
+
+        # No policy, no verdict.
+        (Invoke-TkPolicyAudit -Level 'Essential').Compliance | Should -BeNullOrEmpty
+    }
+
+    It 'writes the verdict into the HTML report, every value encoded' {
+
+        $policy   = ConvertTo-TkPolicy -Data (New-PolicyData -Extra @{ Exceptions = @(@{ Control = 'RDP-001'; Reason = '<script>alert(1)</script>'; Owner = 'J. Martin'; Expires = '2099-12-31' }) })
+        $resolved = Resolve-TkPolicyCompliance -Policy $policy -Finding @(New-Finding 'RDP-001' 'Fail') -Computer 'ACC-01' -Now (Get-Date)
+        $findings = @($resolved.Findings)
+        $resolved.PSObject.Properties.Remove('Findings')
+
+        $html = ConvertTo-TkSecurityAuditHtml -Finding $findings -Compliance $resolved -Computer 'ACC-01'
+
+        $html | Should -Match 'Organisation policy'
+        $html | Should -Match 'Compliant with Contoso workstations 2026.09.1, with 1 exception'
+        $html | Should -Not -Match '<script'
+        $html | Should -Match '&lt;script&gt;'
+
+        Format-TkFindingPolicyNote -Finding $findings[0] | Should -BeLike 'Policy: exception accepted until 2099-12-31 (J. Martin)*'
+        Format-TkFindingPolicyNote -Finding (New-Finding 'X-001' 'Fail') | Should -Be ''
+    }
+
+    It 'writes a starting policy that reads as one, with nothing left out' {
+
+        $template = New-TkPolicyTemplate
+        $policy   = ConvertTo-TkPolicy -Data (ConvertFrom-TkDataPackText -Text $template)
+
+        $policy.Name                | Should -Be 'Workstation policy'
+        @($policy.Problems).Count   | Should -Be 0
+        $policy.MaxPatchAgeDays     | Should -Be 45
+        $template                   | Should -Not -Match '[^\x00-\x7F]'
+    }
+
+    It 'is collected in the headless Audit report, and read by the fleet view' {
+
+        $calls = New-Object System.Collections.Generic.List[object]
+        function Invoke-TkPolicyAudit {
+            param($Level, $ExcludedAccount, $PolicySource, $PolicyTrust)
+            $calls.Add([pscustomobject] @{ Source = $PolicySource; Trust = @($PolicyTrust) })
+            [pscustomobject] @{
+                Level = $Level; ExcludedAccount = @($ExcludedAccount); Score = [pscustomobject] @{ Score = 90 }; Findings = @()
+                Compliance = [pscustomobject] @{ Verdict = 'NonCompliant'; Policy = [pscustomobject] @{ Name = 'Contoso'; Version = '3' } }
+            }
+        }
+
+        $collect = (Get-TkHeadlessReport | Where-Object { $_.Name -eq 'Audit' }).Collect
+        $data    = & $collect @{ AuditLevel = 'Essential'; Policy = 'C:\policy.psd1'; PolicyTrust = @('AB' * 32) }
+
+        $calls[0].Source          | Should -Be 'C:\policy.psd1'
+        @($calls[0].Trust)        | Should -Be @('AB' * 32)
+        $data.Compliance.Verdict  | Should -Be 'NonCompliant'
+
+        $document = [ordered] @{
+            Schema = 'toolkit-report'; SchemaVersion = '1.0'; Computer = 'PC-9'; MachineId = ('9' * 32); GeneratedAt = (Get-Date).ToString('o')
+            Summary = [ordered] @{ Worst = 'Fail' }
+            Reports = [ordered] @{ Audit = [ordered] @{ Version = 1; Status = 'Ok'; Data = [ordered] @{
+                Score = [ordered] @{ Score = 70 }; Findings = @()
+                Compliance = [ordered] @{ Verdict = 'CompliantWithExceptions'; Policy = [ordered] @{ Name = 'Contoso'; Version = '3' } } } } }
+        }
+
+        $machine = ConvertTo-TkFleetMachine -Document $document
+        $machine.Compliance | Should -Be 'CompliantWithExceptions'
+        $machine.Policy     | Should -Be 'Contoso 3'
+
+        $summary = Get-TkFleetSummary -Machine @($machine, (ConvertTo-TkFleetMachine -Document ([ordered] @{ Computer = 'PC-8'; Reports = [ordered] @{} })))
+        $summary.Compliance.CompliantWithExceptions | Should -Be 1
+        $summary.Compliance.None                    | Should -Be 1
+        Format-TkFleetCompliance -Summary $summary | Should -Be '0 compliant, 1 with exceptions, 0 not compliant, 1 without a policy (Contoso 3)'
+        Format-TkFleetComplianceShort -Verdict 'NonCompliant' | Should -Be 'not compliant'
+    }
+
+    It 'has its card in Settings' {
+
+        $markup = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\MainWindow.xaml') -Raw
+
+        foreach ($name in @('PolicySource', 'BtnPolicyBrowse', 'PolicyTrust', 'BtnPolicyCheck', 'BtnPolicyTemplate', 'BtnPolicyClear', 'PolicyStatusText')) {
+            $markup | Should -Match ('x:Name="{0}"' -f $name)
+        }
+
+        Format-TkPolicyCheck -Import $null | Should -Be 'The policy could not be read.'
+        Format-TkPolicyCheck -Import ([pscustomobject] @{ Applied = $false; Reason = 'It is not signed.' }) | Should -Be 'Not applied: It is not signed.'
+    }
+}
+
 Describe 'Switch port discovery' {
 
     BeforeAll {

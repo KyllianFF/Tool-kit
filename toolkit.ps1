@@ -45,6 +45,12 @@ param(
     [string] $AuditLevel = 'Essential',
 
     [Parameter()]
+    [string] $Policy,
+
+    [Parameter()]
+    [string[]] $PolicyTrust,
+
+    [Parameter()]
     [ValidateSet('None', 'Personal', 'Strict')]
     [string] $Redact = 'None',
 
@@ -134,7 +140,7 @@ if ($Fix -or $Tweak -or $Remediate -or $Execute -or $Revert) {
     }
 }
 elseif ($Report -or $CompareWith) {
-    Start-Toolkit -Report $Report -CompareWith $CompareWith -OutFile $OutFile -AuditLevel $AuditLevel -Redact $Redact
+    Start-Toolkit -Report $Report -CompareWith $CompareWith -OutFile $OutFile -AuditLevel $AuditLevel -Redact $Redact -Policy $Policy -PolicyTrust $PolicyTrust
 }
 elseif ($RunAction) {
     Start-Toolkit -RunAction $RunAction -ActionData $ActionData -ResultFile $ResultFile

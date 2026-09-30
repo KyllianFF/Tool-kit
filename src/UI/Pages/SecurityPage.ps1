@@ -12,8 +12,10 @@
 # as it is copied.
 $script:TkLastGeneratedSecret = ''
 
-# Last audit result, kept so the export button has something to write.
-$script:TkLastAudit = $null
+# Last audit result, kept so the export button has something to write, with
+# the organisation policy's verdict on it when there was one.
+$script:TkLastAudit      = $null
+$script:TkLastCompliance = $null
 
 <#
 .SYNOPSIS
@@ -171,6 +173,7 @@ function Initialize-TkSecurityPage {
     }
 
     Initialize-TkPrivacySetting
+    Initialize-TkPolicySetting
 
     Register-TkClick -Name 'BtnCheckToolkitUpdate' -Action { Invoke-TkUpdateCheckFromUi }
     Register-TkClick -Name 'BtnCopyLaunchCommand'  -Action { Copy-TkLaunchCommandFromUi }
@@ -885,18 +888,30 @@ function Invoke-TkAuditFromUi {
     $script:TkAuditLevel     = Get-TkSelectedAuditLevel
     $script:TkAuditExclusion = @(Get-TkAuditExclusion)
 
-    Invoke-TkBackgroundAction -StatusText ('Running the {0} security audit...' -f $script:TkAuditLevel.ToLowerInvariant()) `
-        -ScriptBlock {
-            param($Level, $ExcludedAccount)
+    # The organisation policy set in Settings, read and verified again at
+    # every run: a policy published since is the one applied.
+    $policy = Get-TkPolicySetting
+    $status = if ($policy.Source) { 'Running the {0} security audit under the organisation policy...' } else { 'Running the {0} security audit...' }
 
-            Invoke-TkSecurityAudit -Level $Level -ExcludedAccount $ExcludedAccount
+    Invoke-TkBackgroundAction -StatusText ($status -f $script:TkAuditLevel.ToLowerInvariant()) `
+        -ScriptBlock {
+            param($Level, $ExcludedAccount, $PolicySource, $PolicyTrust)
+
+            Invoke-TkPolicyAudit -Level $Level -ExcludedAccount $ExcludedAccount -PolicySource $PolicySource -PolicyTrust $PolicyTrust
         } `
-        -ParameterList @{ Level = $script:TkAuditLevel; ExcludedAccount = $script:TkAuditExclusion } `
+        -ParameterList @{ Level = $script:TkAuditLevel; ExcludedAccount = $script:TkAuditExclusion; PolicySource = $policy.Source; PolicyTrust = @($policy.Trust) } `
         -OnComplete {
             param($result)
 
-            Show-TkAuditReport -Finding @($result.Output) `
-                -Level $script:TkAuditLevel -ExcludedAccount $script:TkAuditExclusion
+            $audit = @($result.Output) | Where-Object { $_ -and $_.PSObject.Properties['Findings'] } | Select-Object -Last 1
+
+            if (-not $audit) {
+                Set-TkStatus -Text $(if (@($result.Errors).Count) { 'The audit failed: {0}' -f @($result.Errors)[0] } else { 'The audit returned nothing.' })
+                return
+            }
+
+            Show-TkAuditReport -Finding @($audit.Findings) -Level $audit.Level `
+                -ExcludedAccount $script:TkAuditExclusion -Compliance $audit.Compliance
         }
 }
 
@@ -931,11 +946,17 @@ function Show-TkAuditReport {
 
         [Parameter()]
         [AllowEmptyCollection()]
-        [string[]] $ExcludedAccount = @()
+        [string[]] $ExcludedAccount = @(),
+
+        # The verdict of the organisation policy, when one was set.
+        [Parameter()]
+        [AllowNull()]
+        [pscustomobject] $Compliance
     )
 
     $findings = @($Finding)
-    $script:TkLastAudit = $findings
+    $script:TkLastAudit      = $findings
+    $script:TkLastCompliance = $Compliance
 
     Show-TkAuditScore -Finding $findings
 
@@ -953,6 +974,10 @@ function Show-TkAuditReport {
             'Excluded from the account controls at your request: {0}.' -f
                 ($ExcludedAccount -join ', ')
         )
+    }
+
+    if ($Compliance) {
+        Add-TkComplianceSection -Document $document -Compliance $Compliance
     }
 
     # Failing first, then warnings, then the rest: the order someone
@@ -974,7 +999,7 @@ function Show-TkAuditReport {
             # which told the reader nothing they could act on.
             Add-TkFindingCard -Document $document -Severity $finding.Status -Tinted `
                 -Title ('{0}  -  {1}' -f $finding.Id, $finding.Name) `
-                -State $finding.Measured -Detail $finding.Detail `
+                -State $finding.Measured -Detail (Join-TkPolicyNote -Finding $finding) `
                 -Action $finding.Recommendation -RemediationId $finding.RemediationId
         }
     }
@@ -983,8 +1008,91 @@ function Show-TkAuditReport {
 
     $score = Get-TkAuditScore -Finding $findings
 
-    Set-TkStatus -Text ('Audit: {0} of 100, {1} failing, {2} warnings.' -f
-        $score.Score, $score.Failed, $score.Warnings)
+    $text = 'Audit: {0} of 100, {1} failing, {2} warnings.' -f $score.Score, $score.Failed, $score.Warnings
+    if ($Compliance) { $text += ' {0}.' -f (Format-TkComplianceHeadline -Compliance $Compliance) }
+
+    Set-TkStatus -Text $text
+}
+
+<#
+.SYNOPSIS
+    A finding's detail, followed by what the organisation policy makes of it.
+#>
+function Join-TkPolicyNote {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject] $Finding
+    )
+
+    $note = Format-TkFindingPolicyNote -Finding $Finding
+
+    if (-not $note) {
+        return [string] $Finding.Detail
+    }
+
+    return ('{0} {1}' -f ([string] $Finding.Detail).Trim(), $note).Trim()
+}
+
+<#
+.SYNOPSIS
+    Draws the organisation policy's verdict at the top of the audit.
+
+.DESCRIPTION
+    The verdict, what the policy is and what trusted it, its own rules as
+    cards, then what counts against it or is accepted by an exception. A
+    policy that was not applied says why, and that the audit below it is the
+    generic one.
+#>
+function Add-TkComplianceSection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Documents.FlowDocument] $Document,
+
+        [Parameter(Mandatory)]
+        [pscustomobject] $Compliance
+    )
+
+    Add-TkHeading -Document $Document -Text 'Organisation policy' -Level 2
+
+    $severity = Get-TkComplianceSeverity -Verdict $Compliance.Verdict
+
+    if ($Compliance.Verdict -eq 'PolicyRefused') {
+        Add-TkSeverityLine -Document $Document -Severity $severity -Heading (Format-TkComplianceHeadline -Compliance $Compliance) `
+            -Note ('{0} {1}' -f $Compliance.Policy.Source, $Compliance.Reason).Trim()
+        return
+    }
+
+    $identity = $Compliance.Policy
+    $trust    = if ($identity.VerifiedBy -eq 'Signature') { 'the signature of {0} (certificate {1})' -f $identity.Signer, $identity.Thumbprint } else { 'its pinned SHA-256 {0}' -f $identity.Sha256 }
+
+    Add-TkSeverityLine -Document $Document -Severity $severity -Heading (Format-TkComplianceHeadline -Compliance $Compliance) `
+        -Note ('{0}{1}, trusted by {2}. The score below measures the machine against the toolkit''s controls; this verdict judges it against the policy.' -f
+            $identity.Source, $(if ($identity.Owner) { ' ({0})' -f $identity.Owner } else { '' }), $trust)
+
+    foreach ($rule in @($Compliance.Rules)) {
+        Add-TkFindingCard -Document $Document -Severity $rule.Status -Tinted `
+            -Title ('{0}  -  {1}' -f $rule.Id, $rule.Name) `
+            -State $rule.Measured -Detail (Join-TkPolicyNote -Finding $rule) -Action $rule.Recommendation
+    }
+
+    $items = @($Compliance.Items)
+    if ($items.Count -gt 0) {
+        Add-TkTable -Document $Document -Column @('Control', 'Result', 'Under the policy', 'Exception') -Weight @(2.2, 0.8, 1.0, 3.0) `
+            -Row @($items | ForEach-Object {
+                , @(('{0} {1}' -f $_.Id, $_.Name), $_.Status, (Format-TkPolicyState -State $_.State), (Format-TkComplianceException -Item $_))
+            })
+    }
+
+    foreach ($unused in @($Compliance.Unused)) {
+        Add-TkParagraph -Document $Document -Muted -Text ('The exception on {0} ({1}, until {2}) covers nothing on this machine: it can be withdrawn here.' -f $unused.Control, $unused.Owner, $unused.Expires)
+    }
+
+    foreach ($problem in @($Compliance.Problems)) {
+        Add-TkParagraph -Document $Document -Muted -Text ('Left out of the policy: {0}' -f $problem)
+    }
 }
 
 <#
@@ -1282,7 +1390,7 @@ function Export-TkAuditFromUi {
         return
     }
 
-    $written = Export-TkSecurityAuditReport -Path $dialog.FileName -Findings $script:TkLastAudit -Privacy $level -Confirm:$false
+    $written = Export-TkSecurityAuditReport -Path $dialog.FileName -Findings $script:TkLastAudit -Privacy $level -Compliance $script:TkLastCompliance -Confirm:$false
 
     if ($written) {
         Set-TkStatus -Text ('Audit report written to {0}.{1}' -f $written, (Format-TkPrivacyNote -Result ([pscustomobject] @{ Level = $level; Replaced = $null })))

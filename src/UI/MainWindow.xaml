@@ -6112,7 +6112,7 @@
                     <StackPanel Grid.Row="0" Margin="0,0,0,4">
                         <TextBlock Text="Settings" Style="{StaticResource Heading}" />
                         <TextBlock Style="{StaticResource Muted}"
-                                   Text="Kept for this Windows account only: the VirusTotal key, the update check, the privacy of exports, and the folder where the toolkit writes its data and logs." />
+                                   Text="Kept for this Windows account only: the VirusTotal key, the update check, the privacy of exports, the organisation policy, and the folder where the toolkit writes its data and logs." />
                     </StackPanel>
 
                     <ScrollViewer Grid.Row="1" Margin="0,10,0,0" VerticalScrollBarVisibility="Auto">
@@ -6173,6 +6173,33 @@
                                         <Button x:Name="BtnFindPseudonym" Content="Find" Margin="10,0,0,0" />
                                     </StackPanel>
                                     <TextBlock x:Name="PseudonymResult" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!--
+                                The organisation policy the audit is judged against: a signed data pack,
+                                applied only when its signer or its hash is trusted here.
+                            -->
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Organisation policy" Style="{StaticResource SubHeading}" Margin="0,0,0,8" />
+                                    <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" TextWrapping="Wrap"
+                                               Text="A .psd1 file the security team publishes: the controls it does not require, the programs required or forbidden, the administrators that belong, the least Windows build, the oldest patch, and exceptions that each end on a date. The audit then says whether this machine complies. The file is data and is never run, and it is applied only when its signature or its SHA-256 is trusted here: otherwise the audit stays generic and says why." />
+                                    <TextBlock Text="Policy file" Style="{StaticResource FieldLabel}" Margin="0,0,0,4" />
+                                    <WrapPanel>
+                                        <TextBox x:Name="PolicySource" Width="460" Margin="0,0,8,6" Tag="\\server\policy\workstations.psd1, or an https:// address" />
+                                        <Button x:Name="BtnPolicyBrowse" Content="Browse" Style="{StaticResource GlyphButton}" Tag="&#xE838;" Margin="0,0,0,6" />
+                                    </WrapPanel>
+                                    <TextBlock Text="Trusted signer or file hash" Style="{StaticResource FieldLabel}" Margin="0,8,0,4" />
+                                    <TextBox x:Name="PolicyTrust" Width="460" HorizontalAlignment="Left" Margin="0,0,0,6"
+                                             Tag="Thumbprint of the signing certificate, or SHA-256 of the file"
+                                             ToolTip="A signature counts when its certificate has this thumbprint and Windows trusts its chain. A SHA-256 trusts exactly one version of the file. Several values: separate them with commas." />
+                                    <WrapPanel Margin="0,6,0,0">
+                                        <Button x:Name="BtnPolicyCheck" Content="Check the policy" Style="{StaticResource PrimaryButton}" Margin="0,0,10,6" />
+                                        <Button x:Name="BtnPolicyTemplate" Content="Save a starting policy" Margin="0,0,10,6" />
+                                        <Button x:Name="BtnPolicyClear" Content="Stop using a policy" Margin="0,0,0,6" />
+                                    </WrapPanel>
+                                    <TextBlock x:Name="PolicyStatusText" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                 </StackPanel>
                             </Border>
 

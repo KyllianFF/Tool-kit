@@ -298,6 +298,13 @@ param(
     [ValidateSet('Essential', 'Full')]
     [string] `$AuditLevel = 'Essential',
 
+    # The organisation policy of the Audit report; see Start-Toolkit.
+    [Parameter()]
+    [string] `$Policy,
+
+    [Parameter()]
+    [string[]] `$PolicyTrust,
+
     [Parameter()]
     [ValidateSet('None', 'Personal', 'Strict')]
     [string] `$Redact = 'None',
@@ -420,7 +427,8 @@ if (`$Fix -or `$Tweak -or `$Remediate -or `$Execute -or `$Revert) {
     }
 }
 elseif (`$Report -or `$CompareWith) {
-    Start-Toolkit -Report `$Report -CompareWith `$CompareWith -OutFile `$OutFile -AuditLevel `$AuditLevel -Redact `$Redact -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
+    Start-Toolkit -Report `$Report -CompareWith `$CompareWith -OutFile `$OutFile -AuditLevel `$AuditLevel -Redact `$Redact -Policy `$Policy -PolicyTrust `$PolicyTrust ``
+                  -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 }
 elseif (`$RunAction) {
     Start-Toolkit -RunAction `$RunAction -ActionData `$ActionData -ResultFile `$ResultFile -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
