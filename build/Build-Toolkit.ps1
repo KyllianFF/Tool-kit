@@ -285,6 +285,10 @@ param(
     [Parameter()]
     [switch] `$NoGui,
 
+    # The assistance mode, My PC; see Start-Toolkit.
+    [Parameter()]
+    [switch] `$Assist,
+
     [Parameter()]
     [string[]] `$Report,
 
@@ -435,6 +439,9 @@ elseif (`$RunAction) {
 }
 elseif (`$NoGui) {
     Start-Toolkit -NoGui -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
+}
+elseif (`$Assist) {
+    Start-Toolkit -Assist -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 }
 else {
     Start-Toolkit -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256

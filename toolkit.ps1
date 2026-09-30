@@ -29,6 +29,9 @@ param(
     [switch] $NoGui,
 
     [Parameter()]
+    [switch] $Assist,
+
+    [Parameter()]
     [switch] $Elevated,
 
     [Parameter()]
@@ -147,6 +150,9 @@ elseif ($RunAction) {
 }
 elseif ($NoGui) {
     Start-Toolkit -NoGui
+}
+elseif ($Assist) {
+    Start-Toolkit -Assist
 }
 else {
     Start-Toolkit

@@ -30,6 +30,11 @@
     instance. Kept with SourceUri, so an elevation restart downloads the same
     address again and runs it only if the hash still matches.
 
+.PARAMETER Assist
+    Opens the assistance mode: one page, My PC, with the verdicts in plain
+    words and a request for support the user prepares. No navigation, no
+    search, nothing that changes the PC or needs an administrator.
+
 .PARAMETER NoGui
     Loads everything and returns without showing a window. Used by the tests
     and by anyone wanting the functions in a plain console session.
@@ -105,6 +110,9 @@ function Start-Toolkit {
         [string] $ExpectedSha256,
 
         [Parameter()]
+        [switch] $Assist,
+
+        [Parameter()]
         [switch] $NoGui,
 
         [Parameter()]
@@ -162,6 +170,10 @@ function Start-Toolkit {
     # Said before anything is loaded: alone, these would open the window.
     if (($Execute -or $Revert) -and -not ($Fix -or $Tweak -or $Remediate)) {
         throw '-Execute and -Revert go with -Fix, -Tweak or -Remediate.'
+    }
+
+    if ($Assist -and ($Report -or $CompareWith -or $Fix -or $Tweak -or $Remediate -or $RunAction -or $NoGui)) {
+        throw '-Assist opens the assistance window on its own: it does not mix with -Report, -CompareWith, -Fix, -Tweak, -Remediate or -NoGui.'
     }
 
     if (($Fix -or $Tweak -or $Remediate) -and ($Report -or $CompareWith)) {
@@ -279,18 +291,27 @@ function Start-Toolkit {
         Initialize-TkPlaybooksPage
         Initialize-TkInterventionPage
         Initialize-TkFleetPage
+        Initialize-TkAssistPage
 
         # After every page is wired, so each control exists to be disabled.
         Update-TkPrivilegedControls
 
-        # The Dashboard first: it answers the questions a support call starts
-        # with. The System inventory loads when its own page is first opened.
-        Show-TkPage -Name 'Dashboard'
-        Update-TkDashboard
+        if ($Assist) {
 
-        # Only when the user turned it on in Settings: it is a network request.
-        if ($ctx.Settings['CheckForUpdates'] -eq $true) {
-            Invoke-TkUpdateCheckFromUi -Automatic
+            # One page for the person in front of the PC, and nothing else.
+            Enter-TkAssistMode
+        }
+        else {
+
+            # The Dashboard first: it answers the questions a support call starts
+            # with. The System inventory loads when its own page is first opened.
+            Show-TkPage -Name 'Dashboard'
+            Update-TkDashboard
+
+            # Only when the user turned it on in Settings: it is a network request.
+            if ($ctx.Settings['CheckForUpdates'] -eq $true) {
+                Invoke-TkUpdateCheckFromUi -Automatic
+            }
         }
 
         if (-not $ctx.IsElevated) {
