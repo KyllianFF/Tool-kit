@@ -87,6 +87,36 @@ function Get-TkProcessorSupport {
 
 <#
 .SYNOPSIS
+    Translates an MSFT_Disk partition style: MBR, GPT, or empty.
+
+.DESCRIPTION
+    Pure. By number or by name, through ConvertFrom-TkCimEnum: Windows 11
+    build 26300 answers "GPT" where the documentation gives 2, and an integer
+    cast of it made the whole Readiness report fail.
+
+.OUTPUTS
+    System.String
+#>
+function ConvertFrom-TkPartitionStyle {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Value
+    )
+
+    $name = ConvertFrom-TkCimEnum -Value $Value -Name @{ 0 = 'RAW'; 1 = 'MBR'; 2 = 'GPT' }
+
+    if ($name -in @('MBR', 'GPT')) {
+        return $name.ToUpperInvariant()
+    }
+
+    return ''
+}
+
+<#
+.SYNOPSIS
     Reads what the Windows 11 requirements and the renewal advice are judged on.
 
 .DESCRIPTION
@@ -176,7 +206,7 @@ function Get-TkHardwareFacts {
 
     $systemDisk = [pscustomobject] @{
         SizeBytes      = $(if ($disk) { [long] $disk.Size } else { [long] 0 })
-        PartitionStyle = $(if ($disk) { switch ([int] $disk.PartitionStyle) { 1 { 'MBR' } 2 { 'GPT' } default { '' } } } else { '' })
+        PartitionStyle = $(if ($disk) { ConvertFrom-TkPartitionStyle -Value $disk.PartitionStyle } else { '' })
         MediaType      = $(if ($physical) { ConvertFrom-TkMediaType -Code $physical.MediaType } else { '' })
         BusType        = $(if ($physical) { ConvertFrom-TkBusType -Code $physical.BusType } else { '' })
         Health         = $(if ($physical) { ConvertFrom-TkDiskHealth -Value $physical.HealthStatus } else { '' })

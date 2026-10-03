@@ -5262,6 +5262,15 @@ Describe 'Windows 11 and renewal' {
         $judged.Renewal.Verdict   | Should -Not -Be 'Replace'
     }
 
+    It 'reads the partition style by number or by name, as Windows answers it' {
+
+        # Build 26300 answers "GPT" where the documentation gives 2; an integer
+        # cast of it made the whole report fail.
+        foreach ($case in @(@(2, 'GPT'), @('GPT', 'GPT'), @('gpt', 'GPT'), @(1, 'MBR'), @('MBR', 'MBR'), @(0, ''), @('RAW', ''), @($null, ''), @('Unknown', ''))) {
+            ConvertFrom-TkPartitionStyle -Value $case[0] | Should -Be $case[1] -Because ([string] $case[0])
+        }
+    }
+
     It 'reads this machine without administrator rights, and as a headless report' {
 
         $facts = Get-TkHardwareFacts
