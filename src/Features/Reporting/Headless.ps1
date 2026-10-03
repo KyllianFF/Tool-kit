@@ -317,6 +317,13 @@ function Get-TkHeadlessReport {
 
             [pscustomobject] $data
         })
+
+        # Last, so the reports it reads are collected already when they are
+        # in the same document; New-TkReportDocument also keeps it last.
+        (& $row 'Hypotheses' 1 $false 'Possible causes, from explainable rules crossing the other reports: each with its confidence, its evidence and the next step.' {
+            param($Options)
+            Get-TkHypothesisReport -Options $Options
+        })
     )
 }
 
@@ -693,10 +700,18 @@ function New-TkReportDocument {
     $reports = [ordered] @{}
     $worst   = [ordered] @{}
 
-    foreach ($item in $Name) {
+    # The reports collected so far, for Hypotheses to read rather than
+    # collect again; it comes last for that reason, whatever order was asked.
+    $collectorOptions = @{}
+    foreach ($key in @($Options.Keys)) { $collectorOptions[$key] = $Options[$key] }
+    $collectorOptions['Collected'] = $reports
+
+    $order = @(@($Name | Where-Object { $_ -ne 'Hypotheses' }) + @($Name | Where-Object { $_ -eq 'Hypotheses' }))
+
+    foreach ($item in $order) {
 
         $entry  = $Table | Where-Object { $_.Name -eq $item } | Select-Object -First 1
-        $result = Invoke-TkHeadlessCollector -Entry $entry -Elevated $elevated -Options $Options
+        $result = Invoke-TkHeadlessCollector -Entry $entry -Elevated $elevated -Options $collectorOptions
 
         $reports[$item] = $result
 

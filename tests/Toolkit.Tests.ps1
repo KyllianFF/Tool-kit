@@ -624,7 +624,7 @@ Describe 'Headless reports' {
         # removed or renamed, or changed type or meaning. It changes here, in
         # Get-TkHeadlessReport and in docs/REPORT-FORMAT.md together.
         $expected = 'Dashboard=1,Inventory=1,Network=1,Reboot=1,Storage=1,Performance=1,Devices=1,Crashes=1,Duplicates=1,Path=1,' +
-                    'Restarts=1,Timeline=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Readiness=1,Journal=1,Impact=1,Audit=1'
+                    'Restarts=1,Timeline=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Readiness=1,Journal=1,Impact=1,Audit=1,Hypotheses=1'
 
         (@(Get-TkHeadlessReport | ForEach-Object { '{0}={1}' -f $_.Name, $_.Version })) -join ',' | Should -Be $expected
 
@@ -6791,6 +6791,199 @@ Describe 'Assistance mode' {
 
         { Start-Toolkit -Assist -Report 'Reboot' } | Should -Throw '*does not mix*'
         $script:TkQuietConsole = $false
+    }
+}
+
+Describe 'Diagnosis rules' {
+
+    BeforeAll {
+        # Journaled to a temporary folder, never to the account that runs the tests.
+        $script:RulesDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+
+        # The scenario of the roadmap: three blue screens 0xD1 in a week, a
+        # network driver two days before the first, and an older one.
+        function New-CrashDocument {
+            param([datetime] $Now)
+            $crash = { param($days) [ordered] @{ When = $Now.AddDays(-$days).ToString('o'); Kind = 'Blue screen'; Severity = 'Fail'; Code = 209; Info = [ordered] @{ CodeHex = '0x000000D1'; Name = 'DRIVER_IRQL_NOT_LESS_OR_EQUAL' } } }
+            [ordered] @{
+                GeneratedAt = $Now.ToString('o')
+                Reports = [ordered] @{
+                    Crashes  = [ordered] @{ Status = 'Ok'; Data = [ordered] @{ Crashes = @((& $crash 1), (& $crash 3), (& $crash 6)); Stability = @() } }
+                    Timeline = [ordered] @{ Status = 'Ok'; Data = [ordered] @{ Entries = @(
+                        [ordered] @{ Time = $Now.AddDays(-8).ToString('o'); Category = 'Drivers'; Title = 'Driver installed: Intel(R) Ethernet Connection I219-V'; Severity = 'Info' }
+                        [ordered] @{ Time = $Now.AddDays(-20).ToString('o'); Category = 'Drivers'; Title = 'Driver installed: Realtek Audio'; Severity = 'Info' }
+                    ) } }
+                }
+            }
+        }
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:RulesDataRoot
+    }
+
+    It 'evaluates each operator the way a rule means it' {
+
+        $now  = [datetime]::new(2026, 10, 3, 12, 0, 0)
+        $test = { param($value, $condition, $binding) Test-TkRuleCondition -Value $value -Condition ([pscustomobject] $condition) -Binding $(if ($binding) { $binding } else { @{} }) -Now $now }
+
+        & $test $true @{ op = 'eq'; value = $true } | Should -BeTrue
+        & $test 'True' @{ op = 'eq'; value = $true } | Should -BeTrue
+        & $test 'healthy' @{ op = 'eq'; value = 'Healthy' } | Should -BeTrue
+        & $test '90' @{ op = 'eq'; value = 90 } | Should -BeTrue
+        & $test 'Warning' @{ op = 'ne'; value = 'Pass' } | Should -BeTrue
+        & $test '91.5' @{ op = 'ge'; value = 90 } | Should -BeTrue
+        & $test 'n/a' @{ op = 'gt'; value = 1 } | Should -BeFalse -Because 'text that is not a number never compares as one'
+        & $test 'Blue screen, no dump saved' @{ op = 'like'; value = 'Blue screen*' } | Should -BeTrue
+        & $test 'Power lost or reset' @{ op = 'notlike'; value = 'Blue screen*' } | Should -BeTrue
+        & $test 'Unhealthy' @{ op = 'in'; value = @('Warning', 'Unhealthy') } | Should -BeTrue
+        & $test @('a', 'B') @{ op = 'contains'; value = 'b' } | Should -BeTrue
+        & $test 'Driver installed: Intel' @{ op = 'contains'; value = 'intel' } | Should -BeTrue
+        & $test '' @{ op = 'exists' } | Should -BeFalse
+        & $test $now.AddDays(-3).ToString('o') @{ op = 'within'; days = 7 } | Should -BeTrue
+        & $test $now.AddDays(-9).ToString('o') @{ op = 'within'; days = 7 } | Should -BeFalse
+        & $test $now.AddDays(-9).ToString('o') @{ op = 'olderthan'; days = 7 } | Should -BeTrue
+        & $test '2026' @{ op = 'within'; days = 7 } | Should -BeFalse -Because 'only an ISO date is a date'
+
+        $binding = @{ crashes = @([pscustomobject] @{ When = $now.AddDays(-6).ToString('o') }, [pscustomobject] @{ When = $now.AddDays(-1).ToString('o') }) }
+        & $test $now.AddDays(-8).ToString('o') @{ op = 'before'; of = 'crashes'; at = 'When'; days = 3 } $binding | Should -BeTrue
+        & $test $now.AddDays(-10).ToString('o') @{ op = 'before'; of = 'crashes'; at = 'When'; days = 3 } $binding | Should -BeFalse
+        & $test $now.AddDays(-5).ToString('o') @{ op = 'after'; of = 'crashes'; at = 'When'; days = 3 } $binding | Should -BeTrue
+        & $test $now.AddDays(-8).ToString('o') @{ op = 'before'; of = 'missing'; days = 3 } $binding | Should -BeFalse
+
+        { & $test 1 @{ op = 'matches'; value = '.*' } } | Should -Throw '*not an operator*'
+    }
+
+    It 'finds the roadmap scenario with its evidence, and leaves out a driver installed weeks before' {
+
+        $result = Resolve-TkHypothesis -Document (New-CrashDocument -Now ([datetime]::new(2026, 10, 3, 12, 0, 0)))
+
+        $driver = $result.Matched | Where-Object { $_.Id -eq 'bluescreen-after-driver' }
+        $driver.Confidence | Should -Be 'High'
+        $driver.Severity   | Should -Be 'Warning'
+        $result.Matched[0].Id | Should -Be 'bluescreen-after-driver' -Because 'the most confident comes first'
+
+        $lines = @($driver.Evidence | ForEach-Object { $_.Lines })
+        @($lines | Where-Object { $_ -match '0x000000D1' }).Count | Should -Be 3
+        ($lines -join ' ') | Should -Match 'Intel\(R\) Ethernet'
+        ($lines -join ' ') | Should -Not -Match 'Realtek'
+        $driver.Action.Report | Should -Be 'Crashes'
+
+        @($result.Matched | ForEach-Object { $_.Id }) | Should -Contain 'bluescreen-recurring'
+        $result.Severity | Should -Be 'Warning'
+
+        # An old snapshot is read as it was, not against today.
+        $old = Resolve-TkHypothesis -Document (New-CrashDocument -Now ([datetime]::new(2025, 3, 1, 9, 0, 0)))
+        @($old.Matched | ForEach-Object { $_.Id }) | Should -Contain 'bluescreen-after-driver'
+        $old.At | Should -BeLike '2025-03-01*'
+    }
+
+    It 'says a rule is not evaluated when a report it reads was not collected, skipped or failed' {
+
+        $document = [ordered] @{
+            GeneratedAt = (Get-Date).ToString('o')
+            Reports = [ordered] @{
+                Storage     = [ordered] @{ Status = 'Skipped'; Reason = 'Needs administrator rights.' }
+                Performance = [ordered] @{ Status = 'Failed'; Reason = 'Counters unavailable.' }
+            }
+        }
+
+        $result  = Resolve-TkHypothesis -Document $document
+        $byId    = @{}
+        foreach ($item in @($result.NotEvaluated)) { $byId[$item.Id] = $item.Reason }
+
+        @($result.Matched).Count | Should -Be 0
+        $result.Severity          | Should -Be 'Pass'
+        $byId['disk-failing']     | Should -Be 'Storage was skipped: Needs administrator rights.'
+        $byId['memory-full']      | Should -Be 'Performance failed: Counters unavailable.'
+        $byId['updates-failing']  | Should -Be 'Updates was not collected.'
+    }
+
+    It 'keeps the catalog to what exists: reports, operators, fixes, topics and report titles' {
+
+        $rules     = @(Get-TkHypothesisRule)
+        $reports   = @(Get-TkHeadlessReport | ForEach-Object { $_.Name })
+        $operators = @(Get-TkRuleOperator)
+        $fixes     = @((Import-TkCatalog -Name 'fixes').fixes | ForEach-Object { $_.id })
+        $topics    = @((Import-TkCatalog -Name 'network-knowledge').topics | ForEach-Object { $_.id })
+        $titles    = @(Get-TkDiagnosticReport | ForEach-Object { $_.Title })
+
+        $rules.Count | Should -BeGreaterThan 9
+        @($rules | ForEach-Object { $_.id } | Sort-Object -Unique).Count | Should -Be $rules.Count
+
+        foreach ($rule in $rules) {
+
+            $why = $rule.id
+            $rule.id         | Should -Match '^[a-z0-9]+(-[a-z0-9]+)*$' -Because $why
+            $rule.confidence | Should -BeIn @('High', 'Medium', 'Low') -Because $why
+            $rule.title      | Should -Not -BeNullOrEmpty -Because $why
+            $rule.action.advice | Should -Not -BeNullOrEmpty -Because $why
+
+            foreach ($name in @($rule.reports)) { $reports | Should -Contain $name -Because $why }
+            if ($rule.action.report) { $titles | Should -Contain $rule.action.report -Because $why }
+            if ($rule.action.fix)    { $fixes  | Should -Contain $rule.action.fix -Because $why }
+            if ($rule.action.topic)  { $topics | Should -Contain $rule.action.topic -Because $why }
+
+            $bound = New-Object System.Collections.Generic.List[string]
+            foreach ($match in @($rule.match)) {
+                $path = if ($match.PSObject.Properties['from']) { [string] $match.from } else { [string] $match.path }
+                @($rule.reports) | Should -Contain ($path -split '\.')[0] -Because ('{0} reads {1}' -f $why, $path)
+
+                $conditions = @(if ($match.PSObject.Properties['from']) { @($match.where) } else { $match }) + @(if ($match.PSObject.Properties['count']) { $match.count })
+                foreach ($condition in @($conditions | Where-Object { $_ })) {
+                    $operators | Should -Contain $condition.op -Because $why
+                    if ($condition.PSObject.Properties['of']) { $bound | Should -Contain $condition.of -Because $why }
+                }
+                if ($match.PSObject.Properties['as']) { $bound.Add([string] $match.as) }
+            }
+
+            foreach ($evidence in @($rule.evidence)) {
+                $evidence.label | Should -Not -BeNullOrEmpty -Because $why
+                if ($evidence.PSObject.Properties['of']) { $bound | Should -Contain $evidence.of -Because $why }
+            }
+        }
+    }
+
+    It 'reads the reports already in the document, and collects only those missing' {
+
+        $calls = New-Object System.Collections.Generic.List[string]
+        function Get-TkHeadlessReport {
+            foreach ($name in @('Crashes', 'Timeline', 'Storage', 'Updates', 'Reboot', 'Restarts', 'Performance', 'Devices', 'Network', 'Proxy', 'Hypotheses')) {
+                $entryName = $name
+                [pscustomobject] @{
+                    Name = $name; Version = 1; Elevated = $false; Description = $name
+                    Collect = $(if ($name -eq 'Hypotheses') { { param($Options) Get-TkHypothesisReport -Options $Options } }
+                               else { [scriptblock]::Create(('param($Options) $null = $Options; $calls.Add(''{0}''); @()' -f $entryName)) })
+                }
+            }
+        }
+
+        $collected = [ordered] @{ Crashes = [ordered] @{ Status = 'Ok'; Data = [ordered] @{ Crashes = @() } } }
+        $null = Get-TkHypothesisReport -Options @{ Collected = $collected }
+
+        $calls | Should -Not -Contain 'Crashes'
+        $calls | Should -Contain 'Storage'
+
+        # Asked first, Hypotheses is still collected last, on the others.
+        $calls.Clear()
+        $document = New-TkReportDocument -Name @('Hypotheses', 'Storage') -Table @(Get-TkHeadlessReport)
+        @($calls | Where-Object { $_ -eq 'Storage' }).Count | Should -Be 1
+        $document.Reports['Hypotheses'].Status | Should -Be 'Ok'
+        (Get-TkJournalFolder) | Should -BeLike ('{0}*' -f $TestDrive)
+    }
+
+    It 'has its tab, and a headless report that comes last' {
+
+        $markup = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\MainWindow.xaml') -Raw
+        foreach ($name in @('BtnHypothesesRun', 'BtnHypothesesOpen', 'HypothesesOutput')) {
+            $markup | Should -Match ('x:Name="{0}"' -f $name)
+        }
+        $markup | Should -Match '<TabItem Header="Possible causes">'
+
+        $table = @(Get-TkHeadlessReport)
+        $table[-1].Name     | Should -Be 'Hypotheses'
+        $table[-1].Elevated | Should -BeFalse
     }
 }
 

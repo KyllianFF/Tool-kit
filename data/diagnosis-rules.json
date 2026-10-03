@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 1,
+  "description": "Explainable diagnosis rules, evaluated on the report documents (docs/DIAGNOSIS-RULES.md). Data only: each rule names the reports it reads, the conditions on their data, the hypothesis it supports with its confidence, the evidence to show, and the next step. Nothing is run by a rule.",
+  "rules": [
+    {
+      "id": "bluescreen-after-driver",
+      "title": "A driver installed just before the blue screens is the likely cause",
+      "explanation": "Several blue screens that start within days of a driver being installed are most often caused by that driver.",
+      "confidence": "High",
+      "reports": ["Crashes", "Timeline"],
+      "match": [
+        { "as": "crashes", "from": "Crashes.Crashes", "where": [ { "field": "Kind", "op": "like", "value": "Blue screen*" }, { "field": "When", "op": "within", "days": 14 } ], "count": { "op": "ge", "value": 2 } },
+        { "as": "drivers", "from": "Timeline.Entries", "where": [ { "field": "Category", "op": "eq", "value": "Drivers" }, { "field": "Time", "op": "before", "of": "crashes", "at": "When", "days": 3 } ] }
+      ],
+      "evidence": [
+        { "label": "Blue screens in the last 14 days", "of": "crashes", "show": ["When", "Info.CodeHex", "Info.Name"] },
+        { "label": "Drivers installed in the 3 days before the first one", "of": "drivers", "show": ["Time", "Title"] }
+      ],
+      "action": { "advice": "Roll the driver back (Device Manager, the device, Properties, Driver, Roll Back Driver) or install the manufacturer's current one, then watch for a week.", "report": "Crashes" }
+    },
+    {
+      "id": "bluescreen-after-update",
+      "title": "A Windows update installed just before the blue screens may be the cause",
+      "explanation": "Blue screens that begin within days of an update point at what the update changed, often a driver it brought.",
+      "confidence": "Medium",
+      "reports": ["Crashes", "Timeline"],
+      "match": [
+        { "as": "crashes", "from": "Crashes.Crashes", "where": [ { "field": "Kind", "op": "like", "value": "Blue screen*" }, { "field": "When", "op": "within", "days": 30 } ] },
+        { "as": "updates", "from": "Timeline.Entries", "where": [ { "field": "Category", "op": "eq", "value": "Updates" }, { "field": "Title", "op": "like", "value": "Update installed*" }, { "field": "Time", "op": "before", "of": "crashes", "at": "When", "days": 3 } ] }
+      ],
+      "evidence": [
+        { "label": "Blue screens in the last 30 days", "of": "crashes", "show": ["When", "Info.CodeHex", "Info.Name"] },
+        { "label": "Updates installed in the 3 days before the first one", "of": "updates", "show": ["Time", "Title"] }
+      ],
+      "action": { "advice": "If the crashes started right after it, uninstall that update (Settings, Windows Update, Update history, Uninstall updates) and pause updates for a week while the vendor fixes it.", "report": "Update history", "topic": "windows-update-servicing" }
+    },
+    {
+      "id": "bluescreen-recurring",
+      "title": "The blue screens recur: one cause, not bad luck",
+      "explanation": "Three or more blue screens in a month are a fault that will come back until it is found; the stop codes say where to look.",
+      "confidence": "Medium",
+      "reports": ["Crashes"],
+      "match": [
+        { "as": "crashes", "from": "Crashes.Crashes", "where": [ { "field": "Kind", "op": "like", "value": "Blue screen*" }, { "field": "When", "op": "within", "days": 30 } ], "count": { "op": "ge", "value": 3 } }
+      ],
+      "evidence": [
+        { "label": "Blue screens in the last 30 days", "of": "crashes", "show": ["When", "Info.CodeHex", "Info.Name"] }
+      ],
+      "action": { "advice": "Open the crash history: each stop code comes with what it means and the steps for it, and the drivers registered before each crash.", "report": "Crashes" }
+    },
+    {
+      "id": "power-loss",
+      "title": "The machine loses power: a power or hardware problem rather than Windows",
+      "explanation": "Repeated stops with no blue screen recorded are the machine losing power or resetting: the supply, the battery, overheating or the power line, not a Windows fault.",
+      "confidence": "Medium",
+      "reports": ["Crashes"],
+      "match": [
+        { "as": "losses", "from": "Crashes.Crashes", "where": [ { "field": "Kind", "op": "eq", "value": "Power lost or reset" }, { "field": "When", "op": "within", "days": 30 } ], "count": { "op": "ge", "value": 2 } },
+        { "from": "Crashes.Crashes", "where": [ { "field": "Kind", "op": "like", "value": "Blue screen*" }, { "field": "When", "op": "within", "days": 30 } ], "count": { "op": "eq", "value": 0 } }
+      ],
+      "evidence": [
+        { "label": "Stops without a clean shutdown in the last 30 days", "of": "losses", "show": ["When", "Kind"] }
+      ],
+      "action": { "advice": "Check the power strip or UPS and the supply cable; on a laptop, the battery and the charger; on any machine, the vents and fans for heat. Ask the user whether the machine was switched off by hand.", "report": "Restarts and shutdowns" }
+    },
+    {
+      "id": "disk-failing",
+      "title": "A disk is failing: freezes, slowness and crashes can come from it",
+      "explanation": "A disk Windows reports in warning or unhealthy can lose data at any moment, and the reads it retries make the whole machine stall.",
+      "confidence": "High",
+      "reports": ["Storage"],
+      "match": [
+        { "as": "disks", "from": "Storage", "where": [ { "field": "Kind", "op": "eq", "value": "Disk" }, { "field": "Health", "op": "in", "value": ["Warning", "Unhealthy"] } ] }
+      ],
+      "evidence": [
+        { "label": "Disks Windows reports in trouble", "of": "disks", "show": ["Name", "Health", "Notes"] }
+      ],
+      "action": { "advice": "Back up the user's data now, before anything else, then replace the disk.", "report": "Storage health", "topic": "backups-ransomware" }
+    },
+    {
+      "id": "ssd-worn",
+      "title": "An SSD is near the end of its endurance",
+      "explanation": "Past 90% of its rated writes, an SSD can switch to read only or fail without warning.",
+      "confidence": "Medium",
+      "reports": ["Storage"],
+      "match": [
+        { "as": "disks", "from": "Storage", "where": [ { "field": "Kind", "op": "eq", "value": "Disk" }, { "field": "WearPercent", "op": "ge", "value": 90 } ] }
+      ],
+      "evidence": [
+        { "label": "Worn disks", "of": "disks", "show": ["Name", "WearPercent"] }
+      ],
+      "action": { "advice": "Plan its replacement and make sure the data on it is backed up.", "report": "Storage health" }
+    },
+    {
+      "id": "updates-fail-for-space",
+      "title": "Windows updates fail because a drive is full",
+      "explanation": "Updates need several gigabytes free to install; with a drive nearly full they fail and retry.",
+      "confidence": "High",
+      "reports": ["Storage", "Updates"],
+      "match": [
+        { "as": "volumes", "from": "Storage", "where": [ { "field": "Kind", "op": "eq", "value": "Volume" }, { "field": "Severity", "op": "in", "value": ["Warning", "Fail"] } ] },
+        { "as": "failed", "from": "Updates", "where": [ { "field": "Outcome", "op": "eq", "value": "Failed" }, { "field": "When", "op": "within", "days": 30 } ] }
+      ],
+      "evidence": [
+        { "label": "Drives nearly full", "of": "volumes", "show": ["Name", "Health"] },
+        { "label": "Updates that failed in the last 30 days", "of": "failed", "show": ["When", "Title", "Code"] }
+      ],
+      "action": { "advice": "Free space first (temporary files, the Recycle Bin, the Storage settings), then run Windows Update again.", "report": "Disk space", "fix": "clear-temp" }
+    },
+    {
+      "id": "drive-full",
+      "title": "A drive is almost full: Windows and applications slow down or fail",
+      "explanation": "Windows needs room for its paging file, updates and temporary files; applications fail to save when a drive is full.",
+      "confidence": "Medium",
+      "reports": ["Storage"],
+      "match": [
+        { "as": "volumes", "from": "Storage", "where": [ { "field": "Kind", "op": "eq", "value": "Volume" }, { "field": "Severity", "op": "eq", "value": "Fail" } ] }
+      ],
+      "evidence": [
+        { "label": "Drives nearly full", "of": "volumes", "show": ["Name", "Size", "Health"] }
+      ],
+      "action": { "advice": "Clear the temporary files, then look at the largest folders and the duplicate files.", "report": "Disk space", "fix": "clear-temp" }
+    },
+    {
+      "id": "updates-failing",
+      "title": "Windows Update keeps failing",
+      "explanation": "The same updates failing again and again point at a damaged update store or a blocked update service rather than at each update.",
+      "confidence": "Medium",
+      "reports": ["Updates"],
+      "match": [
+        { "as": "failed", "from": "Updates", "where": [ { "field": "Outcome", "op": "eq", "value": "Failed" }, { "field": "When", "op": "within", "days": 30 } ], "count": { "op": "ge", "value": 2 } }
+      ],
+      "evidence": [
+        { "label": "Updates that failed in the last 30 days", "of": "failed", "show": ["When", "Title", "Code", "Meaning"] }
+      ],
+      "action": { "advice": "Repair Windows Update (it resets its services and its download store), then install again. The error codes say whether it is space, the network or the store.", "report": "Update history", "fix": "repair-windows-update", "topic": "windows-update-servicing" }
+    },
+    {
+      "id": "restart-overdue",
+      "title": "A restart has been waiting while the machine ran for over a week",
+      "explanation": "Updates, drivers and renamed files wait for the restart: until it happens they are half installed, which shows as odd faults and as updates that never complete.",
+      "confidence": "Medium",
+      "reports": ["Reboot", "Restarts"],
+      "match": [
+        { "path": "Reboot.Pending", "op": "eq", "value": true },
+        { "path": "Restarts.Current.Since", "op": "olderthan", "days": 7 }
+      ],
+      "evidence": [
+        { "label": "Why a restart is waiting", "path": "Reboot.Reasons" },
+        { "label": "Running since", "path": "Restarts.Current.Since" }
+      ],
+      "action": { "advice": "Restart the machine (a restart, not a shutdown, when fast startup is on), then check again.", "report": "Pending reboot" }
+    },
+    {
+      "id": "memory-full",
+      "title": "The memory is full: Windows pages to disk and everything slows",
+      "explanation": "When the committed memory nears the limit, Windows moves memory to disk and applications wait on it.",
+      "confidence": "Medium",
+      "reports": ["Performance"],
+      "match": [
+        { "path": "Performance.Snapshot.CommitPercent", "op": "ge", "value": 90 }
+      ],
+      "evidence": [
+        { "label": "Committed memory (percent of the limit)", "path": "Performance.Snapshot.CommitPercent" },
+        { "label": "Memory in use (percent)", "path": "Performance.Snapshot.MemoryUsedPercent" }
+      ],
+      "action": { "advice": "Close what is not needed, look at which applications use the most memory, and consider more memory if this is the usual load.", "report": "Performance" }
+    },
+    {
+      "id": "many-startup-programs",
+      "title": "Many programs start with Windows: a slow start and a busy session",
+      "explanation": "Each program that starts with Windows delays the session and keeps running in the background.",
+      "confidence": "Low",
+      "reports": ["Performance"],
+      "match": [
+        { "as": "startup", "from": "Performance.Startup", "where": [ { "field": "Enabled", "op": "eq", "value": true } ], "count": { "op": "ge", "value": 20 } }
+      ],
+      "evidence": [
+        { "label": "Programs that start with Windows", "of": "startup", "show": ["Name", "Scope"] }
+      ],
+      "action": { "advice": "Disable those the user does not need at start (Task Manager, Startup apps), keeping the security software.", "report": "Performance" }
+    },
+    {
+      "id": "device-after-driver",
+      "title": "A device stopped working after a driver change",
+      "explanation": "A device in error within days of a driver being installed is most often a driver that does not suit it.",
+      "confidence": "Medium",
+      "reports": ["Devices", "Timeline"],
+      "match": [
+        { "as": "devices", "from": "Devices", "where": [ { "field": "Severity", "op": "in", "value": ["Warning", "Fail"] } ] },
+        { "as": "drivers", "from": "Timeline.Entries", "where": [ { "field": "Category", "op": "eq", "value": "Drivers" }, { "field": "Time", "op": "within", "days": 7 } ] }
+      ],
+      "evidence": [
+        { "label": "Devices in error", "of": "devices", "show": ["Name", "Code", "Meaning"] },
+        { "label": "Drivers installed in the last 7 days", "of": "drivers", "show": ["Time", "Title"] }
+      ],
+      "action": { "advice": "Roll the driver of that device back, or install the manufacturer's own, then unplug and reconnect the device.", "report": "Devices" }
+    },
+    {
+      "id": "no-dhcp-address",
+      "title": "The network gave this machine no address (DHCP)",
+      "explanation": "An address in 169.254 is what Windows takes when no DHCP server answers: the machine is linked but cannot talk to anything.",
+      "confidence": "High",
+      "reports": ["Network"],
+      "match": [
+        { "as": "adapters", "from": "Network", "where": [ { "field": "Physical", "op": "eq", "value": true }, { "field": "Status", "op": "eq", "value": "Up" }, { "field": "IPv4Address", "op": "like", "value": "169.254.*" } ] }
+      ],
+      "evidence": [
+        { "label": "Adapters without an address", "of": "adapters", "show": ["Name", "Description", "IPv4Address"] }
+      ],
+      "action": { "advice": "Reconnect the cable or the Wi-Fi; if other machines get an address on the same network, reset this one's network stack, otherwise look at the DHCP server.", "fix": "reset-network-stack", "topic": "dhcp" }
+    },
+    {
+      "id": "proxy-breaks-web",
+      "title": "The proxy settings break web access",
+      "explanation": "A proxy that cannot be reached, or a configuration script that fails, makes every web request wait and fail while the network itself works.",
+      "confidence": "Medium",
+      "reports": ["Proxy"],
+      "match": [
+        { "as": "findings", "from": "Proxy.Findings", "where": [ { "field": "Severity", "op": "eq", "value": "Fail" } ] }
+      ],
+      "evidence": [
+        { "label": "What the proxy check found", "of": "findings", "show": ["Heading", "Detail"] }
+      ],
+      "action": { "advice": "If the proxy is not meant to be used here, reset the proxy settings; otherwise check the proxy or its configuration script is reachable.", "report": "Proxy", "fix": "reset-proxy" }
+    }
+  ]
+}
