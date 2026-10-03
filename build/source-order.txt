@@ -84,6 +84,7 @@ src/Features/Diagnostics/Playbooks.ps1
 src/Features/Diagnostics/HardwareTests.ps1
 src/Features/Diagnostics/PerformanceTrace.ps1
 src/Features/Diagnostics/Timeline.ps1
+src/Features/Diagnostics/Hypotheses.ps1
 src/Features/Diagnostics/SupportBundle.ps1
 src/Features/Intervention/Journal.ps1
 src/Features/Reporting/Headless.ps1
@@ -142,6 +143,7 @@ src/UI/Pages/PolicySetting.ps1
 src/UI/Pages/ImpactTab.ps1
 src/UI/Pages/ThreatHuntingPage.ps1
 src/UI/Pages/DiagnosticsPage.ps1
+src/UI/Pages/HypothesesTab.ps1
 src/UI/Pages/HardwarePage.ps1
 src/UI/Pages/PlaybooksPage.ps1
 src/UI/Pages/InterventionPage.ps1

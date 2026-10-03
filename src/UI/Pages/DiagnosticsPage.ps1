@@ -50,6 +50,7 @@ function Initialize-TkDiagnosticsPage {
 
     Initialize-TkEventSearchTab
     Initialize-TkTimelineTab
+    Initialize-TkHypothesesTab
 
 }
 
