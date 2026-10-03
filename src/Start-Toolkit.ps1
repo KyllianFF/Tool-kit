@@ -85,6 +85,24 @@
     With Fix, Tweak or Remediate, takes the actions. Without it nothing
     changes: the run says what would be taken and what would be refused.
 
+.PARAMETER Triage
+    Collects an incident triage case into this folder without a window, and
+    returns the result as JSON; List returns the steps instead.
+
+.PARAMETER TriageReference
+    With Triage, the incident or ticket reference written into the manifest.
+
+.PARAMETER TriageCertificate
+    With Triage, the responder's certificate (.cer, RSA) the archive is
+    encrypted for.
+
+.PARAMETER TriageStep
+    With Triage, the keys of the steps to run; all of them when omitted.
+
+.PARAMETER TriageRemoveClear
+    With TriageCertificate, removes the clear archive and folder once every
+    encrypted chunk has been read back.
+
 .EXAMPLE
     Start-Toolkit
 
@@ -99,6 +117,9 @@
 
 .EXAMPLE
     Start-Toolkit -Fix flush-dns, reset-print-spooler -Execute -OutFile .\fix.json
+
+.EXAMPLE
+    Start-Toolkit -Triage E:\ -TriageReference INC-0142 -TriageCertificate .\soc.cer
 #>
 function Start-Toolkit {
     [CmdletBinding()]
@@ -154,6 +175,21 @@ function Start-Toolkit {
         [switch] $Execute,
 
         [Parameter()]
+        [string] $Triage,
+
+        [Parameter()]
+        [string] $TriageReference,
+
+        [Parameter()]
+        [string] $TriageCertificate,
+
+        [Parameter()]
+        [string[]] $TriageStep,
+
+        [Parameter()]
+        [switch] $TriageRemoveClear,
+
+        [Parameter()]
         [string] $RunAction,
 
         [Parameter()]
@@ -163,22 +199,31 @@ function Start-Toolkit {
         [string] $ResultFile
     )
 
-    # Set on every start, so a headless run does not leave a later start
-    # without its progress lines.
-    $script:TkQuietConsole = [bool] ($Report -or $CompareWith -or $RunAction -or $Fix -or $Tweak -or $Remediate)
-
     # Said before anything is loaded: alone, these would open the window.
     if (($Execute -or $Revert) -and -not ($Fix -or $Tweak -or $Remediate)) {
         throw '-Execute and -Revert go with -Fix, -Tweak or -Remediate.'
     }
 
-    if ($Assist -and ($Report -or $CompareWith -or $Fix -or $Tweak -or $Remediate -or $RunAction -or $NoGui)) {
-        throw '-Assist opens the assistance window on its own: it does not mix with -Report, -CompareWith, -Fix, -Tweak, -Remediate or -NoGui.'
+    if (($TriageReference -or $TriageCertificate -or $TriageStep -or $TriageRemoveClear) -and -not $Triage) {
+        throw '-TriageReference, -TriageCertificate, -TriageStep and -TriageRemoveClear go with -Triage.'
+    }
+
+    if ($Assist -and ($Report -or $CompareWith -or $Fix -or $Tweak -or $Remediate -or $RunAction -or $NoGui -or $Triage)) {
+        throw '-Assist opens the assistance window on its own: it does not mix with -Report, -CompareWith, -Fix, -Tweak, -Remediate, -Triage or -NoGui.'
+    }
+
+    if ($Triage -and ($Report -or $CompareWith -or $Fix -or $Tweak -or $Remediate -or $RunAction -or $NoGui)) {
+        throw '-Triage collects a case on its own: it does not mix with -Report, -CompareWith, -Fix, -Tweak, -Remediate or -NoGui.'
     }
 
     if (($Fix -or $Tweak -or $Remediate) -and ($Report -or $CompareWith)) {
         throw 'Collect reports and take actions in two runs: -Report and -CompareWith do not mix with -Fix, -Tweak or -Remediate.'
     }
+
+    # Set on every start that is not refused, so a headless run does not
+    # leave a later start without its progress lines, and a refused one
+    # leaves the console as it was.
+    $script:TkQuietConsole = [bool] ($Report -or $CompareWith -or $RunAction -or $Fix -or $Tweak -or $Remediate -or $Triage)
 
     # --- 1. Context and logging ------------------------------------------
     $ctx = Initialize-TkContext
@@ -221,6 +266,12 @@ function Start-Toolkit {
 
     # --- 3. Data ----------------------------------------------------------
     Import-TkAllCatalogs
+
+    # An incident triage case without a window, for a remote shell or an RMM.
+    if ($Triage) {
+        return Invoke-TkHeadlessTriage -Destination $Triage -Reference ([string] $TriageReference) -Step @($TriageStep | Where-Object { $_ }) `
+                                       -CertificatePath ([string] $TriageCertificate) -RemoveClear:$TriageRemoveClear -OutFile ([string] $OutFile)
+    }
 
     # Fixes, tweaks and corrections without a window: a plan, unless -Execute.
     if ($Fix -or $Tweak -or $Remediate) {

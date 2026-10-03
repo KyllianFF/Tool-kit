@@ -118,6 +118,7 @@ Each entry of `Reports`:
 | Journal | 1 | no | An object: `Severity`, `Valid`, `Entries`, `Chained`, `Unchained`, `Trimmed`, `Head`, `First`, `Last`, `Breaks` (each with `File`, `Line`, `Time`, `Name`, `Problem`). |
 | Impact | 1 | no | An object: `Probes`, one per hardening (`ntlm`, `smb1`, `lsa`, `ps2`), each with `Id`, `Name`, `Hardening`, `Control` (the audit control it relates to), `Measuring`, `ByToolkit`, `Started`, `StartedBy`, `Verdict` (`NotMeasured`, `Waiting`, `TooEarly`, `NoUseSeen`, `InUse`, `Hardened` or `NotReadable`), `Severity`, `Headline`, `Note`, `Days`, `Uses` and `Sources` (`Key`, `Count`, `First`, `Last`, `Detail`). |
 | Audit | 1 | yes | An object: `Level`, `ExcludedAccount`, `Score`, `Findings`, and `Compliance` when an organisation policy is set (see below). |
+| Hypotheses | 1 | no | An object: `At` (the moment judged against), `Severity`, `Rules`, `Matched` (each with `Id`, `Title`, `Explanation`, `Confidence`, `Severity`, `Evidence` with `Label` and `Lines`, and `Action` with `Advice`, `Report`, `Fix` and `Topic`), `NotEvaluated` (each with its `Reason`) and `NotMatched`, a count. Collected last; see [DIAGNOSIS-RULES.md](DIAGNOSIS-RULES.md). |
 
 `-Report List` writes an array of `Name`, `Version`, `Elevated` and
 `Description`, one per report.

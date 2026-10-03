@@ -37,6 +37,7 @@ $script:TkJournalKind = @{
     SSH         = 'Change'
     Bundle      = 'Collection'
     Report      = 'Collection'
+    Triage      = 'Collection'
     Audit       = 'Check'
     Policy      = 'Check'
     Hunting     = 'Check'
