@@ -102,7 +102,11 @@ function Initialize-TkRunspacePool {
 
         # The Before hardening tab reads the audit modes in a worker: where
         # the record of what was turned on is kept, and the log size it sets.
-        'TkImpactStateKey', 'TkImpactLogBytes'
+        'TkImpactStateKey', 'TkImpactLogBytes',
+
+        # The incident triage collects and encrypts in a worker: the size of
+        # the chunks it cuts the archive into before encrypting each.
+        'TkTriageChunkBytes'
     )
 
     foreach ($name in $sharedVariables) {

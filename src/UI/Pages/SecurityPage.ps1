@@ -175,6 +175,7 @@ function Initialize-TkSecurityPage {
     Initialize-TkPrivacySetting
     Initialize-TkPolicySetting
     Initialize-TkImpactTab
+    Initialize-TkTriageTab
 
     Register-TkClick -Name 'BtnCheckToolkitUpdate' -Action { Invoke-TkUpdateCheckFromUi }
     Register-TkClick -Name 'BtnCopyLaunchCommand'  -Action { Copy-TkLaunchCommandFromUi }

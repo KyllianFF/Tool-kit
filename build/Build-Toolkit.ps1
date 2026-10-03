@@ -271,6 +271,7 @@ $builder = New-Object System.Text.StringBuilder
         & ([scriptblock]::Create((irm <url of this file>))) -CompareWith .\report.json
         & ([scriptblock]::Create((irm <url of this file>))) -Report All -Redact Personal -OutFile .\to-send.json
         & ([scriptblock]::Create((irm <url of this file>))) -Fix flush-dns -Execute; exit `$LASTEXITCODE
+        & ([scriptblock]::Create((irm <url of this file>))) -Triage E:\ -TriageReference INC-0142 -TriageCertificate .\soc.cer
 #>
 
 [CmdletBinding()]
@@ -328,6 +329,22 @@ param(
 
     [Parameter()]
     [switch] `$Execute,
+
+    # An incident triage case without a window; see Start-Toolkit.
+    [Parameter()]
+    [string] `$Triage,
+
+    [Parameter()]
+    [string] `$TriageReference,
+
+    [Parameter()]
+    [string] `$TriageCertificate,
+
+    [Parameter()]
+    [string[]] `$TriageStep,
+
+    [Parameter()]
+    [switch] `$TriageRemoveClear,
 
     [Parameter()]
     [string] `$RunAction,
@@ -419,7 +436,18 @@ $($resourceLines -join "`r`n")
 # replayed instead.
 `$script:TkEntryScript = `$PSCommandPath
 
-if (`$Fix -or `$Tweak -or `$Remediate -or `$Execute -or `$Revert) {
+if (`$Triage -or `$TriageReference -or `$TriageCertificate -or `$TriageStep -or `$TriageRemoveClear) {
+
+    # The other modes are passed on so that a mix is refused, not ignored.
+    Start-Toolkit -Triage `$Triage -TriageReference `$TriageReference -TriageCertificate `$TriageCertificate -TriageStep `$TriageStep ``
+                  -TriageRemoveClear:`$TriageRemoveClear -OutFile `$OutFile -Report `$Report -CompareWith `$CompareWith -Fix `$Fix -Tweak `$Tweak -Remediate `$Remediate ``
+                  -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
+
+    if (`$PSCommandPath -and `$MyInvocation.InvocationName -ne '.') {
+        exit `$LASTEXITCODE
+    }
+}
+elseif (`$Fix -or `$Tweak -or `$Remediate -or `$Execute -or `$Revert) {
     Start-Toolkit -Fix `$Fix -Tweak `$Tweak -Remediate `$Remediate -Revert:`$Revert -Execute:`$Execute -OutFile `$OutFile -Redact `$Redact ``
                   -Report `$Report -CompareWith `$CompareWith -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 
