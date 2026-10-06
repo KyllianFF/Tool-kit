@@ -88,6 +88,15 @@ param(
     [switch] $TriageRemoveClear,
 
     [Parameter()]
+    [string] $Evidence,
+
+    [Parameter()]
+    [string[]] $EvidenceFramework,
+
+    [Parameter()]
+    [string] $EvidenceCertificate,
+
+    [Parameter()]
     [string] $RunAction,
 
     [Parameter()]
@@ -152,11 +161,18 @@ if ($Triage -or $TriageReference -or $TriageCertificate -or $TriageStep -or $Tri
 
     # The other modes are passed on so that a mix is refused, not ignored.
     Start-Toolkit -Triage $Triage -TriageReference $TriageReference -TriageCertificate $TriageCertificate -TriageStep $TriageStep `
-                  -TriageRemoveClear:$TriageRemoveClear -OutFile $OutFile -Report $Report -CompareWith $CompareWith -Fix $Fix -Tweak $Tweak -Remediate $Remediate
+                  -TriageRemoveClear:$TriageRemoveClear -OutFile $OutFile -Report $Report -CompareWith $CompareWith -Fix $Fix -Tweak $Tweak -Remediate $Remediate `
+                  -Evidence $Evidence
 
     if ($MyInvocation.InvocationName -ne '.') {
         exit $LASTEXITCODE
     }
+}
+elseif ($Evidence -or $EvidenceFramework -or $EvidenceCertificate) {
+
+    # The other modes are passed on so that a mix is refused, not ignored.
+    Start-Toolkit -Evidence $Evidence -EvidenceFramework $EvidenceFramework -EvidenceCertificate $EvidenceCertificate -AuditLevel $AuditLevel `
+                  -Policy $Policy -PolicyTrust $PolicyTrust -Redact $Redact -OutFile $OutFile -Report $Report -CompareWith $CompareWith -Fix $Fix -Tweak $Tweak -Remediate $Remediate
 }
 elseif ($Fix -or $Tweak -or $Remediate -or $Execute -or $Revert) {
     Start-Toolkit -Fix $Fix -Tweak $Tweak -Remediate $Remediate -Revert:$Revert -Execute:$Execute -OutFile $OutFile -Redact $Redact `

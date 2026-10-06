@@ -1,0 +1,291 @@
+{
+  "version": "2026-10-06",
+  "notice": "The toolkit's reading of which requirement each control contributes to. It is evidence for an auditor to weigh, not a judgement of compliance: a requirement is met by an organisation's measures as a whole, which one workstation's settings never show. Review the mapping against the editions your organisation follows.",
+  "frameworks": [
+    {
+      "id": "ISO27001",
+      "name": "ISO/IEC 27001:2022, Annex A",
+      "short": "ISO 27001",
+      "edition": "2022",
+      "indicative": false,
+      "requirements": [
+        { "id": "5.15", "title": "Access control" },
+        { "id": "5.16", "title": "Identity management" },
+        { "id": "5.17", "title": "Authentication information" },
+        { "id": "5.18", "title": "Access rights" },
+        { "id": "7.7", "title": "Clear desk and clear screen" },
+        { "id": "7.10", "title": "Storage media" },
+        { "id": "8.1", "title": "User endpoint devices" },
+        { "id": "8.2", "title": "Privileged access rights" },
+        { "id": "8.5", "title": "Secure authentication" },
+        { "id": "8.7", "title": "Protection against malware" },
+        { "id": "8.8", "title": "Management of technical vulnerabilities" },
+        { "id": "8.9", "title": "Configuration management" },
+        { "id": "8.15", "title": "Logging" },
+        { "id": "8.16", "title": "Monitoring activities" },
+        { "id": "8.20", "title": "Networks security" },
+        { "id": "8.21", "title": "Security of network services" },
+        { "id": "8.24", "title": "Use of cryptography" }
+      ]
+    },
+    {
+      "id": "NIS2",
+      "name": "NIS2 Directive (EU) 2022/2555, Article 21(2)",
+      "short": "NIS2",
+      "edition": "2022",
+      "indicative": true,
+      "requirements": [
+        { "id": "21(2)(b)", "title": "Incident handling" },
+        { "id": "21(2)(e)", "title": "Security in network and information systems acquisition, development and maintenance, including vulnerability handling and disclosure" },
+        { "id": "21(2)(g)", "title": "Basic cyber hygiene practices and cybersecurity training" },
+        { "id": "21(2)(h)", "title": "Policies and procedures regarding the use of cryptography and, where appropriate, encryption" },
+        { "id": "21(2)(i)", "title": "Human resources security, access control policies and asset management" }
+      ]
+    },
+    {
+      "id": "CIS",
+      "name": "CIS Critical Security Controls v8, safeguards",
+      "short": "CIS Controls",
+      "edition": "v8",
+      "indicative": false,
+      "requirements": [
+        { "id": "2.2", "title": "Ensure authorized software is currently supported" },
+        { "id": "3.6", "title": "Encrypt data on end-user devices" },
+        { "id": "4.1", "title": "Establish and maintain a secure configuration process" },
+        { "id": "4.3", "title": "Configure automatic session locking on enterprise assets" },
+        { "id": "4.5", "title": "Implement and manage a firewall on end-user devices" },
+        { "id": "4.7", "title": "Manage default accounts on enterprise assets and software" },
+        { "id": "4.8", "title": "Uninstall or disable unnecessary services on enterprise assets and software" },
+        { "id": "4.10", "title": "Enforce automatic device lockout on portable end-user devices" },
+        { "id": "5.2", "title": "Use unique passwords" },
+        { "id": "5.4", "title": "Restrict administrator privileges to dedicated administrator accounts" },
+        { "id": "7.3", "title": "Perform automated operating system patch management" },
+        { "id": "8.2", "title": "Collect audit logs" },
+        { "id": "8.5", "title": "Collect detailed audit logs" },
+        { "id": "8.8", "title": "Collect command-line audit logs" },
+        { "id": "10.1", "title": "Deploy and maintain anti-malware software" },
+        { "id": "10.2", "title": "Configure automatic anti-malware signature updates" },
+        { "id": "10.3", "title": "Disable autorun and autoplay for removable media" },
+        { "id": "10.5", "title": "Enable anti-exploitation features" }
+      ]
+    },
+    {
+      "id": "ANSSI",
+      "name": "ANSSI, Guide d'hygiene informatique (42 measures, 2017)",
+      "short": "ANSSI hygiene",
+      "edition": "2017",
+      "indicative": false,
+      "requirements": [
+        { "id": "8", "title": "Identify by name each person accessing the system" },
+        { "id": "10", "title": "Define and check rules for choosing and sizing passwords" },
+        { "id": "11", "title": "Protect the passwords stored on the systems" },
+        { "id": "14", "title": "Implement a minimum level of security across the whole IT estate" },
+        { "id": "15", "title": "Protect against the threats of removable media" },
+        { "id": "17", "title": "Enable and configure the local firewall of workstations" },
+        { "id": "21", "title": "Use secure network protocols wherever they exist" },
+        { "id": "29", "title": "Limit administration rights on workstations to strict operational need" },
+        { "id": "31", "title": "Encrypt sensitive data, especially on hardware that may be lost" },
+        { "id": "34", "title": "Define an update policy for the components of the information system" },
+        { "id": "35", "title": "Anticipate the end of maintenance of software and systems" },
+        { "id": "36", "title": "Enable and configure the logs of the most important components" }
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "id": "ENC-001",
+      "method": "Each fixed drive's protection status, encryption method and key protectors, from Get-BitLockerVolume, against the fixed disks of Win32_LogicalDisk.",
+      "maps": { "ISO27001": ["8.1", "8.24"], "NIS2": ["21(2)(h)"], "CIS": ["3.6"], "ANSSI": ["31"] }
+    },
+    {
+      "id": "AV-001",
+      "method": "The antivirus products registered with Windows Security Center (root\\SecurityCenter2, AntiVirusProduct) and Microsoft Defender's state (Get-MpComputerStatus).",
+      "maps": { "ISO27001": ["8.7"], "NIS2": ["21(2)(g)"], "CIS": ["10.1"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "AV-002",
+      "method": "The age of Microsoft Defender's signatures: AntivirusSignatureLastUpdated from Get-MpComputerStatus.",
+      "maps": { "ISO27001": ["8.7"], "NIS2": ["21(2)(g)"], "CIS": ["10.2"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "AV-003",
+      "method": "Microsoft Defender's path, process and extension exclusions (Get-MpPreference), judged by how much they leave unscanned.",
+      "maps": { "ISO27001": ["8.7", "8.9"], "NIS2": ["21(2)(g)"], "CIS": ["10.1"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "EDR-002",
+      "method": "IsTamperProtected from Get-MpComputerStatus.",
+      "maps": { "ISO27001": ["8.7"], "NIS2": ["21(2)(g)"], "CIS": ["10.1"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "EDR-001",
+      "method": "The Attack Surface Reduction rules configured and their action: AttackSurfaceReductionRules_Ids and AttackSurfaceReductionRules_Actions from Get-MpPreference.",
+      "maps": { "ISO27001": ["8.7", "8.9"], "NIS2": ["21(2)(g)"], "CIS": ["10.5"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "UAC-001",
+      "method": "EnableLUA and ConsentPromptBehaviorAdmin under HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System.",
+      "maps": { "ISO27001": ["8.2"], "NIS2": ["21(2)(i)"], "CIS": ["5.4"], "ANSSI": ["29"] }
+    },
+    {
+      "id": "PS-001",
+      "method": "The MicrosoftWindowsPowerShellV2 optional feature, from Get-WindowsOptionalFeature -Online.",
+      "maps": { "ISO27001": ["8.9"], "NIS2": ["21(2)(g)"], "CIS": ["4.1"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "USB-001",
+      "method": "NoDriveTypeAutoRun under HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer.",
+      "maps": { "ISO27001": ["7.10", "8.7"], "NIS2": ["21(2)(g)"], "CIS": ["10.3"], "ANSSI": ["15"] }
+    },
+    {
+      "id": "LOCK-001",
+      "method": "InactivityTimeoutSecs under HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System, otherwise the session's ScreenSaveActive, ScreenSaverIsSecure and ScreenSaveTimeOut under HKCU\\Control Panel\\Desktop.",
+      "maps": { "ISO27001": ["7.7", "8.1"], "NIS2": ["21(2)(g)"], "CIS": ["4.3"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "BOOT-001",
+      "method": "Confirm-SecureBootUEFI.",
+      "maps": { "ISO27001": ["8.9"], "NIS2": ["21(2)(e)"], "CIS": ["4.1"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "TPM-001",
+      "method": "Win32_Tpm in root\\CIMV2\\Security\\MicrosoftTpm: present, enabled, activated, and its specification version.",
+      "maps": { "ISO27001": ["8.1", "8.24"], "NIS2": ["21(2)(h)"], "CIS": ["4.1"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "DRV-001",
+      "method": "VulnerableDriverBlocklistEnable under HKLM\\SYSTEM\\CurrentControlSet\\Control\\CI\\Config, with the Device Guard state (Win32_DeviceGuard).",
+      "maps": { "ISO27001": ["8.7", "8.8"], "NIS2": ["21(2)(e)"], "CIS": ["10.5"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "DRV-002",
+      "method": "Hypervisor-protected code integrity configured and running: Win32_DeviceGuard in root\\Microsoft\\Windows\\DeviceGuard.",
+      "maps": { "ISO27001": ["8.7", "8.9"], "NIS2": ["21(2)(e)"], "CIS": ["10.5"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "CRED-003",
+      "method": "UseLogonCredential under HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest.",
+      "maps": { "ISO27001": ["5.17", "8.5"], "NIS2": ["21(2)(i)"], "CIS": ["4.1"], "ANSSI": ["11"] }
+    },
+    {
+      "id": "CRED-002",
+      "method": "RunAsPPL under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa.",
+      "maps": { "ISO27001": ["5.17", "8.5"], "NIS2": ["21(2)(i)"], "CIS": ["10.5"], "ANSSI": ["11"] }
+    },
+    {
+      "id": "CRED-001",
+      "method": "Credential Guard configured and running (Win32_DeviceGuard), and whether the edition (EditionID) supports it.",
+      "maps": { "ISO27001": ["5.17", "8.5"], "NIS2": ["21(2)(i)"], "CIS": ["10.5"], "ANSSI": ["11"] }
+    },
+    {
+      "id": "CRED-004",
+      "method": "CachedLogonsCount under HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon, and whether the machine is joined to a domain (Win32_ComputerSystem).",
+      "maps": { "ISO27001": ["5.17", "8.5"], "NIS2": ["21(2)(i)"], "CIS": ["4.1"], "ANSSI": ["11"] }
+    },
+    {
+      "id": "FW-001",
+      "method": "Each firewall profile's state and default inbound action, from Get-NetFirewallProfile.",
+      "maps": { "ISO27001": ["8.20"], "NIS2": ["21(2)(g)"], "CIS": ["4.5"], "ANSSI": ["17"] }
+    },
+    {
+      "id": "SMB-001",
+      "method": "The SMB1Protocol optional feature, from Get-WindowsOptionalFeature -Online.",
+      "maps": { "ISO27001": ["8.9", "8.20"], "NIS2": ["21(2)(g)"], "CIS": ["4.8"], "ANSSI": ["21"] }
+    },
+    {
+      "id": "SMB-002",
+      "method": "RequireSecuritySignature of the SMB server and client, from Get-SmbServerConfiguration and Get-SmbClientConfiguration.",
+      "maps": { "ISO27001": ["8.20", "8.21", "8.24"], "NIS2": ["21(2)(h)"], "CIS": ["4.1"], "ANSSI": ["21"] }
+    },
+    {
+      "id": "NET-002",
+      "method": "LmCompatibilityLevel under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa, with the level Windows applies when it is absent.",
+      "maps": { "ISO27001": ["8.5", "8.20"], "NIS2": ["21(2)(i)"], "CIS": ["4.1"], "ANSSI": ["21"] }
+    },
+    {
+      "id": "NET-004",
+      "method": "NtlmMinClientSec and NtlmMinServerSec under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\MSV1_0.",
+      "maps": { "ISO27001": ["8.5", "8.24"], "NIS2": ["21(2)(h)"], "CIS": ["4.1"], "ANSSI": ["21"] }
+    },
+    {
+      "id": "NET-001",
+      "method": "EnableMulticast under HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient.",
+      "maps": { "ISO27001": ["8.20"], "NIS2": ["21(2)(g)"], "CIS": ["4.8"], "ANSSI": ["21"] }
+    },
+    {
+      "id": "PRN-001",
+      "method": "The Spooler service's state and start type (Get-Service), and the printers installed (Win32_Printer).",
+      "maps": { "ISO27001": ["8.9"], "NIS2": ["21(2)(g)"], "CIS": ["4.8"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "RDP-001",
+      "method": "fDenyTSConnections under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server.",
+      "maps": { "ISO27001": ["5.15", "8.20"], "NIS2": ["21(2)(i)"], "CIS": ["4.8"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "RDP-002",
+      "method": "UserAuthentication under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp, when Remote Desktop is on.",
+      "maps": { "ISO27001": ["8.5", "8.21"], "NIS2": ["21(2)(i)"], "CIS": ["4.1"], "ANSSI": ["21"] }
+    },
+    {
+      "id": "NET-003",
+      "method": "The WinRM service (Get-Service) and its listeners (WSMan:\\localhost\\Listener).",
+      "maps": { "ISO27001": ["5.15", "8.21"], "NIS2": ["21(2)(i)"], "CIS": ["4.8"], "ANSSI": ["14"] }
+    },
+    {
+      "id": "ACC-001",
+      "method": "The built-in guest account, by its security identifier ending in -501, from Get-LocalUser.",
+      "maps": { "ISO27001": ["5.16", "5.18"], "NIS2": ["21(2)(i)"], "CIS": ["4.7"], "ANSSI": ["8"] }
+    },
+    {
+      "id": "ACC-002",
+      "method": "The members of the local Administrators group (S-1-5-32-544), from Get-LocalGroupMember, less the accounts the operator excluded.",
+      "maps": { "ISO27001": ["8.2"], "NIS2": ["21(2)(i)"], "CIS": ["5.4"], "ANSSI": ["29"] }
+    },
+    {
+      "id": "PWD-001",
+      "method": "The minimum password length of the local policy, as net accounts reports it.",
+      "maps": { "ISO27001": ["5.17"], "NIS2": ["21(2)(i)"], "CIS": ["5.2"], "ANSSI": ["10"] }
+    },
+    {
+      "id": "ACC-004",
+      "method": "The lockout threshold of the local policy, as net accounts reports it.",
+      "maps": { "ISO27001": ["8.5"], "NIS2": ["21(2)(i)"], "CIS": ["4.10"], "ANSSI": ["10"] }
+    },
+    {
+      "id": "ACC-005",
+      "method": "The enabled local accounts whose password never expires, from Get-LocalUser, the built-in accounts set apart.",
+      "maps": { "ISO27001": ["5.17"], "NIS2": ["21(2)(i)"], "CIS": [], "ANSSI": ["10"] }
+    },
+    {
+      "id": "ACC-003",
+      "method": "A Windows LAPS policy (HKLM\\SOFTWARE\\Microsoft\\Policies\\LAPS) or a legacy LAPS policy (HKLM\\SOFTWARE\\Policies\\Microsoft Services\\AdmPwd).",
+      "maps": { "ISO27001": ["5.17", "8.2"], "NIS2": ["21(2)(i)"], "CIS": ["5.2"], "ANSSI": ["10"] }
+    },
+    {
+      "id": "UPD-001",
+      "method": "The installation date of the newest update, from Get-HotFix.",
+      "maps": { "ISO27001": ["8.8"], "NIS2": ["21(2)(e)"], "CIS": ["7.3"], "ANSSI": ["34"] }
+    },
+    {
+      "id": "UPD-002",
+      "method": "PauseFeatureUpdatesEndTime and PauseQualityUpdatesEndTime under HKLM\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings.",
+      "maps": { "ISO27001": ["8.8"], "NIS2": ["21(2)(e)"], "CIS": ["7.3"], "ANSSI": ["34"] }
+    },
+    {
+      "id": "UPD-003",
+      "method": "The Windows edition, release and build (registry and Win32_OperatingSystem), against the toolkit's catalog of Windows lifecycle dates.",
+      "maps": { "ISO27001": ["8.8"], "NIS2": ["21(2)(e)"], "CIS": ["2.2"], "ANSSI": ["35"] }
+    },
+    {
+      "id": "LOG-001",
+      "method": "EnableScriptBlockLogging and EnableTranscripting under HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell.",
+      "maps": { "ISO27001": ["8.15"], "NIS2": ["21(2)(b)"], "CIS": ["8.8"], "ANSSI": ["36"] }
+    },
+    {
+      "id": "LOG-002",
+      "method": "The advanced audit policy (auditpol /backup), against the toolkit's baseline of subcategories.",
+      "maps": { "ISO27001": ["8.15", "8.16"], "NIS2": ["21(2)(b)"], "CIS": ["8.2", "8.5"], "ANSSI": ["36"] }
+    }
+  ]
+}

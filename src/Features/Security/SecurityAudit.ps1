@@ -39,65 +39,69 @@
     Every control has one, because a warning with no way forward is a report
     that stops being read. A check can still choose a different action for one
     of its paths; the table only fills in what the check left empty.
+
+    Id is the identifier of the finding the control returns. It is the key of
+    the control's framework mapping (data/frameworks.json), which a test keeps
+    in step with this table.
 #>
 $script:TkAuditControl = @(
 
     # --- Data protection ---------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditBitLocker';           Weight = 10; Level = 'Essential'; Action = 'open-bitlocker' }
+    [pscustomobject] @{ Function = 'Test-TkAuditBitLocker';           Weight = 10; Level = 'Essential'; Action = 'open-bitlocker'; Id = 'ENC-001' }
 
     # --- Endpoint protection -----------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditAntivirus';           Weight = 10; Level = 'Essential'; Action = 'open-windows-security' }
-    [pscustomobject] @{ Function = 'Test-TkAuditDefenderSignature';   Weight =  4; Level = 'Essential'; Action = 'update-signatures' }
-    [pscustomobject] @{ Function = 'Test-TkAuditDefenderExclusion';   Weight =  6; Level = 'Essential'; Action = 'open-defender-settings' }
-    [pscustomobject] @{ Function = 'Test-TkTamperProtection';         Weight =  6; Level = 'Full';      Action = 'open-defender-settings' }
-    [pscustomobject] @{ Function = 'Test-TkAsrRules';                 Weight =  5; Level = 'Full';      Action = 'asr-audit-mode' }
-    [pscustomobject] @{ Function = 'Test-TkAuditUac';                 Weight =  7; Level = 'Essential'; Action = 'enable-uac' }
-    [pscustomobject] @{ Function = 'Test-TkAuditPowerShellV2';        Weight =  5; Level = 'Essential'; Action = 'disable-powershell-v2' }
-    [pscustomobject] @{ Function = 'Test-TkAuditAutoPlay';            Weight =  3; Level = 'Essential'; Action = 'disable-autorun' }
-    [pscustomobject] @{ Function = 'Test-TkAuditScreenLock';          Weight =  6; Level = 'Essential'; Action = 'set-inactivity-lock' }
+    [pscustomobject] @{ Function = 'Test-TkAuditAntivirus';           Weight = 10; Level = 'Essential'; Action = 'open-windows-security'; Id = 'AV-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditDefenderSignature';   Weight =  4; Level = 'Essential'; Action = 'update-signatures'; Id = 'AV-002' }
+    [pscustomobject] @{ Function = 'Test-TkAuditDefenderExclusion';   Weight =  6; Level = 'Essential'; Action = 'open-defender-settings'; Id = 'AV-003' }
+    [pscustomobject] @{ Function = 'Test-TkTamperProtection';         Weight =  6; Level = 'Full';      Action = 'open-defender-settings'; Id = 'EDR-002' }
+    [pscustomobject] @{ Function = 'Test-TkAsrRules';                 Weight =  5; Level = 'Full';      Action = 'asr-audit-mode'; Id = 'EDR-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditUac';                 Weight =  7; Level = 'Essential'; Action = 'enable-uac'; Id = 'UAC-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditPowerShellV2';        Weight =  5; Level = 'Essential'; Action = 'disable-powershell-v2'; Id = 'PS-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditAutoPlay';            Weight =  3; Level = 'Essential'; Action = 'disable-autorun'; Id = 'USB-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditScreenLock';          Weight =  6; Level = 'Essential'; Action = 'set-inactivity-lock'; Id = 'LOCK-001' }
 
     # --- Platform ----------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditSecureBoot';          Weight =  6; Level = 'Essential'; Action = 'restart-to-firmware' }
-    [pscustomobject] @{ Function = 'Test-TkAuditTpm';                 Weight =  4; Level = 'Essential'; Action = 'restart-to-firmware' }
-    [pscustomobject] @{ Function = 'Test-TkAuditDriverBlocklist';     Weight =  6; Level = 'Essential'; Action = 'open-core-isolation' }
-    [pscustomobject] @{ Function = 'Test-TkMemoryIntegrity';          Weight =  5; Level = 'Full';      Action = 'open-core-isolation' }
+    [pscustomobject] @{ Function = 'Test-TkAuditSecureBoot';          Weight =  6; Level = 'Essential'; Action = 'restart-to-firmware'; Id = 'BOOT-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditTpm';                 Weight =  4; Level = 'Essential'; Action = 'restart-to-firmware'; Id = 'TPM-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditDriverBlocklist';     Weight =  6; Level = 'Essential'; Action = 'open-core-isolation'; Id = 'DRV-001' }
+    [pscustomobject] @{ Function = 'Test-TkMemoryIntegrity';          Weight =  5; Level = 'Full';      Action = 'open-core-isolation'; Id = 'DRV-002' }
 
     # --- Credential protection ---------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkWdigest';                  Weight =  8; Level = 'Essential'; Action = 'disable-wdigest' }
-    [pscustomobject] @{ Function = 'Test-TkLsaProtection';            Weight =  6; Level = 'Full';      Action = 'enable-lsa-protection' }
-    [pscustomobject] @{ Function = 'Test-TkCredentialGuard';          Weight =  5; Level = 'Full';      Action = 'enable-credential-guard' }
-    [pscustomobject] @{ Function = 'Test-TkCachedLogon';              Weight =  3; Level = 'Full';      Action = 'set-cached-logons' }
+    [pscustomobject] @{ Function = 'Test-TkWdigest';                  Weight =  8; Level = 'Essential'; Action = 'disable-wdigest'; Id = 'CRED-003' }
+    [pscustomobject] @{ Function = 'Test-TkLsaProtection';            Weight =  6; Level = 'Full';      Action = 'enable-lsa-protection'; Id = 'CRED-002' }
+    [pscustomobject] @{ Function = 'Test-TkCredentialGuard';          Weight =  5; Level = 'Full';      Action = 'enable-credential-guard'; Id = 'CRED-001' }
+    [pscustomobject] @{ Function = 'Test-TkCachedLogon';              Weight =  3; Level = 'Full';      Action = 'set-cached-logons'; Id = 'CRED-004' }
 
     # --- Network -----------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditFirewall';            Weight =  9; Level = 'Essential'; Action = 'enable-firewall' }
-    [pscustomobject] @{ Function = 'Test-TkAuditSmbV1';               Weight =  8; Level = 'Essential'; Action = 'disable-smbv1' }
-    [pscustomobject] @{ Function = 'Test-TkSmbSigning';               Weight =  5; Level = 'Full';      Action = 'require-smb-signing' }
-    [pscustomobject] @{ Function = 'Test-TkNtlmRestriction';          Weight =  6; Level = 'Full';      Action = 'set-lm-level' }
-    [pscustomobject] @{ Function = 'Test-TkNtlmSessionSecurity';      Weight =  3; Level = 'Full';      Action = 'require-ntlmv2-session' }
-    [pscustomobject] @{ Function = 'Test-TkAuditLlmnr';               Weight =  4; Level = 'Essential'; Action = 'disable-llmnr' }
-    [pscustomobject] @{ Function = 'Test-TkAuditPrintSpooler';        Weight =  4; Level = 'Essential'; Action = 'disable-spooler' }
+    [pscustomobject] @{ Function = 'Test-TkAuditFirewall';            Weight =  9; Level = 'Essential'; Action = 'enable-firewall'; Id = 'FW-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditSmbV1';               Weight =  8; Level = 'Essential'; Action = 'disable-smbv1'; Id = 'SMB-001' }
+    [pscustomobject] @{ Function = 'Test-TkSmbSigning';               Weight =  5; Level = 'Full';      Action = 'require-smb-signing'; Id = 'SMB-002' }
+    [pscustomobject] @{ Function = 'Test-TkNtlmRestriction';          Weight =  6; Level = 'Full';      Action = 'set-lm-level'; Id = 'NET-002' }
+    [pscustomobject] @{ Function = 'Test-TkNtlmSessionSecurity';      Weight =  3; Level = 'Full';      Action = 'require-ntlmv2-session'; Id = 'NET-004' }
+    [pscustomobject] @{ Function = 'Test-TkAuditLlmnr';               Weight =  4; Level = 'Essential'; Action = 'disable-llmnr'; Id = 'NET-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditPrintSpooler';        Weight =  4; Level = 'Essential'; Action = 'disable-spooler'; Id = 'PRN-001' }
 
     # --- Remote access -----------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditRemoteDesktop';       Weight =  7; Level = 'Essential'; Action = 'open-remote-desktop' }
-    [pscustomobject] @{ Function = 'Test-TkAuditRdpNla';              Weight =  8; Level = 'Essential'; Action = 'enable-rdp-nla' }
-    [pscustomobject] @{ Function = 'Test-TkAuditWinRm';               Weight =  5; Level = 'Full';      Action = 'disable-winrm' }
+    [pscustomobject] @{ Function = 'Test-TkAuditRemoteDesktop';       Weight =  7; Level = 'Essential'; Action = 'open-remote-desktop'; Id = 'RDP-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditRdpNla';              Weight =  8; Level = 'Essential'; Action = 'enable-rdp-nla'; Id = 'RDP-002' }
+    [pscustomobject] @{ Function = 'Test-TkAuditWinRm';               Weight =  5; Level = 'Full';      Action = 'disable-winrm'; Id = 'NET-003' }
 
     # --- Accounts ----------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditGuestAccount';        Weight =  5; Level = 'Essential'; Action = 'disable-guest' }
-    [pscustomobject] @{ Function = 'Test-TkAuditLocalAdministrators'; Weight =  7; Level = 'Essential'; Action = 'open-local-users' }
-    [pscustomobject] @{ Function = 'Test-TkAuditPasswordPolicy';      Weight =  5; Level = 'Essential'; Action = 'set-password-length' }
-    [pscustomobject] @{ Function = 'Test-TkAuditAccountLockout';      Weight =  6; Level = 'Essential'; Action = 'set-account-lockout' }
-    [pscustomobject] @{ Function = 'Test-TkAuditStaleLocalAccount';   Weight =  4; Level = 'Full';      Action = 'open-local-users' }
-    [pscustomobject] @{ Function = 'Test-TkLaps';                     Weight =  5; Level = 'Full';      Action = 'open-laps-guide' }
+    [pscustomobject] @{ Function = 'Test-TkAuditGuestAccount';        Weight =  5; Level = 'Essential'; Action = 'disable-guest'; Id = 'ACC-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditLocalAdministrators'; Weight =  7; Level = 'Essential'; Action = 'open-local-users'; Id = 'ACC-002' }
+    [pscustomobject] @{ Function = 'Test-TkAuditPasswordPolicy';      Weight =  5; Level = 'Essential'; Action = 'set-password-length'; Id = 'PWD-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditAccountLockout';      Weight =  6; Level = 'Essential'; Action = 'set-account-lockout'; Id = 'ACC-004' }
+    [pscustomobject] @{ Function = 'Test-TkAuditStaleLocalAccount';   Weight =  4; Level = 'Full';      Action = 'open-local-users'; Id = 'ACC-005' }
+    [pscustomobject] @{ Function = 'Test-TkLaps';                     Weight =  5; Level = 'Full';      Action = 'open-laps-guide'; Id = 'ACC-003' }
 
     # --- Servicing ---------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkAuditWindowsUpdate';       Weight =  8; Level = 'Essential'; Action = 'open-windows-update' }
-    [pscustomobject] @{ Function = 'Test-TkAuditUpdatePaused';        Weight =  5; Level = 'Essential'; Action = 'open-windows-update' }
-    [pscustomobject] @{ Function = 'Test-TkAuditWindowsSupport';      Weight =  9; Level = 'Essential'; Action = 'open-windows-update' }
+    [pscustomobject] @{ Function = 'Test-TkAuditWindowsUpdate';       Weight =  8; Level = 'Essential'; Action = 'open-windows-update'; Id = 'UPD-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditUpdatePaused';        Weight =  5; Level = 'Essential'; Action = 'open-windows-update'; Id = 'UPD-002' }
+    [pscustomobject] @{ Function = 'Test-TkAuditWindowsSupport';      Weight =  9; Level = 'Essential'; Action = 'open-windows-update'; Id = 'UPD-003' }
 
     # --- Logging -----------------------------------------------------------
-    [pscustomobject] @{ Function = 'Test-TkPowerShellLogging';        Weight =  4; Level = 'Full';      Action = 'enable-script-block-logging' }
-    [pscustomobject] @{ Function = 'Test-TkAuditPolicy';              Weight =  4; Level = 'Full';      Action = 'enable-baseline-audit-policy' }
+    [pscustomobject] @{ Function = 'Test-TkPowerShellLogging';        Weight =  4; Level = 'Full';      Action = 'enable-script-block-logging'; Id = 'LOG-001' }
+    [pscustomobject] @{ Function = 'Test-TkAuditPolicy';              Weight =  4; Level = 'Full';      Action = 'enable-baseline-audit-policy'; Id = 'LOG-002' }
 )
 
 <#

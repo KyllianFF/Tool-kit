@@ -13,9 +13,13 @@
 $script:TkLastGeneratedSecret = ''
 
 # Last audit result, kept so the export button has something to write, with
-# the organisation policy's verdict on it when there was one.
-$script:TkLastAudit      = $null
-$script:TkLastCompliance = $null
+# the organisation policy's verdict on it when there was one, and what the
+# evidence pack says about the run.
+$script:TkLastAudit         = $null
+$script:TkLastCompliance    = $null
+$script:TkLastAuditLevel    = 'Essential'
+$script:TkLastAuditExcluded = @()
+$script:TkLastAuditAt       = $null
 
 <#
 .SYNOPSIS
@@ -108,6 +112,7 @@ function Initialize-TkSecurityPage {
     # --- Audit ------------------------------------------------------------
     Register-TkClick -Name 'BtnRunAudit'        -Action { Invoke-TkAuditFromUi }
     Register-TkClick -Name 'BtnExportAudit'     -Action { Export-TkAuditFromUi }
+    Register-TkClick -Name 'BtnAuditEvidence'   -Action { Export-TkEvidenceFromUi }
     Register-TkClick -Name 'BtnAuditExclusions' -Action { Show-TkAuditExclusionDialog }
 
     $levelBox = Get-TkControl -Name 'AuditLevel'
@@ -960,6 +965,11 @@ function Show-TkAuditReport {
     $script:TkLastAudit      = $findings
     $script:TkLastCompliance = $Compliance
 
+    # What an evidence pack made from this audit says about it.
+    $script:TkLastAuditLevel    = $Level
+    $script:TkLastAuditExcluded = @($ExcludedAccount)
+    $script:TkLastAuditAt       = [datetime]::UtcNow
+
     Show-TkAuditScore -Finding $findings
 
     $document = New-TkFlowDocument
@@ -1018,7 +1028,8 @@ function Show-TkAuditReport {
 
 <#
 .SYNOPSIS
-    A finding's detail, followed by what the organisation policy makes of it.
+    A finding's detail, followed by what the organisation policy makes of it
+    and the framework requirements it contributes to.
 #>
 function Join-TkPolicyNote {
     [CmdletBinding()]
@@ -1028,13 +1039,15 @@ function Join-TkPolicyNote {
         [pscustomobject] $Finding
     )
 
-    $note = Format-TkFindingPolicyNote -Finding $Finding
+    $note       = Format-TkFindingPolicyNote -Finding $Finding
+    $references = Format-TkControlReference -Id ([string] $Finding.Id)
+    $text       = if ($note) { ('{0} {1}' -f ([string] $Finding.Detail).Trim(), $note).Trim() } else { [string] $Finding.Detail }
 
-    if (-not $note) {
-        return [string] $Finding.Detail
+    if ($references) {
+        $text = "{0}`nContributes to: {1}." -f $text.Trim(), $references
     }
 
-    return ('{0} {1}' -f ([string] $Finding.Detail).Trim(), $note).Trim()
+    return $text
 }
 
 <#
@@ -1397,6 +1410,85 @@ function Export-TkAuditFromUi {
     if ($written) {
         Set-TkStatus -Text ('Audit report written to {0}.{1}' -f $written, (Format-TkPrivacyNote -Result ([pscustomobject] @{ Level = $level; Replaced = $null })))
     }
+}
+
+<#
+.SYNOPSIS
+    Writes the evidence pack of the last audit, signed when the user agrees.
+
+.DESCRIPTION
+    The folder first, then the signature: a certificate of this account or of
+    the machine made for signing is offered, never chosen silently. The pack
+    is built and written in the background, with the toolkit's identity read
+    here, where it is known.
+#>
+function Export-TkEvidenceFromUi {
+    [CmdletBinding()]
+    param()
+
+    if (-not $script:TkLastAudit) {
+        Set-TkStatus -Text 'Run the audit first: the evidence pack is made from it.'
+        return
+    }
+
+    $folder = Select-TkFolderPath -Description 'Where to write the evidence pack: its data, its printable page, their SHA-256 and its signature.'
+    if (-not $folder) {
+        return
+    }
+
+    $thumbprint = ''
+    $candidate  = @(Get-TkEvidenceSigningCertificate) | Select-Object -First 1
+
+    if ($candidate) {
+        $message = "Sign the evidence pack with {0}?`n`nCertificate {1}, valid until {2}. A signature shows who produced the pack and that it was not changed since; openssl and Windows both check it." -f
+            ($candidate.Subject -replace '^CN=([^,]+).*$', '$1'), $candidate.Thumbprint, $candidate.NotAfter.ToString('yyyy-MM-dd')
+
+        if (Show-TkDialog -Title 'Sign the evidence pack' -Message $message -AcceptText 'Sign it' -RejectText 'Without a signature') {
+            $thumbprint = $candidate.Thumbprint
+        }
+    }
+
+    Invoke-TkBackgroundAction -StatusText 'Writing the evidence pack...' `
+        -ScriptBlock {
+            param($Finding, $Level, $Compliance, $ExcludedAccount, $AuditedAt, $Toolkit, $Folder, $Privacy, $Thumbprint, $Elevated)
+
+            $certificate = if ($Thumbprint) { @(Get-TkEvidenceSigningCertificate -Thumbprint $Thumbprint)[0] } else { $null }
+            $pack        = New-TkEvidencePack -Finding $Finding -Level $Level -Compliance $Compliance -ExcludedAccount $ExcludedAccount -AuditedAt $AuditedAt `
+                               -Toolkit $Toolkit -Journal (Test-TkJournalChain) -Elevated $Elevated
+
+            Export-TkEvidencePack -Pack $pack -Folder $Folder -Privacy $Privacy -Certificate $certificate -Confirm:$false
+        } `
+        -ParameterList @{
+            Finding = @($script:TkLastAudit); Level = $script:TkLastAuditLevel; Compliance = $script:TkLastCompliance; ExcludedAccount = @($script:TkLastAuditExcluded)
+            AuditedAt = $(if ($script:TkLastAuditAt) { $script:TkLastAuditAt } else { [datetime]::UtcNow }); Toolkit = Get-TkToolkitIdentity; Folder = $folder
+            Privacy = Get-TkExportPrivacyLevel; Thumbprint = $thumbprint; Elevated = [bool] (Test-TkIsElevated)
+        } `
+        -OnComplete { param($result) Receive-TkEvidenceResult -Result $result }
+}
+
+<#
+.SYNOPSIS
+    Says where the evidence pack went, and shows it in Explorer.
+#>
+function Receive-TkEvidenceResult {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        $Result
+    )
+
+    $written = @(if ($Result) { $Result.Output }) | Where-Object { $_ -and $_.PSObject.Properties['JsonSha256'] } | Select-Object -Last 1
+
+    if (-not $written) {
+        Set-TkStatus -Text $(if ($Result -and @($Result.Errors).Count) { 'The evidence pack could not be written: {0}' -f @($Result.Errors)[0] } else { 'The evidence pack could not be written.' })
+        return
+    }
+
+    Set-TkStatus -Text ('Evidence pack written to {0}: SHA-256 {1}, {2}.{3}' -f $written.Html, $written.JsonSha256,
+        $(if ($written.Signer) { 'signed by {0}' -f $written.Signer } else { 'not signed' }), (Format-TkPrivacyNote -Result ([pscustomobject] @{ Level = $written.Privacy; Replaced = $null })))
+
+    Start-Process -FilePath 'explorer.exe' -ArgumentList ('/select,"{0}"' -f $written.Html)
 }
 
 <#

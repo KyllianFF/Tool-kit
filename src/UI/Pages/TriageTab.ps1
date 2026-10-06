@@ -204,7 +204,7 @@ function Invoke-TkTriageFromUi {
     # where the toolkit was launched from.
     Set-TkTriageState -State ([pscustomobject] @{
         Case        = $case
-        Toolkit     = Get-TkTriageToolkitIdentity
+        Toolkit     = Get-TkToolkitIdentity
         Certificate = $certificate
         RemoveClear = ($removeClear -and [bool] $recipient)
         Result      = $null

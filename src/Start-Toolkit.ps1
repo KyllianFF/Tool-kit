@@ -103,6 +103,19 @@
     With TriageCertificate, removes the clear archive and folder once every
     encrypted chunk has been read back.
 
+.PARAMETER Evidence
+    Runs the security audit and writes its evidence pack into this folder
+    without a window, mapped to ISO 27001, NIS2, the CIS Controls and the
+    ANSSI hygiene guide; List returns the frameworks instead. Needs
+    administrator rights, as the audit does. AuditLevel, Policy,
+    PolicyTrust and Redact apply.
+
+.PARAMETER EvidenceFramework
+    With Evidence, the frameworks to include; all of them when omitted.
+
+.PARAMETER EvidenceCertificate
+    With Evidence, the thumbprint of the certificate that signs the pack.
+
 .EXAMPLE
     Start-Toolkit
 
@@ -120,6 +133,9 @@
 
 .EXAMPLE
     Start-Toolkit -Triage E:\ -TriageReference INC-0142 -TriageCertificate .\soc.cer
+
+.EXAMPLE
+    Start-Toolkit -Evidence \\server\evidence$ -AuditLevel Full -EvidenceFramework ISO27001, NIS2
 #>
 function Start-Toolkit {
     [CmdletBinding()]
@@ -190,6 +206,15 @@ function Start-Toolkit {
         [switch] $TriageRemoveClear,
 
         [Parameter()]
+        [string] $Evidence,
+
+        [Parameter()]
+        [string[]] $EvidenceFramework,
+
+        [Parameter()]
+        [string] $EvidenceCertificate,
+
+        [Parameter()]
         [string] $RunAction,
 
         [Parameter()]
@@ -208,12 +233,20 @@ function Start-Toolkit {
         throw '-TriageReference, -TriageCertificate, -TriageStep and -TriageRemoveClear go with -Triage.'
     }
 
-    if ($Assist -and ($Report -or $CompareWith -or $Fix -or $Tweak -or $Remediate -or $RunAction -or $NoGui -or $Triage)) {
-        throw '-Assist opens the assistance window on its own: it does not mix with -Report, -CompareWith, -Fix, -Tweak, -Remediate, -Triage or -NoGui.'
+    if (($EvidenceFramework -or $EvidenceCertificate) -and -not $Evidence) {
+        throw '-EvidenceFramework and -EvidenceCertificate go with -Evidence.'
     }
 
-    if ($Triage -and ($Report -or $CompareWith -or $Fix -or $Tweak -or $Remediate -or $RunAction -or $NoGui)) {
-        throw '-Triage collects a case on its own: it does not mix with -Report, -CompareWith, -Fix, -Tweak, -Remediate or -NoGui.'
+    if ($Assist -and ($Report -or $CompareWith -or $Fix -or $Tweak -or $Remediate -or $RunAction -or $NoGui -or $Triage -or $Evidence)) {
+        throw '-Assist opens the assistance window on its own: it does not mix with -Report, -CompareWith, -Fix, -Tweak, -Remediate, -Triage, -Evidence or -NoGui.'
+    }
+
+    if ($Triage -and ($Report -or $CompareWith -or $Fix -or $Tweak -or $Remediate -or $RunAction -or $NoGui -or $Evidence)) {
+        throw '-Triage collects a case on its own: it does not mix with -Report, -CompareWith, -Fix, -Tweak, -Remediate, -Evidence or -NoGui.'
+    }
+
+    if ($Evidence -and ($Report -or $CompareWith -or $Fix -or $Tweak -or $Remediate -or $RunAction -or $NoGui)) {
+        throw '-Evidence runs the audit and writes its pack on its own: it does not mix with -Report, -CompareWith, -Fix, -Tweak, -Remediate or -NoGui.'
     }
 
     if (($Fix -or $Tweak -or $Remediate) -and ($Report -or $CompareWith)) {
@@ -223,7 +256,7 @@ function Start-Toolkit {
     # Set on every start that is not refused, so a headless run does not
     # leave a later start without its progress lines, and a refused one
     # leaves the console as it was.
-    $script:TkQuietConsole = [bool] ($Report -or $CompareWith -or $RunAction -or $Fix -or $Tweak -or $Remediate -or $Triage)
+    $script:TkQuietConsole = [bool] ($Report -or $CompareWith -or $RunAction -or $Fix -or $Tweak -or $Remediate -or $Triage -or $Evidence)
 
     # --- 1. Context and logging ------------------------------------------
     $ctx = Initialize-TkContext
@@ -271,6 +304,13 @@ function Start-Toolkit {
     if ($Triage) {
         return Invoke-TkHeadlessTriage -Destination $Triage -Reference ([string] $TriageReference) -Step @($TriageStep | Where-Object { $_ }) `
                                        -CertificatePath ([string] $TriageCertificate) -RemoveClear:$TriageRemoveClear -OutFile ([string] $OutFile)
+    }
+
+    # The audit's evidence pack without a window, for an RMM or a scheduled task.
+    if ($Evidence) {
+        return Invoke-TkHeadlessEvidence -Destination $Evidence -Framework @($EvidenceFramework | Where-Object { $_ }) -AuditLevel $AuditLevel `
+                                         -Policy ([string] $Policy) -PolicyTrust @($PolicyTrust | Where-Object { $_ }) -Certificate ([string] $EvidenceCertificate) `
+                                         -Redact $Redact -OutFile ([string] $OutFile)
     }
 
     # Fixes, tweaks and corrections without a window: a plan, unless -Execute.

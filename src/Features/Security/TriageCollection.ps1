@@ -402,38 +402,6 @@ function Get-TkTriageFileList {
 
 <#
 .SYNOPSIS
-    What identifies the toolkit that collected: version, commit, where it
-    came from, and the SHA-256 of that build when it is known.
-#>
-function Get-TkTriageToolkitIdentity {
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param()
-
-    $ctx    = Get-TkContext
-    $source = ''
-    $sha    = ''
-    $how    = ''
-
-    if ($ctx.EntryScript -and [System.IO.File]::Exists([string] $ctx.EntryScript)) {
-        $source = [string] $ctx.EntryScript
-        $sha    = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-        $how    = 'The file that ran, hashed by the collection.'
-    }
-    elseif ($ctx.SourceUri) {
-        $source = [string] $ctx.SourceUri
-        $sha    = [string] $ctx.SourceSha256
-        $how    = if ($sha) { 'Downloaded and run only after this SHA-256 was checked.' } else { 'Downloaded without a pinned SHA-256: the build that ran cannot be proven.' }
-    }
-    else {
-        $how = 'Neither the file nor the address the toolkit was started from is known: the build that ran cannot be proven.'
-    }
-
-    return [pscustomobject] @{ Version = [string] $ctx.Version; Commit = [string] $ctx.Commit; Source = $source; Sha256 = $sha; Proof = $how }
-}
-
-<#
-.SYNOPSIS
     The manifest of a triage case.
 
 .DESCRIPTION
@@ -699,7 +667,7 @@ function Unprotect-TkTriageArchive {
     evidence is never lost to a wrong certificate.
 
 .PARAMETER Toolkit
-    What identifies the toolkit that collected, from Get-TkTriageToolkitIdentity.
+    What identifies the toolkit that collected, from Get-TkToolkitIdentity.
     Read on the window's thread and handed over: a background runspace has
     no record of where the toolkit was launched from.
 
@@ -726,7 +694,7 @@ function Complete-TkTriageCase {
 
     # Read first: a wrong certificate is refused before anything is packed.
     $certificate = if ($CertificatePath) { Get-TkTriageCertificate -Path $CertificatePath } else { $null }
-    $identity    = if ($Toolkit) { $Toolkit } else { Get-TkTriageToolkitIdentity }
+    $identity    = if ($Toolkit) { $Toolkit } else { Get-TkToolkitIdentity }
 
     $files    = @(Get-TkTriageFileList -Folder $Case.Folder -Exclude @('manifest.json', 'manifest.sha256'))
     $manifest = New-TkTriageManifest -Case $Case -Step $Step -File $files -Toolkit $identity -Elevated ([bool] (Test-TkIsElevated))
@@ -734,7 +702,9 @@ function Complete-TkTriageCase {
     $manifestPath = [System.IO.Path]::Combine($Case.Folder, 'manifest.json')
     [System.IO.File]::WriteAllText($manifestPath, (ConvertTo-Json -InputObject $manifest -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
     $manifestSha = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
-    [System.IO.File]::WriteAllText([System.IO.Path]::Combine($Case.Folder, 'manifest.sha256'), ('{0}  manifest.json{1}' -f $manifestSha, [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
+    # Line feeds only in the hash files: sha256sum -c reads a carriage return
+    # as part of the file name.
+    [System.IO.File]::WriteAllText([System.IO.Path]::Combine($Case.Folder, 'manifest.sha256'), ('{0}  manifest.json{1}' -f $manifestSha, "`n"), (New-Object System.Text.UTF8Encoding($false)))
 
     if ($PSVersionTable.PSEdition -eq 'Desktop') {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -765,7 +735,7 @@ function Complete-TkTriageCase {
         foreach ($chunk in $encrypted.Chunks) { $hashes.Add(('{0}  {1}' -f (Get-FileHash -LiteralPath ([System.IO.Path]::Combine($base, $chunk)) -Algorithm SHA256).Hash, $chunk)) }
     }
     $summary = '{0}.sha256.txt' -f $Case.Folder
-    [System.IO.File]::WriteAllText($summary, (($hashes -join [Environment]::NewLine) + [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($summary, (($hashes -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 
     if ($encrypted -and $RemoveClear) {
         Remove-Item -LiteralPath $archive -Force

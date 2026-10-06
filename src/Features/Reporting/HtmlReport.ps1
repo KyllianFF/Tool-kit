@@ -359,6 +359,13 @@ function ConvertTo-TkSecurityAuditHtml {
                 [void] $body.AppendLine(('<p class="policy">{0}</p>' -f (ConvertTo-TkHtmlEncoded $policyNote)))
             }
 
+            # The framework requirements the control contributes to: what an
+            # auditor reading the report for ISO 27001 or NIS2 looks for.
+            $references = Format-TkControlReference -Id ([string] $item.Id)
+            if ($references) {
+                [void] $body.AppendLine(('<p class="policy">Contributes to: {0}</p>' -f (ConvertTo-TkHtmlEncoded $references)))
+            }
+
             [void] $body.AppendLine('</div>')
         }
     }

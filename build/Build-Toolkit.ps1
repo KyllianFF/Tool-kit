@@ -272,6 +272,7 @@ $builder = New-Object System.Text.StringBuilder
         & ([scriptblock]::Create((irm <url of this file>))) -Report All -Redact Personal -OutFile .\to-send.json
         & ([scriptblock]::Create((irm <url of this file>))) -Fix flush-dns -Execute; exit `$LASTEXITCODE
         & ([scriptblock]::Create((irm <url of this file>))) -Triage E:\ -TriageReference INC-0142 -TriageCertificate .\soc.cer
+        & ([scriptblock]::Create((irm <url of this file>))) -Evidence \\server\evidence$ -AuditLevel Full
 #>
 
 [CmdletBinding()]
@@ -345,6 +346,16 @@ param(
 
     [Parameter()]
     [switch] `$TriageRemoveClear,
+
+    # The audit's evidence pack without a window; see Start-Toolkit.
+    [Parameter()]
+    [string] `$Evidence,
+
+    [Parameter()]
+    [string[]] `$EvidenceFramework,
+
+    [Parameter()]
+    [string] `$EvidenceCertificate,
 
     [Parameter()]
     [string] `$RunAction,
@@ -441,11 +452,18 @@ if (`$Triage -or `$TriageReference -or `$TriageCertificate -or `$TriageStep -or 
     # The other modes are passed on so that a mix is refused, not ignored.
     Start-Toolkit -Triage `$Triage -TriageReference `$TriageReference -TriageCertificate `$TriageCertificate -TriageStep `$TriageStep ``
                   -TriageRemoveClear:`$TriageRemoveClear -OutFile `$OutFile -Report `$Report -CompareWith `$CompareWith -Fix `$Fix -Tweak `$Tweak -Remediate `$Remediate ``
-                  -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
+                  -Evidence `$Evidence -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 
     if (`$PSCommandPath -and `$MyInvocation.InvocationName -ne '.') {
         exit `$LASTEXITCODE
     }
+}
+elseif (`$Evidence -or `$EvidenceFramework -or `$EvidenceCertificate) {
+
+    # The other modes are passed on so that a mix is refused, not ignored.
+    Start-Toolkit -Evidence `$Evidence -EvidenceFramework `$EvidenceFramework -EvidenceCertificate `$EvidenceCertificate -AuditLevel `$AuditLevel ``
+                  -Policy `$Policy -PolicyTrust `$PolicyTrust -Redact `$Redact -OutFile `$OutFile -Report `$Report -CompareWith `$CompareWith ``
+                  -Fix `$Fix -Tweak `$Tweak -Remediate `$Remediate -SourceUri `$SourceUri -ExpectedSha256 `$ExpectedSha256
 }
 elseif (`$Fix -or `$Tweak -or `$Remediate -or `$Execute -or `$Revert) {
     Start-Toolkit -Fix `$Fix -Tweak `$Tweak -Remediate `$Remediate -Revert:`$Revert -Execute:`$Execute -OutFile `$OutFile -Redact `$Redact ``

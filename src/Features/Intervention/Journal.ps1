@@ -38,6 +38,7 @@ $script:TkJournalKind = @{
     Bundle      = 'Collection'
     Report      = 'Collection'
     Triage      = 'Collection'
+    Evidence    = 'Collection'
     Audit       = 'Check'
     Policy      = 'Check'
     Hunting     = 'Check'
