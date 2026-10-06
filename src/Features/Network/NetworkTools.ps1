@@ -872,12 +872,13 @@ function Get-TkSecondaryAdapterSummary {
 
     $parts = @()
 
+    # A line a person reads, in the language of the interface.
     if ($connected.Count -gt 0) {
-        $parts += 'Also connected: {0}.' -f ((@($connected | ForEach-Object { '{0} {1}' -f $_.Name, $_.IPv4Address })) -join ', ')
+        $parts += Get-TkText -Text 'Also connected: {0}.' -ArgumentList ((@($connected | ForEach-Object { '{0} {1}' -f $_.Name, $_.IPv4Address })) -join ', ')
     }
 
     if ($virtual.Count -gt 0) {
-        $parts += '{0} virtual adapter(s) up: {1}.' -f $virtual.Count, ((@($virtual | ForEach-Object { $_.Name })) -join ', ')
+        $parts += Get-TkText -Text '{0} virtual adapter(s) up: {1}.' -ArgumentList $virtual.Count, ((@($virtual | ForEach-Object { $_.Name })) -join ', ')
     }
 
     return ($parts -join ' ')

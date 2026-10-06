@@ -389,7 +389,10 @@ function Initialize-TkThemeToggle {
             $choice = if ((Get-TkControl -Name 'ThemeToggle').IsChecked) { 'Dark' } else { 'Light' }
 
             Set-TkTheme -Name $choice -Persist | Out-Null
-            Set-TkStatus -Text ('{0} theme applied.' -f $choice)
+
+            # Two whole sentences rather than one built from the name: each is
+            # translated as it stands.
+            Set-TkStatus -Text $(if ($choice -eq 'Dark') { 'Dark theme applied.' } else { 'Light theme applied.' })
         })
     }
 

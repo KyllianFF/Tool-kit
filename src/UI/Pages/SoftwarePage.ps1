@@ -685,7 +685,7 @@ function Initialize-TkInstalledAppsTab {
             if ($routed.OriginalSource -ne $source) { return }
 
             $tab = $source.SelectedItem
-            if ($tab -and [string] $tab.Header -eq 'Installed Apps' -and -not $script:TkInstalledAppLoaded) {
+            if ($tab -and (Get-TkElementKey -Element $tab) -eq 'Installed Apps' -and -not $script:TkInstalledAppLoaded) {
                 Update-TkInstalledAppList
             }
         })

@@ -168,6 +168,10 @@ function Import-TkSettings {
 
         # The tenant name the Microsoft 365 page tests SharePoint with.
         M365Tenant            = ''
+
+        # The language of the interface and the reports: en, fr, or auto for
+        # the display language of Windows. English until the user chooses.
+        Language              = 'en'
     }
 
     if (Test-Path -LiteralPath $ctx.SettingsFile) {

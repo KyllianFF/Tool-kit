@@ -792,7 +792,7 @@ function Initialize-TkProfileChoice {
     if (@($script:TkProfileChoices).Count -gt 0) { return }
 
     $tabs = Get-TkControl -Name 'MigrationTabs'
-    if (-not $tabs -or -not $tabs.SelectedItem -or [string] $tabs.SelectedItem.Header -ne 'Another profile') { return }
+    if (-not $tabs -or -not $tabs.SelectedItem -or (Get-TkElementKey -Element $tabs.SelectedItem) -ne 'Another profile') { return }
 
     $profiles = @(Get-TkLocalProfile)
     Set-TkProfileCopyState -Choice $profiles -Confirm:$false

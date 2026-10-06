@@ -106,7 +106,11 @@ function Initialize-TkRunspacePool {
 
         # The incident triage collects and encrypts in a worker: the size of
         # the chunks it cuts the archive into before encrypting each.
-        'TkTriageChunkBytes'
+        'TkTriageChunkBytes',
+
+        # Workers write texts a person reads, such as an intervention report,
+        # in the language of the interface.
+        'TkLanguage'
     )
 
     foreach ($name in $sharedVariables) {
