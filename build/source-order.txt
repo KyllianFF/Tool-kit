@@ -61,6 +61,7 @@ src/Features/Security/Policy.ps1
 src/Features/Security/HardeningImpact.ps1
 src/Features/Security/ThreatHunting.ps1
 src/Features/Security/ThreatHuntingHistory.ps1
+src/Features/Security/TriageCollection.ps1
 src/Features/Security/PrivilegeEscalation.ps1
 src/Features/Security/ShareExposure.ps1
 src/Features/Security/HardeningCheck.ps1
@@ -141,6 +142,7 @@ src/UI/Pages/MigrationPage.ps1
 src/UI/Pages/SecurityPage.ps1
 src/UI/Pages/PolicySetting.ps1
 src/UI/Pages/ImpactTab.ps1
+src/UI/Pages/TriageTab.ps1
 src/UI/Pages/ThreatHuntingPage.ps1
 src/UI/Pages/DiagnosticsPage.ps1
 src/UI/Pages/HypothesesTab.ps1

@@ -3673,6 +3673,76 @@
                             </Grid>
                         </TabItem>
 
+                        <!--
+                            The state of a suspect machine, kept before it changes: each
+                            artefact a file, hashed in a manifest, packed in one archive
+                            and, with the responder's certificate, encrypted for them.
+                        -->
+                        <TabItem Header="Incident triage">
+                            <!--
+                                The form on the left, as the Threat hunting tab has its list,
+                                so the result keeps the height of the window: a form across
+                                the top left it a strip at the default size.
+                            -->
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="300" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <DockPanel Grid.Column="0" Margin="0,0,16,0" LastChildFill="True">
+                                    <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="8" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button Grid.Column="0" x:Name="BtnTriageRun" Content="Collect" Style="{StaticResource GlyphPrimaryButton}" Tag="&#xE896;" HorizontalAlignment="Stretch" />
+                                            <Button Grid.Column="2" x:Name="BtnTriageStop" Content="Stop" Style="{StaticResource GlyphButton}" Tag="&#xE71A;" HorizontalAlignment="Stretch"
+                                                    ToolTip="Stops once the step running now has ended. What was taken is still hashed and packed." />
+                                        </Grid>
+                                        <Button x:Name="BtnTriageOpen" Content="Open the folder" Style="{StaticResource GlyphButton}" Tag="&#xE838;" HorizontalAlignment="Stretch" Margin="0,0,0,6" />
+                                        <Button x:Name="BtnTriageTopic" Content="The first hour of an incident" Style="{StaticResource GlyphButton}" Tag="&#xE82D;" HorizontalAlignment="Stretch" Margin="0" />
+                                    </StackPanel>
+
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel Margin="0,0,4,0">
+                                            <TextBlock Text="Incident or ticket reference" Style="{StaticResource FieldLabel}" Margin="0,0,0,4" />
+                                            <TextBox x:Name="TriageReference" Tag="INC-2026-0142" MaxLength="120" Margin="0,0,0,10" />
+
+                                            <TextBlock Text="Destination" Style="{StaticResource FieldLabel}" Margin="0,0,0,4" />
+                                            <DockPanel Margin="0,0,0,10">
+                                                <Button DockPanel.Dock="Right" x:Name="BtnTriageBrowse" Content="Browse" Style="{StaticResource GlyphButton}" Tag="&#xE838;" Margin="8,0,0,0" />
+                                                <TextBox x:Name="TriageDestination" Tag="E:\ or \\server\share" />
+                                            </DockPanel>
+
+                                            <TextBlock Text="Responder's certificate (optional)" Style="{StaticResource FieldLabel}" Margin="0,0,0,4" />
+                                            <DockPanel Margin="0,0,0,6">
+                                                <Button DockPanel.Dock="Right" x:Name="BtnTriageCertificate" Content="Browse" Style="{StaticResource GlyphButton}" Tag="&#xE8D7;" Margin="8,0,0,0" />
+                                                <TextBox x:Name="TriageCertificate" Tag="The SOC's or CERT's .cer"
+                                                         ToolTip="The public certificate (RSA) of whoever will read the evidence. The archive is encrypted for it in CMS, which openssl and Windows both read; only the holder of its private key can open it." />
+                                            </DockPanel>
+                                            <CheckBox x:Name="TriageRemoveClear" Content="Remove the clear copy once encrypted" IsChecked="False" Margin="0,0,0,12"
+                                                      ToolTip="Only once every encrypted chunk has been read back for the certificate. Left off, the clear archive stays beside the encrypted one: a wrong certificate then loses nothing." />
+
+                                            <TextBlock Text="Steps, most volatile first" Style="{StaticResource FieldLabel}" Margin="0,0,0,6" />
+                                            <WrapPanel x:Name="TriageStepList" />
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </DockPanel>
+
+                                <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="TriageOutput" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 IsDocumentEnabled="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
                     </TabControl>
                 </Grid>
 

@@ -6987,6 +6987,287 @@ Describe 'Diagnosis rules' {
     }
 }
 
+Describe 'Incident triage' {
+
+    BeforeAll {
+        # Journaled to a temporary folder, never to the account that runs the tests.
+        $script:TriageDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+
+        # Three steps that need no machine: one writes a file, one fails, one
+        # needs administrator rights.
+        function New-TestTriageStep {
+            @(
+                [pscustomobject] @{ Key = 'first'; Title = 'First'; Label = 'First step'; NeedsElevation = $false; Partial = ''
+                    Collect = { param($Folder) [System.IO.File]::WriteAllText([System.IO.Path]::Combine($Folder, 'a.txt'), 'alpha'); [pscustomobject] @{ Files = @('a.txt'); Note = 'One file.' } } }
+                [pscustomobject] @{ Key = 'broken'; Title = 'Broken'; Label = 'Broken step'; NeedsElevation = $false; Partial = ''
+                    Collect = { param($Folder) $null = $Folder; throw 'This could not be read.' } }
+                [pscustomobject] @{ Key = 'admin'; Title = 'Admin'; Label = 'Administrator step'; NeedsElevation = $true; Partial = 'Hidden without rights.'
+                    Collect = { param($Folder) [System.IO.File]::WriteAllText([System.IO.Path]::Combine($Folder, 'b.txt'), 'beta'); [pscustomobject] @{ Files = @('b.txt'); Note = 'Another file.' } } }
+            )
+        }
+
+        # A responder's certificate made in memory; the .pfx round trip gives
+        # Windows PowerShell a key it can decrypt with.
+        function New-TestRecipient {
+            param([string] $Path, [datetime] $NotAfter = (Get-Date).AddDays(30))
+            $key     = [System.Security.Cryptography.RSA]::Create(2048)
+            $request = New-Object System.Security.Cryptography.X509Certificates.CertificateRequest('CN=Test CERT', $key,
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+            $made    = $request.CreateSelfSigned([datetimeoffset] $NotAfter.AddDays(-60), [datetimeoffset] $NotAfter)
+            [System.IO.File]::WriteAllBytes($Path, $made.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+            $pfx = $made.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, 'test')
+            return [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, 'test', [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        }
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:TriageDataRoot
+    }
+
+    It 'keeps a closed list of steps, most volatile first, and takes them in that order' {
+
+        $steps = @(Get-TkTriageStep)
+        $keys  = @($steps | ForEach-Object { $_.Key })
+
+        $steps.Count | Should -Be 15
+        @($keys | Sort-Object -Unique).Count | Should -Be 15
+        $keys[0]  | Should -Be 'processes'
+        $keys[1]  | Should -Be 'connections'
+        $keys[-1] | Should -Be 'event-logs'
+
+        foreach ($step in $steps) {
+            $step.Key     | Should -Match '^[a-z]+(-[a-z]+)*$'
+            $step.Title   | Should -Not -BeNullOrEmpty
+            $step.Collect | Should -BeOfType [scriptblock]
+            if ($step.NeedsElevation) { $step.Partial | Should -Not -BeNullOrEmpty -Because ('{0} says what it cannot read' -f $step.Key) }
+        }
+
+        Resolve-TkTriageStepChoice -Step @('event-logs, processes') | Should -Be @('processes', 'event-logs')
+        @(Resolve-TkTriageStepChoice -Step @()).Count | Should -Be 15
+        { Resolve-TkTriageStepChoice -Step @('memory') } | Should -Throw '*memory is not a triage step*'
+    }
+
+    It 'records a step that fails and goes on, and marks a step that needs rights' {
+
+        function Get-TkTriageStep { New-TestTriageStep }
+
+        $destination = Join-Path $TestDrive 'isolation'
+        New-Item -ItemType Directory -Path $destination | Out-Null
+        $case = New-TkTriageCase -Destination $destination -Reference 'INC-1' -Now ([datetime]::new(2026, 10, 3, 12, 0, 0, [System.DateTimeKind]::Utc)) -Confirm:$false
+
+        $case.Id | Should -Match '^triage-[A-Za-z0-9_-]+-20261003T120000Z$'
+        [System.IO.Directory]::Exists([System.IO.Path]::Combine($case.Folder, 'artefacts')) | Should -BeTrue
+
+        $broken = Invoke-TkTriageStep -Key 'broken' -Folder $case.Folder -Order 2
+        $broken.Status | Should -Be 'Failed'
+        $broken.Ok     | Should -BeFalse
+        $broken.Note   | Should -Be 'This could not be read.'
+
+        $admin = Invoke-TkTriageStep -Key 'admin' -Folder $case.Folder -Order 3
+        $admin.Status | Should -Be $(if (Test-TkIsElevated) { 'Done' } else { 'Partial' })
+        $admin.Folder | Should -Be 'artefacts/03-admin'
+
+        $result = Invoke-TkTriageCollection -Destination $destination -Reference 'INC-2' -Confirm:$false
+        @($result.Steps | ForEach-Object { $_.Status })[0..1] | Should -Be @('Done', 'Failed')
+        $result.Failed | Should -Be 1
+    }
+
+    It 'writes a manifest whose hashes match the files, packs the case and journals both hashes' {
+
+        function Get-TkTriageStep { New-TestTriageStep }
+
+        $destination = Join-Path $TestDrive 'manifest'
+        New-Item -ItemType Directory -Path $destination | Out-Null
+
+        $case     = New-TkTriageCase -Destination $destination -Reference 'INC-3' -Confirm:$false
+        $records  = @(Invoke-TkTriageStep -Key 'first' -Folder $case.Folder -Order 1)
+        $identity = [pscustomobject] @{ Version = '9.9.9'; Commit = 'abc1234'; Source = 'https://example.org/toolkit.ps1'; Sha256 = 'AB' * 32; Proof = 'Pinned.' }
+        $result   = Complete-TkTriageCase -Case $case -Step $records -Toolkit $identity -Confirm:$false
+
+        $manifest = Get-Content -LiteralPath $result.Manifest -Raw | ConvertFrom-Json
+        $manifest.Schema           | Should -Be 'toolkit-triage'
+        $manifest.SchemaVersion    | Should -Be '1.0'
+        $manifest.Case.Reference   | Should -Be 'INC-3'
+        $manifest.Toolkit.Commit   | Should -Be 'abc1234' -Because 'the identity read on the window''s thread is the one recorded'
+        $manifest.Operator.User    | Should -Be ('{0}\{1}' -f $env:USERDOMAIN, $env:USERNAME)
+        $manifest.NotCollected     | Should -Match 'LSASS'
+        @($manifest.Files).Count   | Should -Be 1
+        $manifest.Files[0].Path    | Should -Be 'artefacts/01-first/a.txt'
+        $manifest.Files[0].Sha256  | Should -Be (Get-FileHash -LiteralPath ([System.IO.Path]::Combine($case.Folder, 'artefacts', '01-first', 'a.txt')) -Algorithm SHA256).Hash
+
+        (Get-Content -LiteralPath ([System.IO.Path]::Combine($case.Folder, 'manifest.sha256')) -Raw).Trim() | Should -Be ('{0}  manifest.json' -f $result.ManifestSha256)
+        $result.ManifestSha256 | Should -Be (Get-FileHash -LiteralPath $result.Manifest -Algorithm SHA256).Hash
+        $result.ArchiveSha256  | Should -Be (Get-FileHash -LiteralPath $result.Archive -Algorithm SHA256).Hash
+
+        if ($PSVersionTable.PSEdition -eq 'Desktop') { Add-Type -AssemblyName System.IO.Compression.FileSystem }
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($result.Archive)
+        try { $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') }) } finally { $zip.Dispose() }
+        $entries | Should -Contain ('{0}/manifest.json' -f $case.Id)
+        $entries | Should -Contain ('{0}/artefacts/01-first/a.txt' -f $case.Id)
+
+        $hashes = @(Get-Content -LiteralPath $result.Hashes)
+        $hashes.Count | Should -Be 2
+        $hashes[1]    | Should -Be ('{0}  {1}.zip' -f $result.ArchiveSha256, $case.Id)
+
+        (Get-TkJournalFolder) | Should -BeLike ('{0}*' -f $TestDrive)
+        $entry = @(Get-TkJournalEntry -Since (Get-Date).AddMinutes(-10) | Where-Object { $_.Category -eq 'Triage' }) | Select-Object -Last 1
+        $entry.Kind   | Should -Be 'Collection'
+        $entry.Detail | Should -Match $result.ManifestSha256
+        $entry.Detail | Should -Match $result.ArchiveSha256
+    }
+
+    It 'encrypts in CMS chunks for the certificate, and rebuilds the same archive' {
+
+        $folder  = Join-Path $TestDrive 'cms'
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        $keyed   = New-TestRecipient -Path (Join-Path $folder 'soc.cer')
+        $archive = Join-Path $folder 'case.zip'
+        $bytes   = New-Object byte[] 5000
+        (New-Object System.Random 11).NextBytes($bytes)
+        [System.IO.File]::WriteAllBytes($archive, $bytes)
+
+        $protected = Protect-TkTriageArchive -Path $archive -Certificate (Get-TkTriageCertificate -Path (Join-Path $folder 'soc.cer')) -ChunkBytes 2048 -Confirm:$false
+        @($protected.Chunks) | Should -Be @('case.zip.p7m.001', 'case.zip.p7m.002', 'case.zip.p7m.003')
+
+        $index = Get-Content -LiteralPath $protected.Index -Raw | ConvertFrom-Json
+        $index.Schema               | Should -Be 'toolkit-triage-archive'
+        $index.Sha256               | Should -Be (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+        $index.Recipient.Thumbprint | Should -Be $keyed.Thumbprint
+        @($index.Chunks | ForEach-Object { $_.ClearBytes }) | Should -Be @(2048, 2048, 904)
+
+        # No clear text in a chunk.
+        $first = [System.IO.File]::ReadAllBytes((Join-Path $folder 'case.zip.p7m.001'))
+        [System.BitConverter]::ToString($first).Contains([System.BitConverter]::ToString($bytes, 0, 32)) | Should -BeFalse
+
+        $rebuilt = Unprotect-TkTriageArchive -Index $protected.Index -OutFile (Join-Path $folder 'rebuilt.zip') -Certificate $keyed -Confirm:$false
+        (Get-FileHash -LiteralPath $rebuilt -Algorithm SHA256).Hash | Should -Be $index.Sha256
+
+        # A chunk changed afterwards is refused before it is decrypted.
+        $first[$first.Length - 1] = $first[$first.Length - 1] -bxor 0xFF
+        [System.IO.File]::WriteAllBytes((Join-Path $folder 'case.zip.p7m.001'), $first)
+        { Unprotect-TkTriageArchive -Index $protected.Index -OutFile (Join-Path $folder 'again.zip') -Certificate $keyed -Confirm:$false } | Should -Throw '*SHA-256 differs*'
+    }
+
+    It 'refuses a certificate the archive cannot be encrypted for' {
+
+        $folder = Join-Path $TestDrive 'refused'
+        New-Item -ItemType Directory -Path $folder | Out-Null
+
+        $curve   = [System.Security.Cryptography.ECDsa]::Create()
+        $request = New-Object System.Security.Cryptography.X509Certificates.CertificateRequest('CN=Curve', $curve, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+        $made    = $request.CreateSelfSigned([datetimeoffset] (Get-Date).AddDays(-1), [datetimeoffset] (Get-Date).AddDays(30))
+        [System.IO.File]::WriteAllBytes((Join-Path $folder 'curve.cer'), $made.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+        { Get-TkTriageCertificate -Path (Join-Path $folder 'curve.cer') } | Should -Throw '*only be encrypted for an RSA key*'
+
+        $null = New-TestRecipient -Path (Join-Path $folder 'old.cer') -NotAfter (Get-Date).AddDays(-2)
+        { Get-TkTriageCertificate -Path (Join-Path $folder 'old.cer') } | Should -Throw '*expired*'
+
+        [System.IO.File]::WriteAllText((Join-Path $folder 'note.cer'), 'not a certificate')
+        { Get-TkTriageCertificate -Path (Join-Path $folder 'note.cer') } | Should -Throw '*not a certificate*'
+
+        # Refused before anything is collected: no case folder is made.
+        { Invoke-TkTriageCollection -Destination $folder -CertificatePath (Join-Path $folder 'curve.cer') -Confirm:$false } | Should -Throw '*RSA*'
+        @(Get-ChildItem -LiteralPath $folder -Directory).Count | Should -Be 0
+    }
+
+    It 'removes the clear copy only once encrypted and when asked, and keeps it when encryption fails' {
+
+        function Get-TkTriageStep { New-TestTriageStep }
+
+        $destination = Join-Path $TestDrive 'clear'
+        New-Item -ItemType Directory -Path $destination | Out-Null
+        $null = New-TestRecipient -Path (Join-Path $TestDrive 'clear-soc.cer')
+
+        $case   = New-TkTriageCase -Destination $destination -Now ([datetime]::new(2026, 10, 3, 9, 0, 0, [System.DateTimeKind]::Utc)) -Confirm:$false
+        $steps  = @(Invoke-TkTriageStep -Key 'first' -Folder $case.Folder -Order 1)
+        $result = Complete-TkTriageCase -Case $case -Step $steps -CertificatePath (Join-Path $TestDrive 'clear-soc.cer') -RemoveClear -ChunkBytes 1024 -Confirm:$false
+
+        $result.Encrypted    | Should -BeTrue
+        $result.ClearRemoved | Should -BeTrue
+        [System.IO.File]::Exists($result.Archive)     | Should -BeFalse
+        [System.IO.Directory]::Exists($result.Folder) | Should -BeFalse
+        [System.IO.File]::Exists($result.Index)       | Should -BeTrue
+        @(Get-Content -LiteralPath $result.Hashes).Count | Should -Be (2 + @($result.Chunks).Count)
+
+        # Encryption that fails keeps the clear archive, and says so.
+        function Protect-TkTriageArchive { throw 'The certificate store is unavailable.' }
+        $case   = New-TkTriageCase -Destination $destination -Now ([datetime]::new(2026, 10, 3, 9, 5, 0, [System.DateTimeKind]::Utc)) -Confirm:$false
+        $steps  = @(Invoke-TkTriageStep -Key 'first' -Folder $case.Folder -Order 1)
+        $result = Complete-TkTriageCase -Case $case -Step $steps -CertificatePath (Join-Path $TestDrive 'clear-soc.cer') -RemoveClear -Confirm:$false
+
+        $result.Encrypted       | Should -BeFalse
+        $result.ClearRemoved    | Should -BeFalse
+        $result.EncryptionError | Should -Match 'kept in clear: The certificate store is unavailable'
+        [System.IO.File]::Exists($result.Archive) | Should -BeTrue
+    }
+
+    It 'collects a few harmless steps of the real list' {
+
+        $destination = Join-Path $TestDrive 'real'
+        New-Item -ItemType Directory -Path $destination | Out-Null
+
+        $result = Invoke-TkTriageCollection -Destination $destination -Step @('connections', 'dns-cache', 'arp-cache') -Confirm:$false
+
+        @($result.Steps | ForEach-Object { $_.Key }) | Should -Be @('connections', 'dns-cache', 'arp-cache')
+        foreach ($step in @($result.Steps)) { $step.Status | Should -BeIn @('Done', 'Partial') -Because ('{0}: {1}' -f $step.Key, $step.Note) }
+        [System.IO.File]::Exists([System.IO.Path]::Combine($result.Folder, 'artefacts', '02-connections', 'tcp.csv')) | Should -BeTrue
+        [System.IO.File]::Exists([System.IO.Path]::Combine($result.Folder, 'artefacts', '05-arp-cache', 'arp-cache.csv')) | Should -BeTrue
+    }
+
+    It 'reads what a stopped or broken queue left, for the manifest' {
+
+        $queue = [pscustomobject] @{ Steps = @(
+            [pscustomobject] @{ Key = 'processes'; State = 'Done'; Text = ''; Started = $null; Ended = $null
+                                Output = [pscustomobject] @{ Key = 'processes'; Label = 'P'; Started = 's'; Ended = 'e'; Status = 'Partial'; Note = 'n'; Folder = 'artefacts/01-processes' } }
+            [pscustomobject] @{ Key = 'connections'; State = 'Failed'; Text = 'Runspace broke.'; Output = $null; Started = (Get-Date); Ended = (Get-Date) }
+            [pscustomobject] @{ Key = 'sessions'; State = 'NotRun'; Text = 'Not run: stopped.'; Output = $null; Started = $null; Ended = $null }
+        ) }
+
+        $records = @(ConvertTo-TkTriageStepRecord -Queue $queue)
+
+        @($records | ForEach-Object { $_.Status }) | Should -Be @('Partial', 'Failed', 'NotRun')
+        $records[1].Note  | Should -Be 'Runspace broke.'
+        $records[1].Label | Should -Match 'connections'
+        $records[2].Note  | Should -Match 'stopped'
+    }
+
+    It 'runs without a window, and refuses what does not go with it' {
+
+        $list = Invoke-TkHeadlessTriage -Destination 'List' | ConvertFrom-Json
+        @($list).Count  | Should -Be 15
+        $LASTEXITCODE   | Should -Be 0
+
+        { Invoke-TkHeadlessTriage -Destination $TestDrive -RemoveClear } | Should -Throw '*needs -TriageCertificate*'
+        { Start-Toolkit -Triage $TestDrive -Report Storage } | Should -Throw '*does not mix*'
+        { Start-Toolkit -TriageReference 'INC-4' } | Should -Throw '*go with -Triage*'
+        { Start-Toolkit -Assist -Triage $TestDrive } | Should -Throw '*does not mix*'
+
+        foreach ($file in @('toolkit.ps1', 'build\Build-Toolkit.ps1')) {
+            $text = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot $file) -Raw
+            foreach ($name in @('Triage', 'TriageReference', 'TriageCertificate', 'TriageStep', 'TriageRemoveClear')) {
+                $text | Should -Match ('\[string(\[\])?\] `?\${0},|\[switch\] `?\${0},' -f $name) -Because ('{0} takes -{1}' -f $file, $name)
+            }
+        }
+    }
+
+    It 'has its tab, journals as a collection, and seeds the chunk size into the workers' {
+
+        $markup = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\MainWindow.xaml') -Raw
+        foreach ($name in @('TriageReference', 'TriageDestination', 'BtnTriageBrowse', 'TriageCertificate', 'BtnTriageCertificate', 'TriageRemoveClear',
+                            'TriageStepList', 'BtnTriageRun', 'BtnTriageStop', 'BtnTriageOpen', 'BtnTriageTopic', 'TriageOutput')) {
+            $markup | Should -Match ('x:Name="{0}"' -f $name)
+        }
+        $markup | Should -Match '<TabItem Header="Incident triage">'
+
+        Get-TkJournalKind -Category 'Triage' | Should -Be 'Collection'
+        $script:TkTriageChunkBytes | Should -BeLessThan (64MB) -Because '.NET cannot read back a CMS message past about 64 MB'
+
+        $topics = @((Import-TkCatalog -Name 'network-knowledge').topics | ForEach-Object { $_.id })
+        $topics | Should -Contain 'incident-first-hour'
+    }
+}
+
 Describe 'Switch port discovery' {
 
     BeforeAll {

@@ -73,6 +73,21 @@ param(
     [switch] $Execute,
 
     [Parameter()]
+    [string] $Triage,
+
+    [Parameter()]
+    [string] $TriageReference,
+
+    [Parameter()]
+    [string] $TriageCertificate,
+
+    [Parameter()]
+    [string[]] $TriageStep,
+
+    [Parameter()]
+    [switch] $TriageRemoveClear,
+
+    [Parameter()]
     [string] $RunAction,
 
     [Parameter()]
@@ -133,7 +148,17 @@ if ($Elevated -and -not (Test-TkIsElevated)) {
 }
 
 # --- Start -----------------------------------------------------------------
-if ($Fix -or $Tweak -or $Remediate -or $Execute -or $Revert) {
+if ($Triage -or $TriageReference -or $TriageCertificate -or $TriageStep -or $TriageRemoveClear) {
+
+    # The other modes are passed on so that a mix is refused, not ignored.
+    Start-Toolkit -Triage $Triage -TriageReference $TriageReference -TriageCertificate $TriageCertificate -TriageStep $TriageStep `
+                  -TriageRemoveClear:$TriageRemoveClear -OutFile $OutFile -Report $Report -CompareWith $CompareWith -Fix $Fix -Tweak $Tweak -Remediate $Remediate
+
+    if ($MyInvocation.InvocationName -ne '.') {
+        exit $LASTEXITCODE
+    }
+}
+elseif ($Fix -or $Tweak -or $Remediate -or $Execute -or $Revert) {
     Start-Toolkit -Fix $Fix -Tweak $Tweak -Remediate $Remediate -Revert:$Revert -Execute:$Execute -OutFile $OutFile -Redact $Redact `
                   -Report $Report -CompareWith $CompareWith
 
