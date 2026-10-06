@@ -624,7 +624,7 @@ Describe 'Headless reports' {
         # removed or renamed, or changed type or meaning. It changes here, in
         # Get-TkHeadlessReport and in docs/REPORT-FORMAT.md together.
         $expected = 'Dashboard=1,Inventory=1,Network=1,Reboot=1,Storage=1,Performance=1,Devices=1,Crashes=1,Duplicates=1,Path=1,' +
-                    'Restarts=1,Timeline=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Readiness=1,Journal=1,Impact=1,Audit=1,Hypotheses=1'
+                    'Restarts=1,Timeline=1,Wifi=1,Proxy=1,Identity=1,Updates=1,Printing=1,Profiles=1,Lifecycle=1,Exploited=1,Readiness=1,Journal=1,Impact=1,Audit=1,Hypotheses=1'
 
         (@(Get-TkHeadlessReport | ForEach-Object { '{0}={1}' -f $_.Name, $_.Version })) -join ',' | Should -Be $expected
 
@@ -7678,6 +7678,154 @@ Describe 'Language of the interface' {
         $english | Should -Match '<html lang="en">'
         $english | Should -Match '<h1>Intervention report</h1>'
         $english | Should -Match '<td>Updates</td><td>12 days ago</td>'
+    }
+}
+
+Describe 'Exploited software' {
+
+    BeforeAll {
+        function New-TestProgram {
+            param([string] $Name, [string] $Version)
+            [pscustomobject] @{ Name = $Name; Version = $Version; Scope = 'Machine'; Architecture = '64-bit' }
+        }
+    }
+
+    It 'compares versions number by number, whatever follows them' {
+
+        @(ConvertTo-TkVersionPart -Text '24.09') | Should -Be @(24, 9)
+        @(ConvertTo-TkVersionPart -Text '7.13.0 (64-bit)') | Should -Be @(7, 13, 0)
+        @(ConvertTo-TkVersionPart -Text '').Count | Should -Be 0
+        @(ConvertTo-TkVersionPart -Text 'unknown').Count | Should -Be 0
+
+        Compare-TkVersionText -Left '24.09' -Right '24.09.00.0' | Should -Be 0
+        Compare-TkVersionText -Left '24.08' -Right '24.09' | Should -Be -1
+        Compare-TkVersionText -Left '24.10' -Right '24.09' | Should -Be 1
+        Compare-TkVersionText -Left '26.001.21411' -Right '24.001.30360' | Should -Be 1
+        Compare-TkVersionText -Left '153.0.8010.9' -Right '153.0.8010.36' | Should -Be -1
+    }
+
+    It 'judges each program by the ranges of the catalog, branch by branch' {
+
+        $rows = @(Resolve-TkExploitedSoftware -Program @(
+            (New-TestProgram '7-Zip 24.08 (x64)' '24.08')
+            (New-TestProgram 'WinRAR 7.12 (64-bit)' '7.12.0')
+            (New-TestProgram 'Mozilla Firefox ESR (x64 fr)' '128.3.1')
+            (New-TestProgram 'Mozilla Firefox (x64 fr)' '130.0')
+            (New-TestProgram 'Adobe Acrobat (64-bit)' '24.001.30360')
+            (New-TestProgram 'Adobe Acrobat Reader DC - French' '25.001.20756')
+            (New-TestProgram 'PaperCut NG 25.0.1' '25.0.1')
+            (New-TestProgram 'PaperCut NG Client' '20.0')
+            (New-TestProgram 'ASUS Live Update' '3.6.15')
+            (New-TestProgram 'ScreenConnect Client (a1b2c3d4)' '')
+            (New-TestProgram 'Google Chrome' '153.0.8010.36')
+            (New-TestProgram 'Contoso Editor' '1.0')
+        ))
+
+        $by = @{}
+        foreach ($row in $rows) { $by[$row.Name] = $row }
+
+        $by['7-Zip 24.08 (x64)'].Status | Should -Be 'Exposed'
+        $by['7-Zip 24.08 (x64)'].Vulnerabilities[0].Cve | Should -Be 'CVE-2025-0411'
+        $by['WinRAR 7.12 (64-bit)'].FixedIn | Should -Be '7.13' -Because '7.12 fixes CVE-2025-6218 but not CVE-2025-8088'
+        @($by['WinRAR 7.12 (64-bit)'].Vulnerabilities | ForEach-Object { $_.Cve }) | Should -Be @('CVE-2025-8088')
+        $by['Mozilla Firefox ESR (x64 fr)'].Status | Should -Be 'NotListedVersion' -Because 'ESR 128.3.1 is the fixed release of its branch'
+        $by['Mozilla Firefox (x64 fr)'].FixedIn | Should -Be '131.0.2'
+        $by['Adobe Acrobat (64-bit)'].Status | Should -Be 'NotListedVersion' -Because 'Acrobat 2024 at 24.001.30360 is fixed on its own track'
+        $by['Adobe Acrobat Reader DC - French'].FixedIn | Should -Be '26.001.21411'
+        $by['PaperCut NG 25.0.1'].Status | Should -Be 'NotListedVersion' -Because 'the vulnerable range of the 25 line starts at 25.0.2'
+        $by.ContainsKey('PaperCut NG Client') | Should -BeFalse -Because 'the client is not the application server'
+        $by['ASUS Live Update'].Status | Should -Be 'Unsupported'
+        $by['ScreenConnect Client (a1b2c3d4)'].Status | Should -Be 'Unreadable'
+        $by['Google Chrome'].Status | Should -Be 'NotListedVersion'
+        $by.ContainsKey('Contoso Editor') | Should -BeFalse
+
+        $rows[0].Status | Should -Be 'Exposed' -Because 'the exposed come first'
+        $by['7-Zip 24.08 (x64)'].Search | Should -Be '7-Zip'
+    }
+
+    It 'keeps a catalog every entry of which can be traced and checked' {
+
+        $catalog = Get-TkExploitedSoftwareCatalog
+        $through = [datetime]::ParseExact([string] $catalog.kevThrough, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+
+        [datetime]::ParseExact([string] $catalog.version, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) | Should -BeGreaterOrEqual $through
+        [string] $catalog.kevFeed | Should -Match '^https://www\.cisa\.gov/'
+        [string] $catalog.notice | Should -Match 'never says a program is safe'
+        @($catalog.products).Count | Should -BeGreaterOrEqual 10
+        @($catalog.products | ForEach-Object { $_.id } | Sort-Object -Unique).Count | Should -Be @($catalog.products).Count
+
+        foreach ($product in @($catalog.products)) {
+            $why = $product.id
+            { [regex]::new([string] $product.match) } | Should -Not -Throw -Because $why
+            $product.advice | Should -Not -BeNullOrEmpty -Because $why
+            $product.search | Should -Not -BeNullOrEmpty -Because $why
+            $product.kev.vendor | Should -Not -BeNullOrEmpty -Because $why
+
+            foreach ($rule in @($product.rules)) {
+                $rule.cve | Should -Match '^CVE-\d{4}-\d{4,}$' -Because $why
+                [datetime]::ParseExact([string] $rule.kevAdded, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) | Should -BeLessOrEqual $through -Because ('{0} {1} is in the CISA catalog the catalog was checked against' -f $why, $rule.cve)
+                @(ConvertTo-TkVersionPart -Text ([string] $rule.below)).Count | Should -BeGreaterThan 0 -Because $why
+                if ($rule.PSObject.Properties['from']) { Compare-TkVersionText -Left ([string] $rule.from) -Right ([string] $rule.below) | Should -Be -1 -Because $why }
+                $rule.summary | Should -Not -BeNullOrEmpty -Because $why
+            }
+        }
+    }
+
+    It 'says the catalog is out of date past 45 days, and never calls a program safe' {
+
+        $catalog = Get-TkExploitedSoftwareCatalog
+        $written = [datetime]::ParseExact([string] $catalog.version, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+
+        $fresh = Get-TkExploitedSoftwareReport -Program @(New-TestProgram 'WinRAR 7.23 (64-bit)' '7.23.0') -Now $written.AddDays(10)
+        $fresh.Catalog.Stale | Should -BeFalse
+        $fresh.Severity      | Should -Be 'Pass'
+        $fresh.Headline      | Should -Not -Match '(?i)\bsafe\b|no vulnerab'
+
+        $old = Get-TkExploitedSoftwareReport -Program @(New-TestProgram 'WinRAR 7.23 (64-bit)' '7.23.0') -Now $written.AddDays(60)
+        $old.Catalog.Stale   | Should -BeTrue
+        $old.Catalog.AgeDays | Should -Be 60
+        $old.Severity        | Should -Be 'Warning'
+
+        $exposed = Get-TkExploitedSoftwareReport -Program @(New-TestProgram 'WinRAR 7.11 (64-bit)' '7.11.0') -Now $written
+        $exposed.Severity | Should -Be 'Fail'
+        $exposed.Exposed  | Should -Be 1
+    }
+
+    It 'finds the CISA entries added since the catalog, for its products only' {
+
+        $kev = [pscustomobject] @{ vulnerabilities = @(
+            [pscustomobject] @{ cveID = 'CVE-2099-0001'; vendorProject = 'RARLAB'; product = 'WinRAR'; dateAdded = '2099-01-01'; vulnerabilityName = 'New WinRAR flaw'; requiredAction = 'Apply updates.' }
+            [pscustomobject] @{ cveID = 'CVE-2025-8088'; vendorProject = 'RARLAB'; product = 'WinRAR'; dateAdded = '2025-08-12'; vulnerabilityName = 'Known'; requiredAction = '' }
+            [pscustomobject] @{ cveID = 'CVE-2099-0002'; vendorProject = 'Contoso'; product = 'Editor'; dateAdded = '2099-01-02'; vulnerabilityName = 'Other vendor'; requiredAction = '' }
+            [pscustomobject] @{ cveID = 'CVE-2099-0003'; vendorProject = 'Google'; product = 'Chromium V8'; dateAdded = '2099-01-03'; vulnerabilityName = 'New V8 flaw'; requiredAction = '' }
+        ) }
+
+        $newer = @(Get-TkKevNewerEntry -Kev $kev)
+        @($newer | ForEach-Object { $_.Cve } | Sort-Object -Unique) | Should -Be @('CVE-2099-0001', 'CVE-2099-0003')
+        @($newer | Where-Object { $_.Cve -eq 'CVE-2099-0003' } | ForEach-Object { $_.Product }) | Should -Contain 'Microsoft Edge' -Because 'Edge is built on Chromium'
+    }
+
+    It 'reads the CISA catalog only from its own address, as data' {
+
+        function Invoke-RestMethod { param($Uri, $TimeoutSec, [switch] $UseBasicParsing, $ErrorAction) $null = $TimeoutSec, $UseBasicParsing, $ErrorAction; $script:AskedUri = $Uri; [pscustomobject] @{ catalogVersion = '2099.01.01'; dateReleased = '2099-01-01'; vulnerabilities = @([pscustomobject] @{ cveID = 'CVE-2099-0001'; vendorProject = 'RARLAB'; product = 'WinRAR'; dateAdded = '2099-01-01'; vulnerabilityName = 'New'; requiredAction = '' }) } }
+
+        $answer = Invoke-TkKevCheck
+        $answer.CatalogVersion | Should -Be '2099.01.01'
+        @($answer.Newer).Count | Should -Be 1
+        $script:AskedUri | Should -Be (Get-TkExploitedSoftwareCatalog).kevFeed
+
+        function Get-TkExploitedSoftwareCatalog { [pscustomobject] @{ kevFeed = 'https://example.org/feed.json'; kevThrough = '2026-10-04'; products = @() } }
+        { Invoke-TkKevCheck } | Should -Throw '*not the one this toolkit reads*'
+    }
+
+    It 'has its investigation, its report without a window and its documented format' {
+
+        @(Get-TkHuntInvestigation | ForEach-Object { $_.Title }) | Should -Contain 'Exploited software'
+        $markup = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\MainWindow.xaml') -Raw
+        $markup | Should -Match '<TextBlock Text="Exploited software" Style="\{StaticResource ChoiceTitle\}" />'
+
+        @(Get-TkHeadlessReport | ForEach-Object { $_.Name }) | Should -Contain 'Exploited'
+        (Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'docs\REPORT-FORMAT.md') -Raw) | Should -Match '\| Exploited \| 1 \| no \|'
     }
 }
 

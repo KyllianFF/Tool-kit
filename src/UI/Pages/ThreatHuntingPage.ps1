@@ -70,6 +70,7 @@ function Get-TkHuntInvestigation {
         [pscustomobject] @{ Title = 'Autostart and persistence';  Show = 'Invoke-TkPersistenceFromUi' }
         [pscustomobject] @{ Title = 'Privilege escalation';       Show = 'Invoke-TkPrivilegeEscalationFromUi' }
         [pscustomobject] @{ Title = 'Browser extensions';         Show = 'Invoke-TkBrowserExtensionFromUi' }
+        [pscustomobject] @{ Title = 'Exploited software';         Show = 'Invoke-TkExploitedSoftwareFromUi' }
         [pscustomobject] @{ Title = 'Network exposure';           Show = 'Invoke-TkExposureFromUi' }
         [pscustomobject] @{ Title = 'Shared folders';             Show = 'Invoke-TkShareExposureFromUi' }
         [pscustomobject] @{ Title = 'Saved Wi-Fi networks';       Show = 'Invoke-TkWifiProfileFromUi' }

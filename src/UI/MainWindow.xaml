@@ -3556,7 +3556,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Style="{StaticResource Muted}" Margin="0,0,0,12"
-                                           Text="Eleven read only investigations. Nothing here changes the machine, which is what makes them safe to run first on a system whose state you do not want to disturb. Some read what only an administrator can: event triage needs the Security log, USB times and incoming Remote Desktop need an elevated instance too." />
+                                           Text="Twelve read only investigations. Nothing here changes the machine, which is what makes them safe to run first on a system whose state you do not want to disturb. Some read what only an administrator can: event triage needs the Security log, USB times and incoming Remote Desktop need an elevated instance too." />
 
                                 <DockPanel Grid.Row="1" Grid.Column="0" Margin="0,0,16,0" LastChildFill="True">
                                     <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
@@ -3608,6 +3608,10 @@
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ChoiceGroup}">
                                             <TextBlock Text="EXPOSURE" Style="{StaticResource ChoiceGroupTitle}" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource ReportChoice}"
+                                                     ToolTip="Installed programs below the version that fixes a vulnerability being exploited, from the CISA catalog: archivers, browsers, PDF readers, remote access clients. Against the catalog shipped with the toolkit, which says its date.">
+                                            <TextBlock Text="Exploited software" Style="{StaticResource ChoiceTitle}" />
                                         </ListBoxItem>
                                         <ListBoxItem Style="{StaticResource ReportChoice}"
                                                      ToolTip="Listening sockets joined to the inbound firewall policy.">
