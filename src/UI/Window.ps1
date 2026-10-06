@@ -109,6 +109,14 @@ function New-TkMainWindow {
         '{0} named controls registered.' -f $ctx.Controls.Count
     )
 
+    # Before any page writes its own texts: the markup's are the ones the
+    # dictionary translates.
+    $translated = Set-TkWindowLanguage -Root $window -Confirm:$false
+
+    if ($translated -gt 0) {
+        Write-TkLog -Level Information -Category 'UI' -Message ('{0} texts of the window shown in {1}.' -f $translated, (Get-TkLanguage))
+    }
+
     return $window
 }
 
@@ -420,7 +428,8 @@ function Select-TkTab {
 
     foreach ($item in $tabs.Items) {
 
-        if ($item -is [System.Windows.Controls.TabItem] -and [string] $item.Header -eq $Header) {
+        # The English header, whatever language the tab is shown in.
+        if ($item -is [System.Windows.Controls.TabItem] -and (Get-TkElementKey -Element $item) -eq $Header) {
             $item.IsSelected = $true
             return $true
         }
@@ -677,12 +686,14 @@ function Get-TkItemTitle {
 
     $content = if ($Item -is [System.Windows.Controls.ContentControl]) { $Item.Content } else { $Item }
 
+    # The English title, which every chooser switches on, whatever language
+    # the entry is shown in (Get-TkElementKey).
     if ($content -is [string]) {
-        return $content
+        return (Get-TkElementKey -Element $Item -Shown $content)
     }
 
     if ($content -is [System.Windows.Controls.TextBlock]) {
-        return [string] $content.Text
+        return (Get-TkElementKey -Element $content)
     }
 
     if ($content -is [System.Windows.DependencyObject]) {
@@ -777,8 +788,10 @@ function Set-TkStatus {
     $status = Get-TkControl -Name 'StatusText'
     $bar    = Get-TkControl -Name 'BusyBar'
 
+    # A message the dictionary holds is shown in the language of the
+    # interface; the others, built from values, stay as they were written.
     if ($status) {
-        $status.Text = $Text
+        $status.Text = ConvertTo-TkLocalText -Text $Text -Exact
     }
 
     if ($bar) {
@@ -1691,7 +1704,7 @@ function Update-TkElevationBadge {
 
     if ($ctx.IsElevated) {
 
-        $text.Text = 'Administrator'
+        $text.Text = Get-TkText 'Administrator'
 
         if ($badge) {
             $badge.BorderBrush = $ctx.Window.Resources['Success']
@@ -1702,7 +1715,7 @@ function Update-TkElevationBadge {
         }
     }
     else {
-        $text.Text = 'Standard user - system changes disabled'
+        $text.Text = Get-TkText 'Standard user - system changes disabled'
 
         if ($badge) {
             $badge.BorderBrush = $ctx.Window.Resources['Warning']

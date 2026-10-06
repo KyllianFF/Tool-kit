@@ -177,6 +177,7 @@ function Initialize-TkSecurityPage {
         })
     }
 
+    Initialize-TkLanguageSetting
     Initialize-TkPrivacySetting
     Initialize-TkPolicySetting
     Initialize-TkImpactTab

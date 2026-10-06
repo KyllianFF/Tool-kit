@@ -17,6 +17,7 @@ src/Core/Utilities.ps1
 src/Core/DataPack.ps1
 src/Core/Threading.ps1
 src/Core/DataLoader.ps1
+src/Core/Localization.ps1
 
 # --- Features: depend on core only -----------------------------------------
 src/Features/System/SystemInventory.ps1
@@ -128,6 +129,7 @@ src/Features/Tools/HttpHeaders.ps1
 # --- Interface: depends on core and features -------------------------------
 src/UI/Theme.ps1
 src/UI/Window.ps1
+src/UI/Localization.ps1
 src/UI/ActionQueue.ps1
 src/UI/RichText.ps1
 src/UI/Search.ps1
@@ -142,6 +144,7 @@ src/UI/Pages/Microsoft365Page.ps1
 src/UI/Pages/MigrationPage.ps1
 src/UI/Pages/SecurityPage.ps1
 src/UI/Pages/PolicySetting.ps1
+src/UI/Pages/LanguageSetting.ps1
 src/UI/Pages/ImpactTab.ps1
 src/UI/Pages/TriageTab.ps1
 src/UI/Pages/ThreatHuntingPage.ps1

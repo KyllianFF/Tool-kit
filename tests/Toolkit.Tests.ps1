@@ -7532,6 +7532,155 @@ Describe 'Framework mapping and evidence pack' {
     }
 }
 
+Describe 'Language of the interface' {
+
+    BeforeAll {
+        Add-Type -AssemblyName PresentationFramework
+        $script:FrenchPairs = @((Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'data\strings-fr.json') -Raw -Encoding UTF8 | ConvertFrom-Json).strings)
+
+        # The accented letters by their code: this file has no byte order
+        # mark, and Windows PowerShell would read a literal one as two.
+        $script:Eacute = [string] [char] 0x00E9
+        $script:Agrave = [string] [char] 0x00E0
+    }
+
+    It 'resolves the language from the setting and from Windows, English by default' {
+
+        Resolve-TkLanguage -Setting 'fr' -Culture 'en' | Should -Be 'fr'
+        Resolve-TkLanguage -Setting 'auto' -Culture 'fr' | Should -Be 'fr'
+        Resolve-TkLanguage -Setting 'auto' -Culture 'de' | Should -Be 'en'
+        Resolve-TkLanguage -Setting '' -Culture 'fr' | Should -Be 'en'
+        Resolve-TkLanguage -Setting 'xx' -Culture 'fr' | Should -Be 'en'
+
+        $settings = (Get-TkContext).Settings
+        $saved    = $settings['Language']
+        try {
+            $settings.Remove('Language')
+            Initialize-TkLanguage | Should -Be 'en' -Because 'nothing changes until the user chooses'
+        }
+        finally {
+            $settings['Language'] = $saved
+            Initialize-TkLanguage | Out-Null
+        }
+
+        @(Get-TkLanguageChoice | ForEach-Object { $_.Id }) | Should -Be @('en', 'fr')
+        $threading = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\Core\Threading.ps1') -Raw
+        $threading | Should -Match "'TkLanguage'" -Because 'workers write texts a person reads'
+    }
+
+    It 'keeps each translation''s placeholders, and only English the code or the markup uses' {
+
+        $sources = (Get-ChildItem -Path (Join-Path $script:RepositoryRoot 'src') -Filter '*.ps1' -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $markup  = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\MainWindow.xaml') -Raw -Encoding UTF8
+
+        # Case matters: WORKSTATION and Workstation are two texts.
+        $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
+
+        $script:FrenchPairs.Count | Should -BeGreaterThan 100
+
+        foreach ($pair in $script:FrenchPairs) {
+
+            $key     = [string] $pair.en
+            $context = if ($pair.PSObject.Properties['context']) { [string] $pair.context } else { '' }
+            $why     = '"{0}"' -f $key
+
+            [string] $pair.text | Should -Not -BeNullOrEmpty -Because $why
+            $seen.Add(('{0}|{1}' -f $context, $key)) | Should -BeTrue -Because ('{0} is listed once' -f $why)
+
+            # The same placeholders, so -f gives every value its place in both languages.
+            $english = @([regex]::Matches($key, '\{\d+\}') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+            $french  = @([regex]::Matches([string] $pair.text, '\{\d+\}') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+            ($english -join ',') | Should -Be ($french -join ',') -Because $why
+
+            if ($pair.PSObject.Properties['values']) {
+                foreach ($index in $pair.values.PSObject.Properties.Name) { $english | Should -Contain ('{{{0}}}' -f $index) -Because $why }
+            }
+
+            # A key nobody uses is a translation nobody sees.
+            $xml = [System.Security.SecurityElement]::Escape($key).Replace('&apos;', "'")
+            ($sources.Contains("'$key'") -or $sources.Contains("`"$key`"") -or $markup.Contains("=`"$xml`"")) | Should -BeTrue -Because ('{0} is written in the code or the markup' -f $why)
+        }
+    }
+
+    It 'translates text written in English elsewhere, and leaves names and values alone' {
+
+        ConvertTo-TkLocalText -Text '12 days ago' -Language 'fr' | Should -Be 'Il y a 12 jours'
+        ConvertTo-TkLocalText -Text 'Up for 3d 4h 12m' -Language 'fr' | Should -Be ('Allum{0} depuis 3 j 4 h 12 min' -f $script:Eacute) -Because 'a captured value is translated once too'
+        ConvertTo-TkLocalText -Text 'Storage C:' -Language 'fr' | Should -Be 'Stockage C:'
+        ConvertTo-TkLocalText -Text 'Storage health' -Language 'fr' | Should -Be 'Storage health' -Because 'the placeholder of "Storage {0}" is a drive letter'
+        ConvertTo-TkLocalText -Text '12 days ago' -Exact -Language 'fr' | Should -Be '12 days ago'
+        ConvertTo-TkLocalText -Text 'CONTOSO-PC' -Language 'fr' | Should -Be 'CONTOSO-PC'
+        ConvertTo-TkLocalText -Text 'Restart pending' -Language 'en' | Should -Be 'Restart pending'
+
+        Get-TkText -Text 'Dashboard' -Language 'fr' | Should -Be 'Tableau de bord'
+        Get-TkText -Text '{0} (joined)' -ArgumentList 'CORP' -Language 'fr' | Should -Be 'CORP (joint au domaine)'
+        Get-TkText -Text 'Not in the dictionary {0}' -ArgumentList 1 -Language 'fr' | Should -Be 'Not in the dictionary 1'
+        Get-TkText -Text 'Check' -Context 'report' -Language 'fr' | Should -Be ('V{0}rification' -f $script:Eacute)
+        Get-TkText -Text 'Check' -Language 'fr' | Should -Be 'Check' -Because 'the button''s verb is not the report''s noun'
+    }
+
+    It 'translates the rail and the Dashboard in the window, and keeps the English its logic reads' {
+
+        $window = [System.Windows.Markup.XamlReader]::Parse((Get-TkMainWindowXaml))
+        $count  = Set-TkWindowLanguage -Root $window -Language 'fr' -Confirm:$false
+
+        $count | Should -BeGreaterThan 50
+
+        $nav = $window.FindName('NavDashboard')
+        $nav.Content | Should -Be 'Tableau de bord'
+        $nav.Uid     | Should -Be 'Dashboard'
+
+        # Every entry of the rail is translated, but for the names that stay as they are.
+        $same = @('Migration', 'Microsoft 365', 'Intervention', 'Audit')
+        foreach ($name in @(Get-TkPageName | ForEach-Object { 'Nav{0}' -f $_ })) {
+            $button = $window.FindName($name)
+            if ($same -notcontains $button.Uid -and $same -notcontains [string] $button.Content) { $button.Uid | Should -Not -BeNullOrEmpty -Because ('{0} is translated' -f $name) }
+        }
+
+        # A tab and a chooser entry keep their English key.
+        $tab = @($window.FindName('SecurityTabs').Items | Where-Object { $_.Uid -eq 'Security audit' })[0]
+        $tab.Header | Should -Be ('Audit de s{0}curit{0}' -f $script:Eacute)
+        Get-TkElementKey -Element $tab | Should -Be 'Security audit'
+
+        $battery = @($window.FindName('HardwareChoices').Items | Where-Object { (Get-TkItemTitle -Item $_) -eq 'Battery' })
+        $battery.Count | Should -Be 1 -Because 'the chooser still finds its entry by the English title'
+
+        $window.FindName('BtnCheckMailDns').Content | Should -Be 'Check' -Because 'a pair with a context is never used on the window'
+        $window.FindName('SettingLanguage') | Should -Not -BeNullOrEmpty
+
+        # English leaves the window untouched.
+        $english = [System.Windows.Markup.XamlReader]::Parse((Get-TkMainWindowXaml))
+        Set-TkWindowLanguage -Root $english -Language 'en' -Confirm:$false | Should -Be 0
+        $english.FindName('NavDashboard').Content | Should -Be 'Dashboard'
+    }
+
+    It 'writes the intervention report in French when asked, and in English by default' {
+
+        $report = [pscustomobject] @{
+            Computer = 'PC-01'; GeneratedAt = [datetime]::new(2026, 10, 6, 9, 0, 0); Toolkit = 'Toolkit 1.2.0'; Technician = 'Alex'; Ticket = ''; Notes = ''; Period = 'Today'
+            Identity = $null; OS = [pscustomobject] @{ Caption = 'Windows 11 Pro'; DisplayVersion = '25H2'; Build = '26200'; UptimeText = '3d 4h 12m' }
+            Tiles    = @([pscustomobject] @{ Title = 'Updates'; Value = '12 days ago'; Severity = 'Warning'; Detail = 'Last installed: KB5039212' })
+            Audit    = $null
+            Entries  = @([pscustomobject] @{ Time = [datetime]::new(2026, 10, 6, 8, 0, 0); Kind = 'Check'; Name = 'Local security audit'; Outcome = 'Done' })
+            Journal  = [pscustomobject] @{ Valid = $true; Entries = 4; Unchained = 0; Head = 'AB' * 32; Breaks = @() }
+        }
+
+        $french = [System.Net.WebUtility]::HtmlDecode((ConvertTo-TkInterventionHtml -Report $report -Language 'fr'))
+        $french | Should -Match '<html lang="fr">'
+        $french | Should -Match "<h1>Rapport d'intervention</h1>"
+        $french | Should -Match ('<td>Mises {0} jour</td><td>Il y a 12 jours</td>' -f $script:Agrave)
+        $french | Should -Match ('P{0}riode couverte</td><td>Aujourd''hui' -f $script:Eacute)
+        $french | Should -Match ('<td>V{0}rification</td>' -f $script:Eacute) -Because 'the kind of a journal entry, in the report''s context'
+        $french | Should -Match '3 j 4 h 12 min'
+        $french | Should -Match ([regex]::Escape('AB' * 32))
+
+        $english = ConvertTo-TkInterventionHtml -Report $report -Language 'en'
+        $english | Should -Match '<html lang="en">'
+        $english | Should -Match '<h1>Intervention report</h1>'
+        $english | Should -Match '<td>Updates</td><td>12 days ago</td>'
+    }
+}
+
 Describe 'Switch port discovery' {
 
     BeforeAll {

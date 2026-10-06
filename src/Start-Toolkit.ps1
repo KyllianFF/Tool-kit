@@ -261,6 +261,7 @@ function Start-Toolkit {
     # --- 1. Context and logging ------------------------------------------
     $ctx = Initialize-TkContext
     Import-TkSettings | Out-Null
+    Initialize-TkLanguage | Out-Null
 
     # Recorded so the elevation restart can replay the same source when the
     # toolkit was piped in and there is no script file on disk to re-run.

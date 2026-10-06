@@ -255,7 +255,8 @@ function Import-TkAllCatalogs {
         'bug-check-names',
         'device-problems',
         'diagnosis-rules',
-        'frameworks'
+        'frameworks',
+        'strings-fr'
     )
 
     foreach ($name in $names) {

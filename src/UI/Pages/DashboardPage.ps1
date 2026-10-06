@@ -109,21 +109,23 @@ function Write-TkDashboardWorkstation {
     $identity = if ($Part) { $Part.Identity } else { $null }
     $os       = if ($Part) { $Part.OS } else { $null }
 
-    $unknown = 'Not available'
+    # The readings arrive in English from the background task; what is
+    # written here is in the language of the interface.
+    $unknown = Get-TkText 'Not available'
 
     $domain = if (-not $identity) { $unknown }
-              elseif ($identity.PartOfDomain) { '{0} (joined)' -f $identity.Domain }
-              else { '{0} (workgroup)' -f $identity.Domain }
+              elseif ($identity.PartOfDomain) { Get-TkText -Text '{0} (joined)' -ArgumentList $identity.Domain }
+              else { Get-TkText -Text '{0} (workgroup)' -ArgumentList $identity.Domain }
 
     Set-TkFieldText -Field @{
         'DashComputerName' = $env:COMPUTERNAME
         'DashModel'        = if ($identity) { '{0} {1}' -f $identity.Manufacturer, $identity.Model } else { $unknown }
-        'DashOs'           = if ($os) { '{0} {1}, build {2}' -f $os.Caption, $os.DisplayVersion, $os.Build } else { $unknown }
-        'DashUptime'       = if ($os) { $os.UptimeText } else { $unknown }
-        'DashUser'         = if ($identity) { $identity.LoggedOnUser } else { $unknown }
+        'DashOs'           = if ($os) { Get-TkText -Text '{0} {1}, build {2}' -ArgumentList $os.Caption, $os.DisplayVersion, $os.Build } else { $unknown }
+        'DashUptime'       = if ($os) { ConvertTo-TkLocalText -Text $os.UptimeText } else { $unknown }
+        'DashUser'         = if ($identity) { ConvertTo-TkLocalText -Text $identity.LoggedOnUser -Exact } else { $unknown }
         'DashDomain'       = $domain
-        'DashSerial'       = if ($identity) { $identity.SerialNumber } else { $unknown }
-        'DashActivation'   = if ($os) { $os.Activation } else { $unknown }
+        'DashSerial'       = if ($identity) { ConvertTo-TkLocalText -Text $identity.SerialNumber -Exact } else { $unknown }
+        'DashActivation'   = if ($os) { ConvertTo-TkLocalText -Text $os.Activation -Exact } else { $unknown }
     }
 }
 
@@ -148,23 +150,23 @@ function Write-TkDashboardNetwork {
     # the log recorded it, and the card was left half written.
     $adapters = @(if ($Part) { $Part.Adapters | Where-Object { $null -ne $_ } })
 
-    $unknown    = 'Not available'
+    $unknown    = Get-TkText 'Not available'
     $hasAddress = ($null -ne $adapter -and $adapter.IPv4Address -and $adapter.IPv4Address -ne 'None')
 
     $addressing = if (-not $adapter) { $unknown }
                   elseif ([string] $adapter.Dhcp -eq 'Enabled') { 'DHCP' }
-                  elseif ([string] $adapter.Dhcp -eq 'Disabled') { 'Static' }
+                  elseif ([string] $adapter.Dhcp -eq 'Disabled') { Get-TkText 'Static' }
                   else { [string] $adapter.Dhcp }
 
-    $adapterLine = if (-not $adapter) { 'No adapter has a usable IPv4 address' }
-                   elseif ($adapter.Gateway -eq 'None') { '{0}, {1}, no default gateway' -f $adapter.Name, $adapter.LinkSpeed }
+    $adapterLine = if (-not $adapter) { Get-TkText 'No adapter has a usable IPv4 address' }
+                   elseif ($adapter.Gateway -eq 'None') { Get-TkText -Text '{0}, {1}, no default gateway' -ArgumentList $adapter.Name, $adapter.LinkSpeed }
                    else { '{0}, {1}' -f $adapter.Name, $adapter.LinkSpeed }
 
     Set-TkFieldText -Field @{
-        'DashIpv4'    = if ($hasAddress) { '{0}/{1}' -f $adapter.IPv4Address, $adapter.PrefixLength } else { 'Not connected' }
+        'DashIpv4'    = if ($hasAddress) { '{0}/{1}' -f $adapter.IPv4Address, $adapter.PrefixLength } else { Get-TkText 'Not connected' }
         'DashAdapter' = $adapterLine
-        'DashGateway' = if ($adapter) { $adapter.Gateway } else { $unknown }
-        'DashDns'     = if ($adapter -and $adapter.DnsServers) { $adapter.DnsServers } else { 'None' }
+        'DashGateway' = if ($adapter) { ConvertTo-TkLocalText -Text ([string] $adapter.Gateway) -Exact } else { $unknown }
+        'DashDns'     = if ($adapter -and $adapter.DnsServers) { $adapter.DnsServers } else { Get-TkText 'None' }
         'DashDhcp'    = $addressing
         'DashMac'     = if ($adapter) { $adapter.MacAddress } else { $unknown }
     }
@@ -205,7 +207,7 @@ function Write-TkDashboardHealth {
     if ($null -eq $Part) {
 
         if ($note) {
-            $note.Text = 'The health of this machine could not be read. The log has the reason.'
+            $note.Text = Get-TkText 'The health of this machine could not be read. The log has the reason.'
         }
 
         return
@@ -218,7 +220,7 @@ function Write-TkDashboardHealth {
     }
 
     if ($note) {
-        $note.Text = 'Read at {0}. Click a tile to open the entry that deals with it.' -f (Get-Date -Format 'HH:mm')
+        $note.Text = Get-TkText -Text 'Read at {0}. Click a tile to open the entry that deals with it.' -ArgumentList (Get-Date -Format 'HH:mm')
     }
 }
 
@@ -253,8 +255,12 @@ function New-TkHealthTile {
     $border.Cursor          = [System.Windows.Input.Cursors]::Hand
     $border.Tag             = $Tile
 
-    $border.ToolTip = if ($Tile.Choice) { 'Open {0} on the {1} page' -f $Tile.Choice, $Tile.Page }
-                      else { 'Open the {0} page' -f $Tile.Page }
+    # The tile is built in English, by code the reports share; it is shown in
+    # the language of the interface. Its Tag keeps the English, which opens it.
+    $page = ConvertTo-TkLocalText -Text ([string] $Tile.Page) -Exact
+
+    $border.ToolTip = if ($Tile.Choice) { Get-TkText -Text 'Open {0} on the {1} page' -ArgumentList (ConvertTo-TkLocalText -Text ([string] $Tile.Choice) -Exact), $page }
+                      else { Get-TkText -Text 'Open the {0} page' -ArgumentList $page }
 
     $border.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, $severityKey)
 
@@ -274,7 +280,7 @@ function New-TkHealthTile {
     $icon.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, $severityKey)
 
     $title = New-Object System.Windows.Controls.TextBlock
-    $title.Text              = $Tile.Title
+    $title.Text              = ConvertTo-TkLocalText -Text ([string] $Tile.Title)
     $title.FontSize          = 11
     $title.Margin            = New-Object System.Windows.Thickness(6, 0, 0, 0)
     $title.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
@@ -286,7 +292,7 @@ function New-TkHealthTile {
 
     # --- Value ------------------------------------------------------------
     $value = New-Object System.Windows.Controls.TextBlock
-    $value.Text         = $Tile.Value
+    $value.Text         = ConvertTo-TkLocalText -Text ([string] $Tile.Value)
     $value.FontSize     = 16
     $value.FontWeight   = [System.Windows.FontWeights]::SemiBold
     $value.TextWrapping = [System.Windows.TextWrapping]::Wrap
@@ -307,7 +313,7 @@ function New-TkHealthTile {
     if ($Tile.Detail) {
 
         $detail = New-Object System.Windows.Controls.TextBlock
-        $detail.Text         = $Tile.Detail
+        $detail.Text         = ConvertTo-TkLocalText -Text ([string] $Tile.Detail)
         $detail.FontSize     = 11
         $detail.TextWrapping = [System.Windows.TextWrapping]::Wrap
         $detail.Margin       = New-Object System.Windows.Thickness(0, 4, 0, 0)
@@ -500,7 +506,7 @@ function Add-TkQuickActionPanel {
 
         $button = New-Object System.Windows.Controls.Button
         $button.Tag     = $action.Id
-        $button.ToolTip = $action.Hint
+        $button.ToolTip = Get-TkText $action.Hint
         $button.SetResourceReference([System.Windows.Controls.Button]::StyleProperty, 'ActionCard')
 
         $grid = New-Object System.Windows.Controls.Grid
@@ -531,11 +537,11 @@ function Add-TkQuickActionPanel {
         $text.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
 
         $name = New-Object System.Windows.Controls.TextBlock
-        $name.Text = $action.Name
+        $name.Text = Get-TkText $action.Name
         $name.SetResourceReference([System.Windows.Controls.TextBlock]::StyleProperty, 'ChoiceTitle')
 
         $hint = New-Object System.Windows.Controls.TextBlock
-        $hint.Text = $action.Hint
+        $hint.Text = Get-TkText $action.Hint
         $hint.SetResourceReference([System.Windows.Controls.TextBlock]::StyleProperty, 'ChoiceHint')
 
         [void] $text.Children.Add($name)
@@ -572,7 +578,7 @@ function Show-TkDashboardPublicIp {
     $label = Get-TkControl -Name 'DashPublicIp'
 
     if ($label) {
-        $label.Text = 'Asking...'
+        $label.Text = Get-TkText 'Asking...'
     }
 
     Invoke-TkBackgroundAction -StatusText 'Asking for the public address...' `
@@ -584,7 +590,7 @@ function Show-TkDashboardPublicIp {
             $target = Get-TkControl -Name 'DashPublicIp'
 
             if ($target) {
-                $target.Text = if ($answer) { [string] $answer } else { 'Not available' }
+                $target.Text = if ($answer) { [string] $answer } else { Get-TkText 'Not available' }
             }
         }
 }

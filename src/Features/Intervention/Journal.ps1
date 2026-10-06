@@ -640,22 +640,33 @@ function ConvertTo-TkInterventionHtml {
     [OutputType([string])]
     param(
         [Parameter(Mandatory)]
-        [pscustomobject] $Report
+        [pscustomobject] $Report,
+
+        # The language the report is written in. The readings it holds were
+        # taken in English; their words are translated as they are written.
+        [Parameter()]
+        [string] $Language = (Get-TkLanguage)
     )
 
     $h = { param($value) ConvertTo-TkHtmlText -Text $value }
 
+    # A label, and a sentence whose values are already HTML: the sentence is
+    # encoded first, then given its values, so a value can carry markup.
+    $t  = { param($text) ConvertTo-TkHtmlText -Text (Get-TkText -Text $text -Language $Language -Context 'report') }
+    $tf = { param($text, [object[]] $values) (ConvertTo-TkHtmlText -Text (Get-TkText -Text $text -Language $Language -Context 'report')) -f $values }
+    $l  = { param($value) ConvertTo-TkHtmlText -Text (ConvertTo-TkLocalText -Text ([string] $value) -Language $Language) }
+
     $badge = {
         param($severity)
         $class = switch ([string] $severity) { 'Pass' { 'pass' } 'Warning' { 'warn' } 'Fail' { 'fail' } default { 'info' } }
-        '<span class="badge {0}">{1}</span>' -f $class, (& $h $severity)
+        '<span class="badge {0}">{1}</span>' -f $class, (& $t ([string] $severity))
     }
 
     $html = New-Object System.Text.StringBuilder
 
     [void] $html.AppendLine('<!DOCTYPE html>')
-    [void] $html.AppendLine('<html lang="en"><head><meta charset="utf-8">')
-    [void] $html.AppendLine(('<title>Intervention report - {0}</title>' -f (& $h $Report.Computer)))
+    [void] $html.AppendLine(('<html lang="{0}"><head><meta charset="utf-8">' -f $(if ($Language -eq 'fr') { 'fr' } else { 'en' })))
+    [void] $html.AppendLine(('<title>{0}</title>' -f (& $tf 'Intervention report - {0}' @(& $h $Report.Computer))))
     [void] $html.AppendLine('<style>
 body{font-family:"Segoe UI",Arial,sans-serif;color:#1b1f27;margin:0;background:#f3f4f7}
 main{max-width:920px;margin:24px auto;background:#fff;padding:32px 40px;border:1px solid #d0d5dd;border-radius:8px}
@@ -670,20 +681,20 @@ footer{margin-top:28px;color:#5c6675;font-size:12px}@media print{body{background
 </style></head><body><main>')
 
     # --- Header -----------------------------------------------------------
-    [void] $html.AppendLine(('<h1>Intervention report</h1><div class="muted">{0} - {1}</div>' -f
-        (& $h $Report.Computer), (& $h ([datetime] $Report.GeneratedAt).ToString('yyyy-MM-dd HH:mm'))))
+    [void] $html.AppendLine(('<h1>{0}</h1><div class="muted">{1} - {2}</div>' -f
+        (& $t 'Intervention report'), (& $h $Report.Computer), (& $h ([datetime] $Report.GeneratedAt).ToString('yyyy-MM-dd HH:mm'))))
 
-    [void] $html.AppendLine('<h2>Intervention</h2><table class="facts">')
-    [void] $html.AppendLine(('<tr><td>Ticket</td><td>{0}</td></tr>' -f $(if ($Report.Ticket) { & $h $Report.Ticket } else { '<span class="muted">None given</span>' })))
-    [void] $html.AppendLine(('<tr><td>Technician</td><td>{0}</td></tr>' -f (& $h $Report.Technician)))
-    [void] $html.AppendLine(('<tr><td>Period covered</td><td>{0}</td></tr>' -f (& $h $Report.Period)))
+    [void] $html.AppendLine(('<h2>{0}</h2><table class="facts">' -f (& $t 'Intervention')))
+    [void] $html.AppendLine(('<tr><td>{0}</td><td>{1}</td></tr>' -f (& $t 'Ticket'), $(if ($Report.Ticket) { & $h $Report.Ticket } else { '<span class="muted">{0}</span>' -f (& $t 'None given') })))
+    [void] $html.AppendLine(('<tr><td>{0}</td><td>{1}</td></tr>' -f (& $t 'Technician'), (& $h $Report.Technician)))
+    [void] $html.AppendLine(('<tr><td>{0}</td><td>{1}</td></tr>' -f (& $t 'Period covered'), (& $l $Report.Period)))
     [void] $html.AppendLine('</table>')
 
     # --- Machine ----------------------------------------------------------
     $identity = $Report.Identity
     $os       = $Report.OS
 
-    [void] $html.AppendLine('<h2>Machine</h2><table class="facts">')
+    [void] $html.AppendLine(('<h2>{0}</h2><table class="facts">' -f (& $t 'Machine')))
 
     # Objects rather than two element arrays: a list of inline arrays is
     # flattened into one list of strings, and each row then showed one letter.
@@ -691,35 +702,35 @@ footer{margin-top:28px;color:#5c6675;font-size:12px}@media print{body{background
         [pscustomobject] @{ Label = 'Computer';               Value = $Report.Computer }
         [pscustomobject] @{ Label = 'Manufacturer and model'; Value = $(if ($identity) { '{0} {1}' -f $identity.Manufacturer, $identity.Model }) }
         [pscustomobject] @{ Label = 'Serial number';          Value = $(if ($identity) { $identity.SerialNumber }) }
-        [pscustomobject] @{ Label = 'Windows';                Value = $(if ($os) { '{0} {1}, build {2}' -f $os.Caption, $os.DisplayVersion, $os.Build }) }
-        [pscustomobject] @{ Label = 'Uptime';                 Value = $(if ($os) { $os.UptimeText }) }
+        [pscustomobject] @{ Label = 'Windows';                Value = $(if ($os) { Get-TkText -Text '{0} {1}, build {2}' -ArgumentList $os.Caption, $os.DisplayVersion, $os.Build -Language $Language }) }
+        [pscustomobject] @{ Label = 'Uptime';                 Value = $(if ($os) { ConvertTo-TkLocalText -Text $os.UptimeText -Language $Language }) }
         [pscustomobject] @{ Label = 'Signed in user';         Value = $(if ($identity) { $identity.LoggedOnUser }) }
         [pscustomobject] @{ Label = 'Domain or workgroup';    Value = $(if ($identity) { $identity.Domain }) }
     )
 
     foreach ($fact in $facts) {
-        [void] $html.AppendLine(('<tr><td>{0}</td><td>{1}</td></tr>' -f (& $h $fact.Label),
-            $(if ($fact.Value) { & $h $fact.Value } else { '<span class="muted">Not available</span>' })))
+        [void] $html.AppendLine(('<tr><td>{0}</td><td>{1}</td></tr>' -f (& $t $fact.Label),
+            $(if ($fact.Value) { & $h $fact.Value } else { '<span class="muted">{0}</span>' -f (& $t 'Not available') })))
     }
 
     [void] $html.AppendLine('</table>')
 
     # --- Health -----------------------------------------------------------
-    [void] $html.AppendLine('<h2>Health at the time of the report</h2>')
+    [void] $html.AppendLine(('<h2>{0}</h2>' -f (& $t 'Health at the time of the report')))
 
     if (@($Report.Tiles).Count -gt 0) {
 
-        [void] $html.AppendLine('<table><tr><th>Check</th><th>Result</th><th>State</th><th>Detail</th></tr>')
+        [void] $html.AppendLine(('<table><tr><th>{0}</th><th>{1}</th><th>{2}</th><th>{3}</th></tr>' -f (& $t 'Check'), (& $t 'Result'), (& $t 'State'), (& $t 'Detail')))
 
         foreach ($tile in @($Report.Tiles)) {
             [void] $html.AppendLine(('<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>' -f
-                (& $h $tile.Title), (& $h $tile.Value), (& $badge $tile.Severity), (& $h $tile.Detail)))
+                (& $l $tile.Title), (& $l $tile.Value), (& $badge $tile.Severity), (& $l $tile.Detail)))
         }
 
         [void] $html.AppendLine('</table>')
     }
     else {
-        [void] $html.AppendLine('<p class="muted">The health of the machine could not be read.</p>')
+        [void] $html.AppendLine(('<p class="muted">{0}</p>' -f (& $t 'The health of the machine could not be read.')))
     }
 
     # --- Security audit ---------------------------------------------------
@@ -727,15 +738,15 @@ footer{margin-top:28px;color:#5c6675;font-size:12px}@media print{body{background
 
         $score = $Report.Audit.Score
 
-        [void] $html.AppendLine('<h2>Security audit</h2>')
-        [void] $html.AppendLine(('<p>Score <strong>{0} of 100</strong>: {1} passed, {2} failed, {3} warnings, {4} not assessed.</p>' -f
-            (& $h $score.Score), (& $h $score.Passed), (& $h $score.Failed), (& $h $score.Warnings), (& $h $score.NotAssessed)))
+        [void] $html.AppendLine(('<h2>{0}</h2>' -f (& $t 'Security audit')))
+        [void] $html.AppendLine(('<p><strong>{0}</strong>: {1}</p>' -f (& $tf 'Score {0} of 100' @(& $h $score.Score)),
+            (& $tf '{0} passed, {1} failed, {2} warnings, {3} not assessed.' @((& $h $score.Passed), (& $h $score.Failed), (& $h $score.Warnings), (& $h $score.NotAssessed)))))
 
         $open = @($Report.Audit.Findings | Where-Object { $_.Status -in @('Fail', 'Warning') })
 
         if ($open.Count -gt 0) {
 
-            [void] $html.AppendLine('<table><tr><th>Control</th><th>State</th><th>Detail</th></tr>')
+            [void] $html.AppendLine(('<table><tr><th>{0}</th><th>{1}</th><th>{2}</th></tr>' -f (& $t 'Control'), (& $t 'State'), (& $t 'Detail')))
 
             foreach ($finding in $open) {
                 [void] $html.AppendLine(('<tr><td>{0} {1}</td><td>{2}</td><td>{3}</td></tr>' -f
@@ -747,24 +758,24 @@ footer{margin-top:28px;color:#5c6675;font-size:12px}@media print{body{background
     }
 
     # --- Actions ----------------------------------------------------------
-    [void] $html.AppendLine('<h2>What was done</h2>')
+    [void] $html.AppendLine(('<h2>{0}</h2>' -f (& $t 'What was done')))
 
     $entries = @($Report.Entries | Where-Object { $_ })
 
     if ($entries.Count -gt 0) {
 
-        [void] $html.AppendLine('<table><tr><th>Time</th><th>Kind</th><th>Operation</th><th>Outcome</th></tr>')
+        [void] $html.AppendLine(('<table><tr><th>{0}</th><th>{1}</th><th>{2}</th><th>{3}</th></tr>' -f (& $t 'Time'), (& $t 'Kind'), (& $t 'Operation'), (& $t 'Outcome')))
 
         foreach ($entry in $entries) {
             [void] $html.AppendLine(('<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>' -f
-                (& $h ([datetime] $entry.Time).ToString('yyyy-MM-dd HH:mm')), (& $h $entry.Kind), (& $h $entry.Name),
+                (& $h ([datetime] $entry.Time).ToString('yyyy-MM-dd HH:mm')), (& $t ([string] $entry.Kind)), (& $h $entry.Name),
                 (& $badge $(if ($entry.Outcome -eq 'Done') { 'Pass' } else { 'Fail' }))))
         }
 
         [void] $html.AppendLine('</table>')
     }
     else {
-        [void] $html.AppendLine('<p class="muted">No operation was run through the toolkit in this period.</p>')
+        [void] $html.AppendLine(('<p class="muted">{0}</p>' -f (& $t 'No operation was run through the toolkit in this period.')))
     }
 
     # --- Journal integrity ---------------------------------------------------
@@ -774,28 +785,30 @@ footer{margin-top:28px;color:#5c6675;font-size:12px}@media print{body{background
 
         $journal = $Report.Journal
 
-        [void] $html.AppendLine('<h2>Journal integrity</h2>')
+        [void] $html.AppendLine(('<h2>{0}</h2>' -f (& $t 'Journal integrity')))
 
         if ($journal.Valid) {
-            [void] $html.AppendLine(('<p>{0} {1} entries in the journal, each linked to the one before it: none was changed or removed since it was written.{2}</p>' -f
-                (& $badge 'Pass'), (& $h $journal.Entries),
-                $(if ($journal.Unchained -gt 0) { ' {0} written before the link existed are counted apart.' -f (& $h $journal.Unchained) } else { '' })))
+            [void] $html.AppendLine(('<p>{0} {1}{2}</p>' -f (& $badge 'Pass'),
+                (& $tf '{0} entries in the journal, each linked to the one before it: none was changed or removed since it was written.' @(& $h $journal.Entries)),
+                $(if ($journal.Unchained -gt 0) { ' ' + (& $tf '{0} written before the link existed are counted apart.' @(& $h $journal.Unchained)) } else { '' })))
         }
         else {
             $break = @($journal.Breaks)[0]
-            [void] $html.AppendLine(('<p>{0} The chain is broken in {1} place(s). First: {2}, line {3}: {4}</p>' -f
-                (& $badge 'Fail'), (& $h @($journal.Breaks).Count), (& $h $break.File), (& $h $break.Line), (& $h $break.Problem)))
+            [void] $html.AppendLine(('<p>{0} {1}</p>' -f (& $badge 'Fail'),
+                (& $tf 'The chain is broken in {0} place(s). First: {1}, line {2}: {3}' @((& $h @($journal.Breaks).Count), (& $h $break.File), (& $h $break.Line), (& $h $break.Problem)))))
         }
 
-        [void] $html.AppendLine(('<p class="muted">Head of the journal when this report was made: <code>{0}</code>. Keep this report: a journal changed afterwards, even rewritten whole, no longer leads to this value.</p>' -f
-            $(if ($journal.Head) { & $h $journal.Head } else { 'none, the journal is empty' })))
+        $head = if ($journal.Head) { '<code>{0}</code>' -f (& $h $journal.Head) } else { & $t 'none, the journal is empty' }
+        [void] $html.AppendLine(('<p class="muted">{0}</p>' -f
+            (& $tf 'Head of the journal when this report was made: {0}. Keep this report: a journal changed afterwards, even rewritten whole, no longer leads to this value.' @($head))))
     }
 
     # --- Notes ------------------------------------------------------------
-    [void] $html.AppendLine('<h2>Notes</h2>')
-    [void] $html.AppendLine($(if ($Report.Notes) { '<div class="notes">{0}</div>' -f (& $h $Report.Notes) } else { '<p class="muted">No notes.</p>' }))
+    [void] $html.AppendLine(('<h2>{0}</h2>' -f (& $t 'Notes')))
+    [void] $html.AppendLine($(if ($Report.Notes) { '<div class="notes">{0}</div>' -f (& $h $Report.Notes) } else { '<p class="muted">{0}</p>' -f (& $t 'No notes.') }))
 
-    [void] $html.AppendLine(('<footer>Generated by {0}. The operations listed are the ones run through the toolkit; changes made by other means do not appear.</footer>' -f (& $h $Report.Toolkit)))
+    [void] $html.AppendLine(('<footer>{0}</footer>' -f
+        (& $tf 'Generated by {0}. The operations listed are the ones run through the toolkit; changes made by other means do not appear.' @(& $h $Report.Toolkit))))
     [void] $html.AppendLine('</main></body></html>')
 
     return $html.ToString()
