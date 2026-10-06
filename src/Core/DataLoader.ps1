@@ -253,7 +253,8 @@ function Import-TkAllCatalogs {
         'vendor-support',
         'bug-checks',
         'bug-check-names',
-        'device-problems'
+        'device-problems',
+        'diagnosis-rules'
     )
 
     foreach ($name in $names) {

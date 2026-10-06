@@ -3152,6 +3152,46 @@
                             </Grid>
                         </TabItem>
 
+                        <!--
+                            What the reports say together: rules written as data
+                            (data/diagnosis-rules.json), each conclusion with its evidence.
+                        -->
+                        <TabItem Header="Possible causes">
+                            <Grid Margin="0,16,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <WrapPanel Margin="0,0,0,4">
+                                            <Border Style="{StaticResource ActionGroup}" Margin="0,0,0,8">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button x:Name="BtnHypothesesRun" Content="Look for causes" Style="{StaticResource GroupedPrimaryButton}"
+                                                            ToolTip="Collects the reports the rules read, on this machine, and crosses them." />
+                                                    <Rectangle Style="{StaticResource GroupDivider}" />
+                                                    <Button x:Name="BtnHypothesesOpen" Content="Read a saved report" Style="{StaticResource GroupedButton}"
+                                                            ToolTip="A report document saved earlier: a snapshot, a headless report, or a request for support sent by a user." />
+                                                </StackPanel>
+                                            </Border>
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                                                   Text="Read only. Rules written as data cross what the reports found - crashes, storage, updates, restarts, memory, devices, network and proxy - and propose possible causes, each with how confident it is, the evidence it rests on and the next step. A cause is a lead, never a certainty, and nothing is run by a rule. A rule whose reports could not be read is named, not passed over." />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0">
+                                    <RichTextBox x:Name="HypothesesOutput" IsReadOnly="True"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextPrimary}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 IsDocumentEnabled="True" />
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
                         <TabItem Header="Event logs">
                             <Grid Margin="0,16,0,0">
                                 <Grid.RowDefinitions>
