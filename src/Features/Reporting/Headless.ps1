@@ -261,6 +261,13 @@ function Get-TkHeadlessReport {
             Get-TkSoftwareLifecycleReport
         })
 
+        # Never online: the catalog shipped with the toolkit, with its date.
+        (& $row 'Exploited' 1 $false 'Installed programs below the version that fixes a vulnerability in the CISA catalog of exploited vulnerabilities, against the catalog shipped with the toolkit and its date.' {
+            param($Options)
+            $null = $Options
+            Get-TkExploitedSoftwareReport
+        })
+
         (& $row 'Readiness' 1 $false 'Whether the machine can run Windows 11, and whether to keep, upgrade or replace it.' {
             param($Options)
             $null = $Options
