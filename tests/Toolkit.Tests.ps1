@@ -7108,6 +7108,7 @@ Describe 'Incident triage' {
 
         $hashes = @(Get-Content -LiteralPath $result.Hashes)
         $hashes.Count | Should -Be 2
+        [System.IO.File]::ReadAllText($result.Hashes) | Should -Not -Match "`r" -Because 'sha256sum -c reads a carriage return as part of the file name'
         $hashes[1]    | Should -Be ('{0}  {1}.zip' -f $result.ArchiveSha256, $case.Id)
 
         (Get-TkJournalFolder) | Should -BeLike ('{0}*' -f $TestDrive)
@@ -7265,6 +7266,269 @@ Describe 'Incident triage' {
 
         $topics = @((Import-TkCatalog -Name 'network-knowledge').topics | ForEach-Object { $_.id })
         $topics | Should -Contain 'incident-first-hour'
+    }
+}
+
+Describe 'Framework mapping and evidence pack' {
+
+    BeforeAll {
+        # Journaled and pseudonymised under a temporary folder, never for the account that runs the tests.
+        $script:EvidenceDataRoot = (Get-TkContext).DataRoot
+        (Get-TkContext).DataRoot = Join-Path $TestDrive 'data'
+
+        function New-TestFinding {
+            param([string] $Id, [string] $Status, [string] $Name = 'Control', [string] $Measured = 'value', [string] $PolicyState = '', [string] $Until = '')
+            $finding = New-TkAuditFinding -Id $Id -Name $Name -Category 'Test' -Status $Status -Detail ('{0} detail' -f $Name) -Measured $Measured
+            if ($PolicyState) {
+                $exception = if ($Until) { [pscustomobject] @{ Expires = $Until; Owner = 'IT'; Ticket = 'CHG-1'; Reason = 'Old scanner' } } else { $null }
+                Add-Member -InputObject $finding -NotePropertyName 'Policy' -NotePropertyValue ([pscustomobject] @{ State = $PolicyState; Exception = $exception })
+            }
+            return $finding
+        }
+
+        function New-TestFindingSet {
+            @(
+                (New-TestFinding -Id 'ENC-001' -Status 'Pass' -Name 'Drive encryption' -Measured 'All fixed drives encrypted')
+                (New-TestFinding -Id 'TPM-001' -Status 'Pass' -Name 'TPM' -Measured 'TPM 2.0')
+                (New-TestFinding -Id 'FW-001' -Status 'Fail' -Name 'Windows Firewall' -Measured 'Public profile off')
+                (New-TestFinding -Id 'SMB-001' -Status 'Fail' -Name 'SMBv1' -Measured 'Enabled' -PolicyState 'Accepted' -Until '2026-12-31')
+            )
+        }
+
+        $script:TestIdentity = [pscustomobject] @{ Version = '9.9.9'; Commit = 'abc1234'; Source = 'https://example.org/toolkit.ps1'; Sha256 = 'AB' * 32; Proof = 'Pinned.' }
+
+        # A signing certificate made in memory; the .pfx round trip gives
+        # Windows PowerShell a key it can sign with.
+        function New-TestSigner {
+            $key     = [System.Security.Cryptography.RSA]::Create(2048)
+            $request = New-Object System.Security.Cryptography.X509Certificates.CertificateRequest('CN=Evidence Signer', $key,
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+            $usages  = New-Object System.Security.Cryptography.OidCollection
+            [void] $usages.Add((New-Object System.Security.Cryptography.Oid('1.3.6.1.4.1.311.10.3.12')))
+            $request.CertificateExtensions.Add((New-Object System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension($usages, $false)))
+            $made    = $request.CreateSelfSigned([datetimeoffset] (Get-Date).AddDays(-1), [datetimeoffset] (Get-Date).AddDays(30))
+            $pfx     = $made.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, 'test')
+            return [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, 'test', [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        }
+    }
+
+    AfterAll {
+        (Get-TkContext).DataRoot = $script:EvidenceDataRoot
+    }
+
+    It 'maps every audit control, and only to requirements that exist' {
+
+        $catalog  = Get-TkFrameworkCatalog
+        $table    = @(Get-TkAuditControl | ForEach-Object { $_.Id })
+        $mapped   = @($catalog.controls | ForEach-Object { [string] $_.id })
+        $used     = @{}
+
+        $table.Count | Should -Be 39
+        @($table | Sort-Object -Unique).Count | Should -Be $table.Count
+        @($mapped | Sort-Object -Unique).Count | Should -Be $mapped.Count
+        (Compare-Object -ReferenceObject $table -DifferenceObject $mapped) | Should -BeNullOrEmpty -Because 'every control of the audit table has a mapping, and no mapping names a control that does not exist'
+
+        foreach ($control in @($catalog.controls)) {
+            $control.method | Should -Not -BeNullOrEmpty -Because $control.id
+            foreach ($property in $control.maps.PSObject.Properties) {
+                $framework = @($catalog.frameworks | Where-Object { $_.id -eq $property.Name }) | Select-Object -First 1
+                $framework | Should -Not -BeNullOrEmpty -Because ('{0} maps to {1}' -f $control.id, $property.Name)
+                foreach ($requirement in @($property.Value)) {
+                    @($framework.requirements | ForEach-Object { [string] $_.id }) | Should -Contain ([string] $requirement) -Because ('{0} maps to {1} {2}' -f $control.id, $property.Name, $requirement)
+                    $used['{0} {1}' -f $property.Name, $requirement] = $true
+                }
+            }
+        }
+
+        foreach ($framework in @($catalog.frameworks)) {
+            $framework.name | Should -Not -BeNullOrEmpty
+            foreach ($requirement in @($framework.requirements)) {
+                $requirement.title | Should -Not -BeNullOrEmpty
+                $used.ContainsKey(('{0} {1}' -f $framework.id, $requirement.id)) | Should -BeTrue -Because ('{0} {1} is listed, so a control contributes to it' -f $framework.id, $requirement.id)
+            }
+        }
+
+        (Get-TkJournalKind -Category 'Evidence') | Should -Be 'Collection'
+    }
+
+    It 'says on one line what a control contributes to' {
+
+        Format-TkControlReference -Id 'ENC-001' | Should -Be 'ISO 27001 8.1, 8.24; NIS2 21(2)(h); CIS Controls 3.6; ANSSI hygiene 31'
+        Format-TkControlReference -Id 'NONE-001' | Should -Be ''
+
+        $html = ConvertTo-TkSecurityAuditHtml -Finding @(New-TestFinding -Id 'ENC-001' -Status 'Pass' -Name 'Drive encryption')
+        $html | Should -Match 'Contributes to: ISO 27001 8\.1, 8\.24'
+    }
+
+    It 'judges a requirement by its controls, and never says it is met' {
+
+        $judge = { param($controls, $notRun) Resolve-TkRequirementObservation -Control @($controls | ForEach-Object { [pscustomobject] $_ }) -NotRun @($notRun) }
+
+        $cases = @(
+            @{ Expect = 'NotCovered';   Result = (& $judge @() @('SMB-002')) }
+            @{ Expect = 'NotRequired';  Result = (& $judge @(@{ Id = 'A'; Status = 'Fail'; PolicyState = 'NotRequired'; ExceptionUntil = '' }) @()) }
+            @{ Expect = 'Gap';          Result = (& $judge @(@{ Id = 'A'; Status = 'Fail'; PolicyState = ''; ExceptionUntil = '' }, @{ Id = 'B'; Status = 'Pass'; PolicyState = ''; ExceptionUntil = '' }) @()) }
+            @{ Expect = 'AcceptedRisk'; Result = (& $judge @(@{ Id = 'A'; Status = 'Fail'; PolicyState = 'Accepted'; ExceptionUntil = '2026-12-31' }) @()) }
+            @{ Expect = 'Weakness';     Result = (& $judge @(@{ Id = 'A'; Status = 'Warning'; PolicyState = ''; ExceptionUntil = '' }) @()) }
+            @{ Expect = 'NotAssessed';  Result = (& $judge @(@{ Id = 'A'; Status = 'NotAssessed'; PolicyState = ''; ExceptionUntil = '' }) @()) }
+            @{ Expect = 'Supported';    Result = (& $judge @(@{ Id = 'A'; Status = 'Pass'; PolicyState = ''; ExceptionUntil = '' }) @('B-001')) }
+        )
+
+        foreach ($case in $cases) {
+            $case.Result.Observation | Should -Be $case.Expect
+            ('{0} {1}' -f $case.Result.Label, $case.Result.Text) | Should -Not -Match '(?i)complian'
+        }
+
+        $cases[3].Result.Text | Should -Match 'until 2026-12-31'
+        $cases[6].Result.Text | Should -Match 'Not in this audit: B-001'
+        $cases[0].Result.Text | Should -Not -Match 'Full audit' -Because 'only said when the controls missing are Full ones'
+        (Resolve-TkRequirementObservation -Control @() -NotRun @('SMB-002') -FullOnly).Text | Should -Match 'The Full audit runs them'
+    }
+
+    It 'builds the pack requirement by requirement, with the exceptions and what the run left out' {
+
+        $journal = [pscustomobject] @{ Valid = $true; Entries = 12; Head = 'CD' * 32 }
+        $pack    = New-TkEvidencePack -Finding (New-TestFindingSet) -Level 'Essential' -Framework @('ISO27001') -Toolkit $script:TestIdentity -Journal $journal `
+                       -AuditedAt ([datetime]::new(2026, 10, 6, 9, 0, 0, [System.DateTimeKind]::Utc)) -Now ([datetime]::new(2026, 10, 6, 9, 5, 0, [System.DateTimeKind]::Utc))
+
+        $pack.Schema        | Should -Be 'toolkit-evidence'
+        $pack.SchemaVersion | Should -Be '1.0'
+        $pack.Id            | Should -Match '^evidence-[A-Za-z0-9_-]+-20261006T090500Z$'
+        $pack.Notice        | Should -Match 'does not establish'
+        $pack.Toolkit.Commit | Should -Be 'abc1234'
+        $pack.Journal.Head   | Should -Be ('CD' * 32)
+        $pack.Audit.AuditedAt | Should -BeLike '2026-10-06T09:00:00*'
+        @($pack.Frameworks).Count | Should -Be 1
+
+        $byId = @{}
+        foreach ($requirement in @($pack.Frameworks[0].Requirements)) { $byId[$requirement.Id] = $requirement }
+
+        $byId['8.24'].Observation | Should -Be 'Supported'
+        @($byId['8.24'].Controls | ForEach-Object { $_.Id }) | Should -Be @('ENC-001', 'TPM-001')
+        @($byId['8.24'].NotInAudit) | Should -Contain 'SMB-002'
+        $byId['8.20'].Observation | Should -Be 'Gap'
+        $byId['8.9'].Observation  | Should -Be 'AcceptedRisk' -Because 'SMBv1 is the only control of 8.9 in the run, and its failure is under an exception'
+        $byId['8.15'].Observation | Should -Be 'NotCovered'
+        $byId['8.15'].Text        | Should -Match 'The Full audit runs them' -Because 'both logging controls are Full ones'
+        $byId['7.7'].Text         | Should -Not -Match 'Full audit' -Because 'the screen lock is an Essential control: had it run, it would be here'
+
+        $smb = @($pack.Controls | Where-Object { $_.Id -eq 'SMB-001' })[0]
+        $smb.Policy.State            | Should -Be 'Accepted'
+        $smb.Policy.Exception.Until  | Should -Be '2026-12-31'
+        $smb.Method                  | Should -Match 'SMB1Protocol'
+        @($smb.References)           | Should -Be @('ISO27001 8.9', 'ISO27001 8.20') -Because 'only the frameworks asked for are referenced'
+
+        { New-TkEvidencePack -Finding (New-TestFindingSet) -Framework @('SOX') -Toolkit $script:TestIdentity } | Should -Throw '*SOX is not a framework*'
+    }
+
+    It 'writes the pack with its hashes and a signature, and finds a change made afterwards' {
+
+        $folder = Join-Path $TestDrive 'signed'
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        $signer = New-TestSigner
+
+        $pack    = New-TkEvidencePack -Finding (New-TestFindingSet) -Toolkit $script:TestIdentity
+        $written = Export-TkEvidencePack -Pack $pack -Folder $folder -Certificate $signer -Confirm:$false
+
+        foreach ($file in @($written.Json, $written.Html, $written.Hashes, $written.Signature)) { [System.IO.File]::Exists($file) | Should -BeTrue }
+        $written.JsonSha256 | Should -Be (Get-FileHash -LiteralPath $written.Json -Algorithm SHA256).Hash
+        $written.Signer     | Should -Match $signer.Thumbprint
+        @(Get-Content -LiteralPath $written.Hashes).Count | Should -Be 3
+        [System.IO.File]::ReadAllText($written.Hashes) | Should -Not -Match "`r" -Because 'sha256sum -c reads a carriage return as part of the file name'
+
+        $check = Test-TkEvidencePack -Path $written.Json
+        $check.Valid                | Should -BeTrue
+        $check.Signed               | Should -BeTrue
+        $check.Signature.Thumbprint | Should -Be $signer.Thumbprint
+        $check.Signature.SigningTime | Should -Not -BeNullOrEmpty
+
+        (Get-Content -LiteralPath $written.Json -Raw | ConvertFrom-Json).Frameworks.Count | Should -Be 4
+
+        $entry = @(Get-TkJournalEntry -Since (Get-Date).AddMinutes(-10) | Where-Object { $_.Category -eq 'Evidence' }) | Select-Object -Last 1
+        $entry.Kind   | Should -Be 'Collection'
+        $entry.Detail | Should -Match $written.JsonSha256
+        (Get-TkJournalFolder) | Should -BeLike ('{0}*' -f $TestDrive)
+
+        # A page changed afterwards is named; the JSON changed breaks the signature too.
+        Add-Content -LiteralPath $written.Html -Value '<!-- edited -->'
+        $after = Test-TkEvidencePack -Path $written.Json
+        $after.Valid  | Should -BeFalse
+        $after.Reason | Should -Match ([regex]::Escape([System.IO.Path]::GetFileName($written.Html)))
+
+        $bytes = [System.IO.File]::ReadAllBytes($written.Json)
+        $bytes[10] = $bytes[10] -bxor 0x20
+        (Test-TkDetachedSignature -Content $bytes -Signature ([System.IO.File]::ReadAllBytes($written.Signature))).Valid | Should -BeFalse
+    }
+
+    It 'writes an unsigned pack without a certificate, under the privacy of exports' {
+
+        $folder = Join-Path $TestDrive 'unsigned'
+        New-Item -ItemType Directory -Path $folder | Out-Null
+
+        $written = Export-TkEvidencePack -Pack (New-TkEvidencePack -Finding (New-TestFindingSet) -Toolkit $script:TestIdentity) -Folder $folder -Privacy 'Personal' -Confirm:$false
+
+        $written.Signature | Should -Be ''
+        @(Get-ChildItem -LiteralPath $folder -Filter '*.p7s').Count | Should -Be 0
+        (Test-TkEvidencePack -Path $written.Json).Signed | Should -BeFalse
+        (Test-TkEvidencePack -Path $written.Json).Valid  | Should -BeTrue
+        (Get-Content -LiteralPath $written.Json -Raw) | Should -Not -Match ([regex]::Escape($env:COMPUTERNAME))
+        (Get-Content -LiteralPath $written.Html -Raw) | Should -Not -Match ([regex]::Escape($env:COMPUTERNAME))
+    }
+
+    It 'renders each requirement and each method, and escapes what the machine reported' {
+
+        $findings = @(New-TestFindingSet) + @(New-TestFinding -Id 'UPD-001' -Status 'Warning' -Name 'Patch <level>' -Measured '45 days & more')
+        $html     = ConvertTo-TkEvidencePackHtml -Pack (New-TkEvidencePack -Finding $findings -Toolkit $script:TestIdentity)
+
+        $html | Should -Match '<strong>8\.24</strong> Use of cryptography'
+        $html | Should -Match '<strong>Method:</strong>'
+        $html | Should -Match 'Patch &lt;level&gt;'
+        $html | Should -Match '45 days &amp; more'
+        $html | Should -Not -Match 'Patch <level>'
+        $html | Should -Match 'Accepted risk'
+        $html | Should -Not -Match '(?i)\bcompliant\b'
+    }
+
+    It 'runs without a window, and refuses before the audit what it cannot honour' {
+
+        $list = Invoke-TkHeadlessEvidence -Destination 'List' | ConvertFrom-Json
+        @($list | ForEach-Object { $_.Id }) | Should -Be @('ISO27001', 'NIS2', 'CIS', 'ANSSI')
+
+        { Invoke-TkHeadlessEvidence -Destination $TestDrive -Framework 'SOX' } | Should -Throw '*not a framework*'
+        { Invoke-TkHeadlessEvidence -Destination $TestDrive -Certificate ('00' * 20) } | Should -Throw '*No valid certificate*'
+        { Start-Toolkit -EvidenceFramework 'ISO27001' } | Should -Throw '*go with -Evidence*'
+        { Start-Toolkit -Evidence $TestDrive -Report Storage } | Should -Throw '*does not mix*'
+        { Start-Toolkit -Triage $TestDrive -Evidence $TestDrive } | Should -Throw '*does not mix*'
+
+        function Test-TkIsElevated { $false }
+        { Invoke-TkHeadlessEvidence -Destination $TestDrive } | Should -Throw '*administrator*'
+
+        # Elevated, with the audit stubbed: the pack is written and the result names it.
+        function Test-TkIsElevated { $true }
+        function Invoke-TkPolicyAudit { param($Level, $ExcludedAccount, $PolicySource, $PolicyTrust) $null = $ExcludedAccount, $PolicySource, $PolicyTrust; [pscustomobject] @{ Level = $Level; ExcludedAccount = @(); Findings = @(New-TestFindingSet); Compliance = $null } }
+
+        $folder = Join-Path $TestDrive 'headless'
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        $result = Invoke-TkHeadlessEvidence -Destination $folder -Framework 'ISO27001,NIS2' -AuditLevel 'Full' | ConvertFrom-Json
+
+        $result.Schema              | Should -Be 'toolkit-evidence-result'
+        $result.Audit.Level         | Should -Be 'Full'
+        [System.IO.File]::Exists($result.Pack.Json) | Should -BeTrue
+        (Get-Content -LiteralPath $result.Pack.Json -Raw | ConvertFrom-Json).Mapping.Frameworks | Should -Be @('ISO27001', 'NIS2')
+        $result.Observations.Gap    | Should -BeGreaterThan 0
+    }
+
+    It 'has its button and its parameters on every entry point' {
+
+        $markup = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot 'src\UI\MainWindow.xaml') -Raw
+        $markup | Should -Match 'x:Name="BtnAuditEvidence"'
+
+        foreach ($file in @('toolkit.ps1', 'build\Build-Toolkit.ps1')) {
+            $text = Get-Content -LiteralPath (Join-Path $script:RepositoryRoot $file) -Raw
+            foreach ($name in @('Evidence', 'EvidenceFramework', 'EvidenceCertificate')) {
+                $text | Should -Match ('\[string(\[\])?\] `?\${0},' -f $name) -Because ('{0} takes -{1}' -f $file, $name)
+            }
+        }
     }
 }
 

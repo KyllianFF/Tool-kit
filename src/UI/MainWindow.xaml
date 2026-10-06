@@ -3481,6 +3481,8 @@
                                     <StackPanel Orientation="Horizontal">
                                         <Button x:Name="BtnRunAudit"    Content="Run the audit" Style="{StaticResource PrimaryButton}" />
                                         <Button x:Name="BtnExportAudit" Content="Export report" />
+                                        <Button x:Name="BtnAuditEvidence" Content="Evidence pack"
+                                                ToolTip="For an ISO 27001, NIS2, CIS or ANSSI review: each requirement with the controls measured, their value and method, who ran the audit and with which build, hashed and optionally signed. It contributes evidence; it never says a requirement is met." />
                                         <TextBlock Text="Depth" VerticalAlignment="Center" Margin="16,0,8,0" Style="{StaticResource Muted}" />
                                         <ComboBox x:Name="AuditLevel" Width="230" VerticalAlignment="Center"
                                                   ToolTip="Essential covers what goes wrong often and is cheap to fix. Full adds the controls that need a decision, a licence or a domain behind them." />

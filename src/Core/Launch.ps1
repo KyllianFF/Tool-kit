@@ -266,3 +266,45 @@ function Get-TkLaunchProvenance {
 
     return (& $make 'Unknown' '' '' $false 'Where this instance came from is not known.')
 }
+
+<#
+.SYNOPSIS
+    What identifies the build that produced a document: version, commit,
+    where it came from, and its SHA-256 when it is known.
+
+.DESCRIPTION
+    Written into what has to say which tool made it, a triage manifest or an
+    evidence pack. A file that ran is hashed here; a download carries the
+    SHA-256 its launch command checked, never one measured afterwards. Call
+    it on the window's thread: a background runspace builds a context of its
+    own, which does not know where the toolkit was launched from.
+
+.OUTPUTS
+    PSCustomObject with Version, Commit, Source, Sha256 and Proof.
+#>
+function Get-TkToolkitIdentity {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    $ctx    = Get-TkContext
+    $source = ''
+    $sha    = ''
+    $how    = ''
+
+    if ($ctx.EntryScript -and [System.IO.File]::Exists([string] $ctx.EntryScript)) {
+        $source = [string] $ctx.EntryScript
+        $sha    = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+        $how    = 'The file that ran, hashed when this was written.'
+    }
+    elseif ($ctx.SourceUri) {
+        $source = [string] $ctx.SourceUri
+        $sha    = [string] $ctx.SourceSha256
+        $how    = if ($sha) { 'Downloaded and run only after this SHA-256 was checked.' } else { 'Downloaded without a pinned SHA-256: the build that ran cannot be proven.' }
+    }
+    else {
+        $how = 'Neither the file nor the address the toolkit was started from is known: the build that ran cannot be proven.'
+    }
+
+    return [pscustomobject] @{ Version = [string] $ctx.Version; Commit = [string] $ctx.Commit; Source = $source; Sha256 = $sha; Proof = $how }
+}
